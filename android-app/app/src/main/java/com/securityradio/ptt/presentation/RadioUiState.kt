@@ -12,6 +12,7 @@ data class RadioUiState(
     val zoneLabel: String,
     val channelLabel: String,
     val channelPosition: String,
+    val totalChannels: Int,
     val displayLine1: String,
     val displayLine2: String,
     val displayLine3: String,
@@ -19,6 +20,9 @@ data class RadioUiState(
     val isPttPressed: Boolean,
     val isEmergencyActive: Boolean,
     val statusMessage: String,
+    val channelsLoading: Boolean,
+    val channelSyncError: String?,
+    val channelSourceLabel: String,
 ) {
     init {
         require(softKeyLabels.size == SOFT_KEY_COUNT) {
@@ -31,20 +35,24 @@ data class RadioUiState(
 
         fun initial(): RadioUiState = RadioUiState(
             systemTime = "--:--",
-            networkLabel = "STANDBY",
+            networkLabel = "SYNCING",
             batteryPercent = 100,
             signalBars = 0,
             maxSignalBars = 5,
             zoneLabel = "ZONE 1",
-            channelLabel = "CH 01",
-            channelPosition = "01 / 16",
+            channelLabel = "----",
+            channelPosition = "-- / --",
+            totalChannels = 0,
             displayLine1 = "ENTERPRISE PTT",
             displayLine2 = "PRIVATE MODE",
-            displayLine3 = "AUDIO: READY",
+            displayLine3 = "CHANNELS: LOADING",
             softKeyLabels = listOf("MENU", "SCAN", "GPS", "EXIT"),
             isPttPressed = false,
             isEmergencyActive = false,
-            statusMessage = "PROTOTYPE UI",
+            statusMessage = "STARTING",
+            channelsLoading = true,
+            channelSyncError = null,
+            channelSourceLabel = "---",
         )
     }
 }
