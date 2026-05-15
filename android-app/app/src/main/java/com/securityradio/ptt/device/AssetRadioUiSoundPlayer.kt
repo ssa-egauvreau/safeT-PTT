@@ -1,19 +1,21 @@
 package com.securityradio.ptt.device
 
 import android.app.Application
+import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
 import java.io.IOException
 
 /**
- * Plays packaged handset cues from `assets/sounds/` when files exist (formats supported by [MediaPlayer]).
+ * Default short synthetic tones are bundled under `assets/sounds/` so the app is audible out of the box;
+ * replace them with your own WAV files anytime (same filenames).
  *
  * Expected filenames (WAV recommended):
  * - channel_switch.wav
  * - ptt_permit.wav
  * - emergency.wav
- * - busy.wav (repeater busy / no path to air)
+ * - busy.wav (repeater busy / no path to air; looped while PTT is held and air is busy)
  */
 class AssetRadioUiSoundPlayer(
     private val app: Application,
@@ -23,6 +25,18 @@ class AssetRadioUiSoundPlayer(
     private var talkPermitPlayer: MediaPlayer? = null
     private var busyTonePlayer: MediaPlayer? = null
 
+    private val uiAudioAttrs: AudioAttributes =
+        AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+
+    private fun MediaPlayer.applyUiAudio(): MediaPlayer {
+        setAudioAttributes(uiAudioAttrs)
+        setVolume(1f, 1f)
+        return this
+    }
+
     override fun playChannelSwitch() {
         playOneShot(FILE_CHANNEL_SWITCH)
     }
@@ -31,7 +45,8 @@ class AssetRadioUiSoundPlayer(
         main.post {
             stopBusyLoopInternal()
             stopTalkPermitLoopInternal()
-            val player = createLoopingPlayer(FILE_TALK_PERMIT) ?: return@post
+            // Talk permit is a cue when air is available — play once per transition, not a hold loop.
+            val player = createTalkPermitOneShot() ?: return@post
             talkPermitPlayer = player
         }
     }
@@ -66,6 +81,7 @@ class AssetRadioUiSoundPlayer(
 
     private fun stopTalkPermitLoopInternal() {
         talkPermitPlayer?.runCatching {
+            setOnCompletionListener(null)
             stop()
             release()
         }
@@ -74,6 +90,7 @@ class AssetRadioUiSoundPlayer(
 
     private fun stopBusyLoopInternal() {
         busyTonePlayer?.runCatching {
+            setOnCompletionListener(null)
             stop()
             release()
         }
@@ -88,7 +105,7 @@ class AssetRadioUiSoundPlayer(
                 return@post
             }
             afd.use {
-                val player = MediaPlayer()
+                val player = MediaPlayer().applyUiAudio()
                 try {
                     player.setDataSource(it.fileDescriptor, it.startOffset, it.length)
                     player.setOnPreparedListener { prepared ->
@@ -109,6 +126,39 @@ class AssetRadioUiSoundPlayer(
         }
     }
 
+    private fun createTalkPermitOneShot(): MediaPlayer? {
+        val afd = try {
+            app.assets.openFd("$SOUNDS_DIR/$FILE_TALK_PERMIT")
+        } catch (_: IOException) {
+            return null
+        }
+        return try {
+            MediaPlayer().applyUiAudio().apply {
+                setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                afd.close()
+                isLooping = false
+                setOnPreparedListener { it.start() }
+                setOnCompletionListener { completed ->
+                    completed.release()
+                    if (talkPermitPlayer === completed) {
+                        talkPermitPlayer = null
+                    }
+                }
+                setOnErrorListener { mp, _, _ ->
+                    if (talkPermitPlayer === mp) {
+                        talkPermitPlayer = null
+                    }
+                    mp.release()
+                    true
+                }
+                prepareAsync()
+            }
+        } catch (_: Exception) {
+            afd.close()
+            null
+        }
+    }
+
     private fun createLoopingPlayer(fileName: String): MediaPlayer? {
         val afd = try {
             app.assets.openFd("$SOUNDS_DIR/$fileName")
@@ -116,7 +166,7 @@ class AssetRadioUiSoundPlayer(
             return null
         }
         return try {
-            MediaPlayer().apply {
+            MediaPlayer().applyUiAudio().apply {
                 setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
                 afd.close()
                 isLooping = true
