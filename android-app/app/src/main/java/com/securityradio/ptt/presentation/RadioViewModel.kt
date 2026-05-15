@@ -127,6 +127,8 @@ class RadioViewModel(
             var audioPrevSample: Boolean? = null
             var audioStableCount = 0
             var audioCommittedBusy: Boolean? = null
+            /** At most one talk-permit cue per PTT hold (prevents repeated restarts if air flaps). */
+            var talkPermitCuePlayedThisHold = false
             while (isActive && _uiState.value.isPttPressed) {
                 val snapshot = _uiState.value
                 val online = snapshot.networkLabel == "ONLINE"
@@ -165,7 +167,10 @@ class RadioViewModel(
                         soundPlayer.startBusyLoop()
                     } else {
                         soundPlayer.stopBusyLoop()
-                        soundPlayer.startTalkPermitLoop()
+                        if (!talkPermitCuePlayedThisHold) {
+                            soundPlayer.startTalkPermitLoop()
+                            talkPermitCuePlayedThisHold = true
+                        }
                     }
                     audioCommittedBusy = useBusy
                 }

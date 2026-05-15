@@ -13,7 +13,7 @@ import java.io.IOException
  * - channel_switch.wav
  * - ptt_permit.wav
  * - emergency.wav
- * - busy.wav (repeater busy / no path to air; one-shot per stable busy segment)
+ * - busy.wav (repeater busy / no path to air; looped while PTT is held and air is busy)
  */
 class AssetRadioUiSoundPlayer(
     private val app: Application,
@@ -45,8 +45,7 @@ class AssetRadioUiSoundPlayer(
         main.post {
             stopTalkPermitLoopInternal()
             stopBusyLoopInternal()
-            // Busy tone: single play per stable busy segment (no MediaPlayer loop).
-            val player = createBusyOneShot() ?: return@post
+            val player = createLoopingPlayer(FILE_BUSY) ?: return@post
             busyTonePlayer = player
         }
     }
@@ -146,9 +145,9 @@ class AssetRadioUiSoundPlayer(
         }
     }
 
-    private fun createBusyOneShot(): MediaPlayer? {
+    private fun createLoopingPlayer(fileName: String): MediaPlayer? {
         val afd = try {
-            app.assets.openFd("$SOUNDS_DIR/$FILE_BUSY")
+            app.assets.openFd("$SOUNDS_DIR/$fileName")
         } catch (_: IOException) {
             return null
         }
@@ -156,18 +155,9 @@ class AssetRadioUiSoundPlayer(
             MediaPlayer().apply {
                 setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
                 afd.close()
-                isLooping = false
+                isLooping = true
                 setOnPreparedListener { it.start() }
-                setOnCompletionListener { completed ->
-                    completed.release()
-                    if (busyTonePlayer === completed) {
-                        busyTonePlayer = null
-                    }
-                }
                 setOnErrorListener { mp, _, _ ->
-                    if (busyTonePlayer === mp) {
-                        busyTonePlayer = null
-                    }
                     mp.release()
                     true
                 }
