@@ -1,7 +1,7 @@
 Place your handset cue audio files in this folder. WAV is recommended (MediaPlayer must support the codec).
 
   channel_switch.wav   — played when the catalog syncs from the network and when CH+/CH− changes the tuned channel
-  ptt_permit.wav       — looped while PTT is held (talk-permit tone)
+  ptt_permit.wav       — played once when air is available (PTT held, not busy); repeats only if busy clears again while still holding PTT
   emergency.wav        — played once when the emergency latch is turned ON
   busy.wav             — looped while PTT is held if there is no connection (not ONLINE) or the server reports the channel occupied (`GET /v1/air`)
 

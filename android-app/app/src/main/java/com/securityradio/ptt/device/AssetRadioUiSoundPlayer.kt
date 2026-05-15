@@ -31,7 +31,8 @@ class AssetRadioUiSoundPlayer(
         main.post {
             stopBusyLoopInternal()
             stopTalkPermitLoopInternal()
-            val player = createLoopingPlayer(FILE_TALK_PERMIT) ?: return@post
+            // Talk permit is a cue when air is available — play once per transition, not a hold loop.
+            val player = createTalkPermitOneShot() ?: return@post
             talkPermitPlayer = player
         }
     }
@@ -66,6 +67,7 @@ class AssetRadioUiSoundPlayer(
 
     private fun stopTalkPermitLoopInternal() {
         talkPermitPlayer?.runCatching {
+            setOnCompletionListener(null)
             stop()
             release()
         }
@@ -106,6 +108,39 @@ class AssetRadioUiSoundPlayer(
                     player.release()
                 }
             }
+        }
+    }
+
+    private fun createTalkPermitOneShot(): MediaPlayer? {
+        val afd = try {
+            app.assets.openFd("$SOUNDS_DIR/$FILE_TALK_PERMIT")
+        } catch (_: IOException) {
+            return null
+        }
+        return try {
+            MediaPlayer().apply {
+                setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                afd.close()
+                isLooping = false
+                setOnPreparedListener { it.start() }
+                setOnCompletionListener { completed ->
+                    completed.release()
+                    if (talkPermitPlayer === completed) {
+                        talkPermitPlayer = null
+                    }
+                }
+                setOnErrorListener { mp, _, _ ->
+                    if (talkPermitPlayer === mp) {
+                        talkPermitPlayer = null
+                    }
+                    mp.release()
+                    true
+                }
+                prepareAsync()
+            }
+        } catch (_: Exception) {
+            afd.close()
+            null
         }
     }
 
