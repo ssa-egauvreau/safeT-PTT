@@ -10,5 +10,6 @@ sealed interface RadioUiEvent {
     data object EmergencyReleased : RadioUiEvent
     data object ChannelUp : RadioUiEvent
     data object ChannelDown : RadioUiEvent
+    data object RetryChannelSync : RadioUiEvent
     data class SoftKeyPressed(val index: Int) : RadioUiEvent
 }

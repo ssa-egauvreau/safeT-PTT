@@ -1,13 +1,8 @@
 package com.securityradio.ptt.domain
 
 /**
- * Future hook for channel/talkgroup metadata from the backend. Not wired into the prototype ViewModel yet.
+ * Loads the channel catalog. Network-first implementations may fall back to local defaults.
  */
-interface ChannelRepository {
-    suspend fun snapshot(): ChannelSnapshot
+fun interface ChannelRepository {
+    suspend fun loadCatalog(): RadioChannelCatalog
 }
-
-data class ChannelSnapshot(
-    val channels: List<String>,
-    val index: Int,
-)

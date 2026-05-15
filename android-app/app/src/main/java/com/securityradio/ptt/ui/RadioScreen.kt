@@ -3,6 +3,7 @@ package com.securityradio.ptt.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -12,8 +13,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -52,6 +53,7 @@ import com.securityradio.ptt.presentation.RadioUiState
 fun RadioShell(
     state: RadioUiState,
     onEvent: (RadioUiEvent) -> Unit,
+    onRequestMicPermission: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -63,7 +65,11 @@ fun RadioShell(
                 .fillMaxSize()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
         ) {
-            RadioScreen(state = state, onEvent = onEvent)
+            RadioScreen(
+                state = state,
+                onEvent = onEvent,
+                onRequestMicPermission = onRequestMicPermission,
+            )
         }
     }
 }
@@ -75,6 +81,7 @@ fun RadioShell(
 fun RadioScreen(
     state: RadioUiState,
     onEvent: (RadioUiEvent) -> Unit,
+    onRequestMicPermission: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -86,10 +93,15 @@ fun RadioScreen(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(gutter),
         ) {
-            StatusStrip(state = state)
+            StatusStrip(
+                state = state,
+                onEvent = onEvent,
+                onRequestMicPermission = onRequestMicPermission,
+            )
             RadioFaceplate(
                 state = state,
                 onEvent = onEvent,
+                tunerEnabled = !state.channelsLoading && state.totalChannels > 0,
                 modifier = Modifier.weight(1f),
             )
             SoftKeyRow(
@@ -106,7 +118,11 @@ fun RadioScreen(
 }
 
 @Composable
-private fun StatusStrip(state: RadioUiState) {
+private fun StatusStrip(
+    state: RadioUiState,
+    onEvent: (RadioUiEvent) -> Unit,
+    onRequestMicPermission: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -117,18 +133,59 @@ private fun StatusStrip(state: RadioUiState) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Column {
-            Text(
-                text = state.systemTime,
-                style = MaterialTheme.typography.titleMedium,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.SemiBold,
-            )
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = state.systemTime,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (state.channelsLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+            }
             Text(
                 text = state.networkLabel,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Text(
+                text = "SRC: ${state.channelSourceLabel}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace,
+            )
+            Text(
+                text = state.micHint,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace,
+            )
+            if (!state.micPermissionGranted) {
+                Text(
+                    text = "ALLOW MIC",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable { onRequestMicPermission() },
+                )
+            }
+            if (state.channelSyncError != null) {
+                Text(
+                    text = "RETRY SYNC",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable { onEvent(RadioUiEvent.RetryChannelSync) },
+                )
+            }
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(
@@ -162,6 +219,7 @@ private fun SignalRow(bars: Int, maxBars: Int) {
 private fun RadioFaceplate(
     state: RadioUiState,
     onEvent: (RadioUiEvent) -> Unit,
+    tunerEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -170,6 +228,7 @@ private fun RadioFaceplate(
     ) {
         ChannelRocker(
             onEvent = onEvent,
+            enabled = tunerEnabled,
             modifier = Modifier
                 .widthIn(min = 56.dp, max = 72.dp)
                 .fillMaxHeight(),
@@ -193,6 +252,7 @@ private fun RadioFaceplate(
 @Composable
 private fun ChannelRocker(
     onEvent: (RadioUiEvent) -> Unit,
+    enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -206,6 +266,7 @@ private fun ChannelRocker(
     ) {
         HardwareKey(
             label = "CH+",
+            enabled = enabled,
             onPress = { onEvent(RadioUiEvent.ChannelUp) },
         )
         Text(
@@ -215,6 +276,7 @@ private fun ChannelRocker(
         )
         HardwareKey(
             label = "CH-",
+            enabled = enabled,
             onPress = { onEvent(RadioUiEvent.ChannelDown) },
         )
     }
@@ -223,15 +285,17 @@ private fun ChannelRocker(
 @Composable
 private fun HardwareKey(
     label: String,
+    enabled: Boolean,
     onPress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val interaction = remember { MutableInteractionSource() }
     Surface(
-        onClick = onPress,
+        onClick = { if (enabled) onPress() },
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 6.dp, vertical = 4.dp),
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .alpha(if (enabled) 1f else 0.35f),
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         interactionSource = interaction,
@@ -297,6 +361,7 @@ private fun CenterDisplay(
             LcdLine(text = state.displayLine1, fontSize = 18.sp)
             LcdLine(text = state.displayLine2, fontSize = 16.sp)
             LcdLine(text = state.displayLine3, fontSize = 15.sp)
+            LcdLine(text = state.micHint, fontSize = 14.sp)
         }
         Text(
             text = state.statusMessage,
