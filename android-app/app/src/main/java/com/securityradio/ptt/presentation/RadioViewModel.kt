@@ -35,6 +35,9 @@ class RadioViewModel(
 
     private var pttToneJob: Job? = null
 
+    @Volatile
+    private var pttMicLiveThisHold: Boolean = false
+
     private val timeFormatter: DateTimeFormatter =
         DateTimeFormatter.ofPattern("HH:mm", Locale.US)
 
@@ -171,16 +174,14 @@ class RadioViewModel(
     }
 
     private fun onPttPressed() {
-        val granted = _uiState.value.micPermissionGranted
-        if (granted) {
-            pttMicCapture.startCapture()
-        }
+        pttMicCapture.stopCapture()
+        pttMicLiveThisHold = false
         _uiState.update {
             it.copy(
                 isPttPressed = true,
                 pttBusyTone = false,
-                statusMessage = if (granted) "TX + MIC" else "TX (NO MIC)",
-                micHint = if (granted) "MIC: MONITOR ON" else "MIC: ALLOW MIC",
+                statusMessage = "AIR: CHECKING",
+                micHint = "MIC: STANDBY",
             )
         }
 
@@ -189,7 +190,6 @@ class RadioViewModel(
             var audioPrevSample: Boolean? = null
             var audioStableCount = 0
             var audioCommittedBusy: Boolean? = null
-            var talkPermitCuePlayedThisHold = false
             while (isActive && _uiState.value.isPttPressed) {
                 val snapshot = _uiState.value
                 val online = snapshot.networkLabel == "ONLINE"
@@ -204,15 +204,22 @@ class RadioViewModel(
                 }
                 val useBusy = !online || occupied
                 val mic = snapshot.micPermissionGranted
+                val micLive = pttMicLiveThisHold
+
+                val statusHint = computePttStatus(
+                    online = online,
+                    useBusy = useBusy,
+                    micGranted = mic,
+                    micLive = micLive,
+                    stableEnough = audioStableCount >= AIR_AUDIO_STABLE_POLLS,
+                )
+
                 _uiState.update { s ->
+                    val nextMicHint = micHintForPtt(useBusy = useBusy, micGranted = mic, micLive = micLive)
                     s.copy(
                         pttBusyTone = useBusy,
-                        statusMessage = when {
-                            useBusy && !online -> "NO CONNECTION"
-                            useBusy -> "CHANNEL BUSY"
-                            mic -> "TX + MIC"
-                            else -> "TX (NO MIC)"
-                        },
+                        statusMessage = statusHint,
+                        micHint = nextMicHint,
                     )
                 }
 
@@ -225,12 +232,15 @@ class RadioViewModel(
                 if (audioStableCount >= AIR_AUDIO_STABLE_POLLS && audioCommittedBusy != useBusy) {
                     if (useBusy) {
                         soundPlayer.stopTalkPermitLoop()
+                        pttMicCapture.stopCapture()
+                        pttMicLiveThisHold = false
                         soundPlayer.startBusyLoop()
                     } else {
                         soundPlayer.stopBusyLoop()
-                        if (!talkPermitCuePlayedThisHold) {
-                            soundPlayer.startTalkPermitLoop()
-                            talkPermitCuePlayedThisHold = true
+                        if (!micLive) {
+                            soundPlayer.playTalkPermitThen {
+                                grantMicrophoneAfterVerification()
+                            }
                         }
                     }
                     audioCommittedBusy = useBusy
@@ -240,7 +250,52 @@ class RadioViewModel(
         }
     }
 
+    private fun computePttStatus(
+        online: Boolean,
+        useBusy: Boolean,
+        micGranted: Boolean,
+        micLive: Boolean,
+        stableEnough: Boolean,
+    ): String {
+        return when {
+            useBusy && !online -> "NO CONNECTION"
+            useBusy -> "CHANNEL BUSY"
+            micLive && micGranted -> "TX + MIC"
+            micLive && !micGranted -> "TX (NO MIC)"
+            !useBusy && !micLive && stableEnough -> "AIR: OK — PERMIT"
+            else -> "AIR: CHECKING"
+        }
+    }
+
+    private fun micHintForPtt(useBusy: Boolean, micGranted: Boolean, micLive: Boolean): String {
+        return when {
+            micLive && micGranted -> "MIC: MONITOR ON"
+            micGranted && !micLive -> "MIC: STANDBY"
+            !micGranted -> "MIC: ALLOW MIC"
+            else -> "MIC: STANDBY"
+        }
+    }
+
+    private fun grantMicrophoneAfterVerification() {
+        viewModelScope.launch {
+            val s = _uiState.value
+            if (!s.isPttPressed || s.pttBusyTone) return@launch
+            if (pttMicLiveThisHold) return@launch
+            pttMicLiveThisHold = true
+            if (s.micPermissionGranted) {
+                pttMicCapture.startCapture()
+            }
+            _uiState.update { cur ->
+                cur.copy(
+                    statusMessage = if (cur.micPermissionGranted) "TX + MIC" else "TX (NO MIC)",
+                    micHint = if (cur.micPermissionGranted) "MIC: MONITOR ON" else "MIC: ALLOW MIC",
+                )
+            }
+        }
+    }
+
     private fun onPttReleased() {
+        pttMicLiveThisHold = false
         pttToneJob?.cancel()
         pttToneJob = null
         pttMicCapture.stopCapture()
