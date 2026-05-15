@@ -32,7 +32,7 @@ data class LcdTextStyles(
 
 @Composable
 fun rememberLcdTextStyles(palette: RadioLcdPalette): LcdTextStyles {
-    return remember(palette.lcdMain, palette.textPrimary, palette.textSecondary, palette.textMuted) {
+    return remember(palette.lcdMain, palette.textPrimary, palette.textSecondary, palette.textMuted, palette.textOnButton) {
         LcdTextStyles(
             status = TextStyle(
                 fontFamily = LcdFontFamily,
@@ -46,7 +46,7 @@ fun rememberLcdTextStyles(palette: RadioLcdPalette): LcdTextStyles {
                 fontFamily = LcdFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 11.5.sp,
-                color = palette.textPrimary,
+                color = palette.textOnButton,
                 lineHeight = 13.sp,
                 lineHeightStyle = tightLineHeight(11.5f),
             ),

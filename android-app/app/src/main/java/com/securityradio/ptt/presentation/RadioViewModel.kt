@@ -124,7 +124,9 @@ class RadioViewModel(
 
         pttToneJob?.cancel()
         pttToneJob = viewModelScope.launch {
-            var lastUseBusy: Boolean? = null
+            var audioPrevSample: Boolean? = null
+            var audioStableCount = 0
+            var audioCommittedBusy: Boolean? = null
             while (isActive && _uiState.value.isPttPressed) {
                 val snapshot = _uiState.value
                 val online = snapshot.networkLabel == "ONLINE"
@@ -138,7 +140,26 @@ class RadioViewModel(
                     false
                 }
                 val useBusy = !online || occupied
-                if (lastUseBusy != useBusy) {
+                val mic = snapshot.micPermissionGranted
+                _uiState.update { s ->
+                    s.copy(
+                        pttBusyTone = useBusy,
+                        statusMessage = when {
+                            useBusy && !online -> "NO CONNECTION"
+                            useBusy -> "CHANNEL BUSY"
+                            mic -> "TX + MIC"
+                            else -> "TX (NO MIC)"
+                        },
+                    )
+                }
+
+                if (useBusy == audioPrevSample) {
+                    audioStableCount++
+                } else {
+                    audioPrevSample = useBusy
+                    audioStableCount = 1
+                }
+                if (audioStableCount >= AIR_AUDIO_STABLE_POLLS && audioCommittedBusy != useBusy) {
                     if (useBusy) {
                         soundPlayer.stopTalkPermitLoop()
                         soundPlayer.startBusyLoop()
@@ -146,20 +167,8 @@ class RadioViewModel(
                         soundPlayer.stopBusyLoop()
                         soundPlayer.startTalkPermitLoop()
                     }
-                    val mic = snapshot.micPermissionGranted
-                    _uiState.update { s ->
-                        s.copy(
-                            pttBusyTone = useBusy,
-                            statusMessage = when {
-                                useBusy && !online -> "NO CONNECTION"
-                                useBusy -> "CHANNEL BUSY"
-                                mic -> "TX + MIC"
-                                else -> "TX (NO MIC)"
-                            },
-                        )
-                    }
+                    audioCommittedBusy = useBusy
                 }
-                lastUseBusy = useBusy
                 delay(AIR_POLL_MS)
             }
         }
@@ -286,5 +295,7 @@ class RadioViewModel(
     private companion object {
         const val CLOCK_TICK_MS = 1_000L
         const val AIR_POLL_MS = 400L
+        /** Require this many matching air samples before playing a new busy/permit cue (reduces rapid flip-flop). */
+        const val AIR_AUDIO_STABLE_POLLS = 2
     }
 }

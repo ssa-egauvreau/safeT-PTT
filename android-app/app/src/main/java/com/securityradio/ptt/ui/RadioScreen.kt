@@ -419,7 +419,7 @@ private fun LcdSegmentButton(
             Text(
                 text = label.uppercase(Locale.US),
                 style = styles.softKey,
-                color = if (enabled) p.textPrimary else p.textMuted,
+                color = if (enabled) p.textOnButton else p.textMuted,
             )
         }
     }
@@ -527,7 +527,13 @@ private fun LcdPttBar(
             .height(height)
             .clip(RoundedCornerShape(2.dp))
             .border(1.dp, border, RoundedCornerShape(2.dp))
-            .background(fill.copy(alpha = if (state.isPttPressed) 0.92f else 0.55f))
+            .background(
+                when {
+                    state.isPttPressed && state.pttBusyTone -> fill
+                    state.isPttPressed -> fill.copy(alpha = 0.92f)
+                    else -> fill
+                },
+            )
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
@@ -541,7 +547,11 @@ private fun LcdPttBar(
         horizontalArrangement = Arrangement.Center,
     ) {
         LcdMicIcon(
-            color = if (state.isPttPressed) Color.Black.copy(alpha = 0.85f) else p.textMuted,
+            color = when {
+                state.isPttPressed && state.pttBusyTone -> p.textOnButton
+                state.isPttPressed -> Color.Black.copy(alpha = 0.85f)
+                else -> p.textOnButton
+            },
             modifier = Modifier.size(18.dp),
         )
         Spacer(modifier = Modifier.width(10.dp))
@@ -549,12 +559,20 @@ private fun LcdPttBar(
             Text(
                 text = label,
                 style = styles.softKey.copy(fontSize = 14.sp),
-                color = if (state.isPttPressed) Color.Black.copy(alpha = 0.9f) else p.textPrimary,
+                color = when {
+                    state.isPttPressed && state.pttBusyTone -> p.textOnButton
+                    state.isPttPressed -> Color.Black.copy(alpha = 0.9f)
+                    else -> p.textOnButton
+                },
             )
             Text(
                 text = "HOLD TO TRANSMIT",
                 style = styles.status,
-                color = if (state.isPttPressed) Color.Black.copy(alpha = 0.65f) else p.textMuted,
+                color = when {
+                    state.isPttPressed && state.pttBusyTone -> p.textOnButton.copy(alpha = 0.85f)
+                    state.isPttPressed -> Color.Black.copy(alpha = 0.65f)
+                    else -> p.textOnButton.copy(alpha = 0.9f)
+                },
             )
         }
     }
@@ -574,8 +592,15 @@ private fun LcdEmergencyRow(
             .fillMaxWidth()
             .height(44.dp),
         shape = RoundedCornerShape(2.dp),
-        color = if (state.isEmergencyActive) p.emergencyFill.copy(alpha = 0.95f) else p.emergencyFill.copy(alpha = 0.55f),
-        border = BorderStroke(1.dp, p.statusEmergency),
+        color = if (state.isEmergencyActive) {
+            p.statusEmergency.copy(alpha = 0.95f)
+        } else {
+            p.softKeyInactiveFill
+        },
+        border = BorderStroke(
+            1.dp,
+            if (state.isEmergencyActive) p.statusEmergency else p.divider,
+        ),
         interactionSource = interaction,
     ) {
         Row(
@@ -585,12 +610,15 @@ private fun LcdEmergencyRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            LcdEmergencyGlyphIcon(color = Color.White, modifier = Modifier.size(18.dp))
+            LcdEmergencyGlyphIcon(
+                color = if (state.isEmergencyActive) Color.White else p.textOnButton,
+                modifier = Modifier.size(18.dp),
+            )
             Spacer(modifier = Modifier.width(10.dp))
             Text(
                 text = if (state.isEmergencyActive) "EMERGENCY LATCHED" else "EMERGENCY (TAP)",
                 style = styles.softKey,
-                color = Color.White,
+                color = if (state.isEmergencyActive) Color.White else p.textOnButton,
             )
         }
     }
@@ -641,7 +669,7 @@ private fun LcdSoftKeyRow(
                     Text(
                         text = label.uppercase(Locale.US),
                         style = styles.softKey,
-                        color = p.textPrimary,
+                        color = p.textOnButton,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

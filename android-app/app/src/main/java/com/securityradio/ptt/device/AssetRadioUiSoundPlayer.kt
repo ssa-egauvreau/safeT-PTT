@@ -13,7 +13,7 @@ import java.io.IOException
  * - channel_switch.wav
  * - ptt_permit.wav
  * - emergency.wav
- * - busy.wav (repeater busy / no path to air)
+ * - busy.wav (repeater busy / no path to air; one-shot per stable busy segment)
  */
 class AssetRadioUiSoundPlayer(
     private val app: Application,
@@ -45,7 +45,8 @@ class AssetRadioUiSoundPlayer(
         main.post {
             stopTalkPermitLoopInternal()
             stopBusyLoopInternal()
-            val player = createLoopingPlayer(FILE_BUSY) ?: return@post
+            // Busy tone: single play per stable busy segment (no MediaPlayer loop).
+            val player = createBusyOneShot() ?: return@post
             busyTonePlayer = player
         }
     }
@@ -76,6 +77,7 @@ class AssetRadioUiSoundPlayer(
 
     private fun stopBusyLoopInternal() {
         busyTonePlayer?.runCatching {
+            setOnCompletionListener(null)
             stop()
             release()
         }
@@ -144,9 +146,9 @@ class AssetRadioUiSoundPlayer(
         }
     }
 
-    private fun createLoopingPlayer(fileName: String): MediaPlayer? {
+    private fun createBusyOneShot(): MediaPlayer? {
         val afd = try {
-            app.assets.openFd("$SOUNDS_DIR/$fileName")
+            app.assets.openFd("$SOUNDS_DIR/$FILE_BUSY")
         } catch (_: IOException) {
             return null
         }
@@ -154,9 +156,18 @@ class AssetRadioUiSoundPlayer(
             MediaPlayer().apply {
                 setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
                 afd.close()
-                isLooping = true
+                isLooping = false
                 setOnPreparedListener { it.start() }
+                setOnCompletionListener { completed ->
+                    completed.release()
+                    if (busyTonePlayer === completed) {
+                        busyTonePlayer = null
+                    }
+                }
                 setOnErrorListener { mp, _, _ ->
+                    if (busyTonePlayer === mp) {
+                        busyTonePlayer = null
+                    }
                     mp.release()
                     true
                 }
