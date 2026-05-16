@@ -56,8 +56,15 @@ data class RadioUiState(
     val needsAudioPermission: Boolean,
     val needsAccessibilityService: Boolean,
 
-    /** Debug / Mapping info. */
+    /** Debug / mapping: last intercepted Android keyCode for the HUD. */
     val lastDetectedKey: Int?,
+
+    /** Other radios reporting presence on the currently tuned channel (`null` when unknown). */
+    val radiosOnlineOnChannel: Int?,
+    /** Announce channel name aloud when changing tuning (TextToSpeech). */
+    val announceChannelNameOnTune: Boolean,
+    /** Caption used for one-shot replay (text-first until streamed audio replay exists). */
+    val lastRxReplayCaption: String,
 ) {
     init {
         require(softKeyLabels.size == SOFT_KEY_COUNT) {
@@ -97,7 +104,7 @@ data class RadioUiState(
             localShortUnitId = "",
             rxAttributedLine = "",
             scanActive = false,
-            gpsActive = false,
+            gpsActive = true,
             rssiExpanded = false,
             themeMode = ThemeMode.AUTO,
             mappingSettingsVisible = false,
@@ -106,6 +113,9 @@ data class RadioUiState(
             needsAudioPermission = false,
             needsAccessibilityService = false,
             lastDetectedKey = null,
+            radiosOnlineOnChannel = null,
+            announceChannelNameOnTune = true,
+            lastRxReplayCaption = "",
         )
     }
 }

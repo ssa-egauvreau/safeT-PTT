@@ -31,6 +31,7 @@ class HardwareMappingRepository(context: Context) {
             HardwareAction.CHANNEL_UP -> setOf("230")
             HardwareAction.CHANNEL_DOWN -> setOf("232")
             HardwareAction.SCAN_TOGGLE -> setOf("137")
+            HardwareAction.PLAY_LAST_TRANSMISSION -> emptySet()
         }
     }
 

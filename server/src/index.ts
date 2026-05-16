@@ -1,6 +1,7 @@
 import express from "express";
 import { DEFAULT_GREEN_CHANNELS } from "./defaultChannels.js";
 import { ensureChannelSchema, listChannelsFromDb } from "./db.js";
+import { countPresence, heartbeatPresence } from "./presence.js";
 
 const app = express();
 app.use(express.json());
@@ -50,6 +51,26 @@ app.get("/v1/air", (_req, res) => {
   const raw = process.env.AIR_OCCUPIED?.trim().toLowerCase();
   const occupied = raw === "1" || raw === "true" || raw === "yes";
   res.json({ occupied });
+});
+
+/** Registers (or refreshes TTL for) this unit on a channel via periodic Android heartbeats. */
+app.post("/v1/presence/heartbeat", (req, res) => {
+  const hb = heartbeatPresence(req.body?.unit_id, req.body?.channel);
+  if (!hb.ok) {
+    res.status(400).json({ error: hb.error ?? "presence_refused" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+/** Returns distinct units whose heartbeats arrived within TTL for the queried channel label. */
+app.get("/v1/presence/count", (req, res) => {
+  const channelRaw = typeof req.query.channel === "string" ? req.query.channel : "";
+  const count = countPresence(channelRaw);
+  res.json({
+    channel: channelRaw.trim(),
+    count,
+  });
 });
 
 /**

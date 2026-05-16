@@ -3,8 +3,10 @@ package com.securityradio.ptt.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.securityradio.ptt.data.remote.ChannelsApi
+import com.securityradio.ptt.data.remote.PresenceHeartbeatDto
 import com.securityradio.ptt.data.remote.TalkActivityDto
 import com.securityradio.ptt.data.remote.TalkerSnapshotDto
+import com.securityradio.ptt.device.ChannelSpeechHelper
 import com.securityradio.ptt.device.HardwareAction
 import com.securityradio.ptt.device.HardwareButtonEvent
 import com.securityradio.ptt.device.HardwareButtonRelay
@@ -40,6 +42,7 @@ class RadioViewModel(
     localUnitIdentifier: LocalUnitIdentifier,
     private val hardwareMappingRepository: HardwareMappingRepository,
     private val radioPreferences: RadioPreferences,
+    private val speechHelper: ChannelSpeechHelper,
 ) : ViewModel() {
 
     private val _wakeUiRequests = MutableSharedFlow<String>(extraBufferCapacity = 24)
@@ -74,6 +77,7 @@ class RadioViewModel(
                 localShortUnitId = unitIdUpper,
                 hardwareMappings = hardwareMappingRepository.getAllMappings(),
                 themeMode = radioPreferences.getThemeMode(),
+                announceChannelNameOnTune = radioPreferences.isAnnounceChannelOnTuneEnabled(),
             )
         }
         viewModelScope.launch {
@@ -106,7 +110,14 @@ class RadioViewModel(
                     HardwareButtonEvent.ScanTogglePressed -> {
                         _uiState.update { s -> onScanSoftKeyToggle(s) }
                     }
+                    HardwareButtonEvent.PlayLastTransmissionPressed -> playLastTransmission()
                 }
+            }
+        }
+        viewModelScope.launch {
+            while (isActive) {
+                delay(PRESENCE_POLL_MS)
+                pulsePresenceFromCurrentState(clearWhenOffline = true)
             }
         }
     }
@@ -257,7 +268,25 @@ class RadioViewModel(
             RadioUiEvent.RequestIgnoreBatteryOptimizations -> {
                 // Handled in Activity
             }
+            RadioUiEvent.ToggleVoiceAnnounceChannelTune -> {
+                soundPlayer.playChannelSwitch()
+                val next = !_uiState.value.announceChannelNameOnTune
+                radioPreferences.setAnnounceChannelOnTuneEnabled(next)
+                _uiState.update { it.copy(announceChannelNameOnTune = next) }
+            }
+            RadioUiEvent.PlayLastTransmission -> playLastTransmission()
         }
+    }
+
+    private fun playLastTransmission() {
+        val caption = _uiState.value.lastRxReplayCaption
+        if (caption.isBlank()) {
+            soundPlayer.playChannelSwitch()
+            _uiState.update { it.copy(statusMessage = "NO LAST RX") }
+            return
+        }
+        speechHelper.speakLastTransmissionSummary(caption)
+        _uiState.update { it.copy(statusMessage = "REPLAY LAST") }
     }
 
     private fun startMappingSession(action: HardwareAction) {
@@ -485,9 +514,12 @@ class RadioViewModel(
         }
         channelIndex = (channelIndex + delta + channelNames.size) % channelNames.size
         soundPlayer.playChannelSwitch()
+        val tunedLabel = channelNames[channelIndex]
         _uiState.update {
             it.withTuning(channelNames, channelIndex).pruneScanSets().copy(statusMessage = "CHANNEL ${if (delta > 0) "+" else "-"}")
         }
+        speechHelper.speakChannelTuneIfEnabled(tunedLabel)
+        viewModelScope.launch { pulsePresenceHeartbeatAndCount(expectOnline = true) }
     }
 
     private suspend fun syncCatalog(playConnectSoundIfNetwork: Boolean) {
@@ -546,6 +578,45 @@ class RadioViewModel(
             channelNames.isNotEmpty()
         ) {
             soundPlayer.playChannelSwitch()
+        }
+
+        if (networkLabel == "ONLINE") {
+            pulsePresenceFromCurrentState(clearWhenOffline = false)
+        }
+    }
+
+    /** Fire-and-forget presence refresh aligned with catalog / link changes. */
+    private fun pulsePresenceFromCurrentState(clearWhenOffline: Boolean) {
+        viewModelScope.launch {
+            pulsePresenceHeartbeatAndCount(
+                clearWhenOffline = clearWhenOffline,
+                expectOnline = false,
+            )
+        }
+    }
+
+    /**
+     * Heartbeat tuned channel then read population; skips when offline/loading/[----].
+     * @param clearWhenOffline when true (periodic poll), drop count to null off-link.
+     */
+    private suspend fun pulsePresenceHeartbeatAndCount(clearWhenOffline: Boolean = true, expectOnline: Boolean = false) {
+        val snap = _uiState.value
+        if (snap.channelsLoading || snap.channelLabel.isBlank() || snap.channelLabel == "----") return
+        if (snap.networkLabel != "ONLINE") {
+            if (clearWhenOffline && snap.radiosOnlineOnChannel != null) {
+                _uiState.update { it.copy(radiosOnlineOnChannel = null) }
+            }
+            return
+        }
+        val channel = snap.channelLabel.trim()
+        try {
+            channelsApi.presenceHeartbeat(PresenceHeartbeatDto(unitId = unitIdUpper, channel = channel))
+            val dto = channelsApi.presenceCount(channel)
+            _uiState.update { it.copy(radiosOnlineOnChannel = dto.count.coerceAtLeast(0)) }
+        } catch (_: Exception) {
+            if (!expectOnline) {
+                _uiState.update { it.copy(radiosOnlineOnChannel = null) }
+            }
         }
     }
 
@@ -615,11 +686,40 @@ class RadioViewModel(
                 if (wakingFromIdle) {
                     enqueueBackgroundWakeIfNeeded("rx_talk_activity")
                 }
-                _uiState.update { it.copy(rxAttributedLine = merged) }
+                val replayCaption = nextReplayCaption(snap, merged)
+                _uiState.update {
+                    it.copy(rxAttributedLine = merged, lastRxReplayCaption = replayCaption)
+                }
             } else if (_uiState.value.rxAttributedLine.isNotEmpty()) {
                 _uiState.update { it.copy(rxAttributedLine = "") }
             }
         }
+    }
+
+    /** Keep prior caption unless a new attribution clearly refers to another handset. */
+    private fun nextReplayCaption(snap: RadioUiState, mergedLine: String): String {
+        if (mergedLine.isBlank() || !rxAttributionIsOtherUnit(mergedLine, snap.localShortUnitId)) {
+            return snap.lastRxReplayCaption
+        }
+        return mergedLine
+    }
+
+    /** True when the RX line carries a unit id different from ours (handles "RX: UNIT • …"). */
+    private fun rxAttributionIsOtherUnit(line: String, localShortUnitUpper: String): Boolean {
+        val local = localShortUnitUpper.trim().uppercase(Locale.US)
+        if (local.isEmpty()) return true
+        val trimmed = line.trim()
+        val colon = trimmed.indexOf(':')
+        if (colon <= 0) return true
+        val afterColon = trimmed.substring(colon + 1).trim()
+        val sep = afterColon.indexOf('•').takeUnless { it < 0 } ?: afterColon.length
+        val unitToken = afterColon.substring(0, sep).trim().uppercase(Locale.US)
+        val normalizedLocal = local.removePrefix("UNIT").trim().removePrefix("UNIT ").trim().ifBlank { local }
+        return unitToken.isNotEmpty() &&
+            unitToken != local &&
+            unitToken != "UNIT-$local" &&
+            !unitToken.endsWith(local) &&
+            !(unitToken == "UNIT $local" || unitToken == normalizedLocal)
     }
 
     /**
@@ -676,5 +776,6 @@ class RadioViewModel(
         const val AIR_AUDIO_STABLE_POLLS = 2
         const val TALK_ACTIVITY_POLL_MS = 1200L
         const val WAKE_DEBOUNCE_MS = 700L
+        const val PRESENCE_POLL_MS = 12_000L
     }
 }

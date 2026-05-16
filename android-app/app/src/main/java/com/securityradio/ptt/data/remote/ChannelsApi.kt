@@ -1,7 +1,10 @@
 package com.securityradio.ptt.data.remote
 
 import com.google.gson.annotations.SerializedName
+import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.POST
+import retrofit2.http.Query
 
 interface ChannelsApi {
     @GET("v1/channels")
@@ -13,7 +16,29 @@ interface ChannelsApi {
     /** Optional telemetry for who is keyed on primary vs scan channels (mock via Railway env vars). */
     @GET("v1/talk-activity")
     suspend fun talkActivity(): TalkActivityDto
+
+    /** Register this handset on its tuned channel so the server can approximate channel population. */
+    @POST("v1/presence/heartbeat")
+    suspend fun presenceHeartbeat(@Body body: PresenceHeartbeatDto): PresenceHeartbeatResponseDto
+
+    /** Returns how many unique unit identifiers have heartbeated onto this channel lately. */
+    @GET("v1/presence/count")
+    suspend fun presenceCount(@Query("channel") channel: String): PresenceCountDto
 }
+
+data class PresenceHeartbeatDto(
+    @SerializedName("unit_id") val unitId: String,
+    @SerializedName("channel") val channel: String,
+)
+
+data class PresenceHeartbeatResponseDto(
+    @SerializedName("ok") val ok: Boolean = true,
+)
+
+data class PresenceCountDto(
+    @SerializedName("channel") val channel: String = "",
+    @SerializedName("count") val count: Int = 0,
+)
 
 data class TalkActivityDto(
     @SerializedName("main") val main: TalkerSnapshotDto? = null,

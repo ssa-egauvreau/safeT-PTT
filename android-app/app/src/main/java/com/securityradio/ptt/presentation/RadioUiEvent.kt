@@ -32,5 +32,5 @@ sealed interface RadioUiEvent {
     ) : RadioUiEvent
     data object RequestAudioPermission : RadioUiEvent
     data object OpenAccessibilitySettings : RadioUiEvent
-    data object RequestIgnoreBatteryOptimizations : RadioUiEvent
-}
+    data object ToggleVoiceAnnounceChannelTune : RadioUiEvent
+    data object PlayLastTransmission : RadioUiEvent

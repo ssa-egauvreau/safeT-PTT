@@ -207,8 +207,9 @@ class MainActivity : ComponentActivity() {
         val isChanUp = repository.getMapping(HardwareAction.CHANNEL_UP).contains(keyCode)
         val isChanDown = repository.getMapping(HardwareAction.CHANNEL_DOWN).contains(keyCode)
         val isScanToggle = repository.getMapping(HardwareAction.SCAN_TOGGLE).contains(keyCode)
+        val isPlayLast = repository.getMapping(HardwareAction.PLAY_LAST_TRANSMISSION).contains(keyCode)
 
-        if (isPtt || isEmergency || isChanUp || isChanDown || isScanToggle) {
+        if (isPtt || isEmergency || isChanUp || isChanDown || isScanToggle || isPlayLast) {
             if (event?.repeatCount == 0) {
                 when {
                     isPtt -> HardwareButtonRelay.sendEvent(HardwareButtonEvent.PttPressed)
@@ -216,6 +217,7 @@ class MainActivity : ComponentActivity() {
                     isChanUp -> HardwareButtonRelay.sendEvent(HardwareButtonEvent.ChannelUpPressed)
                     isChanDown -> HardwareButtonRelay.sendEvent(HardwareButtonEvent.ChannelDownPressed)
                     isScanToggle -> HardwareButtonRelay.sendEvent(HardwareButtonEvent.ScanTogglePressed)
+                    isPlayLast -> HardwareButtonRelay.sendEvent(HardwareButtonEvent.PlayLastTransmissionPressed)
                 }
             }
             return true

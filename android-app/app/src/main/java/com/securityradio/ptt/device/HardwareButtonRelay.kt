@@ -40,4 +40,5 @@ sealed interface HardwareButtonEvent {
     data object ChannelUpPressed : HardwareButtonEvent
     data object ChannelDownPressed : HardwareButtonEvent
     data object ScanTogglePressed : HardwareButtonEvent
+    data object PlayLastTransmissionPressed : HardwareButtonEvent
 }

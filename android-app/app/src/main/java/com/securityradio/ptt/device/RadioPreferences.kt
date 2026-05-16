@@ -17,8 +17,17 @@ class RadioPreferences(context: Context) {
         prefs.edit().putString(KEY_THEME, mode.name).apply()
     }
 
+    fun isAnnounceChannelOnTuneEnabled(): Boolean =
+        prefs.getBoolean(KEY_VOICE_ANNOUNCE_TUNING, DEFAULT_VOICE_ANNOUNCE)
+
+    fun setAnnounceChannelOnTuneEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_VOICE_ANNOUNCE_TUNING, enabled).apply()
+    }
+
     private companion object {
         const val PREFS_NAME = "security_radio_prefs"
         const val KEY_THEME = "theme_mode"
+        const val KEY_VOICE_ANNOUNCE_TUNING = "voice_announce_tune"
+        const val DEFAULT_VOICE_ANNOUNCE = true
     }
 }

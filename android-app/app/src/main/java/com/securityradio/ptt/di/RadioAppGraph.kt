@@ -8,6 +8,7 @@ import com.securityradio.ptt.data.remote.ChannelsApi
 import com.securityradio.ptt.data.remote.NetworkModule
 import com.securityradio.ptt.device.AssetRadioUiSoundPlayer
 import com.securityradio.ptt.device.AudioRecordPttCapture
+import com.securityradio.ptt.device.ChannelSpeechHelper
 import com.securityradio.ptt.device.HardwareMappingRepository
 import com.securityradio.ptt.device.RadioPreferences
 import com.securityradio.ptt.device.LocalUnitIdentifier
@@ -18,6 +19,8 @@ import com.securityradio.ptt.domain.ChannelRepository
 class RadioAppGraph(application: Application) {
 
     val radioPreferences = RadioPreferences(application)
+
+    val speechHelper = ChannelSpeechHelper(application, radioPreferences)
 
     val hardwareMappingRepository = HardwareMappingRepository(application)
 

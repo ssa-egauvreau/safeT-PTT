@@ -246,7 +246,7 @@ private fun LcdStatusBar(
                 )
                 val online = state.networkLabel == "ONLINE"
                 Text(
-                    text = if (online) "SEC" else "OFF",
+                    text = if (online) "NET" else "OFF",
                     style = styles.status,
                     color = if (online) p.statusGreen else p.statusAmber,
                 )
@@ -290,30 +290,27 @@ private fun LcdStatusBar(
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val rssiLine = buildString {
-                append(state.networkLabel.uppercase(Locale.US))
-                if (state.rssiExpanded) {
-                    append(" · RSSI ")
-                    append(state.signalBars)
-                    append("/")
-                    append(state.maxSignalBars)
-                }
+            val linkLabel = when (state.networkLabel.uppercase(Locale.US)) {
+                "ONLINE" -> "LINK: ONLINE"
+                "OFFLINE" -> "LINK: OFFLINE"
+                "LOCAL" -> "LINK: LOCAL"
+                "SYNCING" -> "LINK: SYNC"
+                else -> "LINK: ${state.networkLabel.uppercase(Locale.US)}"
+            }
+            val detail = if (state.rssiExpanded) {
+                " · RSSI ${state.signalBars}/${state.maxSignalBars}"
+            } else {
+                ""
             }
             Text(
-                text = rssiLine,
+                text = linkLabel + detail,
                 style = styles.status,
                 color = p.textMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = "SRC ${state.channelSourceLabel.uppercase(Locale.US)}",
-                style = styles.status,
-                color = p.textMuted,
             )
         }
         if (!state.micPermissionGranted || state.channelSyncError != null) {
@@ -436,6 +433,17 @@ private fun LcdMainChannelBlock(
                 color = p.textPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+            )
+            val radiosLine = state.radiosOnlineOnChannel?.let { n ->
+                "RADIOS ONLINE · $n"
+            } ?: "RADIOS ONLINE —"
+            Text(
+                text = radiosLine.uppercase(Locale.US),
+                style = styles.status,
+                color = if (state.radiosOnlineOnChannel != null) p.textSecondary else p.textMuted,
+                maxLines = 1,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
             )
@@ -926,6 +934,39 @@ fun HardwareMappingDialog(
                             ),
                         ) {
                             Text("IGNORE BATTERY SAVER PROMPT FOR THIS APP".uppercase(Locale.US))
+                        }
+                        HorizontalDivider(color = p.divider)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Checkbox(
+                                checked = state.announceChannelNameOnTune,
+                                onCheckedChange = { onEvent(RadioUiEvent.ToggleVoiceAnnounceChannelTune) },
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "SPOKEN CHANNEL ON TUNE",
+                                    style = styles.body.copy(fontWeight = FontWeight.Bold),
+                                    color = p.textPrimary,
+                                )
+                                Text(
+                                    text = "Speak channel name aloud when switching (e.g. Green 2).",
+                                    style = styles.status,
+                                    color = p.textMuted,
+                                )
+                            }
+                        }
+                        TextButton(
+                            onClick = { onEvent(RadioUiEvent.PlayLastTransmission) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.textButtonColors(
+                                containerColor = p.softKeyInactiveFill,
+                                contentColor = p.textPrimary,
+                            ),
+                        ) {
+                            Text("PLAY LAST MESSAGE (SCREEN)".uppercase(Locale.US))
                         }
                         HorizontalDivider(color = p.divider)
                         Text(
