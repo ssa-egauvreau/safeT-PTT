@@ -173,3 +173,36 @@ export function IconStop(props: IconProps) {
     </StrokeIcon>
   );
 }
+
+/** Headphones — monitor a channel. */
+export function IconHeadphones(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
+      <path d="M4 14.5a2 2 0 0 1 2-2h1v6H6a2 2 0 0 1-2-2v-2Z" fill="currentColor" />
+      <path d="M20 14.5a2 2 0 0 0-2-2h-1v6h1a2 2 0 0 0 2-2v-2Z" fill="currentColor" />
+    </StrokeIcon>
+  );
+}
+
+/** Speaker with sound waves — channel volume. */
+export function IconVolume(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M4 9v6h3l5 4V5L7 9H4Z" fill="currentColor" />
+      <path d="M15.5 9.5a3.5 3.5 0 0 1 0 5" />
+      <path d="M18 7a7 7 0 0 1 0 10" />
+    </StrokeIcon>
+  );
+}
+
+/** Speaker with a slash — muted channel. */
+export function IconVolumeMuted(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M4 9v6h3l5 4V5L7 9H4Z" fill="currentColor" />
+      <line x1="16" y1="9.5" x2="21" y2="14.5" />
+      <line x1="21" y1="9.5" x2="16" y2="14.5" />
+    </StrokeIcon>
+  );
+}

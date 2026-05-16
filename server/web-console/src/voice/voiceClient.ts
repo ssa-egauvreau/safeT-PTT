@@ -151,7 +151,10 @@ export class VoiceChannelClient {
   private permission: Permission = "listen_only";
 
   private playCtx: AudioContext | null = null;
+  private playGain: GainNode | null = null;
   private playHead = 0;
+  private volume = 1;
+  private muted = false;
 
   private micStream: MediaStream | null = null;
   private capCtx: AudioContext | null = null;
@@ -180,6 +183,30 @@ export class VoiceChannelClient {
     this.digitalTx = on;
   }
 
+  /** Sets channel listen volume (0–1). Takes effect immediately and on next connect. */
+  setVolume(volume: number): void {
+    this.volume = Math.min(Math.max(volume, 0), 1);
+    if (this.playGain && !this.muted) {
+      this.playGain.gain.value = this.volume;
+    }
+  }
+
+  /** Mutes/unmutes channel listen audio without losing the volume setting. */
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    if (this.playGain) {
+      this.playGain.gain.value = muted ? 0 : this.volume;
+    }
+  }
+
+  get isMuted(): boolean {
+    return this.muted;
+  }
+
+  get currentVolume(): number {
+    return this.volume;
+  }
+
   private setState(state: VoiceState, detail?: string): void {
     this.state = state;
     this.callbacks.onState(state, detail);
@@ -191,6 +218,9 @@ export class VoiceChannelClient {
     void initImbe(); // load the IMBE vocoder in the background for digital RX
     // Created inside the triggering click so the browser lets audio play.
     this.playCtx = new AudioContext({ sampleRate: TARGET_RATE });
+    this.playGain = this.playCtx.createGain();
+    this.playGain.gain.value = this.muted ? 0 : this.volume;
+    this.playGain.connect(this.playCtx.destination);
     this.playHead = 0;
     void this.playCtx.resume();
 
@@ -275,7 +305,7 @@ export class VoiceChannelClient {
     }
     const source = ctx.createBufferSource();
     source.buffer = frame;
-    source.connect(ctx.destination);
+    source.connect(this.playGain ?? ctx.destination);
 
     const now = ctx.currentTime;
     if (this.playHead < now + 0.04) {
@@ -449,6 +479,7 @@ export class VoiceChannelClient {
       void this.playCtx.close();
       this.playCtx = null;
     }
+    this.playGain = null;
     const ws = this.ws;
     this.ws = null;
     if (ws) {
