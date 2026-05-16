@@ -765,14 +765,55 @@ code.mono {
   padding: 10px 12px;
   margin-bottom: 8px;
 }
+.tx-card.selected {
+  border-color: var(--accent);
+  background: var(--channel-active-bg);
+}
 .tx-card-head {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
   gap: 8px;
 }
+.tx-check {
+  flex: 0 0 auto;
+  cursor: pointer;
+}
 .tx-speaker {
+  flex: 1 1 auto;
+  min-width: 0;
   font-weight: 600;
+}
+.tx-select-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.tx-selectall {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.tx-export {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.tx-export-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.tx-export-status {
+  font-size: 11px;
+  color: var(--accent);
 }
 .tx-channel {
   font-size: 11px;
