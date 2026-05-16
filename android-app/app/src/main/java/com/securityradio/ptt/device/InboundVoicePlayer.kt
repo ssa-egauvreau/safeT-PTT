@@ -2,7 +2,9 @@ package com.securityradio.ptt.device
 
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
+import android.os.Build
 
 /**
  * Plays PCM16 mono 16 kHz streamed from peers through the relay.
@@ -36,23 +38,36 @@ class InboundVoicePlayer {
         if (minBuf <= 0) return null
         /** Extra slack reduces underruns on handset speaker routing with bursty decode output. */
         val bufBytes = maxOf(minBuf * 4, minBuf + 8192)
-        val t = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build(),
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setSampleRate(VoiceAudioSpecs.SAMPLE_RATE_HZ)
-                    .setEncoding(VoiceAudioSpecs.PCM_ENCODING)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build(),
-            )
-            .setBufferSizeInBytes(bufBytes)
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .build()
+        val t =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                AudioTrack.Builder()
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build(),
+                    )
+                    .setAudioFormat(
+                        AudioFormat.Builder()
+                            .setSampleRate(VoiceAudioSpecs.SAMPLE_RATE_HZ)
+                            .setEncoding(VoiceAudioSpecs.PCM_ENCODING)
+                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                            .build(),
+                    )
+                    .setBufferSizeInBytes(bufBytes)
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                    .build()
+            } else {
+                @Suppress("DEPRECATION")
+                AudioTrack(
+                    AudioManager.STREAM_VOICE_COMMUNICATION,
+                    VoiceAudioSpecs.SAMPLE_RATE_HZ,
+                    AudioFormat.CHANNEL_OUT_MONO,
+                    VoiceAudioSpecs.PCM_ENCODING,
+                    bufBytes,
+                    AudioTrack.MODE_STREAM,
+                )
+            }
         if (t.state != AudioTrack.STATE_INITIALIZED) {
             t.release()
             return null

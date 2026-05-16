@@ -1,6 +1,7 @@
 package com.securityradio.ptt.device
 
 import android.app.Application
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -25,11 +26,21 @@ class AssetRadioUiSoundPlayer(
 ) : RadioUiSoundPlayer {
 
     private val main = Handler(Looper.getMainLooper())
-    private val audioManager = app.getSystemService(AudioManager::class.java)
+    private val audioManager: AudioManager =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            app.getSystemService(AudioManager::class.java)!!
+        } else {
+            @Suppress("DEPRECATION")
+            app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        }
 
     private var talkPermitPlayer: MediaPlayer? = null
     private var busyTonePlayer: MediaPlayer? = null
     private var busyFocusRequest: AudioFocusRequest? = null
+
+    /** Pre-O [AudioFocusRequest] equivalent; must abandon with same instance. */
+    @Suppress("DEPRECATION")
+    private var busyFocusListener: AudioManager.OnAudioFocusChangeListener? = null
 
     @Suppress("DEPRECATION")
     private var busySpeakerphoneRestore: Boolean? = null
@@ -86,22 +97,39 @@ class AssetRadioUiSoundPlayer(
 
     private fun acquireBusyToneFocus() {
         abandonBusyToneFocusInternal()
-        val req =
-            AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                .setAudioAttributes(busyAlarmAttrs)
-                .setWillPauseWhenDucked(false)
-                .setAcceptsDelayedFocusGain(false)
-                .setOnAudioFocusChangeListener { /* hold until busy loop stops */ }
-                .build()
-        busyFocusRequest = req
-        audioManager.requestAudioFocus(req)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val req =
+                AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                    .setAudioAttributes(busyAlarmAttrs)
+                    .setWillPauseWhenDucked(false)
+                    .setAcceptsDelayedFocusGain(false)
+                    .setOnAudioFocusChangeListener { /* hold until busy loop stops */ }
+                    .build()
+            busyFocusRequest = req
+            audioManager.requestAudioFocus(req)
+        } else {
+            @Suppress("DEPRECATION")
+            val listener =
+                AudioManager.OnAudioFocusChangeListener { /* hold until busy loop stops */ }
+            busyFocusListener = listener
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                listener,
+                AudioManager.STREAM_ALARM,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,
+            )
+        }
     }
 
     private fun abandonBusyToneFocusInternal() {
-        busyFocusRequest?.let {
-            audioManager.abandonAudioFocusRequest(it)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            busyFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+            busyFocusRequest = null
+        } else {
+            @Suppress("DEPRECATION")
+            busyFocusListener?.let { audioManager.abandonAudioFocus(it) }
+            busyFocusListener = null
         }
-        busyFocusRequest = null
     }
 
     override fun playChannelSwitch() {

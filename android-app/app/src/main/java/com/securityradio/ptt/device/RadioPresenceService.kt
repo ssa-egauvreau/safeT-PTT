@@ -55,13 +55,17 @@ class RadioPresenceService : Service() {
     }
 
     private fun buildNotification(): android.app.Notification {
+        var piFlags = PendingIntent.FLAG_UPDATE_CURRENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            piFlags = piFlags or PendingIntent.FLAG_IMMUTABLE
+        }
         val openPi = PendingIntent.getActivity(
             this,
             0,
             Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            piFlags,
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)

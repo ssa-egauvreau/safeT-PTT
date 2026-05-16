@@ -2,9 +2,11 @@ package com.securityradio.ptt.device
 
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -59,23 +61,36 @@ class AudioRecordPttCapture(
             if (enableSidetone) {
                 val trackBuffer = AudioTrack.getMinBufferSize(sampleRate, channelConfigOut, audioFormat)
                 if (trackBuffer > 0) {
-                    track = AudioTrack.Builder()
-                        .setAudioAttributes(
-                            AudioAttributes.Builder()
-                                .setUsage(AudioAttributes.USAGE_MEDIA)
-                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                                .build(),
-                        )
-                        .setAudioFormat(
-                            AudioFormat.Builder()
-                                .setSampleRate(sampleRate)
-                                .setEncoding(audioFormat)
-                                .setChannelMask(channelConfigOut)
-                                .build(),
-                        )
-                        .setBufferSizeInBytes(trackBuffer * 2)
-                        .setTransferMode(AudioTrack.MODE_STREAM)
-                        .build()
+                    track =
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            AudioTrack.Builder()
+                                .setAudioAttributes(
+                                    AudioAttributes.Builder()
+                                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                        .build(),
+                                )
+                                .setAudioFormat(
+                                    AudioFormat.Builder()
+                                        .setSampleRate(sampleRate)
+                                        .setEncoding(audioFormat)
+                                        .setChannelMask(channelConfigOut)
+                                        .build(),
+                                )
+                                .setBufferSizeInBytes(trackBuffer * 2)
+                                .setTransferMode(AudioTrack.MODE_STREAM)
+                                .build()
+                        } else {
+                            @Suppress("DEPRECATION")
+                            AudioTrack(
+                                AudioManager.STREAM_VOICE_COMMUNICATION,
+                                sampleRate,
+                                channelConfigOut,
+                                audioFormat,
+                                trackBuffer * 2,
+                                AudioTrack.MODE_STREAM,
+                            )
+                        }
                     if (track.state == AudioTrack.STATE_INITIALIZED) {
                         track.setVolume(1f)
                         track.play()

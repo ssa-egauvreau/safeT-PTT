@@ -38,7 +38,8 @@ android {
 
     defaultConfig {
         applicationId = "com.securityradio.ptt"
-        minSdk = 26
+        /** Sonim XP6-class devices ship Android 7.x (API 24–25); keep min low enough to install there. */
+        minSdk = 21
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
