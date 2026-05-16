@@ -16,11 +16,13 @@ class RadioViewModelFactory(
                 soundPlayer = graph.soundPlayer,
                 pttMicCapture = graph.pttMicCapture,
                 channelsApi = graph.channelsApi,
+                radioApi = graph.radioApi,
                 localUnitIdentifier = graph.localUnitIdentifier,
                 hardwareMappingRepository = graph.hardwareMappingRepository,
                 radioPreferences = graph.radioPreferences,
                 speechHelper = graph.speechHelper,
                 voiceRelay = graph.voiceRelay,
+                locationReporter = graph.locationReporter,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel type ${modelClass.name}")

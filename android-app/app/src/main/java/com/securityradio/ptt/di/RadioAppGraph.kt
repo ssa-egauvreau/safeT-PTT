@@ -6,12 +6,14 @@ import com.securityradio.ptt.data.RadioChannelGateway
 import com.securityradio.ptt.data.StubChannelRepository
 import com.securityradio.ptt.data.remote.ChannelsApi
 import com.securityradio.ptt.data.remote.NetworkModule
+import com.securityradio.ptt.data.remote.RadioApi
 import com.securityradio.ptt.device.AssetRadioUiSoundPlayer
 import com.securityradio.ptt.device.AudioRecordPttCapture
 import com.securityradio.ptt.device.ChannelSpeechHelper
 import com.securityradio.ptt.device.HardwareMappingRepository
 import com.securityradio.ptt.device.InboundVoicePlayer
 import com.securityradio.ptt.device.LocalUnitIdentifier
+import com.securityradio.ptt.device.LocationReporter
 import com.securityradio.ptt.device.P25ImbeNative
 import com.securityradio.ptt.device.PttMicCapture
 import com.securityradio.ptt.device.RadioPreferences
@@ -55,6 +57,13 @@ class RadioAppGraph(application: Application) {
         baseUrl = BuildConfig.API_BASE_URL,
         apiKey = BuildConfig.RADIO_API_KEY,
     )
+
+    val radioApi: RadioApi = NetworkModule.radioApi(
+        baseUrl = BuildConfig.API_BASE_URL,
+        apiKey = BuildConfig.RADIO_API_KEY,
+    )
+
+    val locationReporter: LocationReporter = LocationReporter(application, radioApi)
 
     val channelRepository: ChannelRepository = RadioChannelGateway(
         api = channelsApi,

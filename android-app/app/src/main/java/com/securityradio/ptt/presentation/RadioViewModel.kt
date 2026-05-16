@@ -4,7 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.securityradio.ptt.data.remote.AirStateDto
 import com.securityradio.ptt.data.remote.ChannelsApi
+import com.securityradio.ptt.data.remote.EmergencyDto
+import com.securityradio.ptt.data.remote.InboxAlertDto
 import com.securityradio.ptt.data.remote.PresenceHeartbeatDto
+import com.securityradio.ptt.data.remote.RadioApi
 import com.securityradio.ptt.data.remote.TalkActivityDto
 import com.securityradio.ptt.data.remote.TalkerSnapshotDto
 import com.securityradio.ptt.device.ChannelSpeechHelper
@@ -13,6 +16,7 @@ import com.securityradio.ptt.device.HardwareButtonEvent
 import com.securityradio.ptt.device.HardwareButtonRelay
 import com.securityradio.ptt.device.HardwareMappingRepository
 import com.securityradio.ptt.device.LocalUnitIdentifier
+import com.securityradio.ptt.device.LocationReporter
 
 import com.securityradio.ptt.device.PttMicCapture
 import com.securityradio.ptt.device.RadioPreferences
@@ -42,12 +46,17 @@ class RadioViewModel(
     private val soundPlayer: RadioUiSoundPlayer,
     private val pttMicCapture: PttMicCapture,
     private val channelsApi: ChannelsApi,
+    private val radioApi: RadioApi,
     localUnitIdentifier: LocalUnitIdentifier,
     private val hardwareMappingRepository: HardwareMappingRepository,
     private val radioPreferences: RadioPreferences,
     private val speechHelper: ChannelSpeechHelper,
     private val voiceRelay: VoiceRelayTransport,
+    private val locationReporter: LocationReporter,
 ) : ViewModel() {
+
+    @Volatile
+    private var locationPermissionGranted: Boolean = false
 
     private val _wakeUiRequests = MutableSharedFlow<String>(extraBufferCapacity = 24)
     /** Emits reasons why the tactical UI might need to reorder to the foreground while not visible. */
@@ -76,6 +85,7 @@ class RadioViewModel(
     val uiState: StateFlow<RadioUiState> = _uiState.asStateFlow()
 
     init {
+        locationReporter.configure(unitIdUpper)
         _uiState.update {
             it.copy(
                 localShortUnitId = unitIdUpper,
@@ -89,6 +99,9 @@ class RadioViewModel(
                 refreshClock()
                 delay(CLOCK_TICK_MS)
             }
+        }
+        viewModelScope.launch {
+            pollInbox()
         }
         viewModelScope.launch {
             syncCatalog(playConnectSoundIfNetwork = true)
@@ -204,13 +217,8 @@ class RadioViewModel(
                     "Soft key index out of bounds: ${event.index}"
                 }
                 when (event.index) {
-                    4 -> {
-                        // Use index 4 as a long-press or settings trigger for demonstration,
-                        // or just add a button in the UI. For now, let's keep it as is
-                        // but maybe index 1 long press opens settings?
-                        // Actually, I'll just add the events and let the UI trigger them.
-                        bumpChannel(+1)
-                    }
+                    3 -> toggleGps()
+                    4 -> bumpChannel(+1)
                     else -> {
                         soundPlayer.playChannelSwitch()
                         _uiState.update { state ->
@@ -218,10 +226,6 @@ class RadioViewModel(
                                 0 -> state.copy(statusMessage = "PTT: HOLD LCD BAR")
                                 1 -> state.copy(mappingSettingsVisible = true)
                                 2 -> onScanSoftKeyToggle(state)
-                                3 -> state.copy(
-                                    gpsActive = !state.gpsActive,
-                                    statusMessage = if (!state.gpsActive) "GPS ON" else "GPS OFF",
-                                )
                                 else -> state
                             }
                         }
@@ -552,6 +556,46 @@ class RadioViewModel(
                 statusMessage = if (activating) "EMERGENCY ACTIVE" else "EMERGENCY OFF",
             )
         }
+        val channel = _uiState.value.channelLabel.trim().takeUnless { it.isEmpty() || it == "----" }
+        viewModelScope.launch {
+            runCatching {
+                radioApi.emergency(
+                    EmergencyDto(
+                        unitId = unitIdUpper,
+                        channel = channel,
+                        active = activating,
+                        message = if (activating) "Emergency activated" else null,
+                    ),
+                )
+            }
+        }
+    }
+
+    /** SCAN soft key 3 — start/stop reporting this handset's GPS position to dispatch. */
+    private fun toggleGps() {
+        soundPlayer.playChannelSwitch()
+        val next = !_uiState.value.gpsActive
+        val status = when {
+            !next -> "GPS OFF"
+            locationPermissionGranted -> "GPS ON"
+            else -> "GPS: NO PERMISSION"
+        }
+        _uiState.update { it.copy(gpsActive = next, statusMessage = status) }
+        applyGpsReporting()
+    }
+
+    /** Called from the activity once the OS location-permission result is known. */
+    fun onLocationPermissionResult(granted: Boolean) {
+        locationPermissionGranted = granted
+        applyGpsReporting()
+    }
+
+    private fun applyGpsReporting() {
+        if (_uiState.value.gpsActive && locationPermissionGranted) {
+            locationReporter.start()
+        } else {
+            locationReporter.stop()
+        }
     }
 
     private fun bumpChannel(delta: Int) {
@@ -651,6 +695,54 @@ class RadioViewModel(
             channelLabel = s.channelLabel,
             networkOnline = s.networkLabel == "ONLINE",
         )
+        locationReporter.setChannel(s.channelLabel)
+    }
+
+    /**
+     * Polls the server for pages and dispatch emergencies addressed to this unit/channel.
+     * The first batch is consumed silently to prime the cursor — only later alerts notify.
+     */
+    private suspend fun pollInbox() {
+        var since = 0L
+        var primed = false
+        while (currentCoroutineContext().isActive) {
+            delay(INBOX_POLL_MS)
+            if (_uiState.value.networkLabel != "ONLINE") continue
+            val channel = _uiState.value.channelLabel.trim().takeUnless { it.isEmpty() || it == "----" }
+            val response = try {
+                radioApi.inbox(unit = unitIdUpper, channel = channel, since = since)
+            } catch (_: Exception) {
+                null
+            } ?: continue
+            if (primed) {
+                response.alerts
+                    .filter { it.fromUnit?.trim()?.uppercase(Locale.US) != unitIdUpper }
+                    .forEach { handleInboundAlert(it) }
+            }
+            since = if (response.lastId > since) response.lastId else since
+            primed = true
+        }
+    }
+
+    private fun handleInboundAlert(alert: InboxAlertDto) {
+        val from = alert.fromUnit?.trim()?.takeIf { it.isNotEmpty() }
+            ?: alert.fromName?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "DISPATCH"
+        if (alert.kind.equals("emergency", ignoreCase = true)) {
+            soundPlayer.playEmergencyAlert()
+            _uiState.update { it.copy(statusMessage = "EMERGENCY • ${from.uppercase(Locale.US)}") }
+            enqueueBackgroundWakeIfNeeded("inbox_emergency")
+        } else {
+            soundPlayer.playChannelSwitch()
+            val message = alert.message?.trim()?.takeIf { it.isNotEmpty() }
+            val line = if (message != null) {
+                "PAGE: ${message.take(40).uppercase(Locale.US)}"
+            } else {
+                "PAGE • ${from.uppercase(Locale.US)}"
+            }
+            _uiState.update { it.copy(statusMessage = line) }
+            enqueueBackgroundWakeIfNeeded("inbox_page")
+        }
     }
 
     /**
@@ -841,6 +933,7 @@ class RadioViewModel(
 
     override fun onCleared() {
         voiceRelay.disconnect()
+        locationReporter.stop()
         pttToneJob?.cancel()
         pttMicCapture.release()
         soundPlayer.release()
@@ -854,5 +947,6 @@ class RadioViewModel(
         const val TALK_ACTIVITY_POLL_MS = 1200L
         const val WAKE_DEBOUNCE_MS = 700L
         const val PRESENCE_POLL_MS = 12_000L
+        const val INBOX_POLL_MS = 5_000L
     }
 }

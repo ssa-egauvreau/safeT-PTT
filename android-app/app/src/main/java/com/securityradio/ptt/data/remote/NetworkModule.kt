@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit
 
 object NetworkModule {
 
-    fun channelsApi(baseUrl: String, apiKey: String): ChannelsApi {
+    private fun buildRetrofit(baseUrl: String, apiKey: String): Retrofit {
         val logging = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) {
                 HttpLoggingInterceptor.Level.BASIC
@@ -35,12 +35,16 @@ object NetworkModule {
             .addInterceptor(logging)
             .build()
 
-        val retrofit = Retrofit.Builder()
+        return Retrofit.Builder()
             .baseUrl(baseUrl)
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
-
-        return retrofit.create(ChannelsApi::class.java)
     }
+
+    fun channelsApi(baseUrl: String, apiKey: String): ChannelsApi =
+        buildRetrofit(baseUrl, apiKey).create(ChannelsApi::class.java)
+
+    fun radioApi(baseUrl: String, apiKey: String): RadioApi =
+        buildRetrofit(baseUrl, apiKey).create(RadioApi::class.java)
 }
