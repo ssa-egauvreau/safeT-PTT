@@ -202,13 +202,26 @@ a {
 }
 .topnav {
   display: flex;
-  gap: 16px;
+  gap: 4px;
 }
-.topnav a {
+.nav-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border-radius: 6px;
+  font-size: 13px;
   color: var(--text-dim);
+  text-decoration: none;
 }
-.topnav a:hover {
+.nav-tab:hover {
   color: var(--text);
+  background: var(--bg);
+}
+.nav-tab.active {
+  color: var(--accent);
+  background: var(--channel-active-bg);
+  font-weight: 600;
 }
 .who {
   margin-left: auto;
@@ -455,8 +468,77 @@ code.mono {
   border-color: var(--accent);
   background: var(--channel-active-bg);
 }
+.chan-item.primary {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
 .chan-item:hover {
   border-color: var(--accent-2);
+}
+.chan-primary-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+/* --- console: multi-channel control panels --- */
+.panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+.channel-panel {
+  margin: 0;
+}
+.channel-panel.primary {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.cp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.cp-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-primary {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+}
+.cp-close {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.cp-close:hover {
+  border-color: var(--accent-2);
+  color: var(--text);
 }
 
 /* --- console: per-channel monitoring + volume (phase 5) --- */
