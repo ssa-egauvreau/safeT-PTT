@@ -1,41 +1,52 @@
 import { createServer } from "node:http";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import { DEFAULT_GREEN_CHANNELS } from "./defaultChannels.js";
-import { ensureChannelSchema, listChannelsFromDb } from "./db.js";
+import { ensureSchema, listChannelsFromDb } from "./db.js";
+import { seedInitialAdmin } from "./store.js";
+import { authenticate } from "./auth.js";
+import { createApiRouter } from "./apiRoutes.js";
 import { countPresence, heartbeatPresence } from "./presence.js";
 import { VOICE_WS_PATH, attachVoiceRelay, peekVoiceTransmittingUnit } from "./voiceRelay.js";
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
+app.use(authenticate);
 
 const radioApiKey = process.env.RADIO_API_KEY?.trim();
 
-function requireApiKeyUnlessDisabled(
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-): void {
-  if (!radioApiKey) {
+/**
+ * Legacy Android endpoints stay behind the shared `RADIO_API_KEY`.
+ * The console/admin API (`/v1/auth`, `/v1/admin`, `/v1/me`) authenticates with per-account JWTs instead.
+ */
+const LEGACY_KEYED_PATHS = new Set([
+  "/v1/channels",
+  "/v1/air",
+  "/v1/presence/heartbeat",
+  "/v1/presence/count",
+  "/v1/talk-activity",
+]);
+
+app.use((req, res, next) => {
+  if (!radioApiKey || !LEGACY_KEYED_PATHS.has(req.path)) {
     next();
     return;
   }
-  if (req.path === "/health") {
-    next();
-    return;
-  }
-  const provided = req.header("x-radio-key");
-  if (provided !== radioApiKey) {
+  if (req.header("x-radio-key") !== radioApiKey) {
     res.status(401).json({ error: "unauthorized" });
     return;
   }
   next();
-}
-
-app.use(requireApiKeyUnlessDisabled);
+});
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", service: "security-radio-api" });
 });
+
+// Console + admin API. Unmatched paths fall through to the legacy routes below.
+app.use("/v1", createApiRouter());
 
 app.get("/v1/channels", async (_req, res) => {
   try {
@@ -117,11 +128,30 @@ app.get("/v1/talk-activity", (_req, res) => {
   });
 });
 
+// Serve the built web console (and let it own client-side routing) when present.
+const webDist = resolve(dirname(fileURLToPath(import.meta.url)), "../../web-console/dist");
+if (existsSync(webDist)) {
+  app.use(express.static(webDist));
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path.startsWith("/v1/") || req.path === "/health") {
+      next();
+      return;
+    }
+    res.sendFile(join(webDist, "index.html"));
+  });
+  console.log(`Web console served from ${webDist}`);
+} else {
+  console.log(`Web console build not found at ${webDist} (build it, or run the Vite dev server).`);
+}
+
 const port = Number(process.env.PORT ?? 8080);
 
 async function main(): Promise<void> {
-  await ensureChannelSchema().catch((error) => {
+  await ensureSchema().catch((error) => {
     console.error("Database bootstrap failed (continuing without DB)", error);
+  });
+  await seedInitialAdmin().catch((error) => {
+    console.error("Initial admin seed failed", error);
   });
 
   const server = createServer(app);
