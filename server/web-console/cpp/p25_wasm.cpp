@@ -52,4 +52,27 @@ int imbe_decode(uint8_t* codeword11, int16_t* samples160) {
   return 1;
 }
 
+// --- per-stream decoders -------------------------------------------------
+// IMBE decoding keeps frame-to-frame history, so each concurrent digital
+// stream needs its own decoder; a shared one corrupts interleaved traffic.
+
+EMSCRIPTEN_KEEPALIVE
+MBEDecoder* imbe_decoder_create() {
+  return new (std::nothrow) MBEDecoder(DECODE_88BIT_IMBE);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void imbe_decoder_free(MBEDecoder* decoder) {
+  delete decoder;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int imbe_decoder_decode(MBEDecoder* decoder, uint8_t* codeword11, int16_t* samples160) {
+  if (decoder == nullptr) {
+    return 0;
+  }
+  decoder->decode(codeword11, samples160);
+  return 1;
+}
+
 } // extern "C"

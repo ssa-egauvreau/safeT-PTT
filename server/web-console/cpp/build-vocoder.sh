@@ -27,7 +27,7 @@ build() {
     -s SINGLE_FILE=1 \
     -s ENVIRONMENT="$environment" \
     -s ALLOW_MEMORY_GROWTH=1 \
-    -s EXPORTED_FUNCTIONS='["_imbe_init","_imbe_encode","_imbe_decode","_malloc","_free"]' \
+    -s EXPORTED_FUNCTIONS='["_imbe_init","_imbe_encode","_imbe_decode","_imbe_decoder_create","_imbe_decoder_decode","_imbe_decoder_free","_malloc","_free"]' \
     -s EXPORTED_RUNTIME_METHODS='["HEAP16","HEAPU8"]' \
     -o "$out"
   echo "Built $out"

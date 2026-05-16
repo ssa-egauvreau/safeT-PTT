@@ -5,7 +5,7 @@ import { getPool } from "./db.js";
 import { insertTransmission } from "./store.js";
 import { encodeWavPcm16 } from "./wav.js";
 import { enqueueTranscription } from "./transcribe.js";
-import { decodeImbeFrame } from "./imbeServerCodec.js";
+import { createImbeDecoder, type ImbeStreamDecoder } from "./imbeServerCodec.js";
 
 const SAMPLE_RATE = 16000;
 /** Silence after the last frame that closes a transmission. */
@@ -31,6 +31,8 @@ interface ActiveRecording extends FrameAttribution {
   lastFrameMs: number;
   chunks: Buffer[];
   bytes: number;
+  /** Decoder dedicated to this talk-spurt's digital frames (created on demand). */
+  decoder: ImbeStreamDecoder | null;
 }
 
 const active = new Map<string, ActiveRecording>();
@@ -43,6 +45,10 @@ function isImbeFrame(payload: Buffer): boolean {
 async function finalize(rec: ActiveRecording): Promise<void> {
   if (active.get(rec.channelNorm) === rec) {
     active.delete(rec.channelNorm);
+  }
+  if (rec.decoder) {
+    rec.decoder.free();
+    rec.decoder = null;
   }
   if (rec.bytes < MIN_BYTES) {
     return;
@@ -73,18 +79,6 @@ export function recordFrame(attr: FrameAttribution, payload: Buffer): void {
   if (!getPool() || payload.length === 0) {
     return;
   }
-  // Digital (IMBE) frames are decoded to PCM so they record and transcribe like
-  // analog ones. If the vocoder has not loaded yet, the frame is skipped.
-  let pcm: Buffer;
-  if (isImbeFrame(payload)) {
-    const decoded = decodeImbeFrame(payload);
-    if (!decoded) {
-      return;
-    }
-    pcm = decoded;
-  } else {
-    pcm = payload;
-  }
   const now = Date.now();
   let rec = active.get(attr.channelNorm);
   if (rec && rec.unitId !== attr.unitId) {
@@ -92,8 +86,23 @@ export function recordFrame(attr: FrameAttribution, payload: Buffer): void {
     rec = undefined;
   }
   if (!rec) {
-    rec = { ...attr, startedAt: now, lastFrameMs: now, chunks: [], bytes: 0 };
+    rec = { ...attr, startedAt: now, lastFrameMs: now, chunks: [], bytes: 0, decoder: null };
     active.set(attr.channelNorm, rec);
+  }
+  // Digital (IMBE) frames are decoded to PCM with a decoder dedicated to this
+  // talk-spurt, so interleaved channels never share frame-to-frame history.
+  let pcm: Buffer;
+  if (isImbeFrame(payload)) {
+    if (!rec.decoder) {
+      rec.decoder = createImbeDecoder();
+    }
+    const decoded = rec.decoder ? rec.decoder.decode(payload) : null;
+    if (!decoded) {
+      return;
+    }
+    pcm = decoded;
+  } else {
+    pcm = payload;
   }
   // ws may reuse the frame buffer — copy before retaining it.
   rec.chunks.push(Buffer.from(pcm));
