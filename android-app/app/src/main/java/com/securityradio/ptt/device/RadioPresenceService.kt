@@ -71,7 +71,7 @@ class RadioPresenceService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.presence_notification_title))
             .setContentText(getString(R.string.presence_notification_text))
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setSmallIcon(R.drawable.ic_radio_notification_small)
             .setOngoing(true)
             .setContentIntent(openPi)
             .setSilent(true)

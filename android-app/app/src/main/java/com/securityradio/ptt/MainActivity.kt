@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -52,7 +53,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        runCatching { enableEdgeToEdge() }.onFailure {
+            Log.w("MainActivity", "enableEdgeToEdge unsupported; continuing without edge-to-edge", it)
+        }
         val graph = (application as RadioApplication).graph
         repository = graph.hardwareMappingRepository
         val factory = RadioViewModelFactory(graph)
