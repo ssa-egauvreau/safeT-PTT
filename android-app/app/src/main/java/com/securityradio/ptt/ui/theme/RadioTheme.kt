@@ -1,6 +1,7 @@
 package com.securityradio.ptt.ui.theme
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -34,7 +35,7 @@ private val RadioDarkScheme = darkColorScheme(
 fun RadioTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = RadioDarkScheme,
-        typography = MaterialTheme.typography,
+        typography = Typography(),
         content = content,
     )
 }

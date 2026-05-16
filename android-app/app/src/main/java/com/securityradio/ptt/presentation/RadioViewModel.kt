@@ -21,8 +21,8 @@ import com.securityradio.ptt.device.VoiceRelayTransport
 import com.securityradio.ptt.domain.ChannelCatalogOrigin
 import com.securityradio.ptt.domain.ChannelRepository
 import android.os.SystemClock
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -67,8 +67,8 @@ class RadioViewModel(
     @Volatile
     private var pttMicLiveThisHold: Boolean = false
 
-    private val timeFormatter: DateTimeFormatter =
-        DateTimeFormatter.ofPattern("HH:mm", Locale.US)
+    /** API 21–25 path: avoids java.time (`LocalTime`), which requires desugaring below API 26. */
+    private val clockFormat = SimpleDateFormat("HH:mm", Locale.US)
 
     private val unitIdUpper: String = localUnitIdentifier.shortUnitId()
 
@@ -679,7 +679,7 @@ class RadioViewModel(
     }
 
     private fun refreshClock() {
-        val label = LocalTime.now().format(timeFormatter)
+        val label = clockFormat.format(Date())
         _uiState.update { it.copy(systemTime = label) }
     }
 
