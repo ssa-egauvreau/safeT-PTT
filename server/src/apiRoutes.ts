@@ -35,6 +35,7 @@ import {
   updateUser,
   writeAudit,
   type Permission,
+  type TransmissionSort,
 } from "./store.js";
 
 function clientIp(req: Request): string {
@@ -463,21 +464,24 @@ export function createApiRouter(): Router {
   router.get("/transmissions", requireAuth, async (req, res) => {
     try {
       const me = req.authUser!;
-      const limit = Number(req.query.limit ?? 100);
-      const search = typeof req.query.search === "string" ? req.query.search : undefined;
-      const channel = typeof req.query.channel === "string" ? req.query.channel : undefined;
+      const str = (v: unknown): string | undefined =>
+        typeof v === "string" && v.trim() !== "" ? v : undefined;
+      const opts = {
+        limit: Number(req.query.limit ?? 100),
+        search: str(req.query.search),
+        channel: str(req.query.channel),
+        user: str(req.query.user),
+        from: str(req.query.from),
+        to: str(req.query.to),
+        sort: str(req.query.sort) as TransmissionSort | undefined,
+      };
       if (me.role === "admin" || me.role === "dispatcher") {
-        res.json({ transmissions: await listTransmissions({ limit, search, channel }) });
+        res.json({ transmissions: await listTransmissions(opts) });
         return;
       }
       const channels = await listChannelsForUser(me.id);
       res.json({
-        transmissions: await listTransmissions({
-          channelNames: channels.map((c) => c.name),
-          limit,
-          search,
-          channel,
-        }),
+        transmissions: await listTransmissions({ ...opts, channelNames: channels.map((c) => c.name) }),
       });
     } catch (error) {
       fail(res, error);

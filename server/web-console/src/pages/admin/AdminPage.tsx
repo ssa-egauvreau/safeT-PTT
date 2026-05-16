@@ -1,7 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { useAuth } from "../../auth";
-import { ThemeToggle } from "../../ThemeToggle";
+import { Topbar } from "../../Topbar";
 import { AccountsPanel } from "./AccountsPanel";
 import { ChannelsPanel } from "./ChannelsPanel";
 import { AssignmentsPanel } from "./AssignmentsPanel";
@@ -19,27 +17,11 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 export function AdminPage() {
-  const { user, logout } = useAuth();
   const [tab, setTab] = useState<TabId>("accounts");
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          SECURITY RADIO <span>· Admin Portal</span>
-        </div>
-        <nav className="topnav">
-          <Link to="/">Console</Link>
-        </nav>
-        <div className="who">
-          <span className="role-chip">{user?.role}</span>
-          <span>{user?.displayName}</span>
-          <ThemeToggle />
-          <button className="btn sm" onClick={logout}>
-            Sign out
-          </button>
-        </div>
-      </header>
+      <Topbar section="admin" />
 
       <div className="admin-body">
         <aside className="tabs">

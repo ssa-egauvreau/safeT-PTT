@@ -373,15 +373,29 @@ export async function insertTransmission(input: {
   return res.rows[0]!.id;
 }
 
+export type TransmissionSort = "newest" | "oldest" | "longest" | "shortest" | "speaker";
+
+const TX_SORT_SQL: Record<TransmissionSort, string> = {
+  newest: "started_at DESC",
+  oldest: "started_at ASC",
+  longest: "duration_ms DESC, started_at DESC",
+  shortest: "duration_ms ASC, started_at DESC",
+  speaker: "lower(COALESCE(display_name, unit_id, '')) ASC, started_at DESC",
+};
+
 /**
  * Recent transmissions (metadata only — never selects the audio bytes).
- * `channelNames` scopes the result to a role's accessible channels; `channel`
- * narrows to one channel by name; `search` matches transcript text.
+ * `channelNames` scopes the result to a role's accessible channels; the other
+ * fields narrow the result and `sort` orders it.
  */
 export async function listTransmissions(opts: {
   channelNames?: string[];
   channel?: string;
   search?: string;
+  user?: string;
+  from?: string;
+  to?: string;
+  sort?: TransmissionSort;
   limit?: number;
 }): Promise<TransmissionRow[]> {
   const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 100) || 100, 1), 500);
@@ -391,6 +405,7 @@ export async function listTransmissions(opts: {
   const where: string[] = [];
   const vals: unknown[] = [];
   let i = 1;
+  const like = (s: string) => `%${s.replace(/[\\%_]/g, (m) => "\\" + m)}%`;
   if (opts.channelNames) {
     where.push(`lower(channel_name) = ANY($${i++})`);
     vals.push(opts.channelNames.map((n) => n.trim().toLowerCase()));
@@ -403,13 +418,30 @@ export async function listTransmissions(opts: {
   const search = opts.search?.trim();
   if (search) {
     where.push(`transcript ILIKE $${i++}`);
-    vals.push(`%${search.replace(/[\\%_]/g, (m) => "\\" + m)}%`);
+    vals.push(like(search));
   }
+  const user = opts.user?.trim();
+  if (user) {
+    where.push(`(display_name ILIKE $${i} OR unit_id ILIKE $${i})`);
+    vals.push(like(user));
+    i++;
+  }
+  const from = opts.from?.trim();
+  if (from) {
+    where.push(`started_at >= $${i++}::date`);
+    vals.push(from);
+  }
+  const to = opts.to?.trim();
+  if (to) {
+    where.push(`started_at < ($${i++}::date + interval '1 day')`);
+    vals.push(to);
+  }
+  const order = TX_SORT_SQL[opts.sort ?? "newest"] ?? TX_SORT_SQL.newest;
   vals.push(limit);
   const res = await requirePool().query<TransmissionRow>(
     `SELECT ${TX_META_COLS} FROM transmissions
      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-     ORDER BY started_at DESC LIMIT $${i};`,
+     ORDER BY ${order} LIMIT $${i};`,
     vals,
   );
   return res.rows;

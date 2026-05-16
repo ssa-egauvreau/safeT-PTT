@@ -189,13 +189,23 @@ export const api = {
 
   listAudit: (limit = 200) => request<{ entries: AuditEntry[] }>("GET", `/v1/admin/audit?limit=${limit}`),
 
-  transmissions: (opts: { limit?: number; search?: string; channel?: string } = {}) => {
+  transmissions: (
+    opts: {
+      limit?: number;
+      search?: string;
+      channel?: string;
+      user?: string;
+      from?: string;
+      to?: string;
+      sort?: string;
+    } = {},
+  ) => {
     const params = new URLSearchParams({ limit: String(opts.limit ?? 100) });
-    if (opts.search?.trim()) {
-      params.set("search", opts.search.trim());
-    }
-    if (opts.channel?.trim()) {
-      params.set("channel", opts.channel.trim());
+    for (const key of ["search", "channel", "user", "from", "to", "sort"] as const) {
+      const value = opts[key]?.trim();
+      if (value) {
+        params.set(key, value);
+      }
     }
     return request<{ transmissions: Transmission[] }>("GET", `/v1/transmissions?${params}`);
   },

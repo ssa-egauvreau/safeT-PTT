@@ -164,6 +164,7 @@ export class VoiceChannelClient {
   private markerTimer: number | null = null;
   private readonly localTones = new Set<AudioBufferSourceNode>();
   private digitalTx = true;
+  private gestureUnbind: (() => void) | null = null;
 
   constructor(channelName: string, callbacks: VoiceCallbacks) {
     this.channelName = channelName;
@@ -212,6 +213,36 @@ export class VoiceChannelClient {
     this.callbacks.onState(state, detail);
   }
 
+  /**
+   * When the console auto-connects to the remembered channel before the user
+   * has interacted with the page, the browser's autoplay policy leaves the
+   * AudioContext suspended. Resume it (and the capture context) on the first
+   * user gesture so audio is not silent until a manual navigation.
+   */
+  private armAudioResume(): void {
+    if (!this.playCtx || this.playCtx.state === "running") {
+      return;
+    }
+    const resume = () => {
+      void this.playCtx?.resume();
+      void this.capCtx?.resume();
+      this.unbindAudioResume();
+    };
+    window.addEventListener("pointerdown", resume);
+    window.addEventListener("keydown", resume);
+    window.addEventListener("touchstart", resume);
+    this.gestureUnbind = () => {
+      window.removeEventListener("pointerdown", resume);
+      window.removeEventListener("keydown", resume);
+      window.removeEventListener("touchstart", resume);
+    };
+  }
+
+  private unbindAudioResume(): void {
+    this.gestureUnbind?.();
+    this.gestureUnbind = null;
+  }
+
   /** Opens the relay socket and starts listening. Call from a user gesture. */
   connect(): void {
     this.setState("connecting");
@@ -223,6 +254,7 @@ export class VoiceChannelClient {
     this.playGain.connect(this.playCtx.destination);
     this.playHead = 0;
     void this.playCtx.resume();
+    this.armAudioResume();
 
     let ws: WebSocket;
     try {
@@ -457,6 +489,7 @@ export class VoiceChannelClient {
   close(): void {
     this.setChannelMarker(false);
     this.stopLocalTones();
+    this.unbindAudioResume();
     this.transmitting = false;
     if (this.capNode) {
       this.capNode.port.onmessage = null;
