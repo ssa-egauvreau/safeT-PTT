@@ -28,7 +28,8 @@ class RadioAppGraph(application: Application) {
 
     val localUnitIdentifier: LocalUnitIdentifier = LocalUnitIdentifier(application)
 
-    val pttMicCapture: PttMicCapture = AudioRecordPttCapture()
+    /** Sidetone off — mic is captured only (Step B will stream to peers); avoids hearing yourself like a speakerphone. */
+    val pttMicCapture: PttMicCapture = AudioRecordPttCapture(enableSidetone = false)
 
     private val stubChannelRepository = StubChannelRepository()
 
