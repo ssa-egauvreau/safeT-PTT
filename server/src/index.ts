@@ -3,7 +3,7 @@ import express from "express";
 import { DEFAULT_GREEN_CHANNELS } from "./defaultChannels.js";
 import { ensureChannelSchema, listChannelsFromDb } from "./db.js";
 import { countPresence, heartbeatPresence } from "./presence.js";
-import { VOICE_WS_PATH, attachVoiceRelay } from "./voiceRelay.js";
+import { VOICE_WS_PATH, attachVoiceRelay, peekVoiceTransmittingUnit } from "./voiceRelay.js";
 
 const app = express();
 app.use(express.json());
@@ -48,11 +48,22 @@ app.get("/v1/channels", async (_req, res) => {
   }
 });
 
-/** While PTT is held, Android polls this. Set AIR_OCCUPIED=1 on Railway to simulate another caller. */
-app.get("/v1/air", (_req, res) => {
+/**
+ * Busy / Permit hint for PTT.
+ * Optional `?channel=Green 1`: uses live PCM activity from voice relay (+ optional AIR_OCCUPIED simulation).
+ */
+app.get("/v1/air", (req, res) => {
   const raw = process.env.AIR_OCCUPIED?.trim().toLowerCase();
-  const occupied = raw === "1" || raw === "true" || raw === "yes";
-  res.json({ occupied });
+  const envBusy = raw === "1" || raw === "true" || raw === "yes";
+
+  const chQ = typeof req.query.channel === "string" ? req.query.channel : "";
+  const transmitting = peekVoiceTransmittingUnit(chQ);
+  const occupied = envBusy || transmitting !== null;
+
+  res.json({
+    occupied,
+    transmitting_unit_id: transmitting ?? null,
+  });
 });
 
 /** Registers (or refreshes TTL for) this unit on its tuned channel via periodic Android heartbeats. */

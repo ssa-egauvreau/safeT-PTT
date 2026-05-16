@@ -11,7 +11,7 @@ interface ChannelsApi {
     suspend fun channels(): ChannelsResponseDto
 
     @GET("v1/air")
-    suspend fun airState(): AirStateDto
+    suspend fun airState(@Query("channel") channel: String? = null): AirStateDto
 
     /** Optional telemetry for who is keyed on primary vs scan channels (mock via Railway env vars). */
     @GET("v1/talk-activity")
@@ -63,4 +63,6 @@ data class ChannelDto(
 
 data class AirStateDto(
     @SerializedName("occupied") val occupied: Boolean,
+    /** Non-null while live PCM keyed on this channel (same TTL as relay “on air”). */
+    @SerializedName("transmitting_unit_id") val transmittingUnitId: String? = null,
 )

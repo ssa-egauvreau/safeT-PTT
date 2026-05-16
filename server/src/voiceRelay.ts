@@ -14,7 +14,49 @@ import { normalizedChannel } from "./presence.js";
 
 export const VOICE_WS_PATH = "/v1/voice/stream";
 
+/** TTL after last PCM frame before "off air" (~350 ms framing + jitter). */
+const VOICE_AIR_TTL_MS = 550;
+
 type ClientMeta = { unitId: string; channelNorm: string | null };
+
+type VoiceSlot = { unitUpper: string; lastPcmMs: number };
+
+/** Who is currently keyed on normalized channel keys (presence-style names). */
+const voiceAirByChannel = new Map<string, VoiceSlot>();
+
+export function peekVoiceTransmittingUnit(channelRaw: unknown): string | null {
+  const chNorm = normalizedChannel(channelRaw);
+  if (!chNorm || chNorm === "----") {
+    return null;
+  }
+  const slot = voiceAirByChannel.get(chNorm);
+  if (!slot) {
+    return null;
+  }
+  if (Date.now() - slot.lastPcmMs > VOICE_AIR_TTL_MS) {
+    voiceAirByChannel.delete(chNorm);
+    return null;
+  }
+  return slot.unitUpper;
+}
+
+function touchTransmission(channelNorm: string, unitUpper: string): void {
+  voiceAirByChannel.set(channelNorm, { unitUpper, lastPcmMs: Date.now() });
+}
+
+/** True if channel is keyed by someone other than [candidateUnitUpper]. Caller uses for busy / drop. */
+function isBlockedByAnother(channelNorm: string, candidateUnitUpper: string): boolean {
+  const now = Date.now();
+  const slot = voiceAirByChannel.get(channelNorm);
+  if (!slot) {
+    return false;
+  }
+  if (now - slot.lastPcmMs > VOICE_AIR_TTL_MS) {
+    voiceAirByChannel.delete(channelNorm);
+    return false;
+  }
+  return slot.unitUpper !== candidateUnitUpper;
+}
 
 export function attachVoiceRelay(
   server: HttpServer,
@@ -90,6 +132,14 @@ export function attachVoiceRelay(
         if (!meta?.channelNorm) {
           return;
         }
+        /**
+         * Only one transmitting unit per channel per air window — drop streams from intruders while
+         * another handset holds the channel (TTL window).
+         */
+        if (isBlockedByAnother(meta.channelNorm, meta.unitId)) {
+          return;
+        }
+
         let payload: Buffer;
         if (Buffer.isBuffer(raw)) {
           payload = raw;
@@ -98,6 +148,10 @@ export function attachVoiceRelay(
         } else {
           payload = Buffer.from(raw);
         }
+        if (payload.length === 0) {
+          return;
+        }
+        touchTransmission(meta.channelNorm, meta.unitId);
         broadcastExcept(ws, meta.channelNorm, payload);
       } catch (e) {
         console.warn("voiceRelay message handling error", e);

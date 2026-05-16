@@ -2,6 +2,7 @@ package com.securityradio.ptt.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.securityradio.ptt.data.remote.AirStateDto
 import com.securityradio.ptt.data.remote.ChannelsApi
 import com.securityradio.ptt.data.remote.PresenceHeartbeatDto
 import com.securityradio.ptt.data.remote.TalkActivityDto
@@ -380,16 +381,20 @@ class RadioViewModel(
             while (isActive && _uiState.value.isPttPressed) {
                 val snapshot = _uiState.value
                 val online = snapshot.networkLabel == "ONLINE"
-                val occupied = if (online) {
+                val chParam =
+                    snapshot.channelLabel.trim().takeUnless { it.isEmpty() || it == "----" }
+                val air: AirStateDto? = if (online) {
                     try {
-                        channelsApi.airState().occupied
+                        channelsApi.airState(channel = chParam)
                     } catch (_: Exception) {
-                        true
+                        null
                     }
                 } else {
-                    false
+                    null
                 }
-                val useBusy = !online || occupied
+                val occupiedForTransmit = channelBusyBlockingLocalPtt(online, air)
+                val useBusy = !online || occupiedForTransmit
+                val busyPeerHighlight = peerUnitIfBusyDueToVoice(online, air, occupiedForTransmit)
                 val mic = snapshot.micPermissionGranted
                 val micLive = pttMicLiveThisHold
 
@@ -399,6 +404,7 @@ class RadioViewModel(
                     micGranted = mic,
                     micLive = micLive,
                     stableEnough = audioStableCount >= AIR_AUDIO_STABLE_POLLS,
+                    busyPeerUnit = busyPeerHighlight,
                 )
 
                 _uiState.update { s ->
@@ -443,15 +449,51 @@ class RadioViewModel(
         micGranted: Boolean,
         micLive: Boolean,
         stableEnough: Boolean,
+        busyPeerUnit: String? = null,
     ): String {
         return when {
             useBusy && !online -> "NO CONNECTION"
-            useBusy -> "CHANNEL BUSY"
+            useBusy -> {
+                val peer = busyPeerUnit?.trim()?.takeIf { it.isNotEmpty() }?.uppercase(Locale.US)
+                if (peer != null) "CHANNEL BUSY — $peer" else "CHANNEL BUSY"
+            }
             micLive && micGranted -> "TX + MIC"
             micLive -> "TX (NO MIC)"
             stableEnough -> "AIR: OK — PERMIT"
             else -> "AIR: CHECKING"
         }
+    }
+
+    /**
+     * True when we should block local TX over the relay. When offline, the caller combines this with
+     * `!online` for the full PTT gate. When online but the air probe fails, treat as busy.
+     */
+    private fun channelBusyBlockingLocalPtt(online: Boolean, air: AirStateDto?): Boolean {
+        if (!online) return false
+        if (air == null) return true
+        return isAirBusyForThisUnit(air)
+    }
+
+    /** Server says occupied; if the slot names another unit than us, busy; env-only lacks [transmittingUnitId]. */
+    private fun isAirBusyForThisUnit(air: AirStateDto): Boolean {
+        if (!air.occupied) return false
+        val tx =
+            air.transmittingUnitId?.trim()?.uppercase(Locale.US)?.takeIf { it.isNotEmpty() }
+                ?: return true
+        return tx != unitIdUpper
+    }
+
+    /** Peer unit id shown on HUD while PTT is held and relay reports another keyed station. */
+    private fun peerUnitIfBusyDueToVoice(
+        online: Boolean,
+        air: AirStateDto?,
+        occupiedForTransmit: Boolean,
+    ): String? {
+        if (!online || air == null || !occupiedForTransmit) return null
+        val peer =
+            air.transmittingUnitId?.trim()?.uppercase(Locale.US)?.takeIf { it.isNotEmpty() }
+                ?: return null
+        return peer.takeIf { it != unitIdUpper }
     }
 
     private fun micHintForPtt(micGranted: Boolean, micLive: Boolean): String {
@@ -689,14 +731,24 @@ class RadioViewModel(
                 }
                 continue
             }
+            val snap = _uiState.value
+            val chParam =
+                snap.channelLabel.trim().takeUnless { it.isEmpty() || it == "----" }
             val dto = try {
                 channelsApi.talkActivity()
             } catch (_: Exception) {
                 null
             }
-            if (dto != null) {
-                val snap = _uiState.value
-                val merged = mergedRxAttributedLine(dto, snap)
+            val air = try {
+                channelsApi.airState(channel = chParam)
+            } catch (_: Exception) {
+                null
+            }
+            val voiceLine = rxLineFromLiveVoice(air, snap)
+            val mockLine = dto?.let { mergedRxAttributedLine(it, snap) }.orEmpty()
+            val merged = voiceLine.ifBlank { mockLine }
+
+            if (merged.isNotEmpty() || snap.rxAttributedLine.isNotEmpty()) {
                 val wakingFromIdle = snap.rxAttributedLine.isEmpty() && merged.isNotEmpty()
                 if (wakingFromIdle) {
                     enqueueBackgroundWakeIfNeeded("rx_talk_activity")
@@ -705,10 +757,18 @@ class RadioViewModel(
                 _uiState.update {
                     it.copy(rxAttributedLine = merged, lastRxReplayCaption = replayCaption)
                 }
-            } else if (_uiState.value.rxAttributedLine.isNotEmpty()) {
-                _uiState.update { it.copy(rxAttributedLine = "") }
             }
         }
+    }
+
+    /** Attribution from relay live PCM (“on air”); overrides mock talk-activity when non-empty. */
+    private fun rxLineFromLiveVoice(air: AirStateDto?, snap: RadioUiState): String {
+        val tx =
+            air?.transmittingUnitId?.trim()?.uppercase(Locale.US)?.takeIf { it.isNotEmpty() }
+                ?: return ""
+        val local = snap.localShortUnitId.trim().uppercase(Locale.US)
+        if (tx == local) return ""
+        return "RX: $tx • VOICE"
     }
 
     /** Keep prior caption unless a new attribution clearly refers to another handset. */
