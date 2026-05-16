@@ -23,13 +23,14 @@ class HardwareMappingRepository(context: Context) {
         prefs.edit().remove(action.name).apply()
     }
 
+    /** Inrico S-200 factory-style defaults (override per device in the mapping screen if needed). */
     private fun getDefaultKeyCodes(action: HardwareAction): Set<String> {
         return when (action) {
-            HardwareAction.PTT -> setOf("232")
+            HardwareAction.PTT -> setOf("229")
             HardwareAction.EMERGENCY -> setOf("141")
-            HardwareAction.CHANNEL_UP -> setOf("231")
-            HardwareAction.CHANNEL_DOWN -> setOf("230")
-            HardwareAction.SCAN_TOGGLE -> emptySet()
+            HardwareAction.CHANNEL_UP -> setOf("230")
+            HardwareAction.CHANNEL_DOWN -> setOf("232")
+            HardwareAction.SCAN_TOGGLE -> setOf("137")
         }
     }
 
