@@ -26,6 +26,7 @@ set_target_properties(libdvmvocoder PROPERTIES
 )
 
 find_library(android_log_lib log)
+find_library(cpp_shared NAMES c++_shared)
 
 add_library(securityradiovocoder SHARED "${CMAKE_CURRENT_LIST_DIR}/p25_jni.cpp")
 target_compile_options(securityradiovocoder PRIVATE -Wall)
@@ -41,4 +42,5 @@ target_link_libraries(securityradiovocoder PRIVATE
     libdvmvocoder
     android
     ${android_log_lib}
+    ${cpp_shared}
 )

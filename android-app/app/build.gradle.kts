@@ -49,8 +49,9 @@ android {
 
         externalNativeBuild {
             cmake {
-                // Static STL avoids shipping an older libc++_shared.so that may lack 16KB ELF alignment.
-                arguments += listOf("-DANDROID_STL=c++_static")
+                // libc++ must be linked for C++ ABI (operators, mutex, exceptions). ANDROID_STL=c++_static
+                // drove only -static-libstdc++, which breaks NDK/clang linkage; see C++ STL guide.
+                arguments += listOf("-DANDROID_STL=c++_shared")
             }
         }
     }
