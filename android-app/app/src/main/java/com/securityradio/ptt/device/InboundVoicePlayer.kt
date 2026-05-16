@@ -2,7 +2,6 @@ package com.securityradio.ptt.device
 
 import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioTrack
 import android.os.Build
 
@@ -60,7 +59,7 @@ class InboundVoicePlayer {
             } else {
                 @Suppress("DEPRECATION")
                 AudioTrack(
-                    AudioManager.STREAM_VOICE_COMMUNICATION,
+                    VoiceAudioSpecs.LEGACY_STREAM_VOICE_COMMUNICATION,
                     VoiceAudioSpecs.SAMPLE_RATE_HZ,
                     AudioFormat.CHANNEL_OUT_MONO,
                     VoiceAudioSpecs.PCM_ENCODING,

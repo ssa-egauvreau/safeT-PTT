@@ -2,7 +2,6 @@ package com.securityradio.ptt.device
 
 import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
@@ -83,7 +82,7 @@ class AudioRecordPttCapture(
                         } else {
                             @Suppress("DEPRECATION")
                             AudioTrack(
-                                AudioManager.STREAM_VOICE_COMMUNICATION,
+                                VoiceAudioSpecs.LEGACY_STREAM_VOICE_COMMUNICATION,
                                 sampleRate,
                                 channelConfigOut,
                                 audioFormat,
