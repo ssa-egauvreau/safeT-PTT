@@ -24,10 +24,19 @@ class RadioPreferences(context: Context) {
         prefs.edit().putBoolean(KEY_VOICE_ANNOUNCE_TUNING, enabled).apply()
     }
 
+    fun isP25ImbeDigitalVoiceEnabled(): Boolean =
+        prefs.getBoolean(KEY_P25_IMBE_VOICE, DEFAULT_P25_IMBE_VOICE)
+
+    fun setP25ImbeDigitalVoiceEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_P25_IMBE_VOICE, enabled).apply()
+    }
+
     private companion object {
         const val PREFS_NAME = "security_radio_prefs"
         const val KEY_THEME = "theme_mode"
         const val KEY_VOICE_ANNOUNCE_TUNING = "voice_announce_tune"
+        const val KEY_P25_IMBE_VOICE = "p25_imbe_digital_voice"
         const val DEFAULT_VOICE_ANNOUNCE = true
+        const val DEFAULT_P25_IMBE_VOICE = false
     }
 }

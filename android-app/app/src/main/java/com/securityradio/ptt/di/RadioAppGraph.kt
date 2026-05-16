@@ -11,7 +11,7 @@ import com.securityradio.ptt.device.AudioRecordPttCapture
 import com.securityradio.ptt.device.ChannelSpeechHelper
 import com.securityradio.ptt.device.HardwareMappingRepository
 import com.securityradio.ptt.device.InboundVoicePlayer
-import com.securityradio.ptt.device.LocalUnitIdentifier
+import com.securityradio.ptt.device.P25ImbeNative
 import com.securityradio.ptt.device.PttMicCapture
 import com.securityradio.ptt.device.RadioPreferences
 import com.securityradio.ptt.device.RadioUiSoundPlayer
@@ -19,6 +19,10 @@ import com.securityradio.ptt.device.VoiceRelayTransport
 import com.securityradio.ptt.domain.ChannelRepository
 
 class RadioAppGraph(application: Application) {
+
+    init {
+        P25ImbeNative.tryLoadLibrary()
+    }
 
     val radioPreferences = RadioPreferences(application)
 
@@ -36,6 +40,7 @@ class RadioAppGraph(application: Application) {
         httpApiBaseUrl = BuildConfig.API_BASE_URL,
         apiKey = BuildConfig.RADIO_API_KEY,
         inbound = inboundVoicePlayer,
+        radioPreferences = radioPreferences,
     )
 
     /** Sidetone off; PCM also flows to [voiceRelay]. */

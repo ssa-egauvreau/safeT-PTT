@@ -34,6 +34,7 @@ sealed interface RadioUiEvent {
     data object OpenAccessibilitySettings : RadioUiEvent
     data object RequestIgnoreBatteryOptimizations : RadioUiEvent
 
+    data object ToggleP25ImbeDigitalVoice : RadioUiEvent
     data object ToggleVoiceAnnounceChannelTune : RadioUiEvent
     data object PlayLastTransmission : RadioUiEvent
 }

@@ -57,6 +57,9 @@ data class RadioUiState(
 
     /** Other radios reporting presence on the currently tuned channel (`null` when unknown). */
     val radiosOnlineOnChannel: Int?,
+    /** P25-style IMBE digital voice (transmit + receive when peers use codewords; requires native lib). */
+    val p25ImbeDigitalVoiceEnabled: Boolean,
+
     /** Announce channel name aloud when changing tuning (TextToSpeech). */
     val announceChannelNameOnTune: Boolean,
     /** Caption used for one-shot replay (text-first until streamed audio replay exists). */
@@ -107,6 +110,7 @@ data class RadioUiState(
             needsAccessibilityService = false,
             lastDetectedKey = null,
             radiosOnlineOnChannel = null,
+            p25ImbeDigitalVoiceEnabled = false,
             announceChannelNameOnTune = true,
             lastRxReplayCaption = "",
         )

@@ -13,7 +13,7 @@ import com.securityradio.ptt.device.HardwareButtonEvent
 import com.securityradio.ptt.device.HardwareButtonRelay
 import com.securityradio.ptt.device.HardwareMappingRepository
 import com.securityradio.ptt.device.LocalUnitIdentifier
-import com.securityradio.ptt.device.PttMicCapture
+import com.securityradio.ptt.device.P25ImbeNative
 import com.securityradio.ptt.device.RadioPreferences
 import com.securityradio.ptt.device.RadioUiSoundPlayer
 import com.securityradio.ptt.device.VoiceRelayTransport
@@ -81,6 +81,7 @@ class RadioViewModel(
                 hardwareMappings = hardwareMappingRepository.getAllMappings(),
                 themeMode = radioPreferences.getThemeMode(),
                 announceChannelNameOnTune = radioPreferences.isAnnounceChannelOnTuneEnabled(),
+                p25ImbeDigitalVoiceEnabled = radioPreferences.isP25ImbeDigitalVoiceEnabled(),
             )
         }
         viewModelScope.launch {
@@ -277,6 +278,28 @@ class RadioViewModel(
                 val next = !_uiState.value.announceChannelNameOnTune
                 radioPreferences.setAnnounceChannelOnTuneEnabled(next)
                 _uiState.update { it.copy(announceChannelNameOnTune = next) }
+            }
+            RadioUiEvent.ToggleP25ImbeDigitalVoice -> {
+                soundPlayer.playChannelSwitch()
+                val snap = _uiState.value
+                val next = !snap.p25ImbeDigitalVoiceEnabled
+                if (next) {
+                    if (!P25ImbeNative.isAvailable && !P25ImbeNative.tryLoadLibrary()) {
+                        _uiState.update {
+                            it.copy(statusMessage = "P25 VOCODER NOT AVAILABLE")
+                        }
+                        return@onEvent
+                    }
+                }
+                radioPreferences.setP25ImbeDigitalVoiceEnabled(next)
+                voiceRelay.discardPendingUplinkTail()
+                _uiState.update {
+                    it.copy(
+                        p25ImbeDigitalVoiceEnabled = next,
+                        statusMessage = if (next) "P25 STYLE VOICE TX ON" else "P25 STYLE VOICE TX OFF",
+                    )
+                }
+                reconcileVoiceTransport()
             }
             RadioUiEvent.PlayLastTransmission -> playLastTransmission()
         }

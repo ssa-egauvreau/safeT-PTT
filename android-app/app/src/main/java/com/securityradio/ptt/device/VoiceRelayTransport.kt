@@ -27,14 +27,20 @@ fun httpApiBaseUrlToVoiceWebSocketUrl(httpBaseUrl: String): String {
 }
 
 /**
- * Half-duplex voice path: uploads local PCM frames and plays peer PCM from the relay.
+ * Half-duplex voice path over the relay WebSocket.
  *
- * Codec: PCM 16-bit signed LE, mono, 16000 Hz (aligned with Android capture).
+ * - Default transport: PCM 16-bit signed LE mono @ 16000 Hz (Android capture).
+ * - Optional transmit path: encode with P25-style 88-bit IMBE (**all handsets must match** —
+ * see menu toggle). Incoming IMBE frames are auto-detected by a 2-byte magic prefix even if local
+ * TX stays on PCM for compatibility experiments.
+ *
+ * Codec: see [VoiceAudioSpecs] (PCM); IMBE via bundled dvmvocoder (GPL — see cpp/dvmvocoder).
  */
 class VoiceRelayTransport(
     httpApiBaseUrl: String,
     private val apiKey: String,
     private val inbound: InboundVoicePlayer,
+    private val radioPreferences: RadioPreferences,
 ) : StreamingPcmSink {
 
     private val wsUrl = httpApiBaseUrlToVoiceWebSocketUrl(httpApiBaseUrl)
@@ -50,10 +56,15 @@ class VoiceRelayTransport(
 
     private val wantOnline = AtomicBoolean(false)
 
-    @Volatile
-    private var pendingUnitId: String = ""
+    private var pcmAcc = ByteArray(2048)
+    private var pcmAccLen = 0
+    private var lastP25TxEnabled: Boolean? = null
+    private val pcmFrameScratch = ByteArray(P25ImbeNative.Frames.PCM_16K_FRAME_BYTES)
 
-    @Volatile
+    /** Two-byte sentinel so random PCM blobs are unlikely to collide; followed by an 11-byte codeword. */
+    private val imbeWsMagic = byteArrayOf(0xF5.toByte(), 0xAB.toByte())
+
+    private var pendingUnitId: String = ""
     private var pendingChannelRaw: String = ""
 
     private val listener = object : WebSocketListener() {
@@ -63,7 +74,7 @@ class VoiceRelayTransport(
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-            inbound.writePcm(bytes.toByteArray())
+            dispatchInboundVoice(bytes.toByteArray())
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -79,6 +90,59 @@ class VoiceRelayTransport(
             socketReady.set(false)
             webSocketRef.compareAndSet(webSocket, null)
         }
+    }
+
+    /** WebSocket inbound: IMBE frames (13-byte header) decode to reconstructed 16 kHz PCM; legacy raw PCM forwarded. */
+    private fun dispatchInboundVoice(payload: ByteArray) {
+        if (payload.size == 13 &&
+            payload[0] == imbeWsMagic[0] &&
+            payload[1] == imbeWsMagic[1]
+        ) {
+            if (!P25ImbeNative.isAvailable) {
+                return
+            }
+            val codeword = payload.copyOfRange(2, 13)
+            val pcm8k160 = P25ImbeNative.decodeCodeword11(codeword) ?: return
+            val pcm16LittleEndian = P25ImbeNative.Frames.upsampleDup8kToLe16Mono(pcm8k160)
+            inbound.writePcm(pcm16LittleEndian)
+            return
+        }
+        inbound.writePcm(payload)
+    }
+
+    private fun p25UplinkEligible(): Boolean =
+        radioPreferences.isP25ImbeDigitalVoiceEnabled() && P25ImbeNative.isAvailable
+
+    private fun reconcileAccumulatorForModeToggle() {
+        val cur = p25UplinkEligible()
+        val prev = lastP25TxEnabled
+        if (prev != null && prev != cur) {
+            pcmAccLen = 0
+        }
+        lastP25TxEnabled = cur
+    }
+
+    private fun appendAccumulator(fragment: ByteArray, len: Int) {
+        val need = pcmAccLen + len
+        if (need > pcmAcc.size) {
+            pcmAcc = pcmAcc.copyOf(maxOf(pcmAcc.size * 2, need))
+        }
+        System.arraycopy(fragment, 0, pcmAcc, pcmAccLen, len)
+        pcmAccLen = need
+    }
+
+    private fun sendBinaryWs(ws: WebSocket, payload: ByteArray) {
+        val bs = Buffer()
+            .write(payload, 0, payload.size)
+            .readByteString(payload.size.toLong())
+        ws.send(bs)
+    }
+
+    /**
+     * Drop any fractional uplink PCM held for IMBE framing (preference toggles / disconnect).
+     */
+    fun discardPendingUplinkTail() {
+        pcmAccLen = 0
     }
 
     /**
@@ -110,33 +174,55 @@ class VoiceRelayTransport(
 
     override fun consumePcm(buffer: ByteArray, length: Int) {
         if (!wantOnline.get() || length <= 0) return
+        reconcileAccumulatorForModeToggle()
+
+        val wsPrepared = acquireActiveSocketPrepared()
+        val active = wsPrepared ?: return
+
+        val p25 = p25UplinkEligible()
+        if (!p25) {
+            pcmAccLen = 0
+            sendBinaryWs(active, buffer.copyOfRange(0, length))
+            return
+        }
+
+        appendAccumulator(buffer, length)
+        while (pcmAccLen >= pcmFrameScratch.size) {
+            System.arraycopy(pcmAcc, 0, pcmFrameScratch, 0, pcmFrameScratch.size)
+            System.arraycopy(pcmAcc, pcmFrameScratch.size, pcmAcc, 0, pcmAccLen - pcmFrameScratch.size)
+            pcmAccLen -= pcmFrameScratch.size
+
+            val imbeIn = P25ImbeNative.Frames.downsampleAvg16kToImbe(pcmFrameScratch)
+            val codeword11 = P25ImbeNative.encodeFrame(imbeIn) ?: continue
+            val packet = ByteArray(2 + codeword11.size)
+            packet[0] = imbeWsMagic[0]
+            packet[1] = imbeWsMagic[1]
+            System.arraycopy(codeword11, 0, packet, 2, codeword11.size)
+            sendBinaryWs(active, packet)
+        }
+    }
+
+    private fun acquireActiveSocketPrepared(): WebSocket? {
         var ws = webSocketRef.get()
         if (ws == null || !socketReady.get()) {
-            if (!wantOnline.get()) return
+            if (!wantOnline.get()) return null
             synchronized(connectionLock) {
-                if (!wantOnline.get()) return
+                if (!wantOnline.get()) return null
                 if (webSocketRef.get() == null) {
                     openSocketLocked()
                 }
                 ws = webSocketRef.get()
             }
-            if (!socketReady.get()) return
+            if (!socketReady.get()) return null
         }
-        val active = ws ?: return
-        try {
-            val copy = buffer.copyOfRange(0, length)
-            val frame = Buffer()
-                .write(copy, 0, copy.size)
-                .readByteString(copy.size.toLong())
-            active.send(frame)
-        } catch (_: Exception) {
-        }
+        return ws
     }
 
     /** Stop outbound/inbound sockets and mute remote playback ([InboundVoicePlayer] stays reusable). */
     fun disconnect() {
         wantOnline.set(false)
         socketReady.set(false)
+        pcmAccLen = 0
         webSocketRef.getAndSet(null)?.close(1001, "bye")
         inbound.stop()
     }

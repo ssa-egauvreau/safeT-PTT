@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.securityradio.ptt.device.HardwareAction
+import com.securityradio.ptt.device.P25ImbeNative
 import com.securityradio.ptt.presentation.RadioUiEvent
 import com.securityradio.ptt.presentation.RadioUiState
 import com.securityradio.ptt.presentation.ThemeMode
@@ -945,6 +946,35 @@ fun HardwareMappingDialog(
                                 )
                             }
                         }
+                        HorizontalDivider(color = p.divider)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Checkbox(
+                                checked = state.p25ImbeDigitalVoiceEnabled,
+                                onCheckedChange = { onEvent(RadioUiEvent.ToggleP25ImbeDigitalVoice) },
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "P25-STYLE DIGITAL VOICE (IMBE)",
+                                    style = styles.body.copy(fontWeight = FontWeight.Bold),
+                                    color = p.textPrimary,
+                                )
+                                Text(
+                                    text = if (P25ImbeNative.isAvailable) {
+                                        "Transmit 88-bit IMBE codewords; all radios on this voice channel must use the same mode. " +
+                                            "GPL-2.0 vocoder (dvmvocoder) is bundled in the app binary."
+                                    } else {
+                                        "Native codec did not load (check build ABI or reinstall); uplink stays clear PCM."
+                                    },
+                                    style = styles.status,
+                                    color = p.textMuted,
+                                )
+                            }
+                        }
+                        HorizontalDivider(color = p.divider)
                         TextButton(
                             onClick = { onEvent(RadioUiEvent.PlayLastTransmission) },
                             modifier = Modifier.fillMaxWidth(),
