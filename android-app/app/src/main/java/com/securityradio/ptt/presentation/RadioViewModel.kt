@@ -872,8 +872,8 @@ class RadioViewModel(
 
     private companion object {
         const val CLOCK_TICK_MS = 1_000L
-        const val AIR_POLL_MS = 400L
-        const val AIR_AUDIO_STABLE_POLLS = 2
+        const val AIR_POLL_MS = 250L
+        const val AIR_AUDIO_STABLE_POLLS = 1
         const val TALK_ACTIVITY_POLL_MS = 1200L
         const val WAKE_DEBOUNCE_MS = 700L
         const val PRESENCE_POLL_MS = 12_000L

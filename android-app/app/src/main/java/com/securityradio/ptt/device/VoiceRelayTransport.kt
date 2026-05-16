@@ -7,6 +7,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.Buffer
 import okio.ByteString
+import android.util.Log
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -30,9 +31,9 @@ fun httpApiBaseUrlToVoiceWebSocketUrl(httpBaseUrl: String): String {
  * Half-duplex voice path over the relay WebSocket.
  *
  * - Default transport: PCM 16-bit signed LE mono @ 16000 Hz (Android capture).
- * - Optional transmit path: encode with P25-style 88-bit IMBE (**all handsets must match** —
- * see menu toggle). Incoming IMBE frames are auto-detected by a 2-byte magic prefix even if local
- * TX stays on PCM for compatibility experiments.
+ * - Optional uplink path: encode with P25-style 88-bit IMBE only when enabled in prefs (MENU toggle).
+ * - Downlink auto-detects IMBE (13-byte magic frame) whenever the JNI codec can load, even if
+ *   uplink stays on PCM — so mates who enable digital voice remain audible without matching TX prefs.
  *
  * Codec: see [VoiceAudioSpecs] (PCM); IMBE via bundled dvmvocoder (GPL — see cpp/dvmvocoder).
  */
@@ -92,23 +93,36 @@ class VoiceRelayTransport(
         }
     }
 
-    /** WebSocket inbound: IMBE frames (13-byte header) decode to reconstructed 16 kHz PCM; legacy raw PCM forwarded. */
+    /** WebSocket inbound: IMBE frames (13-byte magic) decoded when native library is loadable; else PCM. */
     private fun dispatchInboundVoice(payload: ByteArray) {
         if (payload.size == 13 &&
             payload[0] == imbeWsMagic[0] &&
             payload[1] == imbeWsMagic[1]
         ) {
-            if (!P25ImbeNative.isAvailable) {
+            if (!ensureImbeNativeLoadedForRx()) {
+                Log.w(
+                    TAG,
+                    "IMBE frame discarded: JNI vocoder unavailable (receiver cannot unpack peer digital voice)",
+                )
                 return
             }
             val codeword = payload.copyOfRange(2, 13)
-            val pcm8k160 = P25ImbeNative.decodeCodeword11(codeword) ?: return
+            val pcm8k160 =
+                P25ImbeNative.decodeCodeword11(codeword)
+                    ?: run {
+                        Log.w(TAG, "IMBE decode returned null for one frame — check peer encoder alignment")
+                        return
+                    }
             val pcm16LittleEndian = P25ImbeNative.Frames.upsampleDup8kToLe16Mono(pcm8k160)
             inbound.writePcm(pcm16LittleEndian)
             return
         }
         inbound.writePcm(payload)
     }
+
+    /** One-shot load so mates' IMBE frames work even before user opens the PTT screen (RX path). */
+    private fun ensureImbeNativeLoadedForRx(): Boolean =
+        P25ImbeNative.isAvailable || P25ImbeNative.tryLoadLibrary()
 
     private fun p25UplinkEligible(): Boolean =
         radioPreferences.isP25ImbeDigitalVoiceEnabled() && P25ImbeNative.isAvailable
@@ -256,4 +270,8 @@ class VoiceRelayTransport(
 
     private fun escapeJsonFragment(s: String): String =
         s.replace("\\", "\\\\").replace("\"", "\\\"")
+
+    private companion object {
+        private const val TAG = "VoiceRelay"
+    }
 }

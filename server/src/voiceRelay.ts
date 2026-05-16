@@ -14,8 +14,12 @@ import { normalizedChannel } from "./presence.js";
 
 export const VOICE_WS_PATH = "/v1/voice/stream";
 
-/** TTL after last PCM frame before "off air" (~350 ms framing + jitter). */
-const VOICE_AIR_TTL_MS = 550;
+/**
+ * TTL after last relay frame before "off air".
+ * Keep comfortably above worst-case framing/poll gaps so `/v1/air` does not flap between polls
+ * (Android polls ~250–400ms) or between sparse IMBE frames / encode skips.
+ */
+const VOICE_AIR_TTL_MS = 2000;
 
 type ClientMeta = { unitId: string; channelNorm: string | null };
 

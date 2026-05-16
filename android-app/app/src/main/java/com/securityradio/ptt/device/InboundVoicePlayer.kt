@@ -34,6 +34,8 @@ class InboundVoicePlayer {
             VoiceAudioSpecs.PCM_ENCODING,
         )
         if (minBuf <= 0) return null
+        /** Extra slack reduces underruns on handset speaker routing with bursty decode output. */
+        val bufBytes = maxOf(minBuf * 4, minBuf + 8192)
         val t = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -48,7 +50,7 @@ class InboundVoicePlayer {
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build(),
             )
-            .setBufferSizeInBytes(minBuf * 2)
+            .setBufferSizeInBytes(bufBytes)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
         if (t.state != AudioTrack.STATE_INITIALIZED) {

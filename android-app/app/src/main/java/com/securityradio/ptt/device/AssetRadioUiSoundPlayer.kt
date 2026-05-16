@@ -54,7 +54,8 @@ class AssetRadioUiSoundPlayer(
 
     private fun acquireBusyToneFocus() {
         abandonBusyToneFocusInternal()
-        val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+        /** Non-exclusive so some OEM stacks still route the loop while voice RX holds the comm stack. */
+        val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
             .setAudioAttributes(busyAudioAttrs)
             .setWillPauseWhenDucked(false)
             .setAcceptsDelayedFocusGain(false)
