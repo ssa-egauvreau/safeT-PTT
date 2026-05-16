@@ -26,16 +26,19 @@ set_target_properties(libdvmvocoder PROPERTIES
 )
 
 find_library(android_log_lib log)
-find_library(cpp_shared NAMES c++_shared)
 
 add_library(securityradiovocoder SHARED "${CMAKE_CURRENT_LIST_DIR}/p25_jni.cpp")
 target_compile_options(securityradiovocoder PRIVATE -Wall)
 
 target_include_directories(securityradiovocoder PRIVATE "${VOCODER_SRC_DIR}")
 
+# Required for Android 15+ devices / emulators with 16 KB memory pages (ELF LOAD alignment).
+target_link_options(securityradiovocoder PRIVATE
+    "-Wl,-z,max-page-size=16384"
+    "-Wl,-z,common-page-size=16384")
+
 target_link_libraries(securityradiovocoder PRIVATE
     libdvmvocoder
     android
     ${android_log_lib}
-    ${cpp_shared}
 )

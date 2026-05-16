@@ -49,7 +49,8 @@ android {
 
         externalNativeBuild {
             cmake {
-                arguments += listOf("-DANDROID_STL=c++_shared")
+                // Static STL avoids shipping an older libc++_shared.so that may lack 16KB ELF alignment.
+                arguments += listOf("-DANDROID_STL=c++_static")
             }
         }
     }
@@ -97,6 +98,10 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        jniLibs {
+            // Helps install on strict 16KB-page emulators when zip/APK JNI alignment differs.
+            useLegacyPackaging = true
         }
     }
 }
