@@ -108,4 +108,7 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    // Direct Okio (same line as OkHttp 4.12) so Kotlin `ByteArray.toByteString()` resolves; `-Werror`
+    // style builds reject deprecated `ByteString.of` factories.
+    implementation("com.squareup.okio:okio:3.6.0")
 }
