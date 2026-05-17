@@ -1,0 +1,47 @@
+# XcodeGen spec — run `xcodegen generate` to produce SafeTMobile.xcodeproj.
+# Keeping the project as YAML avoids committing a churny .pbxproj.
+name: SafeTMobile
+
+options:
+  bundleIdPrefix: com.safetptt
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  SafeTMobile:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: SafeTMobile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.safetptt.mobile
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: SafeTMobile/Info.plist
+      properties:
+        CFBundleDisplayName: safeT Mobile
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        # Server connection — set these for your deployment.
+        APIBaseURL: "https://your-server.example.com"
+        RadioAPIKey: ""
+        NSLocationWhenInUseUsageDescription: "Your location is shared with dispatch so your unit appears on the live map."
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
