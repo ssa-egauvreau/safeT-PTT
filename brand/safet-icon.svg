@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="safeT PTT">
+  <title>safeT PTT</title>
+  <desc>Signal bars rising into a T whose stem is a lightning bolt — instant push-to-talk transmission.</desc>
+  <!-- Signal bars: network connectivity, ascending = reliability -->
+  <rect x="10" y="60" width="12" height="20" rx="2.5" fill="#2563EB"/>
+  <rect x="26" y="49" width="12" height="31" rx="2.5" fill="#2563EB"/>
+  <rect x="42" y="38" width="12" height="42" rx="2.5" fill="#2563EB"/>
+  <!-- T crossbar: Talk / Transmit / Together -->
+  <rect x="40" y="12" width="46" height="12" rx="3" fill="#2563EB"/>
+  <!-- Lightning bolt forms the T stem: instant transmission -->
+  <path d="M67 24 L53 51 L63 51 L55 84 L80 48 L67 48 L75 24 Z" fill="#22C5E5"/>
+</svg>

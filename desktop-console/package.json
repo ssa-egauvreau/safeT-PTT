@@ -1,0 +1,42 @@
+{
+  "name": "safet-command-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native desktop shell for safeT Command, the safeT PTT dispatch console.",
+  "author": "safeT PTT",
+  "license": "UNLICENSED",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.safetptt.command",
+    "productName": "safeT Command",
+    "files": ["electron/**/*"],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.business",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "safeT Command voice transmit uses the microphone."
+      }
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Office"
+    }
+  }
+}
