@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
+import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ConsolePage } from "./pages/ConsolePage";
 import { AdminPage } from "./pages/admin/AdminPage";
@@ -13,8 +14,12 @@ export function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
-      <Route path="/" element={user ? <ConsolePage /> : <Navigate to="/login" replace />} />
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/login" element={user ? <Navigate to="/console" replace /> : <LoginPage />} />
+      <Route
+        path="/console"
+        element={user ? <ConsolePage /> : <Navigate to="/login" replace />}
+      />
       <Route
         path="/admin/*"
         element={
@@ -23,7 +28,7 @@ export function App() {
           ) : user.role === "admin" ? (
             <AdminPage />
           ) : (
-            <Navigate to="/" replace />
+            <Navigate to="/console" replace />
           )
         }
       />

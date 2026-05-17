@@ -1,6 +1,6 @@
 import type { ReactNode, SVGProps } from "react";
 
-type IconProps = { size?: number } & Omit<SVGProps<SVGSVGElement>, "width" | "height" | "children">;
+export type IconProps = { size?: number } & Omit<SVGProps<SVGSVGElement>, "width" | "height" | "children">;
 
 function StrokeIcon({ size = 18, children, ...rest }: IconProps & { children: ReactNode }) {
   return (
@@ -216,6 +216,59 @@ export function IconVolumeMuted(props: IconProps) {
       <path d="M4 9v6h3l5 4V5L7 9H4Z" fill="currentColor" />
       <line x1="16" y1="9.5" x2="21" y2="14.5" />
       <line x1="21" y1="9.5" x2="16" y2="14.5" />
+    </StrokeIcon>
+  );
+}
+
+/** Check mark — included plan features. */
+export function IconCheck(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M4.5 12.5 9.5 17.5 19.5 6.5" />
+    </StrokeIcon>
+  );
+}
+
+/** Arrow pointing right — call-to-action affordance. */
+export function IconArrowRight(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <line x1="4" y1="12" x2="19" y2="12" />
+      <path d="M13 6 19.5 12 13 18" />
+    </StrokeIcon>
+  );
+}
+
+/** Map pin — GPS unit location. */
+export function IconMapPin(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M12 21.5c4.5-4.2 7-7.7 7-11.3a7 7 0 0 0-14 0c0 3.6 2.5 7.1 7 11.3Z" />
+      <circle cx="12" cy="10" r="2.6" />
+    </StrokeIcon>
+  );
+}
+
+/** Waveform — recording & transcription. */
+export function IconWaveform(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <line x1="4" y1="11" x2="4" y2="13" />
+      <line x1="8" y1="8" x2="8" y2="16" />
+      <line x1="12" y1="4" x2="12" y2="20" />
+      <line x1="16" y1="8" x2="16" y2="16" />
+      <line x1="20" y1="11" x2="20" y2="13" />
+    </StrokeIcon>
+  );
+}
+
+/** Padlock — encrypted voice. */
+export function IconLock(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <rect x="5" y="10.5" width="14" height="10" rx="2" />
+      <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" />
+      <circle cx="12" cy="15.2" r="0.7" fill="currentColor" stroke="none" />
     </StrokeIcon>
   );
 }

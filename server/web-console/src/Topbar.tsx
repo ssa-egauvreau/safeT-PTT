@@ -16,7 +16,7 @@ export function Topbar({ section }: { section: "console" | "admin" }) {
         <span className="brand-section">{section === "admin" ? "Control" : "Command"}</span>
       </div>
       <nav className="topnav">
-        <Link className={section === "console" ? "nav-tab active" : "nav-tab"} to="/">
+        <Link className={section === "console" ? "nav-tab active" : "nav-tab"} to="/console">
           <IconRadio size={15} /> Command
         </Link>
         {user?.role === "admin" && (
