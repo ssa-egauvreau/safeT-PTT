@@ -2229,3 +2229,13 @@ code.mono {
   background: var(--bg-raised);
   color: var(--text);
 }
+.lp-legal-link {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.86em;
+  color: var(--accent-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.lp-legal-link:hover {
+  color: var(--text);
+}

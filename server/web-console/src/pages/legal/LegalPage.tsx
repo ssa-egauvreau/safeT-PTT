@@ -13,16 +13,23 @@ export type LegalDocId = "terms" | "privacy" | "eula";
 interface LegalDoc {
   label: string;
   path: string;
+  file: string;
   source: string;
 }
 
 const LEGAL_DOCS: Record<LegalDocId, LegalDoc> = {
-  terms: { label: "Terms of Service", path: "/legal/terms", source: termsSource },
-  privacy: { label: "Privacy Policy", path: "/legal/privacy", source: privacySource },
-  eula: { label: "EULA", path: "/legal/eula", source: eulaSource },
+  terms: { label: "Terms of Service", path: "/legal/terms", file: "TERMS_OF_SERVICE.md", source: termsSource },
+  privacy: { label: "Privacy Policy", path: "/legal/privacy", file: "PRIVACY_POLICY.md", source: privacySource },
+  eula: { label: "EULA", path: "/legal/eula", file: "EULA.md", source: eulaSource },
 };
 
 const LEGAL_ORDER: LegalDocId[] = ["terms", "privacy", "eula"];
+
+// The documents reference one another by filename; map those to their routes
+// so the renderer turns the references into in-app links.
+const LEGAL_XREFS: Record<string, string> = Object.fromEntries(
+  LEGAL_ORDER.map((id) => [LEGAL_DOCS[id].file, LEGAL_DOCS[id].path]),
+);
 
 export function LegalPage({ doc }: { doc: LegalDocId }) {
   const entry = LEGAL_DOCS[doc];
@@ -59,7 +66,7 @@ export function LegalPage({ doc }: { doc: LegalDocId }) {
 
       <main className="lp-legal-main">
         <article className="lp-legal-doc">
-          <Markdown source={entry.source} />
+          <Markdown source={entry.source} links={LEGAL_XREFS} />
         </article>
       </main>
 

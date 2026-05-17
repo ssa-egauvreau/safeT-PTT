@@ -1,12 +1,16 @@
 import { type ReactNode } from "react";
+import { Link } from "react-router-dom";
 
 // A small Markdown renderer for the legal documents in `legal/`. It covers only
 // the constructs those documents use: headings (1-3), paragraphs, blockquotes,
 // ordered/unordered lists, GFM tables, and inline bold / italic / code.
+//
+// `links` maps a code-span's exact text (e.g. a referenced filename) to an
+// in-app route, so cross-references between the documents become clickable.
 
 type Token = { kind: "code" | "bold" | "em"; m: RegExpMatchArray };
 
-function renderInline(text: string, prefix: string): ReactNode[] {
+function renderInline(text: string, prefix: string, links: Record<string, string>): ReactNode[] {
   const out: ReactNode[] = [];
   let rest = text;
   let n = 0;
@@ -29,11 +33,20 @@ function renderInline(text: string, prefix: string): ReactNode[] {
     const key = `${prefix}-${n++}`;
     const inner = tok.m[1];
     if (tok.kind === "code") {
-      out.push(<code key={key}>{inner}</code>);
+      const href = links[inner];
+      out.push(
+        href ? (
+          <Link key={key} to={href} className="lp-legal-link">
+            {inner}
+          </Link>
+        ) : (
+          <code key={key}>{inner}</code>
+        ),
+      );
     } else if (tok.kind === "bold") {
-      out.push(<strong key={key}>{renderInline(inner, key)}</strong>);
+      out.push(<strong key={key}>{renderInline(inner, key, links)}</strong>);
     } else {
-      out.push(<em key={key}>{renderInline(inner, key)}</em>);
+      out.push(<em key={key}>{renderInline(inner, key, links)}</em>);
     }
     rest = rest.slice(at + tok.m[0].length);
   }
@@ -69,7 +82,7 @@ function joinParagraphs(rawLines: string[]): string[] {
   return paras;
 }
 
-function parseBlocks(source: string): ReactNode[] {
+function parseBlocks(source: string, links: Record<string, string>): ReactNode[] {
   const lines = source.replace(/\r\n/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -88,7 +101,7 @@ function parseBlocks(source: string): ReactNode[] {
     const heading = line.match(/^(#{1,3})\s+(.*)$/);
     if (heading) {
       const level = heading[1].length;
-      const content = renderInline(heading[2].trim(), `h-${k}`);
+      const content = renderInline(heading[2].trim(), `h-${k}`, links);
       blocks.push(
         level === 1 ? (
           <h1 key={k}>{content}</h1>
@@ -113,7 +126,7 @@ function parseBlocks(source: string): ReactNode[] {
       blocks.push(
         <blockquote key={k}>
           {paras.map((p, idx) => (
-            <p key={idx}>{renderInline(p, `bq-${k}-${idx}`)}</p>
+            <p key={idx}>{renderInline(p, `bq-${k}-${idx}`, links)}</p>
           ))}
         </blockquote>,
       );
@@ -135,7 +148,7 @@ function parseBlocks(source: string): ReactNode[] {
             <thead>
               <tr>
                 {tableCells(headRow).map((c, ci) => (
-                  <th key={ci}>{renderInline(c, `th-${k}-${ci}`)}</th>
+                  <th key={ci}>{renderInline(c, `th-${k}-${ci}`, links)}</th>
                 ))}
               </tr>
             </thead>
@@ -143,7 +156,7 @@ function parseBlocks(source: string): ReactNode[] {
               {bodyRows.map((r, ri) => (
                 <tr key={ri}>
                   {tableCells(r).map((c, ci) => (
-                    <td key={ci}>{renderInline(c, `td-${k}-${ri}-${ci}`)}</td>
+                    <td key={ci}>{renderInline(c, `td-${k}-${ri}-${ci}`, links)}</td>
                   ))}
                 </tr>
               ))}
@@ -172,7 +185,9 @@ function parseBlocks(source: string): ReactNode[] {
           break;
         }
       }
-      const lis = items.map((it, idx) => <li key={idx}>{renderInline(it, `li-${k}-${idx}`)}</li>);
+      const lis = items.map((it, idx) => (
+        <li key={idx}>{renderInline(it, `li-${k}-${idx}`, links)}</li>
+      ));
       blocks.push(ordered ? <ol key={k}>{lis}</ol> : <ul key={k}>{lis}</ul>);
       k++;
       continue;
@@ -184,7 +199,7 @@ function parseBlocks(source: string): ReactNode[] {
       i++;
     }
     if (buf.length > 0) {
-      blocks.push(<p key={k}>{renderInline(buf.join(" "), `p-${k}`)}</p>);
+      blocks.push(<p key={k}>{renderInline(buf.join(" "), `p-${k}`, links)}</p>);
       k++;
     } else {
       i++;
@@ -193,6 +208,12 @@ function parseBlocks(source: string): ReactNode[] {
   return blocks;
 }
 
-export function Markdown({ source }: { source: string }) {
-  return <>{parseBlocks(source)}</>;
+export function Markdown({
+  source,
+  links = {},
+}: {
+  source: string;
+  links?: Record<string, string>;
+}) {
+  return <>{parseBlocks(source, links)}</>;
 }
