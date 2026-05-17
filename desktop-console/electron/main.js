@@ -1,6 +1,6 @@
 "use strict";
 
-// Native desktop shell for the Security Radio dispatch console.
+// safeT Command — native desktop shell for the safeT PTT dispatch console.
 // The Node server already builds and serves the web console with client-side
 // routing, so this app simply points a hardened Electron window at that origin.
 // The server address is configurable at runtime (env var or stored on the box).
@@ -134,8 +134,8 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 680,
-    backgroundColor: "#0b0f14",
-    title: "Security Radio Dispatch Console",
+    backgroundColor: "#0B1220",
+    title: "safeT Command",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

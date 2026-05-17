@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 150" width="560" height="150" role="img" aria-label="safeT PTT">
+  <title>safeT PTT — Talk · Transmit · Together</title>
+  <!-- Symbol -->
+  <g transform="translate(14,14) scale(1.27)">
+    <rect x="10" y="60" width="12" height="20" rx="2.5" fill="#2563EB"/>
+    <rect x="26" y="49" width="12" height="31" rx="2.5" fill="#2563EB"/>
+    <rect x="42" y="38" width="12" height="42" rx="2.5" fill="#2563EB"/>
+    <rect x="40" y="12" width="46" height="12" rx="3" fill="#2563EB"/>
+    <path d="M67 24 L53 51 L63 51 L55 84 L80 48 L67 48 L75 24 Z" fill="#22C5E5"/>
+  </g>
+  <!-- Wordmark (set in Exo 2 where available) -->
+  <g font-family="'Exo 2','Segoe UI',system-ui,-apple-system,sans-serif">
+    <text x="170" y="82" font-size="64" font-weight="600" letter-spacing="-1">
+      <tspan fill="#F3F4F6">safe</tspan><tspan fill="#22C5E5">T</tspan>
+    </text>
+    <text x="172" y="112" font-size="22" font-weight="600" letter-spacing="10" fill="#94A3B8">PTT</text>
+    <text x="173" y="136" font-size="12.5" font-weight="500" letter-spacing="3.2" fill="#94A3B8">TALK · TRANSMIT · TOGETHER</text>
+  </g>
+</svg>

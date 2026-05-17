@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="safeT Command">
+  <title>safeT Command</title>
+  <!-- Source for the packaged app icon. Export to icon.ico / icon.icns / icon.png
+       (>=512px) for electron-builder. See repo brand/ for canonical assets. -->
+  <rect width="1024" height="1024" rx="230" fill="#0B1220"/>
+  <g transform="translate(147,147) scale(7.6)">
+    <rect x="10" y="60" width="12" height="20" rx="2.5" fill="#2563EB"/>
+    <rect x="26" y="49" width="12" height="31" rx="2.5" fill="#2563EB"/>
+    <rect x="42" y="38" width="12" height="42" rx="2.5" fill="#2563EB"/>
+    <rect x="40" y="12" width="46" height="12" rx="3" fill="#2563EB"/>
+    <path d="M67 24 L53 51 L63 51 L55 84 L80 48 L67 48 L75 24 Z" fill="#22C5E5"/>
+  </g>
+</svg>

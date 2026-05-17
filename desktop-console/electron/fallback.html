@@ -7,7 +7,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';"
     />
-    <title>Security Radio Dispatch Console</title>
+    <title>safeT Command</title>
     <style>
       :root {
         color-scheme: dark;
@@ -21,30 +21,45 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #0b0f14;
-        color: #d8e0e8;
-        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        background: #0b1220;
+        color: #ffffff;
+        font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
       }
       .card {
         width: 460px;
         max-width: calc(100vw - 48px);
         padding: 32px;
-        background: #141a22;
-        border: 1px solid #232c38;
-        border-radius: 8px;
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 12px;
       }
-      h1 {
-        margin: 0 0 4px;
-        font-size: 18px;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: #2fbf4e;
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+      .brand svg {
+        width: 40px;
+        height: 40px;
+      }
+      .brand-name {
+        font-family: "Exo 2", "Segoe UI", system-ui, sans-serif;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+      .brand-name .accent {
+        color: #22c5e5;
+      }
+      .brand-name .sub {
+        color: #94a3b8;
       }
       p {
         margin: 8px 0;
         line-height: 1.45;
         font-size: 14px;
-        color: #9aa7b4;
+        color: #94a3b8;
       }
       label {
         display: block;
@@ -52,20 +67,20 @@
         font-size: 12px;
         letter-spacing: 0.05em;
         text-transform: uppercase;
-        color: #9aa7b4;
+        color: #94a3b8;
       }
       input {
         width: 100%;
         padding: 10px 12px;
         font-size: 14px;
-        color: #eef3f7;
-        background: #0b0f14;
-        border: 1px solid #2c3848;
-        border-radius: 4px;
+        color: #ffffff;
+        background: #0b1220;
+        border: 1px solid #1f2937;
+        border-radius: 6px;
       }
       input:focus {
         outline: none;
-        border-color: #2fbf4e;
+        border-color: #2563eb;
       }
       .row {
         display: flex;
@@ -77,10 +92,10 @@
         padding: 10px 16px;
         font-size: 14px;
         font-weight: 600;
-        color: #06210d;
-        background: #2fbf4e;
+        color: #ffffff;
+        background: #2563eb;
         border: 0;
-        border-radius: 4px;
+        border-radius: 6px;
         cursor: pointer;
       }
       .row button {
@@ -88,14 +103,14 @@
         flex: 1;
       }
       button.secondary {
-        color: #d8e0e8;
-        background: #2c3848;
+        color: #f3f4f6;
+        background: #1f2937;
       }
       button:hover {
         filter: brightness(1.08);
       }
       .err {
-        color: #ff6b6b;
+        color: #ef4444;
       }
       [hidden] {
         display: none !important;
@@ -104,13 +119,22 @@
   </head>
   <body>
     <main class="card">
-      <h1>Dispatch Console</h1>
+      <div class="brand">
+        <svg viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="10" y="60" width="12" height="20" rx="2.5" fill="#2563eb" />
+          <rect x="26" y="49" width="12" height="31" rx="2.5" fill="#2563eb" />
+          <rect x="42" y="38" width="12" height="42" rx="2.5" fill="#2563eb" />
+          <rect x="40" y="12" width="46" height="12" rx="3" fill="#2563eb" />
+          <path d="M67 24 L53 51 L63 51 L55 84 L80 48 L67 48 L75 24 Z" fill="#22c5e5" />
+        </svg>
+        <span class="brand-name">safe<span class="accent">T</span> <span class="sub">Command</span></span>
+      </div>
       <p id="lead">Loading…</p>
 
       <div id="setup" hidden>
         <label for="url">Dispatch server address</label>
         <input id="url" type="text" placeholder="https://dispatch.example.com" autocomplete="off" />
-        <p>The address of your Security Radio server. It is remembered on this computer.</p>
+        <p>The address of your safeT PTT server. It is remembered on this computer.</p>
         <p id="err" class="err" hidden></p>
         <button id="connect">Connect</button>
       </div>
@@ -135,7 +159,7 @@
 
       function showSetup(url) {
         errorEl.hidden = true;
-        leadEl.textContent = "Connect this console to your dispatch server.";
+        leadEl.textContent = "Connect safeT Command to your dispatch server.";
         urlInput.value = url || "";
         setupEl.hidden = false;
         urlInput.focus();
