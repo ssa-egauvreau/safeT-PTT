@@ -288,6 +288,9 @@ class RadioViewModel(
             is RadioUiEvent.SaveAgencyRadioKey -> {
                 val key = event.key.trim()
                 radioPreferences.setAgencyRadioKey(key)
+                // REST picks up the key per request; voice must drop its socket
+                // to stop using the previous agency's key on the live stream.
+                voiceRelay.reconnect()
                 _uiState.update {
                     it.copy(
                         agencyRadioKey = key,

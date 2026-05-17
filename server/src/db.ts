@@ -53,6 +53,15 @@ async function ensureAgencyScopedKey(p: pg.Pool, table: "unit_aliases" | "radio_
   await p.query(`ALTER TABLE ${table} ADD PRIMARY KEY (agency_id, unit_id);`);
 }
 
+/** Whether `table` already has `column` — used to run a migration backfill exactly once. */
+async function columnExists(p: pg.Pool, table: string, column: string): Promise<boolean> {
+  const res = await p.query(
+    `SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2;`,
+    [table, column],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
 /**
  * Creates every table the platform needs, migrates a single-tenant database
  * into the default agency, and seeds the default channels. Safe to run on each boot.
@@ -124,6 +133,9 @@ export async function ensureSchema(): Promise<void> {
       ip TEXT
     );
   `);
+  // Captured before the column is added: audit_log.agency_id is intentionally
+  // left NULL for platform-level events, so the backfill below must run once only.
+  const auditAgencyIdExisted = await columnExists(p, "audit_log", "agency_id");
   await p.query(`ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS agency_id INT REFERENCES agencies(id) ON DELETE CASCADE;`);
 
   await p.query(`
@@ -218,7 +230,11 @@ export async function ensureSchema(): Promise<void> {
   await p.query(`UPDATE users SET agency_id = $1 WHERE agency_id IS NULL AND role <> 'owner';`, [defaultAgencyId]);
   await p.query(`UPDATE transmissions SET agency_id = $1 WHERE agency_id IS NULL;`, [defaultAgencyId]);
   await p.query(`UPDATE alerts SET agency_id = $1 WHERE agency_id IS NULL;`, [defaultAgencyId]);
-  await p.query(`UPDATE audit_log SET agency_id = $1 WHERE agency_id IS NULL;`, [defaultAgencyId]);
+  // Only on the migration boot — afterwards a NULL agency_id marks a platform
+  // event (e.g. agency deletion) and must not be reassigned to a tenant.
+  if (!auditAgencyIdExisted) {
+    await p.query(`UPDATE audit_log SET agency_id = $1 WHERE agency_id IS NULL;`, [defaultAgencyId]);
+  }
   await p.query(`UPDATE unit_aliases SET agency_id = $1 WHERE agency_id IS NULL;`, [defaultAgencyId]);
   await p.query(`UPDATE radio_positions SET agency_id = $1 WHERE agency_id IS NULL;`, [defaultAgencyId]);
 

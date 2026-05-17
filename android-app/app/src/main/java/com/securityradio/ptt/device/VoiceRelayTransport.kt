@@ -239,6 +239,22 @@ class VoiceRelayTransport(
         inbound.stop()
     }
 
+    /**
+     * Drop and reopen the relay socket so a changed agency radio key takes
+     * effect on live voice immediately, instead of staying on the old tenant
+     * until the connection happens to drop.
+     */
+    fun reconnect() {
+        synchronized(connectionLock) {
+            socketReady.set(false)
+            pcmAccLen = 0
+            webSocketRef.getAndSet(null)?.close(1001, "reconnect")
+            if (wantOnline.get()) {
+                openSocketLocked()
+            }
+        }
+    }
+
     /** Permanent teardown when discarding transport (normally unused — prefer [disconnect]). */
     fun shutdown() {
         disconnect()
