@@ -979,14 +979,79 @@ code.mono {
 .leaflet-container {
   background: var(--bg);
 }
-.radio-dot {
+.radio-pin {
+  position: relative;
   display: block;
-  width: 14px;
-  height: 14px;
+  width: 22px;
+  height: 22px;
+}
+.radio-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
   border-radius: 50%;
   background: var(--accent-2);
   border: 2px solid #fff;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+.radio-heading {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+}
+.radio-heading::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  margin-left: -4px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 6px solid #fff;
+}
+.radio-pin.stale .radio-dot {
+  background: var(--text-muted);
+  opacity: 0.7;
+}
+.radio-pin.stale .radio-heading::before {
+  border-bottom-color: var(--text-muted);
+  opacity: 0.7;
+}
+.radio-pin.emergency .radio-dot {
+  background: var(--red);
+}
+.radio-pin.emergency .radio-heading::before {
+  border-bottom-color: var(--red);
+}
+.radio-pin.emergency::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 50%;
+  border: 2px solid var(--red);
+  animation: radio-pulse 1.5s ease-out infinite;
+}
+@keyframes radio-pulse {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+.count-emg {
+  color: var(--red);
+  font-weight: 600;
+}
+.leaflet-popup-content .popup-emg {
+  color: var(--red);
 }
 
 .alerts-panel {

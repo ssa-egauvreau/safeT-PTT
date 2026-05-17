@@ -6,6 +6,11 @@ import { useUnitAliasResolver } from "../unitAliases";
 
 const OSM_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const OSM_ATTRIBUTION = "&copy; OpenStreetMap contributors";
+const POLL_MS = 5000;
+/** A radio that has not reported within this window is shown faded. */
+const STALE_MS = 5 * 60_000;
+
+type MarkerState = "live" | "stale" | "emergency";
 
 function escapeHtml(value: string): string {
   return value.replace(
@@ -26,22 +31,32 @@ function ageText(iso: string): string {
   return `${Math.floor(minutes / 60)} h ago`;
 }
 
-function radioIcon(): L.DivIcon {
+function isStale(iso: string): boolean {
+  const ms = Date.now() - new Date(iso).getTime();
+  return Number.isFinite(ms) && ms > STALE_MS;
+}
+
+/** Marker icon: a dot tinted by state, with an optional heading arrow. */
+function radioDivIcon(state: MarkerState, heading: number | null): L.DivIcon {
+  const arrow =
+    heading == null
+      ? ""
+      : `<i class="radio-heading" style="transform:rotate(${Math.round(heading)}deg)"></i>`;
   return L.divIcon({
     className: "radio-marker",
-    html: '<span class="radio-dot"></span>',
-    iconSize: [18, 18],
-    iconAnchor: [9, 9],
-    popupAnchor: [0, -10],
+    html: `<span class="radio-pin ${state}">${arrow}<i class="radio-dot"></i></span>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+    popupAnchor: [0, -13],
   });
 }
 
 export function MapPanel() {
   const mapElRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const markersRef = useRef<Map<string, { marker: L.Marker; iconKey: string }>>(new Map());
   const fittedRef = useRef(false);
-  const [count, setCount] = useState(0);
+  const [stats, setStats] = useState({ total: 0, emergency: 0 });
   const [error, setError] = useState<string | null>(null);
 
   // The poll effect runs once; a ref keeps it reading the latest alias resolver.
@@ -70,41 +85,79 @@ export function MapPanel() {
     let cancelled = false;
     async function poll() {
       try {
-        const res = await api.locations();
+        // Positions and alerts together, so a unit in emergency is flagged on the map.
+        const [locs, alertList] = await Promise.all([api.locations(), api.alerts()]);
         const map = mapRef.current;
         if (cancelled || !map) {
           return;
         }
         setError(null);
-        setCount(res.positions.length);
+
+        const emergencyUnits = new Set(
+          alertList.alerts
+            .filter((a) => a.kind === "emergency" && a.active && a.from_unit)
+            .map((a) => String(a.from_unit).toUpperCase()),
+        );
+
         const seen = new Set<string>();
-        for (const p of res.positions) {
+        let emergencyCount = 0;
+        for (const p of locs.positions) {
           seen.add(p.unit_id);
+          const inEmergency = emergencyUnits.has(p.unit_id.toUpperCase());
+          const state: MarkerState = inEmergency ? "emergency" : isStale(p.updated_at) ? "stale" : "live";
+          if (inEmergency) {
+            emergencyCount++;
+          }
+          const heading =
+            typeof p.heading === "number" && Number.isFinite(p.heading) ? p.heading : null;
           const latlng: L.LatLngExpression = [p.lat, p.lon];
           const label = p.display_name || aliasRef.current(p.unit_id);
+          const speed =
+            typeof p.speed_mps === "number" && p.speed_mps > 0.5
+              ? `${Math.round(p.speed_mps * 2.237)} mph`
+              : null;
           const popup =
+            (inEmergency ? `<b class="popup-emg">EMERGENCY</b><br/>` : "") +
             `<b>${escapeHtml(label)}</b><br/>` +
             `Channel: ${escapeHtml(p.channel_name ?? "—")}<br/>` +
             `Unit: ${escapeHtml(aliasRef.current(p.unit_id))}<br/>` +
+            (speed ? `Speed: ${escapeHtml(speed)}<br/>` : "") +
+            (typeof p.accuracy_m === "number" ? `Accuracy: &plusmn;${Math.round(p.accuracy_m)} m<br/>` : "") +
             `Updated ${escapeHtml(ageText(p.updated_at))}`;
-          let marker = markersRef.current.get(p.unit_id);
-          if (!marker) {
-            marker = L.marker(latlng, { icon: radioIcon() }).addTo(map);
-            markersRef.current.set(p.unit_id, marker);
+
+          const iconKey = `${state}:${heading == null ? "x" : Math.round(heading / 15)}`;
+          let entry = markersRef.current.get(p.unit_id);
+          if (!entry) {
+            const marker = L.marker(latlng, {
+              icon: radioDivIcon(state, heading),
+              zIndexOffset: inEmergency ? 1000 : 0,
+            }).addTo(map);
+            entry = { marker, iconKey };
+            markersRef.current.set(p.unit_id, entry);
           } else {
-            marker.setLatLng(latlng);
+            entry.marker.setLatLng(latlng);
+            if (entry.iconKey !== iconKey) {
+              entry.marker.setIcon(radioDivIcon(state, heading));
+              entry.marker.setZIndexOffset(inEmergency ? 1000 : 0);
+              entry.iconKey = iconKey;
+            }
           }
-          marker.bindPopup(popup);
+          entry.marker.bindPopup(popup);
         }
-        for (const [unit, marker] of markersRef.current) {
+        for (const [unit, entry] of markersRef.current) {
           if (!seen.has(unit)) {
-            marker.remove();
+            entry.marker.remove();
             markersRef.current.delete(unit);
           }
         }
+        setStats({ total: locs.positions.length, emergency: emergencyCount });
         if (!fittedRef.current && markersRef.current.size > 0) {
           fittedRef.current = true;
-          map.fitBounds(L.featureGroup([...markersRef.current.values()]).getBounds().pad(0.3));
+          map.fitBounds(
+            L.featureGroup([...markersRef.current.values()].map((e) => e.marker))
+              .getBounds()
+              .pad(0.3),
+          );
         }
       } catch {
         if (!cancelled) {
@@ -113,7 +166,7 @@ export function MapPanel() {
       }
     }
     void poll();
-    const timer = window.setInterval(poll, 5000);
+    const timer = window.setInterval(poll, POLL_MS);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -124,7 +177,12 @@ export function MapPanel() {
     <div className="map-panel">
       <div className="map-head">
         <h3>Radio Map</h3>
-        <span className="count">{count} reporting</span>
+        <span className="count">
+          {stats.total} reporting
+          {stats.emergency > 0 && (
+            <span className="count-emg"> · {stats.emergency} emergency</span>
+          )}
+        </span>
       </div>
       {error && <div className="banner error">{error}</div>}
       <div ref={mapElRef} className="map-canvas" />
