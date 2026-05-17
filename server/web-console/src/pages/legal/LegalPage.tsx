@@ -2,11 +2,12 @@ import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { SafetMark } from "../../icons";
 import { Markdown } from "./Markdown";
-// The legal documents live at the repo root and are the single source of truth;
-// they are imported as raw markdown and rendered client-side.
-import termsSource from "../../../../../legal/TERMS_OF_SERVICE.md?raw";
-import privacySource from "../../../../../legal/PRIVACY_POLICY.md?raw";
-import eulaSource from "../../../../../legal/EULA.md?raw";
+// The legal documents live in server/legal/ (inside the deploy root so the
+// build can bundle them) and are the single source of truth; they are imported
+// as raw markdown and rendered client-side.
+import termsSource from "../../../../legal/TERMS_OF_SERVICE.md?raw";
+import privacySource from "../../../../legal/PRIVACY_POLICY.md?raw";
+import eulaSource from "../../../../legal/EULA.md?raw";
 
 export type LegalDocId = "terms" | "privacy" | "eula";
 
