@@ -37,4 +37,7 @@ sealed interface RadioUiEvent {
 
     data object ToggleVoiceAnnounceChannelTune : RadioUiEvent
     data object PlayLastTransmission : RadioUiEvent
+
+    /** Bind this handset to an agency (tenant) by its radio key; blank clears the override. */
+    data class SaveAgencyRadioKey(val key: String) : RadioUiEvent
 }

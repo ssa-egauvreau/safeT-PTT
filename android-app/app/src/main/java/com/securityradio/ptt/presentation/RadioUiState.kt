@@ -62,6 +62,8 @@ data class RadioUiState(
     val announceChannelNameOnTune: Boolean,
     /** Caption used for one-shot replay (text-first until streamed audio replay exists). */
     val lastRxReplayCaption: String,
+    /** Agency radio key configured on this device; blank means use the build-time key. */
+    val agencyRadioKey: String,
 ) {
     init {
         require(softKeyLabels.size == SOFT_KEY_COUNT) {
@@ -110,6 +112,7 @@ data class RadioUiState(
             radiosOnlineOnChannel = null,
             announceChannelNameOnTune = true,
             lastRxReplayCaption = "",
+            agencyRadioKey = "",
         )
     }
 }

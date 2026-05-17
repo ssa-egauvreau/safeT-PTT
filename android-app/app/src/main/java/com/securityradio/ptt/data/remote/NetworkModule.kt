@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit
 
 object NetworkModule {
 
-    private fun buildRetrofit(baseUrl: String, apiKey: String): Retrofit {
+    private fun buildRetrofit(baseUrl: String, apiKeyProvider: () -> String): Retrofit {
         val logging = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) {
                 HttpLoggingInterceptor.Level.BASIC
@@ -19,7 +19,10 @@ object NetworkModule {
             }
         }
 
+        // The key is resolved per request so an on-device agency key change
+        // takes effect immediately, without rebuilding or restarting the app.
         val apiKeyInterceptor = Interceptor { chain ->
+            val apiKey = apiKeyProvider().trim()
             val request = if (apiKey.isNotBlank()) {
                 chain.request().newBuilder().header("X-Radio-Key", apiKey).build()
             } else {
@@ -42,9 +45,9 @@ object NetworkModule {
             .build()
     }
 
-    fun channelsApi(baseUrl: String, apiKey: String): ChannelsApi =
-        buildRetrofit(baseUrl, apiKey).create(ChannelsApi::class.java)
+    fun channelsApi(baseUrl: String, apiKeyProvider: () -> String): ChannelsApi =
+        buildRetrofit(baseUrl, apiKeyProvider).create(ChannelsApi::class.java)
 
-    fun radioApi(baseUrl: String, apiKey: String): RadioApi =
-        buildRetrofit(baseUrl, apiKey).create(RadioApi::class.java)
+    fun radioApi(baseUrl: String, apiKeyProvider: () -> String): RadioApi =
+        buildRetrofit(baseUrl, apiKeyProvider).create(RadioApi::class.java)
 }

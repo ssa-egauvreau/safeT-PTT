@@ -34,6 +34,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -874,6 +875,42 @@ fun HardwareMappingDialog(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        Text(
+                            text = "SITE — AGENCY RADIO KEY",
+                            style = styles.body.copy(fontWeight = FontWeight.Bold),
+                            color = p.textPrimary,
+                        )
+                        Text(
+                            text = if (state.agencyRadioKey.isBlank()) {
+                                "Using the built-in key. Paste the radio key from your agency owner to bind this handset to that agency."
+                            } else {
+                                "Bound to a custom agency key. Clear the field and save to fall back to the built-in key."
+                            },
+                            style = styles.status,
+                            color = p.textMuted,
+                        )
+                        var agencyKeyDraft by remember(state.agencyRadioKey) {
+                            mutableStateOf(state.agencyRadioKey)
+                        }
+                        OutlinedTextField(
+                            value = agencyKeyDraft,
+                            onValueChange = { agencyKeyDraft = it },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("AGENCY RADIO KEY") },
+                        )
+                        TextButton(
+                            onClick = { onEvent(RadioUiEvent.SaveAgencyRadioKey(agencyKeyDraft)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = agencyKeyDraft.trim() != state.agencyRadioKey,
+                            colors = ButtonDefaults.textButtonColors(
+                                containerColor = p.softKeyInactiveFill,
+                                contentColor = p.textPrimary,
+                            ),
+                        ) {
+                            Text("SAVE AGENCY KEY".uppercase(Locale.US))
+                        }
+                        HorizontalDivider(color = p.divider)
                         Text(
                             text = "DISPLAY — DAY / NIGHT",
                             style = styles.body.copy(fontWeight = FontWeight.Bold),

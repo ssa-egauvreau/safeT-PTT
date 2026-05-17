@@ -92,6 +92,7 @@ class RadioViewModel(
                 hardwareMappings = hardwareMappingRepository.getAllMappings(),
                 themeMode = radioPreferences.getThemeMode(),
                 announceChannelNameOnTune = radioPreferences.isAnnounceChannelOnTuneEnabled(),
+                agencyRadioKey = radioPreferences.getAgencyRadioKey(),
             )
         }
         viewModelScope.launch {
@@ -284,6 +285,17 @@ class RadioViewModel(
                 _uiState.update { it.copy(announceChannelNameOnTune = next) }
             }
             RadioUiEvent.PlayLastTransmission -> playLastTransmission()
+            is RadioUiEvent.SaveAgencyRadioKey -> {
+                val key = event.key.trim()
+                radioPreferences.setAgencyRadioKey(key)
+                _uiState.update {
+                    it.copy(
+                        agencyRadioKey = key,
+                        statusMessage = if (key.isBlank()) "AGENCY KEY CLEARED" else "AGENCY KEY SAVED",
+                    )
+                }
+                soundPlayer.playChannelSwitch()
+            }
         }
     }
 

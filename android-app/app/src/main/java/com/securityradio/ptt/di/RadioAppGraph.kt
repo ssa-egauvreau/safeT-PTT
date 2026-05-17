@@ -39,9 +39,17 @@ class RadioAppGraph(application: Application) {
 
     private val inboundVoicePlayer = InboundVoicePlayer()
 
+    /**
+     * Effective radio key: an agency key configured on the device wins, so one
+     * APK can serve any agency; otherwise the build-time [BuildConfig.RADIO_API_KEY].
+     */
+    private val radioApiKeyProvider: () -> String = {
+        radioPreferences.getAgencyRadioKey().ifBlank { BuildConfig.RADIO_API_KEY }
+    }
+
     val voiceRelay: VoiceRelayTransport = VoiceRelayTransport(
         httpApiBaseUrl = BuildConfig.API_BASE_URL,
-        apiKey = BuildConfig.RADIO_API_KEY,
+        apiKeyProvider = radioApiKeyProvider,
         inbound = inboundVoicePlayer,
     )
 
@@ -55,12 +63,12 @@ class RadioAppGraph(application: Application) {
 
     val channelsApi: ChannelsApi = NetworkModule.channelsApi(
         baseUrl = BuildConfig.API_BASE_URL,
-        apiKey = BuildConfig.RADIO_API_KEY,
+        apiKeyProvider = radioApiKeyProvider,
     )
 
     val radioApi: RadioApi = NetworkModule.radioApi(
         baseUrl = BuildConfig.API_BASE_URL,
-        apiKey = BuildConfig.RADIO_API_KEY,
+        apiKeyProvider = radioApiKeyProvider,
     )
 
     val locationReporter: LocationReporter = LocationReporter(application, radioApi)

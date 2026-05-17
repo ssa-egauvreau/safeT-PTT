@@ -39,7 +39,7 @@ fun httpApiBaseUrlToVoiceWebSocketUrl(httpBaseUrl: String): String {
  */
 class VoiceRelayTransport(
     httpApiBaseUrl: String,
-    private val apiKey: String,
+    private val apiKeyProvider: () -> String,
     private val inbound: InboundVoicePlayer,
 ) : StreamingPcmSink {
 
@@ -257,7 +257,8 @@ class VoiceRelayTransport(
 
     private fun openSocketLocked() {
         val rb = Request.Builder().url(wsUrl)
-        val key = apiKey.trim()
+        // Resolved per connection so an agency key change applies on the next reconnect.
+        val key = apiKeyProvider().trim()
         if (key.isNotEmpty()) {
             rb.header("X-Radio-Key", key)
         }
