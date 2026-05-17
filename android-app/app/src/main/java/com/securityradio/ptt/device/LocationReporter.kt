@@ -63,19 +63,23 @@ class LocationReporter(
         if (running) return
         val lm = locationManager ?: return
         if (!hasPermission()) return
-        running = true
         val request = LocationRequestCompat.Builder(MIN_INTERVAL_MS)
             .setMinUpdateIntervalMillis(MIN_INTERVAL_MS)
             .setMinUpdateDistanceMeters(MIN_DISTANCE_M)
             .build()
         val executor = ContextCompat.getMainExecutor(appContext)
+        var registered = false
         for (provider in PROVIDERS) {
             runCatching {
                 if (lm.isProviderEnabled(provider)) {
                     LocationManagerCompat.requestLocationUpdates(lm, provider, request, executor, listener)
+                    registered = true
                 }
             }
         }
+        // Stay "not running" when no provider was available, so a later start()
+        // can retry once the user enables location services.
+        running = registered
     }
 
     fun stop() {

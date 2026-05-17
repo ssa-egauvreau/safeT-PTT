@@ -60,6 +60,17 @@ function dispatchOrigin() {
   }
 }
 
+/** True when `url` belongs to the configured dispatch origin. */
+function isDispatchUrl(url) {
+  const origin = dispatchOrigin();
+  if (!origin || !url) return false;
+  try {
+    return new URL(url).origin === origin;
+  } catch {
+    return false;
+  }
+}
+
 function loadConsole() {
   if (!mainWindow) return;
   if (!dispatchUrl) {
@@ -77,22 +88,23 @@ function showFallback(mode, error) {
 }
 
 // Only the live dispatch origin may use the microphone (voice transmit).
+// "media" is broader than the mic, so audio-only requests are required and
+// the requesting frame's origin (not the top-level page) is what's checked.
 function configurePermissions() {
-  const isDispatchFrame = (contents) => {
-    const origin = dispatchOrigin();
-    if (!origin) return false;
-    try {
-      return new URL(contents.getURL()).origin === origin;
-    } catch {
-      return false;
-    }
-  };
   const ses = session.defaultSession;
-  ses.setPermissionRequestHandler((contents, permission, callback) => {
-    callback(permission === "media" && isDispatchFrame(contents));
+  ses.setPermissionRequestHandler((_contents, permission, callback, details) => {
+    if (permission !== "media") {
+      callback(false);
+      return;
+    }
+    const mediaTypes = (details && details.mediaTypes) || [];
+    const audioOnly = mediaTypes.length > 0 && mediaTypes.every((type) => type === "audio");
+    callback(audioOnly && isDispatchUrl(details && details.requestingUrl));
   });
-  ses.setPermissionCheckHandler((contents, permission) => {
-    return permission === "media" && !!contents && isDispatchFrame(contents);
+  ses.setPermissionCheckHandler((_contents, permission, requestingOrigin, details) => {
+    if (permission !== "media") return false;
+    if (details && details.mediaType === "video") return false;
+    return isDispatchUrl(requestingOrigin);
   });
 }
 
@@ -151,6 +163,21 @@ function createWindow() {
       shell.openExternal(url);
     }
     return { action: "deny" };
+  });
+
+  // Block in-window navigation away from the dispatch console (links,
+  // window.location); off-origin targets are handed to the OS browser.
+  const guardNavigation = (event, url) => {
+    if (isDispatchUrl(url) || (url || "").startsWith("file:")) return;
+    event.preventDefault();
+    if (/^https?:\/\//i.test(url || "")) {
+      shell.openExternal(url);
+    }
+  };
+  mainWindow.webContents.on("will-navigate", guardNavigation);
+  mainWindow.webContents.on("will-frame-navigate", (details) => {
+    if (details.isMainFrame) return; // main frame is covered by will-navigate
+    guardNavigation(details, details.url);
   });
 
   mainWindow.webContents.on(
