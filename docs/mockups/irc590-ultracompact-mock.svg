@@ -1,0 +1,43 @@
+<svg width="900" height="620" viewBox="0 0 900 620" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2f333a"/>
+      <stop offset="1" stop-color="#1e2127"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d7d9dc"/>
+      <stop offset="1" stop-color="#c7cacf"/>
+    </linearGradient>
+  </defs>
+
+  <!-- radio shell silhouette inspired by provided IRC590 top-screen photo -->
+  <path d="M90 210 C130 120, 250 70, 450 64 C650 70, 770 120, 810 210 L840 285 C846 300, 846 320, 840 336 L810 410 C772 490, 664 546, 450 552 C236 546, 128 490, 90 410 L60 336 C54 320, 54 300, 60 285 Z"
+        fill="url(#body)" stroke="#4f5560" stroke-width="5"/>
+
+  <!-- center frame around LCD -->
+  <rect x="250" y="190" width="400" height="320" rx="30" fill="#868b93" stroke="#606671" stroke-width="4"/>
+  <rect x="286" y="226" width="328" height="248" rx="22" fill="url(#screen)" stroke="#a8adb6" stroke-width="3"/>
+
+  <!-- status line -->
+  <rect x="304" y="260" width="292" height="42" rx="6" fill="#d0d4d9"/>
+  <rect x="314" y="272" width="6" height="18" fill="#73c067"/>
+  <rect x="323" y="268" width="6" height="22" fill="#73c067"/>
+  <rect x="332" y="264" width="6" height="26" fill="#73c067"/>
+  <text x="348" y="288" fill="#6a707b" font-size="28" font-family="Arial, Helvetica, sans-serif" font-weight="700">⌀ Z ⌁</text>
+  <text x="530" y="288" fill="#6a707b" font-size="28" font-family="Arial, Helvetica, sans-serif" font-weight="700">ɫ A ▣</text>
+
+  <!-- essential ultra-compact fields -->
+  <text x="450" y="362" text-anchor="middle" fill="#666b74" font-size="58" font-family="Arial, Helvetica, sans-serif">East Zone</text>
+  <text x="450" y="430" text-anchor="middle" fill="#666b74" font-size="58" font-family="Arial, Helvetica, sans-serif">Patrol 1</text>
+
+  <!-- side controls / accents (to match feel of reference image) -->
+  <circle cx="196" cy="290" r="54" fill="#252932" stroke="#5f6673" stroke-width="3"/>
+  <circle cx="704" cy="288" r="56" fill="#252932" stroke="#5f6673" stroke-width="3"/>
+  <circle cx="662" cy="380" r="42" fill="#eb784c" stroke="#a44f35" stroke-width="4"/>
+  <circle cx="450" cy="126" r="64" fill="#2b2f36" stroke="#717887" stroke-width="4"/>
+  <text x="450" y="138" text-anchor="middle" fill="#cfd3db" font-size="42" font-family="Arial, Helvetica, sans-serif" font-weight="700">CH</text>
+
+  <text x="70" y="600" fill="#9ea6b6" font-size="24" font-family="Arial, Helvetica, sans-serif">
+    IRC590 top-screen concept: reference-style shell with ultra-compact LCD (status + zone/channel only).
+  </text>
+</svg>

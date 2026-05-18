@@ -137,6 +137,7 @@ fun RadioScreen(
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val isCompact = maxWidth < 420.dp
+        val isUltraCompact = maxWidth < 300.dp
         val gap = if (isCompact) 6.dp else 8.dp
         val pttHeight = if (isCompact) 52.dp else 58.dp
 
@@ -150,6 +151,7 @@ fun RadioScreen(
                 onEvent = onEvent,
                 onRequestMicPermission = onRequestMicPermission,
                 styles = styles,
+                ultraCompact = isUltraCompact,
             )
             LcdDivider()
             Box(
@@ -162,11 +164,14 @@ fun RadioScreen(
                     onEvent = onEvent,
                     tunerEnabled = tunerEnabled,
                     styles = styles,
+                    ultraCompact = isUltraCompact,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
             LcdDivider()
-            LcdStateBanner(state = state, styles = styles)
+            if (!isUltraCompact) {
+                LcdStateBanner(state = state, styles = styles)
+            }
             LcdPttBar(
                 state = state,
                 lcdNightEffective = lcdNightEffective,
@@ -175,7 +180,9 @@ fun RadioScreen(
                 styles = styles,
             )
             LcdEmergencyRow(state = state, onEvent = onEvent, styles = styles)
-            LcdSoftKeyRow(labels = state.softKeyLabels, state = state, onEvent = onEvent, styles = styles)
+            if (!isUltraCompact) {
+                LcdSoftKeyRow(labels = state.softKeyLabels, state = state, onEvent = onEvent, styles = styles)
+            }
         }
         ScanChannelPickerDialog(state = state, onEvent = onEvent)
         HardwareMappingDialog(state = state, onEvent = onEvent, styles = styles)
@@ -201,6 +208,7 @@ private fun LcdStatusBar(
     onEvent: (RadioUiEvent) -> Unit,
     onRequestMicPermission: () -> Unit,
     styles: LcdTextStyles,
+    ultraCompact: Boolean,
 ) {
     val p = RadioLcdTheme.palette
     Column(
@@ -212,7 +220,7 @@ private fun LcdStatusBar(
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Row(
+        if (!ultraCompact) Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -256,33 +264,35 @@ private fun LcdStatusBar(
                     style = styles.status,
                     color = p.textSecondary,
                 )
-                Box(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .clickable { onEvent(RadioUiEvent.OpenMappingSettings) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "⚙",
-                        style = styles.status.copy(fontSize = 16.sp),
-                        color = p.textSecondary,
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .clickable { onEvent(RadioUiEvent.ToggleDayNight) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    LcdDayNightIcon(
-                        night = lcdNightEffective,
-                        color = p.textSecondary,
-                        modifier = Modifier.size(18.dp),
-                    )
+                if (!ultraCompact) {
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clickable { onEvent(RadioUiEvent.OpenMappingSettings) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "⚙",
+                            style = styles.status.copy(fontSize = 16.sp),
+                            color = p.textSecondary,
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clickable { onEvent(RadioUiEvent.ToggleDayNight) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        LcdDayNightIcon(
+                            night = lcdNightEffective,
+                            color = p.textSecondary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
         }
-        Row(
+        if (!ultraCompact) Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -334,6 +344,7 @@ private fun LcdMainChannelBlock(
     onEvent: (RadioUiEvent) -> Unit,
     tunerEnabled: Boolean,
     styles: LcdTextStyles,
+    ultraCompact: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val p = RadioLcdTheme.palette
@@ -380,7 +391,7 @@ private fun LcdMainChannelBlock(
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Row(
+            if (!ultraCompact) Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -425,17 +436,19 @@ private fun LcdMainChannelBlock(
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
             )
-            val radiosLine = state.radiosOnlineOnChannel?.let { n ->
-                "RADIOS ONLINE · $n"
-            } ?: "RADIOS ONLINE —"
-            Text(
-                text = radiosLine.uppercase(Locale.US),
-                style = styles.status,
-                color = if (state.radiosOnlineOnChannel != null) p.textSecondary else p.textMuted,
-                maxLines = 1,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-            )
+            if (!ultraCompact) {
+                val radiosLine = state.radiosOnlineOnChannel?.let { n ->
+                    "RADIOS ONLINE · $n"
+                } ?: "RADIOS ONLINE —"
+                Text(
+                    text = radiosLine.uppercase(Locale.US),
+                    style = styles.status,
+                    color = if (state.radiosOnlineOnChannel != null) p.textSecondary else p.textMuted,
+                    maxLines = 1,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            }
             if (talkLine.isNotBlank()) {
                 Text(
                     text = talkLine.uppercase(Locale.US),
@@ -447,19 +460,21 @@ private fun LcdMainChannelBlock(
                     textAlign = TextAlign.Center,
                 )
             }
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                LcdBodyLine(text = state.displayLine1, styles = styles)
-                LcdBodyLine(text = state.displayLine2, styles = styles)
-                LcdBodyLine(text = state.displayLine3, styles = styles)
+            if (!ultraCompact) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    LcdBodyLine(text = state.displayLine1, styles = styles)
+                    LcdBodyLine(text = state.displayLine2, styles = styles)
+                    LcdBodyLine(text = state.displayLine3, styles = styles)
+                }
+                Text(
+                    text = state.micHint.uppercase(Locale.US),
+                    style = styles.status,
+                    color = p.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            Text(
-                text = state.micHint.uppercase(Locale.US),
-                style = styles.status,
-                color = p.textMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (state.scanActive && state.channelCatalog.size > 1) {
+            if (!ultraCompact && state.scanActive && state.channelCatalog.size > 1) {
                 Text(
                     text = "CONFIGURE SCAN LIST",
                     style = styles.body,
