@@ -177,6 +177,30 @@ Rebuild after adding files.
 
 ## Troubleshooting
 
+### Railway: “branch connected to production” / “GitHub repo not found”
+
+This usually appears after renaming the GitHub repository (for example from `radio-platform` to **`safeT-PTT`**). Railway still points at the old name until you reconnect it.
+
+1. Open [railway.app](https://railway.app/) → your **project** → click the **API service** (Node/`server` service).
+2. Open **Settings** (gear).
+3. Find **Source** / **Connect Repo** / **GitHub Repo**.
+4. Click **Disconnect** (or **Change repository**).
+5. Click **Connect Repo** (or **Connect GitHub**).
+6. If GitHub asks, **authorize Railway** and allow access to **`ssa-egauvreau/safeT-PTT`**.
+7. Select repository **`safeT-PTT`** (not the old `radio-platform` name).
+8. Set **branch** to **`main`** (this repo uses `main`, not `master`).
+9. Set **Root Directory** to **`server`**.
+10. Confirm **Build Command**: `npm install && npm run build` and **Start Command**: `npm start`.
+11. Save, then click **Deploy** / **Redeploy** once.
+
+**Check variables did not disappear:** **Variables** tab → confirm **`DATABASE_URL`** is still linked to Postgres. Re-add **`RADIO_API_KEY`** if it was cleared.
+
+**Verify:** open `https://safet.up.railway.app/health` after the deploy finishes (green/success in Railway).
+
+If the repo does not appear in the list: GitHub → **Settings** → **Applications** → **Railway** → configure repository access → include **`safeT-PTT`**.
+
+---
+
 | Symptom | What to check |
 |--------|----------------|
 | Android shows **BUSY** while PTT even on Wi‑Fi | You are **OFFLINE** (no `ONLINE` in status), or **`AIR_OCCUPIED=1`** on the server, or `/v1/air` returns errors (treated as busy). |
