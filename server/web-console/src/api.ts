@@ -161,6 +161,36 @@ export interface AgencySound {
   updated_at: string;
 }
 
+export interface Bridge {
+  id: number;
+  name: string;
+  source_type: string;
+  source_url: string | null;
+  device_hint: string | null;
+  target_channel: string;
+  direction: string;
+  yield_to_units: boolean;
+  tx_mode: string;
+  vox_threshold: number;
+  vox_hang_ms: number;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface BridgeInput {
+  name: string;
+  sourceType: string;
+  sourceUrl: string | null;
+  deviceHint: string | null;
+  targetChannel: string;
+  direction: string;
+  yieldToUnits: boolean;
+  txMode: string;
+  voxThreshold: number;
+  voxHangMs: number;
+  enabled: boolean;
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(code: string, status: number) {
@@ -334,6 +364,13 @@ export const api = {
 
   // --- agency branding ---------------------------------------------------
   deleteAgencyLogo: () => request<{ ok: boolean }>("DELETE", "/v1/admin/agency/logo"),
+
+  // --- radio bridges -----------------------------------------------------
+  listBridges: () => request<{ bridges: Bridge[] }>("GET", "/v1/admin/bridges"),
+  createBridge: (input: BridgeInput) => request<{ bridge: Bridge }>("POST", "/v1/admin/bridges", input),
+  updateBridge: (id: number, patch: Partial<BridgeInput>) =>
+    request<{ bridge: Bridge }>("PATCH", `/v1/admin/bridges/${id}`, patch),
+  deleteBridge: (id: number) => request<{ ok: boolean }>("DELETE", `/v1/admin/bridges/${id}`),
 
   // --- simulcast channels ------------------------------------------------
   listSimulcasts: () => request<{ simulcasts: Simulcast[] }>("GET", "/v1/simulcast"),

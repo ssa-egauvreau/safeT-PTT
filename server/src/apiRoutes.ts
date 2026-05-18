@@ -32,6 +32,14 @@ import {
   deleteSimulcast,
   listSimulcasts,
   updateSimulcast,
+  BRIDGE_SOURCE_TYPES,
+  BRIDGE_DIRECTIONS,
+  BRIDGE_TX_MODES,
+  createBridge,
+  deleteBridge,
+  listBridges,
+  updateBridge,
+  type BridgeInput,
   getTransmissionAudio,
   getUserById,
   getUserByUsername,
@@ -82,6 +90,17 @@ const LOGO_MAX_BYTES = "512kb";
 /** Reads a device-category value from request input, or null when absent/invalid. */
 function asDeviceType(value: unknown): string | null {
   return isDeviceType(value) ? value : null;
+}
+
+/** Picks `value` when it is one of `allowed`, else `fallback`. */
+function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+/** Clamps request input to a numeric range, falling back when it is not a number. */
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.min(Math.max(n, min), max) : fallback;
 }
 
 function clientIp(req: Request): string {
@@ -850,6 +869,117 @@ export function createApiRouter(): Router {
         actorUserId: req.authUser!.id,
         actorName: req.authUser!.username,
         action: "simulcast_delete",
+        target: String(id),
+        ip: clientIp(req),
+      });
+      res.json({ ok: true });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // --- radio bridges (admin) ---------------------------------------------
+
+  router.get("/admin/bridges", requireAdmin, async (req, res) => {
+    try {
+      res.json({ bridges: await listBridges(req.authUser!.agencyId!) });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.post("/admin/bridges", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const name = String(body.name ?? "").trim();
+      const targetChannel = String(body.targetChannel ?? "").trim();
+      if (!name || !targetChannel) {
+        res.status(400).json({ error: "missing_fields" });
+        return;
+      }
+      const direction = oneOf(body.direction, BRIDGE_DIRECTIONS, "inbound");
+      const input: BridgeInput = {
+        name,
+        sourceType: oneOf(body.sourceType, BRIDGE_SOURCE_TYPES, "stream_url"),
+        sourceUrl: body.sourceUrl ? String(body.sourceUrl).trim() : null,
+        deviceHint: body.deviceHint ? String(body.deviceHint).trim() : null,
+        targetChannel,
+        direction,
+        yieldToUnits:
+          body.yieldToUnits === undefined ? direction !== "bidirectional" : Boolean(body.yieldToUnits),
+        txMode: oneOf(body.txMode, BRIDGE_TX_MODES, "passthrough"),
+        voxThreshold: clampNumber(body.voxThreshold, 0, 1, 0.02),
+        voxHangMs: Math.round(clampNumber(body.voxHangMs, 100, 10000, 1500)),
+        enabled: Boolean(body.enabled),
+      };
+      const bridge = await createBridge(agencyId, input);
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "bridge_create",
+        target: name,
+        detail: { sourceType: input.sourceType, targetChannel },
+        ip: clientIp(req),
+      });
+      res.status(201).json({ bridge });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.patch("/admin/bridges/:id", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const id = Number(req.params.id);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const patch: Partial<BridgeInput> = {};
+      if (body.name !== undefined) patch.name = String(body.name);
+      if (body.sourceType !== undefined) patch.sourceType = oneOf(body.sourceType, BRIDGE_SOURCE_TYPES, "stream_url");
+      if (body.sourceUrl !== undefined) patch.sourceUrl = body.sourceUrl ? String(body.sourceUrl).trim() : null;
+      if (body.deviceHint !== undefined) patch.deviceHint = body.deviceHint ? String(body.deviceHint).trim() : null;
+      if (body.targetChannel !== undefined) patch.targetChannel = String(body.targetChannel);
+      if (body.direction !== undefined) patch.direction = oneOf(body.direction, BRIDGE_DIRECTIONS, "inbound");
+      if (body.yieldToUnits !== undefined) patch.yieldToUnits = Boolean(body.yieldToUnits);
+      if (body.txMode !== undefined) patch.txMode = oneOf(body.txMode, BRIDGE_TX_MODES, "passthrough");
+      if (body.voxThreshold !== undefined) patch.voxThreshold = clampNumber(body.voxThreshold, 0, 1, 0.02);
+      if (body.voxHangMs !== undefined) patch.voxHangMs = Math.round(clampNumber(body.voxHangMs, 100, 10000, 1500));
+      if (body.enabled !== undefined) patch.enabled = Boolean(body.enabled);
+      const bridge = await updateBridge(id, agencyId, patch);
+      if (!bridge) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "bridge_update",
+        target: bridge.name,
+        detail: { fields: Object.keys(patch) },
+        ip: clientIp(req),
+      });
+      res.json({ bridge });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.delete("/admin/bridges/:id", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const id = Number(req.params.id);
+      const ok = await deleteBridge(id, agencyId);
+      if (!ok) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "bridge_delete",
         target: String(id),
         ip: clientIp(req),
       });

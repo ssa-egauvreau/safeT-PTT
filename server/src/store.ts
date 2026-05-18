@@ -596,6 +596,126 @@ export async function deleteSimulcast(id: number, agencyId: number): Promise<boo
   return (res.rowCount ?? 0) > 0;
 }
 
+// --- radio bridges -------------------------------------------------------
+
+export const BRIDGE_SOURCE_TYPES = ["stream_url", "audio_device"] as const;
+export const BRIDGE_DIRECTIONS = ["inbound", "bidirectional"] as const;
+export const BRIDGE_TX_MODES = ["passthrough", "vocoder"] as const;
+
+export interface BridgeRow {
+  id: number;
+  name: string;
+  source_type: string;
+  source_url: string | null;
+  device_hint: string | null;
+  target_channel: string;
+  direction: string;
+  yield_to_units: boolean;
+  tx_mode: string;
+  vox_threshold: number;
+  vox_hang_ms: number;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface BridgeInput {
+  name: string;
+  sourceType: string;
+  sourceUrl: string | null;
+  deviceHint: string | null;
+  targetChannel: string;
+  direction: string;
+  yieldToUnits: boolean;
+  txMode: string;
+  voxThreshold: number;
+  voxHangMs: number;
+  enabled: boolean;
+}
+
+const BRIDGE_COLS =
+  "id, name, source_type, source_url, device_hint, target_channel, direction, " +
+  "yield_to_units, tx_mode, vox_threshold, vox_hang_ms, enabled, created_at";
+
+export async function listBridges(agencyId: number): Promise<BridgeRow[]> {
+  const res = await requirePool().query<BridgeRow>(
+    `SELECT ${BRIDGE_COLS} FROM radio_bridges WHERE agency_id = $1 ORDER BY name ASC;`,
+    [agencyId],
+  );
+  return res.rows;
+}
+
+export async function createBridge(agencyId: number, input: BridgeInput): Promise<BridgeRow> {
+  const res = await requirePool().query<BridgeRow>(
+    `INSERT INTO radio_bridges
+       (agency_id, name, source_type, source_url, device_hint, target_channel,
+        direction, yield_to_units, tx_mode, vox_threshold, vox_hang_ms, enabled)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     RETURNING ${BRIDGE_COLS};`,
+    [
+      agencyId,
+      input.name.trim(),
+      input.sourceType,
+      input.sourceUrl,
+      input.deviceHint,
+      input.targetChannel.trim(),
+      input.direction,
+      input.yieldToUnits,
+      input.txMode,
+      input.voxThreshold,
+      input.voxHangMs,
+      input.enabled,
+    ],
+  );
+  return res.rows[0]!;
+}
+
+export async function updateBridge(
+  id: number,
+  agencyId: number,
+  patch: Partial<BridgeInput>,
+): Promise<BridgeRow | null> {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  let i = 1;
+  const col = (name: string, value: unknown) => {
+    sets.push(`${name} = $${i++}`);
+    vals.push(value);
+  };
+  if (patch.name !== undefined) col("name", patch.name.trim());
+  if (patch.sourceType !== undefined) col("source_type", patch.sourceType);
+  if (patch.sourceUrl !== undefined) col("source_url", patch.sourceUrl);
+  if (patch.deviceHint !== undefined) col("device_hint", patch.deviceHint);
+  if (patch.targetChannel !== undefined) col("target_channel", patch.targetChannel.trim());
+  if (patch.direction !== undefined) col("direction", patch.direction);
+  if (patch.yieldToUnits !== undefined) col("yield_to_units", patch.yieldToUnits);
+  if (patch.txMode !== undefined) col("tx_mode", patch.txMode);
+  if (patch.voxThreshold !== undefined) col("vox_threshold", patch.voxThreshold);
+  if (patch.voxHangMs !== undefined) col("vox_hang_ms", patch.voxHangMs);
+  if (patch.enabled !== undefined) col("enabled", patch.enabled);
+  if (sets.length === 0) {
+    const res = await requirePool().query<BridgeRow>(
+      `SELECT ${BRIDGE_COLS} FROM radio_bridges WHERE id = $1 AND agency_id = $2;`,
+      [id, agencyId],
+    );
+    return res.rows[0] ?? null;
+  }
+  vals.push(id, agencyId);
+  const res = await requirePool().query<BridgeRow>(
+    `UPDATE radio_bridges SET ${sets.join(", ")} WHERE id = $${i++} AND agency_id = $${i}
+     RETURNING ${BRIDGE_COLS};`,
+    vals,
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function deleteBridge(id: number, agencyId: number): Promise<boolean> {
+  const res = await requirePool().query(`DELETE FROM radio_bridges WHERE id = $1 AND agency_id = $2;`, [
+    id,
+    agencyId,
+  ]);
+  return (res.rowCount ?? 0) > 0;
+}
+
 // --- memberships ---------------------------------------------------------
 
 export async function listMemberships(agencyId: number): Promise<MembershipRow[]> {
