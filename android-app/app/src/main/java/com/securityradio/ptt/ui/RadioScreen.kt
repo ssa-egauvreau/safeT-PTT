@@ -427,6 +427,17 @@ private fun LcdMainChannelBlock(
                     styles = styles,
                 )
             }
+            if (ultraCompact) {
+                Text(
+                    text = "${state.zoneLabel} · ${state.channelPosition}".uppercase(Locale.US),
+                    style = styles.status,
+                    color = p.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            }
             Text(
                 text = state.channelLabel.uppercase(Locale.US),
                 style = styles.channel,
