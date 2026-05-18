@@ -935,11 +935,27 @@ export function createApiRouter(): Router {
       const id = Number(req.params.id);
       const body = (req.body ?? {}) as Record<string, unknown>;
       const patch: Partial<BridgeInput> = {};
-      if (body.name !== undefined) patch.name = String(body.name);
+      // A bridge needs a stable label and a routable target — reject blanks
+      // rather than letting updateBridge trim them to empty strings.
+      if (body.name !== undefined) {
+        const name = String(body.name).trim();
+        if (!name) {
+          res.status(400).json({ error: "missing_fields" });
+          return;
+        }
+        patch.name = name;
+      }
+      if (body.targetChannel !== undefined) {
+        const targetChannel = String(body.targetChannel).trim();
+        if (!targetChannel) {
+          res.status(400).json({ error: "missing_fields" });
+          return;
+        }
+        patch.targetChannel = targetChannel;
+      }
       if (body.sourceType !== undefined) patch.sourceType = oneOf(body.sourceType, BRIDGE_SOURCE_TYPES, "stream_url");
       if (body.sourceUrl !== undefined) patch.sourceUrl = body.sourceUrl ? String(body.sourceUrl).trim() : null;
       if (body.deviceHint !== undefined) patch.deviceHint = body.deviceHint ? String(body.deviceHint).trim() : null;
-      if (body.targetChannel !== undefined) patch.targetChannel = String(body.targetChannel);
       if (body.direction !== undefined) patch.direction = oneOf(body.direction, BRIDGE_DIRECTIONS, "inbound");
       if (body.yieldToUnits !== undefined) patch.yieldToUnits = Boolean(body.yieldToUnits);
       if (body.txMode !== undefined) patch.txMode = oneOf(body.txMode, BRIDGE_TX_MODES, "passthrough");
