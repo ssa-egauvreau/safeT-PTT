@@ -1,0 +1,13 @@
+<svg width="960" height="400" viewBox="0 0 960 400" xmlns="http://www.w3.org/2000/svg">
+  <rect width="960" height="400" fill="#0b1f13"/>
+  <rect x="16" y="16" width="928" height="368" fill="#102a1a" stroke="#6fa37b" stroke-width="4"/>
+  <text x="40" y="54" fill="#b9f5c5" font-size="30" font-family="monospace">14:37</text>
+  <text x="620" y="54" fill="#9ad5a8" font-size="24" font-family="monospace">GPS  NET  BAT 92%</text>
+  <line x1="32" y1="92" x2="928" y2="92" stroke="#3d6b4a" stroke-width="2"/>
+  <text x="480" y="162" text-anchor="middle" fill="#d8ffe0" font-size="60" font-family="monospace" font-weight="700">OPS TAC 3</text>
+  <text x="480" y="220" text-anchor="middle" fill="#77d2ff" font-size="34" font-family="monospace">TX: UNIT 2A15 • YOU</text>
+  <line x1="32" y1="280" x2="928" y2="280" stroke="#3d6b4a" stroke-width="2"/>
+  <rect x="40" y="304" width="880" height="64" fill="#6c2a2a" stroke="#9b4a4a" stroke-width="2"/>
+  <text x="480" y="346" text-anchor="middle" fill="#ffe5e5" font-size="30" font-family="monospace" font-weight="700">EMERGENCY (TAP)</text>
+  <text x="40" y="392" fill="#6fa37b" font-size="16" font-family="monospace">Ultra-compact mode (&lt;300dp) mockup for IRC590-style display</text>
+</svg>
