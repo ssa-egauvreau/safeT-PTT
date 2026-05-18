@@ -111,7 +111,9 @@ class LocationReporter(
     private companion object {
         val PROVIDERS = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
         const val MIN_INTERVAL_MS = 15_000L
-        const val MIN_DISTANCE_M = 8f
+        // No distance filter: a parked (stationary) radio must keep refreshing its
+        // position on the time interval, or its dispatch-map marker goes stale.
+        const val MIN_DISTANCE_M = 0f
         const val MIN_POST_INTERVAL_MS = 12_000L
     }
 }

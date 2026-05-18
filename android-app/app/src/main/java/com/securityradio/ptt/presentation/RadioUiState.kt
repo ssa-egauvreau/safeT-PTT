@@ -34,9 +34,8 @@ data class RadioUiState(
     val localShortUnitId: String,
     /** Server hint: formatted RX attribution when someone else is keyed (main channel wins over scan). */
     val rxAttributedLine: String,
-    /** UI toggles for scan / GPS rows (soft keys). */
+    /** UI toggle for the scan row (soft key). */
     val scanActive: Boolean,
-    val gpsActive: Boolean,
 
     /**
      * Day / night **preference**: [ThemeMode.AUTO] follows the device light/dark setting in the Compose layer.
@@ -88,7 +87,7 @@ data class RadioUiState(
             displayLine1 = "SUNSET SAFETY AGENCY",
             displayLine2 = "OPERATIONS",
             displayLine3 = "CHANNELS: LOADING",
-            softKeyLabels = listOf("PTT", "MENU", "SCAN", "GPS", "CHAN"),
+            softKeyLabels = listOf("PTT", "MENU", "SCAN", "", "CHAN"),
             isPttPressed = false,
             isEmergencyActive = false,
             pttBusyTone = false,
@@ -101,7 +100,6 @@ data class RadioUiState(
             localShortUnitId = "",
             rxAttributedLine = "",
             scanActive = false,
-            gpsActive = true,
             themeMode = ThemeMode.AUTO,
             mappingSettingsVisible = false,
             hardwareMappings = emptyMap(),

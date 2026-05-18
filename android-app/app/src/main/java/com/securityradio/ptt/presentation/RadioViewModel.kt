@@ -220,7 +220,7 @@ class RadioViewModel(
                     "Soft key index out of bounds: ${event.index}"
                 }
                 when (event.index) {
-                    3 -> toggleGps()
+                    3 -> Unit // soft key 3 unused — GPS reporting is always on
                     4 -> bumpChannel(+1)
                     else -> {
                         soundPlayer.playChannelSwitch()
@@ -590,31 +590,11 @@ class RadioViewModel(
         }
     }
 
-    /** SCAN soft key 3 — start/stop reporting this handset's GPS position to dispatch. */
-    private fun toggleGps() {
-        soundPlayer.playChannelSwitch()
-        val next = !_uiState.value.gpsActive
-        val status = when {
-            !next -> "GPS OFF"
-            locationPermissionGranted -> "GPS ON"
-            else -> "GPS: NO PERMISSION"
-        }
-        _uiState.update { it.copy(gpsActive = next, statusMessage = status) }
-        applyGpsReporting()
-    }
-
     /** Called from the activity once the OS location-permission result is known. */
     fun onLocationPermissionResult(granted: Boolean) {
         locationPermissionGranted = granted
-        applyGpsReporting()
-    }
-
-    private fun applyGpsReporting() {
-        if (_uiState.value.gpsActive && locationPermissionGranted) {
-            locationReporter.start()
-        } else {
-            locationReporter.stop()
-        }
+        // GPS position reporting is always on — start it as soon as permission allows.
+        if (granted) locationReporter.start()
     }
 
     private fun bumpChannel(delta: Int) {
@@ -951,8 +931,9 @@ class RadioViewModel(
     }
 
     override fun onCleared() {
-        voiceRelay.disconnect()
-        locationReporter.stop()
+        // Voice and GPS intentionally keep running after the UI is gone: the
+        // foreground service holds the process so the handset still receives
+        // its channel and reports position, like a real radio in a pocket.
         pttToneJob?.cancel()
         pttMicCapture.release()
         soundPlayer.release()

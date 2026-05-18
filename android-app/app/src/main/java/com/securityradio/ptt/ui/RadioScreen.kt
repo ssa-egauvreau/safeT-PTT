@@ -229,7 +229,7 @@ private fun LcdStatusBar(
                 LcdGpsIcon(
                     active = p.statusGreen,
                     muted = p.textMuted,
-                    locked = state.gpsActive,
+                    locked = true, // GPS reporting is always on
                     modifier = Modifier.size(14.dp),
                 )
                 LcdScanIcon(
@@ -565,7 +565,7 @@ private fun deriveBanner(state: RadioUiState, p: RadioLcdPalette): Triple<String
         state.isEmergencyActive -> Triple(
             "EMERGENCY",
             buildString {
-                if (state.gpsActive) append("GPS ACTIVE · ")
+                append("GPS ACTIVE · ")
                 append("CH ")
                 append(state.channelLabel.uppercase(Locale.US))
             },
@@ -582,7 +582,6 @@ private fun deriveBanner(state: RadioUiState, p: RadioLcdPalette): Triple<String
             p.statusGreen,
         )
         state.scanActive -> Triple("SCANNING", "SCAN ON", p.statusAmber)
-        state.gpsActive -> Triple("GPS LOCK", "TRACKING", p.statusBlue)
         state.networkLabel == "OFFLINE" && !state.channelsLoading -> Triple(
             "NO SIGNAL",
             state.statusMessage.uppercase(Locale.US),
@@ -750,7 +749,6 @@ private fun LcdSoftKeyRow(
             val active = when (index) {
                 1 -> state.mappingSettingsVisible
                 2 -> state.scanActive
-                3 -> state.gpsActive
                 else -> false
             }
             val interaction = remember { MutableInteractionSource() }
