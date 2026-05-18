@@ -2,6 +2,8 @@ package com.securityradio.ptt.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.Gson
+import com.securityradio.ptt.data.remote.ApiErrorDto
 import com.securityradio.ptt.data.remote.LoginRequestDto
 import com.securityradio.ptt.di.RadioAppGraph
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -80,17 +82,38 @@ class LoginViewModel(
                 _uiState.update { it.copy(busy = false, password = "") }
                 onSuccess()
             } catch (http: HttpException) {
-                val msg = when (http.code()) {
-                    401 -> "Sign-in failed. Check agency code, username, and password."
-                    403 -> "This account cannot use the radio app."
-                    else -> "Sign-in failed (${http.code()})."
+                val code = parseApiError(http)
+                val msg = when (code) {
+                    "unknown_agency" ->
+                        "Unknown agency code. In Platform → Agencies, copy the Slug column exactly (e.g. sunset-safety-agency)."
+                    "agency_mismatch" ->
+                        "That username belongs to a different agency. Use the slug from Platform for the agency that owns this account."
+                    "invalid_login" ->
+                        "Wrong username or password for this agency."
+                    else -> when (http.code()) {
+                        401 -> "Sign-in failed. Check agency code, username, and password."
+                        403 -> "This account cannot use the radio app."
+                        else -> "Sign-in failed (${http.code()})."
+                    }
                 }
                 _uiState.update { it.copy(busy = false, errorMessage = msg) }
             } catch (_: Exception) {
                 _uiState.update {
-                    it.copy(busy = false, errorMessage = "Cannot reach the server. Check network and API URL.")
+                    it.copy(
+                        busy = false,
+                        errorMessage = "Cannot reach the server. Pull latest code, set radio.api.base.url=https://safet.up.railway.app/ in android-app/local.properties, then rebuild.",
+                    )
                 }
             }
+        }
+    }
+
+    private fun parseApiError(http: HttpException): String? {
+        return try {
+            val raw = http.response()?.errorBody()?.string().orEmpty()
+            Gson().fromJson(raw, ApiErrorDto::class.java)?.error
+        } catch (_: Exception) {
+            null
         }
     }
 }

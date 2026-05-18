@@ -219,7 +219,11 @@ export function createApiRouter(): Router {
       }
       if (agencySlugRaw && user!.role !== "owner") {
         const agency = await getAgencyBySlug(agencySlugRaw);
-        if (!agency || agency.disabled || user!.agency_id !== agency.id) {
+        if (!agency || agency.disabled) {
+          res.status(401).json({ error: "unknown_agency" });
+          return;
+        }
+        if (user!.agency_id !== agency.id) {
           await writeAudit({
             agencyId: user?.agency_id ?? null,
             actorUserId: user?.id ?? null,
@@ -227,7 +231,7 @@ export function createApiRouter(): Router {
             action: "login_failed",
             ip: clientIp(req),
           });
-          res.status(401).json({ error: "invalid_login" });
+          res.status(401).json({ error: "agency_mismatch" });
           return;
         }
       }

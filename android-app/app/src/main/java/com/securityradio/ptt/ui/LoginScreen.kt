@@ -60,7 +60,8 @@ fun LoginScreen(
             enabled = !state.busy,
         )
         Text(
-            text = "Example: default for the built-in agency, or the slug from your platform owner (e.g. sunset-security).",
+            text = "Copy the Slug from Platform → Agencies (e.g. default or sunset-safety-agency). " +
+                "Use a radio or admin account created for that agency — not the platform owner login.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
