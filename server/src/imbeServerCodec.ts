@@ -3,6 +3,8 @@
 // decoding keeps frame-to-frame history; a shared decoder would let
 // interleaved channels corrupt each other's saved audio.
 
+import { ImbeAgc } from "./imbeAgc.js";
+
 type ImbeFactory = (typeof import("../vocoder/imbeModule.mjs"))["default"];
 type ImbeModule = Awaited<ReturnType<ImbeFactory>>;
 
@@ -50,6 +52,9 @@ export function createImbeDecoder(): ImbeStreamDecoder | null {
     return null;
   }
   let freed = false;
+  // The bundled WASM vocoder ships without its receive AGC enabled; normalise
+  // decoded IMBE audio here so stored recordings match uncompressed levels.
+  const agc = new ImbeAgc();
   return {
     decode(frame: Buffer): Buffer | null {
       if (freed || frame.length !== 13) {
@@ -62,11 +67,13 @@ export function createImbeDecoder(): ImbeStreamDecoder | null {
         if (mod._imbe_decoder_decode(handle, codewordPtr, samplesPtr) !== 1) {
           return null;
         }
+        const base = samplesPtr >> 1;
+        const samples = mod.HEAP16.slice(base, base + 160);
+        agc.process(samples);
         // 160 samples at 8 kHz -> 320 samples at 16 kHz by duplication.
         const out = Buffer.allocUnsafe(640);
-        const base = samplesPtr >> 1;
         for (let i = 0; i < 160; i++) {
-          const sample = mod.HEAP16[base + i]!;
+          const sample = samples[i];
           out.writeInt16LE(sample, i * 4);
           out.writeInt16LE(sample, i * 4 + 2);
         }

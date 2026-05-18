@@ -37,7 +37,12 @@ void ensureAllocatedLocked() {
     if (gDecoder == nullptr) {
         delete gEncoder;
         gEncoder = nullptr;
+        return;
     }
+    // Enable the vocoder's built-in receive AGC. Without it, decoded IMBE
+    // audio plays at the raw vocoder level (much quieter than uncompressed
+    // PCM). The library otherwise leaves m_autoGain uninitialised.
+    gDecoder->setAutoGain(true);
 }
 
 } // namespace

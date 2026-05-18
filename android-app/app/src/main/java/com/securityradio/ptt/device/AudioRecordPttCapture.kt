@@ -5,6 +5,9 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +34,9 @@ class AudioRecordPttCapture(
     private var job: Job? = null
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
+    private var noiseSuppressor: NoiseSuppressor? = null
+    private var echoCanceler: AcousticEchoCanceler? = null
+    private var autoGainControl: AutomaticGainControl? = null
 
     override fun startCapture() {
         synchronized(this) {
@@ -55,6 +61,7 @@ class AudioRecordPttCapture(
                 record.release()
                 return
             }
+            attachVoiceProcessing(record.audioSessionId)
 
             var track: AudioTrack? = null
             if (enableSidetone) {
@@ -127,10 +134,40 @@ class AudioRecordPttCapture(
         }
     }
 
+    /**
+     * Bind the platform voice-processing effects (noise suppression, echo
+     * cancellation, mic AGC) to the capture session when the device offers
+     * them. Mirrors the echoCancellation/noiseSuppression/autoGainControl
+     * constraints the web console requests via getUserMedia.
+     */
+    private fun attachVoiceProcessing(sessionId: Int) {
+        if (NoiseSuppressor.isAvailable()) {
+            noiseSuppressor = runCatching {
+                NoiseSuppressor.create(sessionId)?.also { it.setEnabled(true) }
+            }.getOrNull()
+        }
+        if (AcousticEchoCanceler.isAvailable()) {
+            echoCanceler = runCatching {
+                AcousticEchoCanceler.create(sessionId)?.also { it.setEnabled(true) }
+            }.getOrNull()
+        }
+        if (AutomaticGainControl.isAvailable()) {
+            autoGainControl = runCatching {
+                AutomaticGainControl.create(sessionId)?.also { it.setEnabled(true) }
+            }.getOrNull()
+        }
+    }
+
     private fun stopCaptureInternal() {
         captureActive = false
         job?.cancel()
         job = null
+        noiseSuppressor?.runCatching { release() }
+        noiseSuppressor = null
+        echoCanceler?.runCatching { release() }
+        echoCanceler = null
+        autoGainControl?.runCatching { release() }
+        autoGainControl = null
         audioRecord?.runCatching {
             if (recordingState == AudioRecord.RECORDSTATE_RECORDING) {
                 stop()
