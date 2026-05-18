@@ -898,10 +898,15 @@ export function createApiRouter(): Router {
         res.status(400).json({ error: "missing_fields" });
         return;
       }
-      const direction = oneOf(body.direction, BRIDGE_DIRECTIONS, "inbound");
+      const sourceType = oneOf(body.sourceType, BRIDGE_SOURCE_TYPES, "stream_url");
+      // A stream URL is a listen-only feed; only an audio device can be bidirectional.
+      const direction =
+        sourceType === "stream_url"
+          ? "inbound"
+          : oneOf(body.direction, BRIDGE_DIRECTIONS, "inbound");
       const input: BridgeInput = {
         name,
-        sourceType: oneOf(body.sourceType, BRIDGE_SOURCE_TYPES, "stream_url"),
+        sourceType,
         sourceUrl: body.sourceUrl ? String(body.sourceUrl).trim() : null,
         deviceHint: body.deviceHint ? String(body.deviceHint).trim() : null,
         targetChannel,

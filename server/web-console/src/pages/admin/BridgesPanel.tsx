@@ -57,6 +57,8 @@ function BridgeForm({
       targetChannel: f.targetChannel.trim(),
       sourceUrl: f.sourceType === "stream_url" ? (f.sourceUrl ?? "").trim() || null : null,
       deviceHint: f.sourceType === "audio_device" ? (f.deviceHint ?? "").trim() || null : null,
+      // A stream URL is a listen-only feed — it can never be bidirectional.
+      direction: f.sourceType === "stream_url" ? "inbound" : f.direction,
     });
   }
 
@@ -102,13 +104,15 @@ function BridgeForm({
             required
           />
         </div>
-        <div className="field">
-          <label>Direction</label>
-          <select value={f.direction} onChange={(e) => set("direction", e.target.value)}>
-            <option value="inbound">Inbound only</option>
-            <option value="bidirectional">Bidirectional</option>
-          </select>
-        </div>
+        {f.sourceType === "audio_device" && (
+          <div className="field">
+            <label>Direction</label>
+            <select value={f.direction} onChange={(e) => set("direction", e.target.value)}>
+              <option value="inbound">Inbound only</option>
+              <option value="bidirectional">Bidirectional</option>
+            </select>
+          </div>
+        )}
         <div className="field">
           <label>TX mode</label>
           <select value={f.txMode} onChange={(e) => set("txMode", e.target.value)}>
