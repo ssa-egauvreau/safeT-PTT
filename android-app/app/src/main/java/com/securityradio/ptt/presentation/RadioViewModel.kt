@@ -177,7 +177,8 @@ class RadioViewModel(
                         _uiState.update { s -> onScanSoftKeyToggle(s) }
                     }
                     HardwareButtonEvent.PlayLastTransmissionPressed -> playLastTransmission()
-                    HardwareButtonEvent.VolumeCheckPressed -> soundPlayer.playVolumeCheck()
+                    HardwareButtonEvent.VolumeCheckPressed -> soundPlayer.startVolumeCheckLoop()
+                    HardwareButtonEvent.VolumeCheckReleased -> soundPlayer.stopVolumeCheckLoop()
                     HardwareButtonEvent.ToggleDayNightPressed -> onEvent(RadioUiEvent.ToggleDayNight)
                 }
             }

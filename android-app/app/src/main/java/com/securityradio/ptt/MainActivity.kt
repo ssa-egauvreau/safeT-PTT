@@ -320,9 +320,15 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
-        if (repository.getMapping(HardwareAction.PTT).contains(keyCode)) {
-            HardwareButtonRelay.sendEvent(HardwareButtonEvent.PttReleased)
-            return true
+        when {
+            repository.getMapping(HardwareAction.PTT).contains(keyCode) -> {
+                HardwareButtonRelay.sendEvent(HardwareButtonEvent.PttReleased)
+                return true
+            }
+            repository.getMapping(HardwareAction.VOLUME_CHECK).contains(keyCode) -> {
+                HardwareButtonRelay.sendEvent(HardwareButtonEvent.VolumeCheckReleased)
+                return true
+            }
         }
         return super.onKeyUp(keyCode, event)
     }

@@ -37,6 +37,7 @@ class AssetRadioUiSoundPlayer(
 
     private var talkPermitPlayer: MediaPlayer? = null
     private var busyTonePlayer: MediaPlayer? = null
+    private var volumeCheckPlayer: MediaPlayer? = null
     private var busyFocusRequest: AudioFocusRequest? = null
 
     /** Pre-O [AudioFocusRequest] equivalent; must abandon with same instance. */
@@ -180,10 +181,24 @@ class AssetRadioUiSoundPlayer(
         playOneShot(FILE_VOLUME_CHECK)
     }
 
+    override fun startVolumeCheckLoop() {
+        main.post {
+            stopVolumeCheckLoopInternal()
+            stopTalkPermitLoopInternal()
+            val player = createVolumeCheckLoopMediaPlayer() ?: return@post
+            volumeCheckPlayer = player
+        }
+    }
+
+    override fun stopVolumeCheckLoop() {
+        main.post { stopVolumeCheckLoopInternal() }
+    }
+
     override fun release() {
         main.post {
             stopTalkPermitLoopInternal()
             stopBusyLoopInternal()
+            stopVolumeCheckLoopInternal()
         }
     }
 
@@ -205,6 +220,46 @@ class AssetRadioUiSoundPlayer(
         }
         busyTonePlayer = null
         deactivateBusySpeakerRouting()
+    }
+
+    private fun stopVolumeCheckLoopInternal() {
+        volumeCheckPlayer?.runCatching {
+            setOnCompletionListener(null)
+            stop()
+            release()
+        }
+        volumeCheckPlayer = null
+    }
+
+    private fun createVolumeCheckLoopMediaPlayer(): MediaPlayer? {
+        val player = MediaPlayer().applyUiAudio()
+        if (!applySource(player, FILE_VOLUME_CHECK)) {
+            player.release()
+            return null
+        }
+        return try {
+            player.apply {
+                isLooping = true
+                setOnPreparedListener { it.start() }
+                setOnCompletionListener { mp ->
+                    if (mp !== volumeCheckPlayer) return@setOnCompletionListener
+                    try {
+                        mp.seekTo(0)
+                        mp.start()
+                    } catch (_: IllegalStateException) {
+                    }
+                }
+                setOnErrorListener { mp, _, _ ->
+                    if (volumeCheckPlayer === mp) volumeCheckPlayer = null
+                    mp.release()
+                    true
+                }
+                prepareAsync()
+            }
+        } catch (_: Exception) {
+            player.release()
+            null
+        }
     }
 
     /** Points [player] at the agency-custom tone when one is cached, else the bundled asset. */

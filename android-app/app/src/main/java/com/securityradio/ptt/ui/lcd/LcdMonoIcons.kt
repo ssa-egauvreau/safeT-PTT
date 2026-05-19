@@ -16,6 +16,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 private val iconStroke = Stroke(width = 1.35f, cap = StrokeCap.Round)
+private val toolbarStroke = Stroke(width = 1.85f, cap = StrokeCap.Round)
 
 @Composable
 fun LcdSignalBarsIcon(
@@ -51,7 +52,7 @@ fun LcdGpsIcon(
     locked: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val stroke = iconStroke
+    val stroke = toolbarStroke
     Canvas(modifier) {
         val c = if (locked) active else muted
         val cx = size.width * 0.5f
@@ -201,27 +202,23 @@ fun LcdBluetoothIcon(
     muted: Color,
     modifier: Modifier = Modifier,
 ) {
-    val stroke = iconStroke
+    val stroke = toolbarStroke
     val c = if (on) active else muted
     Canvas(modifier) {
-        val cx = size.width * 0.42f
-        val cy = size.height * 0.52f
-        val r = size.minDimension * 0.22f
-        drawCircle(color = c, radius = r, center = Offset(cx, cy), style = stroke)
-        drawLine(
-            color = c,
-            start = Offset(size.width * 0.62f, size.height * 0.28f),
-            end = Offset(size.width * 0.88f, size.height * 0.72f),
-            strokeWidth = stroke.width * 1.1f,
-            cap = StrokeCap.Round,
-        )
-        drawLine(
-            color = c,
-            start = Offset(size.width * 0.72f, size.height * 0.28f),
-            end = Offset(size.width * 0.96f, size.height * 0.72f),
-            strokeWidth = stroke.width * 0.85f,
-            cap = StrokeCap.Round,
-        )
+        val w = size.width
+        val h = size.height
+        val stemX = w * 0.34f
+        val midY = h * 0.5f
+        drawCircle(color = c, radius = w * 0.11f, center = Offset(stemX, midY), style = stroke)
+        val wing = Path().apply {
+            moveTo(stemX + w * 0.1f, midY - h * 0.28f)
+            lineTo(w * 0.92f, midY - h * 0.42f)
+            lineTo(w * 0.78f, midY)
+            lineTo(w * 0.92f, midY + h * 0.42f)
+            lineTo(stemX + w * 0.1f, midY + h * 0.28f)
+            close()
+        }
+        drawPath(wing, color = c, style = stroke)
     }
 }
 
@@ -232,7 +229,7 @@ fun LcdReplayIcon(
     hasBuffer: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val stroke = iconStroke
+    val stroke = toolbarStroke
     val c = if (hasBuffer) ready else muted
     Canvas(modifier) {
         val cx = size.width * 0.55f
@@ -272,7 +269,7 @@ fun LcdVolumeIcon(
     isMuted: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val stroke = iconStroke
+    val stroke = toolbarStroke
     val c = if (isMuted) muted else active
     Canvas(modifier) {
         val w = size.width

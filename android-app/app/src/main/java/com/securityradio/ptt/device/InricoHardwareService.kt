@@ -51,8 +51,9 @@ class InricoHardwareService : AccessibilityService() {
                     }
                 }
                 KeyEvent.ACTION_UP -> {
-                    if (isPtt) {
-                        HardwareButtonRelay.sendEvent(HardwareButtonEvent.PttReleased)
+                    when {
+                        isPtt -> HardwareButtonRelay.sendEvent(HardwareButtonEvent.PttReleased)
+                        isVolumeCheck -> HardwareButtonRelay.sendEvent(HardwareButtonEvent.VolumeCheckReleased)
                     }
                 }
             }

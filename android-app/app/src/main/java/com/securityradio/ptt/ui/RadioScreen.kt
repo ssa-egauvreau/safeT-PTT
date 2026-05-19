@@ -17,6 +17,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -113,7 +114,7 @@ fun RadioShell(
                     .fillMaxSize()
                     .statusBarsPadding()
                     .background(palette.lcdAlt)
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .padding(horizontal = 8.dp, top = 4.dp, bottom = 6.dp),
             ) {
                 Box(
                     modifier = Modifier
@@ -291,34 +292,34 @@ private fun LcdStatusBar(
                 val online = state.networkLabel == "ONLINE"
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
                     modifier = Modifier.weight(1f),
                 ) {
                     LcdSignalBarsIcon(
                         bars = if (online) 4 else 1,
                         maxBars = 4,
-                        colorActive = p.statusGreen,
+                        colorActive = if (online) p.statusGreen else p.statusAmber,
                         colorInactive = p.textMuted,
-                        modifier = Modifier.size(22.dp, 16.dp),
+                        modifier = Modifier.size(26.dp, 18.dp),
                     )
                     LcdBluetoothIcon(
                         on = state.bluetoothOn,
                         active = p.statusBlue,
                         muted = p.textMuted,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(24.dp),
                     )
                     LcdGpsIcon(
                         active = p.statusGreen,
                         muted = p.textMuted,
                         locked = true,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(22.dp),
                     )
                     LcdReplayIcon(
                         ready = p.statusAmber,
                         muted = p.textMuted,
                         hasBuffer = state.hasReplayBuffer,
                         modifier = Modifier
-                            .size(18.dp)
+                            .size(24.dp)
                             .clickable { onEvent(RadioUiEvent.PlayLastTransmission) },
                     )
                     LcdVolumeIcon(
@@ -326,7 +327,7 @@ private fun LcdStatusBar(
                         active = p.statusGreen,
                         isMuted = state.listenVolumeMuted,
                         modifier = Modifier
-                            .size(20.dp)
+                            .size(26.dp)
                             .clickable { onEvent(RadioUiEvent.ToggleListenVolume) },
                     )
                 }
@@ -687,23 +688,34 @@ private fun LcdHandsetFillChannelBlock(
                     .background(chrome.washColor),
             )
         }
+        val hasTalk = talkUnit.isNotEmpty()
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
+                .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 14.dp),
         ) {
-            Box(
+            Column(
                 modifier = Modifier
-                    .weight(0.75f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center,
+                    .fillMaxWidth()
+                    .then(if (hasTalk) Modifier.weight(0.2f) else Modifier.weight(0.24f)),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
                     text = zoneLine,
-                    style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 22.sp),
+                    style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 18.sp),
                     color = p.textMuted,
-                    maxLines = 2,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = radiosLine.uppercase(Locale.US),
+                    style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 18.sp),
+                    color = if (state.radiosOnlineOnChannel != null) p.textSecondary else p.textMuted,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
@@ -711,66 +723,106 @@ private fun LcdHandsetFillChannelBlock(
             }
             Box(
                 modifier = Modifier
-                    .weight(3.2f)
+                    .weight(if (hasTalk) 2.35f else 3.1f)
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = state.channelLabel.uppercase(Locale.US),
-                    style = styles.channel.copy(fontSize = 72.sp, lineHeight = 74.sp),
+                    style = styles.channel.copy(
+                        fontSize = if (hasTalk) 60.sp else 72.sp,
+                        lineHeight = if (hasTalk) 62.sp else 74.sp,
+                    ),
                     color = chrome.channelTextColor,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            Box(
-                modifier = Modifier
-                    .weight(0.75f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = radiosLine.uppercase(Locale.US),
-                    style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 22.sp),
-                    color = if (state.radiosOnlineOnChannel != null) p.textSecondary else p.textMuted,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .weight(2.5f)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
+            if (hasTalk) {
                 if (showEmergencyBanner) {
                     Text(
                         text = "EMERGENCY",
-                        style = styles.status.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                        ),
+                        style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 12.sp),
                         color = p.statusEmergency,
                         maxLines = 1,
                         modifier = Modifier.fillMaxWidth(),
                         textAlign = TextAlign.Center,
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                 }
-                if (talkUnit.isNotEmpty()) {
-                    LcdTalkerAttribution(
-                        unitId = talkUnit,
-                        displayName = talkName,
-                        unitColor = talkColor,
-                        nameColor = talkColor.copy(alpha = 0.88f),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                LcdHandsetTalkerBlock(
+                    unitId = talkUnit,
+                    displayName = talkName,
+                    unitColor = talkColor,
+                    nameColor = talkColor.copy(alpha = 0.9f),
+                    styles = styles,
+                    modifier = Modifier
+                        .weight(1.45f)
+                        .fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LcdHandsetTalkerBlock(
+    unitId: String,
+    displayName: String,
+    unitColor: Color,
+    nameColor: Color,
+    styles: LcdTextStyles,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center,
+    ) {
+        val density = LocalDensity.current
+        val maxH = maxHeight
+        val hasName = displayName.isNotBlank()
+        val unitSp = with(density) {
+            val cap = if (hasName) maxH.value * 0.42f else maxH.value * 0.55f
+            cap.coerceIn(30f, 48f).sp
+        }
+        val nameSp = with(density) {
+            val cap = maxH.value * 0.28f
+            cap.coerceIn(14f, 22f).sp
+        }
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = unitId.uppercase(Locale.US),
+                style = styles.channel.copy(
+                    fontSize = unitSp,
+                    lineHeight = (unitSp.value * 1.05f).sp,
+                ),
+                color = unitColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (hasName) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = displayName.uppercase(Locale.US),
+                    style = styles.body.copy(
+                        fontWeight = FontWeight.Normal,
+                        fontSize = nameSp,
+                        lineHeight = (nameSp.value * 1.1f).sp,
+                    ),
+                    color = nameColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
     }

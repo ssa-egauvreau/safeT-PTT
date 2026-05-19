@@ -14,7 +14,10 @@ interface RadioUiSoundPlayer {
     fun startBusyLoop()
     fun stopBusyLoop()
     fun playEmergencyAlert()
-    /** One-shot beep at the current volume level (volume check key). */
+    /** One-shot beep at the current volume level (legacy / screen). */
     fun playVolumeCheck()
+    /** Loop volume-check WAV while the hardware key is held (IRC590 key 232). */
+    fun startVolumeCheckLoop()
+    fun stopVolumeCheckLoop()
     fun release()
 }
