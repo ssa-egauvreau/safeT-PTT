@@ -3,6 +3,7 @@ import { api, describeError, type Alert, type UserChannel } from "../api";
 import { sounds } from "../sounds";
 import { useUnitAliasResolver } from "../unitAliases";
 import { IconAlertTriangle, IconBell } from "../icons";
+import { SectionHeader, type SectionProps } from "./PopOutSection";
 
 type AlertKind = "page" | "emergency";
 
@@ -35,7 +36,7 @@ function notifyEmergency(alert: Alert): void {
   }
 }
 
-export function AlertsPanel() {
+export function AlertsPanel({ variant = "embedded", onPopOut }: SectionProps) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [channels, setChannels] = useState<UserChannel[]>([]);
   const [kind, setKind] = useState<AlertKind>("page");
@@ -111,8 +112,9 @@ export function AlertsPanel() {
   const history = alerts.filter((a) => !(a.kind === "emergency" && a.active));
 
   return (
-    <div className="alerts-panel">
-      <h3>Alerts &amp; Paging</h3>
+    <div className={variant === "window" ? "alerts-panel windowed" : "alerts-panel"}>
+      <SectionHeader title="Alerts & Paging" onPopOut={onPopOut} />
+
 
       {activeEmergencies.map((alert) => (
         <div className="alert-row emergency" key={alert.id}>

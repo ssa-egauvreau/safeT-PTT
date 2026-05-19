@@ -4,6 +4,11 @@ import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ConsolePage } from "./pages/ConsolePage";
 import { MapWindowPage } from "./pages/MapWindowPage";
+import {
+  ChannelsWindowPage,
+  OnAirWindowPage,
+  AlertsWindowPage,
+} from "./pages/ConsoleWindows";
 import { BridgeRunnerPage } from "./pages/BridgeRunnerPage";
 import { AdminPage } from "./pages/admin/AdminPage";
 import { OwnerPage } from "./pages/owner/OwnerPage";
@@ -45,6 +50,42 @@ export function App() {
             <Navigate to="/owner" replace />
           ) : (
             <MapWindowPage />
+          )
+        }
+      />
+      <Route
+        path="/console/channels"
+        element={
+          !user ? (
+            <Navigate to="/login" replace />
+          ) : user.role === "owner" ? (
+            <Navigate to="/owner" replace />
+          ) : (
+            <ChannelsWindowPage />
+          )
+        }
+      />
+      <Route
+        path="/console/onair"
+        element={
+          !user ? (
+            <Navigate to="/login" replace />
+          ) : user.role === "owner" ? (
+            <Navigate to="/owner" replace />
+          ) : (
+            <OnAirWindowPage />
+          )
+        }
+      />
+      <Route
+        path="/console/alerts"
+        element={
+          !user ? (
+            <Navigate to="/login" replace />
+          ) : user.role === "owner" ? (
+            <Navigate to="/owner" replace />
+          ) : (
+            <AlertsWindowPage />
           )
         }
       />

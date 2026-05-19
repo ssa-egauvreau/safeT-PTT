@@ -1467,8 +1467,34 @@ code.mono {
   margin-top: 7px;
 }
 
-.alerts-panel {
+/* --- pop-out console sections --- */
+.alerts-slot {
   margin-top: 24px;
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.section-head h3 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+.section-popout {
+  flex: 0 0 auto;
+}
+.section-panel.windowed,
+.alerts-panel.windowed {
+  position: fixed;
+  inset: 0;
+  overflow: auto;
+  padding: 16px;
+  background: var(--bg);
 }
 .alert-row {
   display: flex;
