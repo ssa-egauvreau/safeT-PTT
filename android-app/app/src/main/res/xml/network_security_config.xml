@@ -5,4 +5,19 @@
         <domain includeSubdomains="false">127.0.0.1</domain>
         <domain includeSubdomains="false">localhost</domain>
     </domain-config>
+    <!--
+        Android 7.x ships without the ISRG Root X1 CA, so it cannot validate
+        the Let's Encrypt certificate served by the Railway backend (the old
+        DST Root CA X3 cross-sign expired 2021-09-30). Bundle ISRG Root X1
+        alongside the system trust store for this domain so Android 7 handsets
+        (e.g. Inrico TM-7 Plus) can complete the TLS handshake. Newer devices
+        still validate via "system".
+    -->
+    <domain-config>
+        <domain includeSubdomains="true">safet.up.railway.app</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/isrg_root_x1" />
+        </trust-anchors>
+    </domain-config>
 </network-security-config>
