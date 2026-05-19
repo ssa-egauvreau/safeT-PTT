@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -246,6 +247,7 @@ fun RadioScreen(
                 LcdHardwareKeyLegend(
                     onEvent = onEvent,
                     styles = styles,
+                    night = lcdNightEffective,
                     rowHeight = if (layout.compactSpacing) 58.dp else 64.dp,
                 )
             }
@@ -1416,23 +1418,18 @@ private fun LcdSoftKeyRow(
 }
 
 /**
- * Bottom legend for the TM-7 Plus's four physical hardware keys. The boxes sit
- * directly above the keys (left to right: channel down, channel up, replay,
- * day/night) and double as touch targets for the same actions.
+ * Bottom legend for the TM-7 Plus's four physical hardware keys (left to right:
+ * channel down, channel up, replay, day/night). The boxes sit above the keys
+ * and double as touch targets for the same actions.
  */
 @Composable
 private fun LcdHardwareKeyLegend(
     onEvent: (RadioUiEvent) -> Unit,
     styles: LcdTextStyles,
+    night: Boolean,
     rowHeight: Dp = 46.dp,
 ) {
     val p = RadioLcdTheme.palette
-    val keys: List<Pair<String, RadioUiEvent>> = listOf(
-        "CH-" to RadioUiEvent.ChannelDown,
-        "CH+" to RadioUiEvent.ChannelUp,
-        "REPLAY" to RadioUiEvent.PlayLastTransmission,
-        "DAY/NT" to RadioUiEvent.ToggleDayNight,
-    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1441,36 +1438,85 @@ private fun LcdHardwareKeyLegend(
             .border(1.dp, p.divider, RoundedCornerShape(2.dp))
             .background(p.lcdSection),
     ) {
-        keys.forEachIndexed { index, (label, event) ->
-            if (index > 0) {
-                Spacer(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .width(1.dp)
-                        .background(p.divider),
-                )
-            }
-            val interaction = remember { MutableInteractionSource() }
-            Surface(
-                onClick = { onEvent(event) },
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                shape = RoundedCornerShape(0.dp),
-                color = p.softKeyInactiveFill,
-                interactionSource = interaction,
-            ) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                    Text(
-                        text = label,
-                        style = styles.softKey.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold),
-                        color = p.textOnButton,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+        LcdLegendKey(onClick = { onEvent(RadioUiEvent.ChannelDown) }) {
+            LcdLegendLabel(text = "CH-", styles = styles, color = p.textOnButton)
         }
+        LcdLegendSeparator(p.divider)
+        LcdLegendKey(onClick = { onEvent(RadioUiEvent.ChannelUp) }) {
+            LcdLegendLabel(text = "CH+", styles = styles, color = p.textOnButton)
+        }
+        LcdLegendSeparator(p.divider)
+        LcdLegendKey(onClick = { onEvent(RadioUiEvent.PlayLastTransmission) }) {
+            LcdReplayIcon(
+                ready = p.textOnButton,
+                muted = p.textOnButton,
+                hasBuffer = true,
+                modifier = Modifier.size(34.dp),
+            )
+        }
+        LcdLegendSeparator(p.divider)
+        LcdLegendKey(onClick = { onEvent(RadioUiEvent.ToggleDayNight) }) {
+            LcdDayNightIcon(
+                night = night,
+                color = p.textOnButton,
+                modifier = Modifier.size(34.dp),
+            )
+        }
+    }
+}
+
+/** One equal-width cell of [LcdHardwareKeyLegend]; also a touch target. */
+@Composable
+private fun RowScope.LcdLegendKey(
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val p = RadioLcdTheme.palette
+    val interaction = remember { MutableInteractionSource() }
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight(),
+        shape = RoundedCornerShape(0.dp),
+        color = p.softKeyInactiveFill,
+        interactionSource = interaction,
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun LcdLegendSeparator(color: Color) {
+    Spacer(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(1.dp)
+            .background(color),
+    )
+}
+
+/** Channel-step label (CH- / CH+) sized to fill the legend cell. */
+@Composable
+private fun LcdLegendLabel(text: String, styles: LcdTextStyles, color: Color) {
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        val density = LocalDensity.current
+        val font = with(density) {
+            val byHeight = constraints.maxHeight * 0.74f
+            val byWidth = constraints.maxWidth / (text.length.coerceAtLeast(2) * 0.66f)
+            minOf(byHeight, byWidth).toSp()
+        }.value.coerceIn(18f, 64f).sp
+        Text(
+            text = text,
+            style = styles.softKey.copy(fontSize = font, fontWeight = FontWeight.Bold),
+            color = color,
+            maxLines = 1,
+        )
     }
 }
 
