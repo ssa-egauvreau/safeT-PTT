@@ -1,6 +1,8 @@
 .gradle/
 build/
 **/build/
+.cxx/
+**/.cxx/
 local.properties
 *.iml
 .idea/

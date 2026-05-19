@@ -1,4 +1,0 @@
-C:/Servers and Coding/Repositories/Radio Platform/android-app/app/.cxx/Debug/4rn5u6i4/armeabi-v7a/CMakeFiles/libdvmvocoder.dir
-C:/Servers and Coding/Repositories/Radio Platform/android-app/app/.cxx/Debug/4rn5u6i4/armeabi-v7a/CMakeFiles/securityradiovocoder.dir
-C:/Servers and Coding/Repositories/Radio Platform/android-app/app/.cxx/Debug/4rn5u6i4/armeabi-v7a/CMakeFiles/edit_cache.dir
-C:/Servers and Coding/Repositories/Radio Platform/android-app/app/.cxx/Debug/4rn5u6i4/armeabi-v7a/CMakeFiles/rebuild_cache.dir
