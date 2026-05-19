@@ -174,6 +174,9 @@ class RadioViewModel(
             syncCatalog(playConnectSoundIfNetwork = true)
         }
         viewModelScope.launch {
+            pollChannelCatalog()
+        }
+        viewModelScope.launch {
             pollTalkHints()
         }
         viewModelScope.launch {
@@ -953,6 +956,50 @@ class RadioViewModel(
      * The first batch is consumed silently to prime the cursor — only later alerts notify.
      */
     /**
+     * Picks up channel-list changes pushed from the control portal without
+     * waiting for a restart — new channels appear on the knob within a few
+     * seconds of being assigned, and channels removed on the portal drop off.
+     * Silent: the catalog is only re-applied when the names actually change.
+     */
+    private suspend fun pollChannelCatalog() {
+        while (currentCoroutineContext().isActive) {
+            delay(CATALOG_POLL_MS)
+            if (_uiState.value.channelsLoading) continue
+            val fresh = try {
+                channelRepository.loadCatalog()
+            } catch (_: Exception) {
+                null
+            } ?: continue
+            if (fresh.origin != ChannelCatalogOrigin.NETWORK) continue
+            val incoming = fresh.channels
+            if (incoming == channelNames) continue
+            applyCatalogChange(incoming)
+        }
+    }
+
+    /** Replace the live catalog while keeping the tuned channel if it still exists. */
+    private fun applyCatalogChange(incoming: List<String>) {
+        if (incoming.isEmpty()) return
+        val tunedName = channelNames
+            .getOrNull(channelIndex.coerceIn(0, channelNames.lastIndex.coerceAtLeast(0)))
+        channelNames = incoming
+        channelIndex = tunedName
+            ?.let { name -> incoming.indexOfFirst { it.equals(name, ignoreCase = true) } }
+            ?.takeIf { it >= 0 }
+            ?: channelIndex.coerceIn(0, incoming.lastIndex)
+        _uiState.update {
+            it.withTuning(channelNames, channelIndex).pruneScanSets().copy(
+                channelSourceLabel = "NETWORK",
+                channelSyncError = null,
+                networkLabel = "ONLINE",
+                displayLine3 = "CHANNELS: NETWORK OK",
+            )
+        }
+        reconcileVoiceTransport()
+        pulsePresenceFromCurrentState(clearWhenOffline = false)
+    }
+
+    /**
      * Watches the agency's tone-set version and re-pulls the custom tones when
      * an admin uploads or removes one, so a running handset never keeps stale
      * tones until the next restart. The first reading just sets the baseline —
@@ -1317,6 +1364,7 @@ class RadioViewModel(
         const val INBOX_POLL_MS = 2_000L
         const val STATUS_REFRESH_MS = 2_000L
         const val SOUNDS_VERSION_POLL_MS = 60_000L
+        const val CATALOG_POLL_MS = 15_000L
         const val OFFLINE_BANNER_CYCLE_MS = 2_000L
         const val OFFLINE_TONE_INTERVAL_MS = 10_000L
         const val RECONNECTED_BANNER_MS = 2_000L
