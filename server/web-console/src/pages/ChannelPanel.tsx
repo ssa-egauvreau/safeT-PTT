@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type PointerEvent,
+} from "react";
 import type { Permission, UserChannel } from "../api";
 import { VoiceChannelClient, type VoiceState, type ToneOutKind } from "../voice/voiceClient";
 import { ChannelRoster } from "./ChannelRoster";
@@ -14,13 +21,17 @@ import {
   IconVolumeMuted,
 } from "../icons";
 import {
+  PANEL_MAX_WIDTH,
+  PANEL_MIN_WIDTH,
   PERMISSION_LABEL,
   STATE_LABEL,
   keyLabel,
   loadMuted,
+  loadPanelWidth,
   loadTxDigital,
   loadVolume,
   muteKey,
+  panelWidthKey,
   txDigitalKey,
   volumeKey,
 } from "./consoleShared";
@@ -33,6 +44,8 @@ interface ChannelPanelProps {
   keyboardOn: boolean;
   onMakePrimary: () => void;
   onClose: () => void;
+  /** Drops a dragged panel (by channel id) onto this one to reorder the strip. */
+  onReorder?: (fromId: number) => void;
 }
 
 /** One channel's full control surface: listen, transmit, marker, and tone-outs. */
@@ -43,6 +56,7 @@ export function ChannelPanel({
   keyboardOn,
   onMakePrimary,
   onClose,
+  onReorder,
 }: ChannelPanelProps) {
   const [voiceState, setVoiceState] = useState<VoiceState>("connecting");
   const [voiceDetail, setVoiceDetail] = useState<string | null>(null);
@@ -56,6 +70,79 @@ export function ChannelPanel({
   const clientRef = useRef<VoiceChannelClient | null>(null);
   /** Whether the operator is currently holding PTT — gates the looping busy tone. */
   const pttHeldRef = useRef(false);
+
+  // --- panel layout: drag-to-reorder + drag-to-resize --------------------
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  // dragenter/dragleave bubble from children, so a depth counter avoids flicker.
+  const dragDepth = useRef(0);
+  const [dragOver, setDragOver] = useState(false);
+
+  // Restore the operator's saved panel width and persist any later resize.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) {
+      return;
+    }
+    const saved = loadPanelWidth(channel.id);
+    if (saved != null) {
+      el.style.width = `${saved}px`;
+    }
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+    let timer: number | undefined;
+    const observer = new ResizeObserver(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const width = parseInt(el.style.width, 10);
+        if (Number.isFinite(width) && width >= PANEL_MIN_WIDTH && width <= PANEL_MAX_WIDTH) {
+          localStorage.setItem(panelWidthKey(channel.id), String(width));
+        }
+      }, 400);
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+    };
+  }, [channel.id]);
+
+  function handleDragEnter() {
+    if (!onReorder) {
+      return;
+    }
+    dragDepth.current += 1;
+    setDragOver(true);
+  }
+
+  function handleDragLeave() {
+    if (!onReorder) {
+      return;
+    }
+    dragDepth.current -= 1;
+    if (dragDepth.current <= 0) {
+      dragDepth.current = 0;
+      setDragOver(false);
+    }
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    if (!onReorder) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragOver(false);
+    const from = Number(event.dataTransfer.getData("text/plain"));
+    if (Number.isFinite(from) && from !== channel.id) {
+      onReorder?.(from);
+    }
+  }
 
   const connect = useCallback(() => {
     const client = new VoiceChannelClient(channel.name, {
@@ -226,14 +313,34 @@ export function ChannelPanel({
 
   return (
     <div
-      className={primary ? "channel-panel live-panel primary" : "channel-panel live-panel"}
+      ref={rootRef}
+      className={`channel-panel live-panel${primary ? " primary" : ""}${dragOver ? " drag-over" : ""}`}
       style={channel.color ? { borderTopColor: channel.color, borderTopWidth: 3 } : undefined}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
     >
       <div
         className="cp-head"
         onClick={onMakePrimary}
         title={primary ? "Keyboard PTT controls this channel" : "Click to control with the keyboard PTT"}
       >
+        {onReorder && (
+          <span
+            className="cp-grip"
+            draggable
+            onClick={(e) => e.stopPropagation()}
+            onDragStart={(e) => {
+              e.dataTransfer.setData("text/plain", String(channel.id));
+              e.dataTransfer.effectAllowed = "move";
+            }}
+            title="Drag to reorder this channel"
+            aria-label="Drag to reorder this channel"
+          >
+            ⠿
+          </span>
+        )}
         <span className="live-channel cp-name">{channel.name}</span>
         <span className={`state-chip ${voiceState}`}>{STATE_LABEL[voiceState]}</span>
         {receiving && !transmitting && <span className="state-chip busy">BUSY</span>}

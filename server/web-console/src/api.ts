@@ -136,18 +136,24 @@ export interface PositionSample {
   recorded_at: string;
 }
 
-/** A circular map overlay zone drawn by an operator. */
+/** A map overlay zone drawn by an operator — a circle or a custom polygon. */
 export interface Geofence {
   id: number;
   name: string;
   shape: string;
   color: string | null;
-  center_lat: number;
-  center_lon: number;
-  radius_m: number;
+  center_lat: number | null;
+  center_lon: number | null;
+  radius_m: number | null;
+  /** Polygon vertices as [lat, lon] pairs; null for a circle geofence. */
+  points: [number, number][] | null;
   created_by: string | null;
   created_at: string;
 }
+
+export type GeofenceInput =
+  | { shape: "circle"; name: string; centerLat: number; centerLon: number; radiusM: number; color?: string | null }
+  | { shape: "polygon"; name: string; points: [number, number][]; color?: string | null };
 
 export interface Alert {
   id: number;
@@ -348,13 +354,8 @@ export const api = {
   },
 
   geofences: () => request<{ geofences: Geofence[] }>("GET", "/v1/geofences"),
-  createGeofence: (input: {
-    name: string;
-    centerLat: number;
-    centerLon: number;
-    radiusM: number;
-    color?: string | null;
-  }) => request<{ geofence: Geofence }>("POST", "/v1/geofences", input),
+  createGeofence: (input: GeofenceInput) =>
+    request<{ geofence: Geofence }>("POST", "/v1/geofences", input),
   deleteGeofence: (id: number) => request<{ ok: boolean }>("DELETE", `/v1/geofences/${id}`),
 
   alerts: () => request<{ alerts: Alert[] }>("GET", "/v1/alerts"),

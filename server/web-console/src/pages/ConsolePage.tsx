@@ -73,6 +73,21 @@ export function ConsolePage() {
     setOpenIds((prev) => prev.filter((x) => x !== id));
   }
 
+  // Drag-to-reorder: move the dragged panel to the drop target's slot.
+  function reorderChannels(fromId: number, toId: number) {
+    if (fromId === toId) {
+      return;
+    }
+    setOpenIds((prev) => {
+      if (!prev.includes(fromId) || !prev.includes(toId)) {
+        return prev;
+      }
+      const without = prev.filter((id) => id !== fromId);
+      const at = without.indexOf(toId);
+      return [...without.slice(0, at), fromId, ...without.slice(at)];
+    });
+  }
+
   function toggleKeyboard() {
     const next = !keyboardOn;
     setKeyboardOn(next);
@@ -260,6 +275,11 @@ export function ConsolePage() {
                   keyboardOn={keyboardOn}
                   onMakePrimary={() => setPrimaryId(channel.id)}
                   onClose={() => closeChannel(channel.id)}
+                  onReorder={
+                    openChannelObjs.length > 1
+                      ? (fromId) => reorderChannels(fromId, channel.id)
+                      : undefined
+                  }
                 />
               ))}
             </div>

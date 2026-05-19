@@ -37,17 +37,25 @@ function toInput(b: Bridge): BridgeInput {
 function BridgeForm({
   initial,
   busy,
+  channelNames,
+  simulcastNames,
   onSubmit,
   onDelete,
 }: {
   initial: BridgeInput;
   busy: boolean;
+  channelNames: string[];
+  simulcastNames: string[];
   onSubmit: (input: BridgeInput) => void;
   onDelete?: () => void;
 }) {
   const [f, setF] = useState<BridgeInput>(initial);
   const set = <K extends keyof BridgeInput>(key: K, value: BridgeInput[K]) =>
     setF((prev) => ({ ...prev, [key]: value }));
+
+  // A bridge saved against a since-renamed channel must still show its target.
+  const known = new Set([...channelNames, ...simulcastNames]);
+  const orphanTarget = f.targetChannel.trim() && !known.has(f.targetChannel.trim());
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -97,12 +105,36 @@ function BridgeForm({
         )}
         <div className="field">
           <label>Target channel</label>
-          <input
+          <select
             value={f.targetChannel}
             onChange={(e) => set("targetChannel", e.target.value)}
-            placeholder="channel or simulcast name"
             required
-          />
+          >
+            <option value="" disabled>
+              Select a channel…
+            </option>
+            {channelNames.length > 0 && (
+              <optgroup label="Channels">
+                {channelNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {simulcastNames.length > 0 && (
+              <optgroup label="Simulcast">
+                {simulcastNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {orphanTarget && (
+              <option value={f.targetChannel}>{f.targetChannel} (not found)</option>
+            )}
+          </select>
         </div>
         {f.sourceType === "audio_device" && (
           <div className="field">
@@ -172,6 +204,8 @@ function BridgeForm({
 /** Admin panel for configuring radio bridges. */
 export function BridgesPanel() {
   const [bridges, setBridges] = useState<Bridge[]>([]);
+  const [channelNames, setChannelNames] = useState<string[]>([]);
+  const [simulcastNames, setSimulcastNames] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -190,6 +224,20 @@ export function BridgesPanel() {
 
   useEffect(() => {
     void reload();
+    // Channels and simulcasts populate the target-channel dropdown; a failed
+    // simulcast fetch must not block the rest of the panel.
+    void (async () => {
+      const [chans, sims] = await Promise.allSettled([
+        api.listChannels(),
+        api.listSimulcasts(),
+      ]);
+      if (chans.status === "fulfilled") {
+        setChannelNames(chans.value.channels.map((c) => c.name));
+      }
+      if (sims.status === "fulfilled") {
+        setSimulcastNames(sims.value.simulcasts.map((s) => s.name));
+      }
+    })();
   }, []);
 
   async function run(action: () => Promise<unknown>) {
@@ -235,7 +283,14 @@ export function BridgesPanel() {
       {error && <div className="banner error">{error}</div>}
 
       <h3>New bridge</h3>
-      <BridgeForm key={createKey} initial={emptyInput()} busy={busy} onSubmit={create} />
+      <BridgeForm
+        key={createKey}
+        initial={emptyInput()}
+        busy={busy}
+        channelNames={channelNames}
+        simulcastNames={simulcastNames}
+        onSubmit={create}
+      />
 
       {loading ? (
         <div className="empty">Loading…</div>
@@ -253,6 +308,8 @@ export function BridgesPanel() {
             <BridgeForm
               initial={toInput(bridge)}
               busy={busy}
+              channelNames={channelNames}
+              simulcastNames={simulcastNames}
               onSubmit={(input) => void run(() => api.updateBridge(bridge.id, input))}
               onDelete={() => remove(bridge)}
             />

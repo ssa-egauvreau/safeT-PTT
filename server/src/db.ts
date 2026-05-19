@@ -274,7 +274,7 @@ export async function ensureSchema(): Promise<void> {
     );
   `);
 
-  // Map geofences — circular overlay zones an operator draws on the live map.
+  // Map geofences — circle or custom-polygon overlay zones an operator draws.
   await p.query(`
     CREATE TABLE IF NOT EXISTS geofences (
       id SERIAL PRIMARY KEY,
@@ -289,6 +289,11 @@ export async function ensureSchema(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  // Polygon geofences carry a vertex list instead of a centre/radius.
+  await p.query(`ALTER TABLE geofences ADD COLUMN IF NOT EXISTS points JSONB;`);
+  await p.query(`ALTER TABLE geofences ALTER COLUMN center_lat DROP NOT NULL;`);
+  await p.query(`ALTER TABLE geofences ALTER COLUMN center_lon DROP NOT NULL;`);
+  await p.query(`ALTER TABLE geofences ALTER COLUMN radius_m DROP NOT NULL;`);
 
   // GPS log — every position report appended, so the console can replay a
   // radio's track. radio_positions keeps only the latest fix per unit.

@@ -1596,32 +1596,78 @@ export function createApiRouter(): Router {
   router.post("/geofences", requireAgencyOperator, async (req, res) => {
     try {
       const agencyId = req.authUser!.agencyId!;
-      const name = String(req.body?.name ?? "").trim();
-      const centerLat = Number(req.body?.centerLat);
-      const centerLon = Number(req.body?.centerLon);
-      const radiusM = Number(req.body?.radiusM);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const name = String(body.name ?? "").trim();
       if (!name) {
         res.status(400).json({ error: "missing_name" });
         return;
       }
-      if (
-        !Number.isFinite(centerLat) ||
-        !Number.isFinite(centerLon) ||
-        !Number.isFinite(radiusM) ||
-        radiusM <= 0
-      ) {
-        res.status(400).json({ error: "missing_fields" });
-        return;
+      const colorRaw = typeof body.color === "string" ? body.color.trim() : "";
+      const color = /^#[0-9a-fA-F]{6}$/.test(colorRaw) ? colorRaw : null;
+      const shape = body.shape === "polygon" ? "polygon" : "circle";
+
+      let fields: {
+        centerLat: number | null;
+        centerLon: number | null;
+        radiusM: number | null;
+        points: [number, number][] | null;
+        detail: Record<string, unknown>;
+      };
+      if (shape === "polygon") {
+        const raw = Array.isArray(body.points) ? body.points : [];
+        const points: [number, number][] = [];
+        for (const pt of raw) {
+          if (Array.isArray(pt) && pt.length === 2) {
+            const lat = Number(pt[0]);
+            const lon = Number(pt[1]);
+            if (Number.isFinite(lat) && Number.isFinite(lon)) {
+              points.push([lat, lon]);
+            }
+          }
+        }
+        // A polygon needs at least a triangle; cap the vertex count.
+        if (points.length < 3) {
+          res.status(400).json({ error: "missing_fields" });
+          return;
+        }
+        fields = {
+          centerLat: null,
+          centerLon: null,
+          radiusM: null,
+          points: points.slice(0, 200),
+          detail: { vertices: Math.min(points.length, 200) },
+        };
+      } else {
+        const centerLat = Number(body.centerLat);
+        const centerLon = Number(body.centerLon);
+        const radiusM = Number(body.radiusM);
+        if (
+          !Number.isFinite(centerLat) ||
+          !Number.isFinite(centerLon) ||
+          !Number.isFinite(radiusM) ||
+          radiusM <= 0
+        ) {
+          res.status(400).json({ error: "missing_fields" });
+          return;
+        }
+        fields = {
+          centerLat,
+          centerLon,
+          radiusM,
+          points: null,
+          detail: { radius_m: Math.round(radiusM) },
+        };
       }
-      const colorRaw = typeof req.body?.color === "string" ? req.body.color.trim() : "";
+
       const geofence = await createGeofence({
         agencyId,
         name: name.slice(0, 80),
-        shape: "circle",
-        color: /^#[0-9a-fA-F]{6}$/.test(colorRaw) ? colorRaw : null,
-        centerLat,
-        centerLon,
-        radiusM,
+        shape,
+        color,
+        centerLat: fields.centerLat,
+        centerLon: fields.centerLon,
+        radiusM: fields.radiusM,
+        points: fields.points,
         createdBy: req.authUser!.displayName,
       });
       await writeAudit({
@@ -1630,7 +1676,7 @@ export function createApiRouter(): Router {
         actorName: req.authUser!.username,
         action: "geofence_create",
         target: geofence.name,
-        detail: { radius_m: Math.round(radiusM) },
+        detail: { shape, ...fields.detail },
         ip: clientIp(req),
       });
       res.status(201).json({ geofence });

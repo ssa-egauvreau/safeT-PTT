@@ -15,13 +15,20 @@ const POLL_MS = 5000;
 const STALE_MS = 5 * 60_000;
 /** Zoom level the map flies to when a radio goes into emergency. */
 const EMERGENCY_ZOOM = 16;
-/** Default radius (metres) for a freshly dropped geofence. */
+/** Default radius (metres) for a freshly dropped circle geofence. */
 const DEFAULT_GEOFENCE_RADIUS = 250;
 const GEOFENCE_DEFAULT_COLOR = "#22c5e5";
+/** Route the pop-out window loads — a standalone full-window map. */
+const MAP_WINDOW_PATH = "/console/map";
 
 type MarkerState = "live" | "stale" | "emergency";
 type DrawMode = "view" | "place";
+type DrawShape = "circle" | "polygon";
 type BaseLayer = "street" | "satellite";
+
+type CircleDraft = { shape: "circle"; lat: number; lon: number; radiusM: number };
+type PolygonDraft = { shape: "polygon"; points: [number, number][] };
+type GeofenceDraft = CircleDraft | PolygonDraft;
 
 /** Inner SVG markup for a handheld-radio marker glyph. */
 const RADIO_GLYPH =
@@ -116,12 +123,21 @@ function trackTip(sample: PositionSample): string {
   return escapeHtml(time + speed);
 }
 
+const tuple = (p: [number, number]): L.LatLngTuple => [p[0], p[1]];
+
 interface UnitOption {
   unitId: string;
   label: string;
 }
 
-export function MapPanel() {
+interface MapViewProps {
+  /** "embedded" runs inside the console column; "window" fills a pop-out window. */
+  variant?: "embedded" | "window";
+  onPopOut?: () => void;
+}
+
+/** The live radio map — markers, geofence overlays, and GPS-log search. */
+export function MapView({ variant = "embedded", onPopOut }: MapViewProps) {
   const { user } = useAuth();
   const canEdit = user?.role === "admin" || user?.role === "dispatcher";
 
@@ -131,7 +147,7 @@ export function MapPanel() {
   const baseLayerRef = useRef<L.TileLayer | null>(null);
   const geoLayerRef = useRef<L.LayerGroup | null>(null);
   const trackLayerRef = useRef<L.LayerGroup | null>(null);
-  const draftCircleRef = useRef<L.Circle | null>(null);
+  const draftLayerRef = useRef<L.LayerGroup | null>(null);
   const fittedRef = useRef(false);
   // Units already auto-zoomed to, so a standing emergency only pulls the map once.
   const emergencyZoomedRef = useRef<Set<string>>(new Set());
@@ -146,7 +162,9 @@ export function MapPanel() {
   const [geofences, setGeofences] = useState<Geofence[]>([]);
   const [geoPanelOpen, setGeoPanelOpen] = useState(false);
   const [mode, setMode] = useState<DrawMode>("view");
-  const [draft, setDraft] = useState<{ lat: number; lon: number; radiusM: number } | null>(null);
+  const [drawShape, setDrawShape] = useState<DrawShape>("circle");
+  const [polyPoints, setPolyPoints] = useState<[number, number][]>([]);
+  const [draft, setDraft] = useState<GeofenceDraft | null>(null);
   const [draftName, setDraftName] = useState("");
   const [draftColor, setDraftColor] = useState(GEOFENCE_DEFAULT_COLOR);
   const [geoBusy, setGeoBusy] = useState(false);
@@ -169,6 +187,8 @@ export function MapPanel() {
   aliasRef.current = aliasFor;
   const modeRef = useRef<DrawMode>(mode);
   modeRef.current = mode;
+  const drawShapeRef = useRef<DrawShape>(drawShape);
+  drawShapeRef.current = drawShape;
 
   const refreshGeofences = useCallback(() => {
     api
@@ -184,13 +204,18 @@ export function MapPanel() {
     }
     const map = L.map(mapElRef.current).setView([39.5, -98.35], 4);
     mapRef.current = map;
-    // A click while drawing drops the geofence centre.
+    // A click while drawing builds the geofence shape.
     map.on("click", (e: L.LeafletMouseEvent) => {
       if (modeRef.current !== "place") {
         return;
       }
-      setDraft({ lat: e.latlng.lat, lon: e.latlng.lng, radiusM: DEFAULT_GEOFENCE_RADIUS });
-      setMode("view");
+      const point: [number, number] = [e.latlng.lat, e.latlng.lng];
+      if (drawShapeRef.current === "circle") {
+        setDraft({ shape: "circle", lat: point[0], lon: point[1], radiusM: DEFAULT_GEOFENCE_RADIUS });
+        setMode("view");
+      } else {
+        setPolyPoints((prev) => [...prev, point]);
+      }
     });
     const resize = window.setTimeout(() => map.invalidateSize(), 200);
     const markers = markersRef.current;
@@ -201,7 +226,7 @@ export function MapPanel() {
       baseLayerRef.current = null;
       geoLayerRef.current = null;
       trackLayerRef.current = null;
-      draftCircleRef.current = null;
+      draftLayerRef.current = null;
       markers.clear();
     };
   }, []);
@@ -248,44 +273,58 @@ export function MapPanel() {
     layer.clearLayers();
     for (const fence of geofences) {
       const color = fence.color ?? GEOFENCE_DEFAULT_COLOR;
-      L.circle([fence.center_lat, fence.center_lon], {
-        radius: fence.radius_m,
-        color,
-        fillColor: color,
-        fillOpacity: 0.1,
-        weight: 2,
-      })
-        .bindTooltip(escapeHtml(fence.name), { direction: "top", sticky: true })
-        .addTo(layer);
+      const style = { color, fillColor: color, fillOpacity: 0.1, weight: 2 };
+      let shape: L.Path | null = null;
+      if (fence.shape === "polygon" && fence.points && fence.points.length >= 3) {
+        shape = L.polygon(fence.points.map(tuple), style);
+      } else if (fence.center_lat != null && fence.center_lon != null && fence.radius_m != null) {
+        shape = L.circle([fence.center_lat, fence.center_lon], { ...style, radius: fence.radius_m });
+      }
+      if (shape) {
+        shape.bindTooltip(escapeHtml(fence.name), { direction: "top", sticky: true }).addTo(layer);
+      }
     }
   }, [geofences]);
 
-  // The dashed circle that previews a geofence the operator is placing.
+  // The dashed preview of the geofence being drawn (in-progress or completed).
   useEffect(() => {
     const map = mapRef.current;
     if (!map) {
       return;
     }
-    if (!draft) {
-      draftCircleRef.current?.remove();
-      draftCircleRef.current = null;
+    const layer = draftLayerRef.current ?? L.layerGroup().addTo(map);
+    draftLayerRef.current = layer;
+    layer.clearLayers();
+    const style = {
+      color: draftColor,
+      fillColor: draftColor,
+      fillOpacity: 0.12,
+      weight: 2,
+      dashArray: "5 5",
+    };
+    if (polyPoints.length > 0) {
+      const latlngs = polyPoints.map(tuple);
+      (latlngs.length >= 3 ? L.polygon(latlngs, style) : L.polyline(latlngs, style)).addTo(layer);
+      for (const ll of latlngs) {
+        L.circleMarker(ll, {
+          radius: 4,
+          color: draftColor,
+          fillColor: "#ffffff",
+          fillOpacity: 1,
+          weight: 2,
+        }).addTo(layer);
+      }
       return;
     }
-    if (!draftCircleRef.current) {
-      draftCircleRef.current = L.circle([draft.lat, draft.lon], {
-        radius: draft.radiusM,
-        color: draftColor,
-        fillColor: draftColor,
-        fillOpacity: 0.12,
-        weight: 2,
-        dashArray: "5 5",
-      }).addTo(map);
-    } else {
-      draftCircleRef.current.setLatLng([draft.lat, draft.lon]);
-      draftCircleRef.current.setRadius(draft.radiusM);
-      draftCircleRef.current.setStyle({ color: draftColor, fillColor: draftColor });
+    if (!draft) {
+      return;
     }
-  }, [draft, draftColor]);
+    if (draft.shape === "circle") {
+      L.circle([draft.lat, draft.lon], { ...style, radius: draft.radiusM }).addTo(layer);
+    } else {
+      L.polygon(draft.points.map(tuple), style).addTo(layer);
+    }
+  }, [draft, draftColor, polyPoints]);
 
   // --- GPS track overlay -------------------------------------------------
   useEffect(() => {
@@ -469,19 +508,35 @@ export function MapPanel() {
   }, [track]);
 
   // --- geofence actions --------------------------------------------------
-  function startDrawing() {
+  function startDrawing(shape: DrawShape) {
     setGeoPanelOpen(true);
     setGeoError(null);
     setDraft(null);
+    setPolyPoints([]);
     setDraftName("");
     setDraftColor(GEOFENCE_DEFAULT_COLOR);
+    setDrawShape(shape);
     setMode("place");
   }
 
   function cancelDraft() {
     setDraft(null);
+    setPolyPoints([]);
     setMode("view");
     setGeoError(null);
+  }
+
+  function undoPoint() {
+    setPolyPoints((prev) => prev.slice(0, -1));
+  }
+
+  function finishPolygon() {
+    if (polyPoints.length < 3) {
+      return;
+    }
+    setDraft({ shape: "polygon", points: polyPoints });
+    setPolyPoints([]);
+    setMode("view");
   }
 
   async function saveGeofence() {
@@ -496,13 +551,23 @@ export function MapPanel() {
     setGeoBusy(true);
     setGeoError(null);
     try {
-      await api.createGeofence({
-        name,
-        centerLat: draft.lat,
-        centerLon: draft.lon,
-        radiusM: Math.round(draft.radiusM),
-        color: draftColor,
-      });
+      if (draft.shape === "circle") {
+        await api.createGeofence({
+          shape: "circle",
+          name,
+          centerLat: draft.lat,
+          centerLon: draft.lon,
+          radiusM: Math.round(draft.radiusM),
+          color: draftColor,
+        });
+      } else {
+        await api.createGeofence({
+          shape: "polygon",
+          name,
+          points: draft.points,
+          color: draftColor,
+        });
+      }
       setDraft(null);
       setDraftName("");
       refreshGeofences();
@@ -523,7 +588,15 @@ export function MapPanel() {
   }
 
   function focusGeofence(fence: Geofence) {
-    mapRef.current?.flyTo([fence.center_lat, fence.center_lon], 14);
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    if (fence.shape === "polygon" && fence.points && fence.points.length >= 3) {
+      map.fitBounds(L.latLngBounds(fence.points.map(tuple)).pad(0.3));
+    } else if (fence.center_lat != null && fence.center_lon != null) {
+      map.flyTo([fence.center_lat, fence.center_lon], 14);
+    }
   }
 
   // --- GPS log actions ---------------------------------------------------
@@ -559,8 +632,15 @@ export function MapPanel() {
     setTrackStatus(null);
   }
 
+  const rootClass =
+    variant === "window"
+      ? "map-panel windowed"
+      : expanded
+        ? "map-panel expanded"
+        : "map-panel";
+
   return (
-    <div className={expanded ? "map-panel expanded" : "map-panel"}>
+    <div className={rootClass}>
       <div className="map-head">
         <h3>Radio Map</h3>
         <span className="count">
@@ -594,9 +674,16 @@ export function MapPanel() {
           >
             GPS log
           </button>
-          <button className="btn sm" onClick={() => setExpanded((v) => !v)}>
-            {expanded ? "Collapse" : "Expand"}
-          </button>
+          {variant === "embedded" && onPopOut && (
+            <button className="btn sm" onClick={onPopOut}>
+              Pop out
+            </button>
+          )}
+          {variant === "embedded" && (
+            <button className="btn sm" onClick={() => setExpanded((v) => !v)}>
+              {expanded ? "Collapse" : "Expand"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -604,7 +691,11 @@ export function MapPanel() {
 
       {mode === "place" && (
         <div className="banner info map-draw-hint">
-          Click the map to drop the geofence centre.
+          <span>
+            {drawShape === "circle"
+              ? "Click the map to drop the geofence centre."
+              : "Click the map to add polygon corners — three or more."}
+          </span>
           <button className="btn sm" onClick={cancelDraft}>
             Cancel
           </button>
@@ -615,13 +706,37 @@ export function MapPanel() {
         <div className="map-tool-panel">
           <div className="map-tool-head">
             <strong>Geofence overlays</strong>
-            {canEdit && mode !== "place" && !draft && (
-              <button className="btn sm" onClick={startDrawing}>
-                Add geofence
-              </button>
+            {canEdit && mode === "view" && !draft && (
+              <div className="geofence-add">
+                <button className="btn sm" onClick={() => startDrawing("circle")}>
+                  + Circle
+                </button>
+                <button className="btn sm" onClick={() => startDrawing("polygon")}>
+                  + Polygon
+                </button>
+              </div>
             )}
           </div>
           {geoError && <div className="banner error">{geoError}</div>}
+
+          {mode === "place" && drawShape === "polygon" && (
+            <div className="geofence-poly">
+              <span>
+                {polyPoints.length} point{polyPoints.length === 1 ? "" : "s"} placed
+              </span>
+              <button className="btn sm" onClick={undoPoint} disabled={polyPoints.length === 0}>
+                Undo point
+              </button>
+              <button
+                className="btn sm primary"
+                onClick={finishPolygon}
+                disabled={polyPoints.length < 3}
+              >
+                Finish shape
+              </button>
+            </div>
+          )}
+
           {draft && (
             <div className="geofence-draft">
               <label>
@@ -630,28 +745,30 @@ export function MapPanel() {
                   type="text"
                   value={draftName}
                   maxLength={80}
-                  placeholder="e.g. Downtown patrol"
+                  placeholder={draft.shape === "circle" ? "e.g. Downtown patrol" : "e.g. Stadium zone"}
                   autoFocus
                   onChange={(e) => setDraftName(e.target.value)}
                 />
               </label>
               <div className="geofence-draft-row">
-                <label>
-                  Radius (m)
-                  <input
-                    type="number"
-                    min={25}
-                    max={50000}
-                    step={25}
-                    value={Math.round(draft.radiusM)}
-                    onChange={(e) => {
-                      const next = Number(e.target.value);
-                      if (Number.isFinite(next) && next > 0) {
-                        setDraft({ ...draft, radiusM: next });
-                      }
-                    }}
-                  />
-                </label>
+                {draft.shape === "circle" && (
+                  <label>
+                    Radius (m)
+                    <input
+                      type="number"
+                      min={25}
+                      max={50000}
+                      step={25}
+                      value={Math.round(draft.radiusM)}
+                      onChange={(e) => {
+                        const next = Number(e.target.value);
+                        if (Number.isFinite(next) && next > 0) {
+                          setDraft({ ...draft, radiusM: next });
+                        }
+                      }}
+                    />
+                  </label>
+                )}
                 <label>
                   Colour
                   <input
@@ -660,6 +777,9 @@ export function MapPanel() {
                     onChange={(e) => setDraftColor(e.target.value)}
                   />
                 </label>
+                {draft.shape === "polygon" && (
+                  <span className="geofence-draft-note">{draft.points.length}-corner polygon</span>
+                )}
               </div>
               <div className="geofence-draft-actions">
                 <button className="btn sm primary" onClick={saveGeofence} disabled={geoBusy}>
@@ -671,10 +791,11 @@ export function MapPanel() {
               </div>
             </div>
           )}
+
           {geofences.length === 0 && !draft ? (
             <div className="empty">
               {canEdit
-                ? "No geofences yet — add one to mark a zone on the map."
+                ? "No geofences yet — add a circle or polygon to mark a zone."
                 : "No geofences have been drawn."}
             </div>
           ) : (
@@ -686,9 +807,16 @@ export function MapPanel() {
                     onClick={() => focusGeofence(fence)}
                     title="Centre the map on this geofence"
                   >
-                    <span className="geofence-swatch" style={{ background: fence.color ?? GEOFENCE_DEFAULT_COLOR }} />
+                    <span
+                      className="geofence-swatch"
+                      style={{ background: fence.color ?? GEOFENCE_DEFAULT_COLOR }}
+                    />
                     {fence.name}
-                    <span className="geofence-meta">{Math.round(fence.radius_m)} m</span>
+                    <span className="geofence-meta">
+                      {fence.shape === "polygon"
+                        ? `Polygon · ${fence.points?.length ?? 0} pts`
+                        : `${Math.round(fence.radius_m ?? 0)} m`}
+                    </span>
                   </button>
                   {canEdit && (
                     <button className="geofence-remove" onClick={() => removeGeofence(fence.id)}>
@@ -761,4 +889,70 @@ export function MapPanel() {
       <div ref={mapElRef} className="map-canvas" />
     </div>
   );
+}
+
+/**
+ * The console's map slot. Hosts the embedded {@link MapView} and can detach it
+ * into a standalone browser window so the map lives on a second screen.
+ */
+export function MapPanel() {
+  const [popup, setPopup] = useState<Window | null>(null);
+
+  // While the map is detached, watch for the operator closing that window.
+  useEffect(() => {
+    if (!popup) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      if (popup.closed) {
+        setPopup(null);
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [popup]);
+
+  function popOut() {
+    if (popup && !popup.closed) {
+      popup.focus();
+      return;
+    }
+    const win = window.open(
+      MAP_WINDOW_PATH,
+      "safetRadioMap",
+      "popup=yes,width=1180,height=860",
+    );
+    if (win) {
+      win.focus();
+      setPopup(win);
+    }
+  }
+
+  function bringBack() {
+    popup?.close();
+    setPopup(null);
+  }
+
+  if (popup) {
+    return (
+      <div className="map-panel">
+        <div className="map-head">
+          <h3>Radio Map</h3>
+        </div>
+        <div className="map-popped">
+          <strong>Map opened in a separate window</strong>
+          <p>The live radio map is running in its own window — drag it to another screen.</p>
+          <div className="map-popped-actions">
+            <button className="btn sm" onClick={() => popup.focus()}>
+              Focus window
+            </button>
+            <button className="btn sm" onClick={bringBack}>
+              Show here again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return <MapView variant="embedded" onPopOut={popOut} />;
 }

@@ -27,6 +27,17 @@ export const KEYBOARD_ENABLED_KEY = "securityradio.keyboardOn";
 export const volumeKey = (id: number) => `securityradio.vol.${id}`;
 export const muteKey = (id: number) => `securityradio.mute.${id}`;
 export const txDigitalKey = (id: number) => `securityradio.txDigital.${id}`;
+export const panelWidthKey = (id: number) => `securityradio.panelWidth.${id}`;
+
+/** Min/max width (px) an operator may resize a channel panel to. */
+export const PANEL_MIN_WIDTH = 280;
+export const PANEL_MAX_WIDTH = 760;
+
+/** Saved width (px) for a channel panel, or null when the operator never resized it. */
+export function loadPanelWidth(id: number): number | null {
+  const raw = Number(localStorage.getItem(panelWidthKey(id)));
+  return Number.isFinite(raw) && raw >= PANEL_MIN_WIDTH && raw <= PANEL_MAX_WIDTH ? raw : null;
+}
 
 /** Friendly label for a KeyboardEvent.code (e.g. "KeyT" -> "T", "F12" -> "F12"). */
 export function keyLabel(code: string): string {

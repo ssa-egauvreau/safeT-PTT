@@ -3,6 +3,7 @@ import { useAuth } from "./auth";
 import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ConsolePage } from "./pages/ConsolePage";
+import { MapWindowPage } from "./pages/MapWindowPage";
 import { BridgeRunnerPage } from "./pages/BridgeRunnerPage";
 import { AdminPage } from "./pages/admin/AdminPage";
 import { OwnerPage } from "./pages/owner/OwnerPage";
@@ -32,6 +33,18 @@ export function App() {
             <Navigate to="/owner" replace />
           ) : (
             <ConsolePage />
+          )
+        }
+      />
+      <Route
+        path="/console/map"
+        element={
+          !user ? (
+            <Navigate to="/login" replace />
+          ) : user.role === "owner" ? (
+            <Navigate to="/owner" replace />
+          ) : (
+            <MapWindowPage />
           )
         }
       />

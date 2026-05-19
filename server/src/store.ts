@@ -1201,15 +1201,17 @@ export interface GeofenceRow {
   name: string;
   shape: string;
   color: string | null;
-  center_lat: number;
-  center_lon: number;
-  radius_m: number;
+  center_lat: number | null;
+  center_lon: number | null;
+  radius_m: number | null;
+  /** Polygon vertices as [lat, lon] pairs; null for a circle geofence. */
+  points: [number, number][] | null;
   created_by: string | null;
   created_at: string;
 }
 
 const GEOFENCE_COLS =
-  "id, name, shape, color, center_lat, center_lon, radius_m, created_by, created_at";
+  "id, name, shape, color, center_lat, center_lon, radius_m, points, created_by, created_at";
 
 export async function listGeofences(agencyId: number): Promise<GeofenceRow[]> {
   const res = await requirePool().query<GeofenceRow>(
@@ -1224,14 +1226,16 @@ export async function createGeofence(input: {
   name: string;
   shape: string;
   color: string | null;
-  centerLat: number;
-  centerLon: number;
-  radiusM: number;
+  centerLat: number | null;
+  centerLon: number | null;
+  radiusM: number | null;
+  points: [number, number][] | null;
   createdBy: string | null;
 }): Promise<GeofenceRow> {
   const res = await requirePool().query<GeofenceRow>(
-    `INSERT INTO geofences (agency_id, name, shape, color, center_lat, center_lon, radius_m, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO geofences
+       (agency_id, name, shape, color, center_lat, center_lon, radius_m, points, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING ${GEOFENCE_COLS};`,
     [
       input.agencyId,
@@ -1241,6 +1245,7 @@ export async function createGeofence(input: {
       input.centerLat,
       input.centerLon,
       input.radiusM,
+      input.points ? JSON.stringify(input.points) : null,
       input.createdBy,
     ],
   );
