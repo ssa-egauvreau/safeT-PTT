@@ -10,8 +10,12 @@ import okio.Buffer
 import okio.ByteString
 import android.util.Log
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -71,6 +75,14 @@ class VoiceRelayTransport(
 
     private val wantOnline = AtomicBoolean(false)
 
+    /** Background reconnector so an idle (listening-only) radio recovers RX after a drop. */
+    private val reconnectExecutor: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "voice-relay-reconnect").apply { isDaemon = true }
+        }
+    private val reconnectAttempt = AtomicInteger(0)
+    private val reconnectPending = AtomicBoolean(false)
+
     private var pcmAcc = ByteArray(2048)
     private var pcmAccLen = 0
     private var lastP25TxEnabled: Boolean? = null
@@ -85,6 +97,7 @@ class VoiceRelayTransport(
     private val listener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
             socketReady.set(true)
+            reconnectAttempt.set(0)
             sendJoin(webSocket)
         }
 
@@ -103,11 +116,13 @@ class VoiceRelayTransport(
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
             socketReady.set(false)
             webSocketRef.compareAndSet(webSocket, null)
+            scheduleReconnect()
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             socketReady.set(false)
             webSocketRef.compareAndSet(webSocket, null)
+            scheduleReconnect()
         }
     }
 
@@ -304,6 +319,7 @@ class VoiceRelayTransport(
     /** Permanent teardown when discarding transport (normally unused — prefer [disconnect]). */
     fun shutdown() {
         disconnect()
+        reconnectExecutor.shutdownNow()
         inbound.release()
     }
 
@@ -335,6 +351,40 @@ class VoiceRelayTransport(
         val ws = client.newWebSocket(rb.build(), listener)
         webSocketRef.set(ws)
         socketReady.set(false)
+    }
+
+    /**
+     * Reopen the relay socket after an unexpected drop, with exponential
+     * backoff (1s → 30s), so a radio that is only listening recovers RX
+     * without waiting for the operator to PTT or change channel.
+     */
+    private fun scheduleReconnect() {
+        if (!wantOnline.get()) return
+        if (!reconnectPending.compareAndSet(false, true)) return
+        val attempt = reconnectAttempt.getAndIncrement()
+        val delaySeconds = when {
+            attempt <= 0 -> 1L
+            attempt >= 5 -> 30L
+            else -> 1L shl attempt
+        }
+        try {
+            reconnectExecutor.schedule(
+                {
+                    reconnectPending.set(false)
+                    if (wantOnline.get()) {
+                        synchronized(connectionLock) {
+                            if (wantOnline.get() && webSocketRef.get() == null) {
+                                openSocketLocked()
+                            }
+                        }
+                    }
+                },
+                delaySeconds,
+                TimeUnit.SECONDS,
+            )
+        } catch (_: RejectedExecutionException) {
+            reconnectPending.set(false)
+        }
     }
 
     private fun escapeJsonFragment(s: String): String =

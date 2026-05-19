@@ -24,6 +24,9 @@ import com.securityradio.ptt.device.RadioPreferences
 import com.securityradio.ptt.device.RadioUiSoundPlayer
 import com.securityradio.ptt.device.VoiceRelayTransport
 import com.securityradio.ptt.domain.ChannelRepository
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 class RadioAppGraph(val application: Application) {
 
@@ -65,6 +68,14 @@ class RadioAppGraph(val application: Application) {
         }
     }
 
+    private val _authExpired = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /**
+     * Emits when the server rejects the stored token (HTTP 401). The UI should
+     * sign out and return to the login screen instead of failing silently.
+     */
+    val authExpired: SharedFlow<Unit> = _authExpired.asSharedFlow()
+
     val authApi: AuthApi = NetworkModule.authApi(BuildConfig.API_BASE_URL)
 
     /** Pulls the agency's custom radio tones; refreshed at startup and on key change. */
@@ -94,12 +105,14 @@ class RadioAppGraph(val application: Application) {
         baseUrl = BuildConfig.API_BASE_URL,
         authTokenProvider = authTokenProvider,
         apiKeyProvider = radioApiKeyProvider,
+        onUnauthorized = { _authExpired.tryEmit(Unit) },
     )
 
     val radioApi: RadioApi = NetworkModule.radioApi(
         baseUrl = BuildConfig.API_BASE_URL,
         authTokenProvider = authTokenProvider,
         apiKeyProvider = radioApiKeyProvider,
+        onUnauthorized = { _authExpired.tryEmit(Unit) },
     )
 
     fun onAuthSessionChanged() {

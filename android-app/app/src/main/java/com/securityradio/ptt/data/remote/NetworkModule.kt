@@ -14,6 +14,7 @@ object NetworkModule {
         baseUrl: String,
         authTokenProvider: () -> String,
         apiKeyProvider: () -> String,
+        onUnauthorized: () -> Unit,
     ): Retrofit {
         val logging = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) {
@@ -35,10 +36,22 @@ object NetworkModule {
             chain.proceed(builder.build())
         }
 
+        // A 401 on a request that carried a bearer token means the saved
+        // session is no longer accepted by the server — surface it so the UI
+        // can sign out, instead of failing silently on every screen.
+        val unauthorizedInterceptor = Interceptor { chain ->
+            val response = chain.proceed(chain.request())
+            if (response.code == 401 && chain.request().header("Authorization") != null) {
+                onUnauthorized()
+            }
+            response
+        }
+
         val client = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .addInterceptor(authInterceptor)
+            .addInterceptor(unauthorizedInterceptor)
             .addInterceptor(logging)
             .build()
 
@@ -53,14 +66,19 @@ object NetworkModule {
         baseUrl: String,
         authTokenProvider: () -> String,
         apiKeyProvider: () -> String,
-    ): ChannelsApi = buildRetrofit(baseUrl, authTokenProvider, apiKeyProvider).create(ChannelsApi::class.java)
+        onUnauthorized: () -> Unit = {},
+    ): ChannelsApi = buildRetrofit(baseUrl, authTokenProvider, apiKeyProvider, onUnauthorized)
+        .create(ChannelsApi::class.java)
 
     fun radioApi(
         baseUrl: String,
         authTokenProvider: () -> String,
         apiKeyProvider: () -> String,
-    ): RadioApi = buildRetrofit(baseUrl, authTokenProvider, apiKeyProvider).create(RadioApi::class.java)
+        onUnauthorized: () -> Unit = {},
+    ): RadioApi = buildRetrofit(baseUrl, authTokenProvider, apiKeyProvider, onUnauthorized)
+        .create(RadioApi::class.java)
 
     fun authApi(baseUrl: String): AuthApi =
-        buildRetrofit(baseUrl, authTokenProvider = { "" }, apiKeyProvider = { "" }).create(AuthApi::class.java)
+        buildRetrofit(baseUrl, authTokenProvider = { "" }, apiKeyProvider = { "" }, onUnauthorized = {})
+            .create(AuthApi::class.java)
 }

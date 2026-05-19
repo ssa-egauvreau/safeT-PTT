@@ -78,12 +78,21 @@ class MainActivity : ComponentActivity() {
         setContent {
             RadioTheme {
                 var showRadio by remember { mutableStateOf(appGraph.radioPreferences.isLoggedIn()) }
+                var sessionExpiredNotice by remember { mutableStateOf(false) }
 
                 if (!showRadio) {
                     val loginVm: LoginViewModel = viewModel(factory = LoginViewModelFactory(appGraph))
                     LoginScreen(
                         viewModel = loginVm,
-                        onSignedIn = { showRadio = true },
+                        notice = if (sessionExpiredNotice) {
+                            "Your session ended on the server. Please sign in again."
+                        } else {
+                            null
+                        },
+                        onSignedIn = {
+                            sessionExpiredNotice = false
+                            showRadio = true
+                        },
                     )
                 } else {
                     val radioVm: RadioViewModel = viewModel(factory = RadioViewModelFactory(appGraph))
@@ -99,6 +108,15 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(radioVm) {
                         radioVm.wakeUiSignals.collect {
                             bringRadioToForeground()
+                        }
+                    }
+
+                    LaunchedEffect(Unit) {
+                        appGraph.authExpired.collect {
+                            appGraph.signOut()
+                            radioViewModel = null
+                            sessionExpiredNotice = true
+                            showRadio = false
                         }
                     }
 

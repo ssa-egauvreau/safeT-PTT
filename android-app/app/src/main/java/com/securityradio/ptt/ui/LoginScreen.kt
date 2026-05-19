@@ -30,6 +30,7 @@ fun LoginScreen(
     viewModel: LoginViewModel,
     onSignedIn: () -> Unit,
     modifier: Modifier = Modifier,
+    notice: String? = null,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -51,6 +52,14 @@ fun LoginScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+
+        notice?.let { text ->
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
 
         OutlinedTextField(
             value = state.agencySlug,
