@@ -53,6 +53,10 @@ import {
   listInboxAlerts,
   listMemberships,
   listPositions,
+  listPositionHistory,
+  listGeofences,
+  createGeofence,
+  deleteGeofence,
   listTransmissions,
   listUnitAliases,
   listUsers,
@@ -1552,6 +1556,107 @@ export function createApiRouter(): Router {
   router.get("/locations", requireAgencyMember, async (req, res) => {
     try {
       res.json({ positions: await listPositions(req.authUser!.agencyId!) });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Recorded GPS track for one radio — drives the map's "search GPS logs" tool.
+  router.get("/locations/history", requireAgencyMember, async (req, res) => {
+    try {
+      const unit = String(req.query.unit ?? "").trim().toUpperCase();
+      if (!unit) {
+        res.status(400).json({ error: "missing_unit" });
+        return;
+      }
+      const from = typeof req.query.from === "string" ? req.query.from : undefined;
+      const to = typeof req.query.to === "string" ? req.query.to : undefined;
+      const samples = await listPositionHistory({
+        agencyId: req.authUser!.agencyId!,
+        unitId: unit,
+        from,
+        to,
+      });
+      res.json({ unit, samples });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // --- console: map geofence overlays ------------------------------------
+
+  router.get("/geofences", requireAgencyMember, async (req, res) => {
+    try {
+      res.json({ geofences: await listGeofences(req.authUser!.agencyId!) });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.post("/geofences", requireAgencyOperator, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const name = String(req.body?.name ?? "").trim();
+      const centerLat = Number(req.body?.centerLat);
+      const centerLon = Number(req.body?.centerLon);
+      const radiusM = Number(req.body?.radiusM);
+      if (!name) {
+        res.status(400).json({ error: "missing_name" });
+        return;
+      }
+      if (
+        !Number.isFinite(centerLat) ||
+        !Number.isFinite(centerLon) ||
+        !Number.isFinite(radiusM) ||
+        radiusM <= 0
+      ) {
+        res.status(400).json({ error: "missing_fields" });
+        return;
+      }
+      const colorRaw = typeof req.body?.color === "string" ? req.body.color.trim() : "";
+      const geofence = await createGeofence({
+        agencyId,
+        name: name.slice(0, 80),
+        shape: "circle",
+        color: /^#[0-9a-fA-F]{6}$/.test(colorRaw) ? colorRaw : null,
+        centerLat,
+        centerLon,
+        radiusM,
+        createdBy: req.authUser!.displayName,
+      });
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "geofence_create",
+        target: geofence.name,
+        detail: { radius_m: Math.round(radiusM) },
+        ip: clientIp(req),
+      });
+      res.status(201).json({ geofence });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.delete("/geofences/:id", requireAgencyOperator, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const id = Number(req.params.id);
+      const ok = await deleteGeofence(id, agencyId);
+      if (!ok) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "geofence_delete",
+        target: String(id),
+        ip: clientIp(req),
+      });
+      res.json({ ok: true });
     } catch (error) {
       fail(res, error);
     }

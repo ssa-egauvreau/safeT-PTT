@@ -4,6 +4,7 @@ import { useAuth } from "../auth";
 import { ChannelPanel } from "./ChannelPanel";
 import { SimulcastManager } from "./SimulcastManager";
 import { TransmissionLog } from "./TransmissionLog";
+import { QuickReplay } from "./QuickReplay";
 import { MapPanel } from "./MapPanel";
 import { AlertsPanel } from "./AlertsPanel";
 import { sounds } from "../sounds";
@@ -242,6 +243,7 @@ export function ConsolePage() {
 
         <div className="console-col">
           <h3>Channels on air</h3>
+          <QuickReplay />
           {openChannelObjs.length === 0 ? (
             <div className="placeholder-box">
               <strong>No channels open</strong>

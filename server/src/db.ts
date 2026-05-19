@@ -274,6 +274,38 @@ export async function ensureSchema(): Promise<void> {
     );
   `);
 
+  // Map geofences — circular overlay zones an operator draws on the live map.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS geofences (
+      id SERIAL PRIMARY KEY,
+      agency_id INT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      shape TEXT NOT NULL DEFAULT 'circle',
+      color TEXT,
+      center_lat DOUBLE PRECISION NOT NULL,
+      center_lon DOUBLE PRECISION NOT NULL,
+      radius_m DOUBLE PRECISION NOT NULL,
+      created_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  // GPS log — every position report appended, so the console can replay a
+  // radio's track. radio_positions keeps only the latest fix per unit.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS radio_position_history (
+      id BIGSERIAL PRIMARY KEY,
+      agency_id INT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      unit_id TEXT NOT NULL,
+      lat DOUBLE PRECISION NOT NULL,
+      lon DOUBLE PRECISION NOT NULL,
+      accuracy_m DOUBLE PRECISION,
+      heading DOUBLE PRECISION,
+      speed_mps DOUBLE PRECISION,
+      recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
   // --- migrate any pre-existing single-tenant data into the default agency ---
   const def = await p.query<{ id: number }>(
     `INSERT INTO agencies (name, slug)
@@ -313,6 +345,10 @@ export async function ensureSchema(): Promise<void> {
   await p.query(`CREATE INDEX IF NOT EXISTS idx_tx_agency ON transmissions (agency_id, started_at DESC);`);
   await p.query(`CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts (created_at DESC);`);
   await p.query(`CREATE INDEX IF NOT EXISTS idx_alerts_agency ON alerts (agency_id, created_at DESC);`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_geofences_agency ON geofences (agency_id, created_at DESC);`);
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS idx_pos_history_unit ON radio_position_history (agency_id, unit_id, recorded_at DESC);`,
+  );
 
   const countRes = await p.query<{ count: string }>(
     `SELECT COUNT(*)::text AS count FROM radio_channels WHERE agency_id = $1;`,

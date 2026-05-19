@@ -2,21 +2,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, describeError, fetchTransmissionAudio, type Transmission, type UserChannel } from "../api";
 import { useUnitAliasResolver } from "../unitAliases";
 
-function formatDuration(ms: number): string {
+export function formatDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return minutes > 0 ? `${minutes}:${seconds.toString().padStart(2, "0")}` : `${seconds}s`;
 }
 
-function formatTime(iso: string): string {
+export function formatTime(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime())
     ? iso
     : date.toLocaleString([], { dateStyle: "short", timeStyle: "medium" });
 }
 
-function transcriptOf(tx: Transmission): { text: string; muted: boolean } {
+export function transcriptOf(tx: Transmission): { text: string; muted: boolean } {
   switch (tx.transcript_status) {
     case "done":
       return tx.transcript && tx.transcript.length > 0

@@ -121,7 +121,32 @@ export interface RadioPosition {
   accuracy_m: number | null;
   heading: number | null;
   speed_mps: number | null;
+  /** Device category of the reporting account (handheld, unit_radio, …), or null. */
+  device_type: string | null;
   updated_at: string;
+}
+
+/** One recorded GPS fix from a radio's position history. */
+export interface PositionSample {
+  lat: number;
+  lon: number;
+  accuracy_m: number | null;
+  heading: number | null;
+  speed_mps: number | null;
+  recorded_at: string;
+}
+
+/** A circular map overlay zone drawn by an operator. */
+export interface Geofence {
+  id: number;
+  name: string;
+  shape: string;
+  color: string | null;
+  center_lat: number;
+  center_lon: number;
+  radius_m: number;
+  created_by: string | null;
+  created_at: string;
 }
 
 export interface Alert {
@@ -308,6 +333,30 @@ export const api = {
   },
 
   locations: () => request<{ positions: RadioPosition[] }>("GET", "/v1/locations"),
+  locationHistory: (unit: string, from?: string, to?: string) => {
+    const params = new URLSearchParams({ unit });
+    if (from) {
+      params.set("from", from);
+    }
+    if (to) {
+      params.set("to", to);
+    }
+    return request<{ unit: string; samples: PositionSample[] }>(
+      "GET",
+      `/v1/locations/history?${params}`,
+    );
+  },
+
+  geofences: () => request<{ geofences: Geofence[] }>("GET", "/v1/geofences"),
+  createGeofence: (input: {
+    name: string;
+    centerLat: number;
+    centerLon: number;
+    radiusM: number;
+    color?: string | null;
+  }) => request<{ geofence: Geofence }>("POST", "/v1/geofences", input),
+  deleteGeofence: (id: number) => request<{ ok: boolean }>("DELETE", `/v1/geofences/${id}`),
+
   alerts: () => request<{ alerts: Alert[] }>("GET", "/v1/alerts"),
   sendAlert: (input: { kind: string; channelName: string | null; targetUnit?: string | null; message: string | null }) =>
     request<{ alert: Alert }>("POST", "/v1/alerts", input),

@@ -1067,6 +1067,8 @@ export interface RadioPosition {
   accuracy_m: number | null;
   heading: number | null;
   speed_mps: number | null;
+  /** Device category of the reporting account (handheld, unit_radio, …), or null. */
+  device_type: string | null;
   updated_at: string;
 }
 
@@ -1082,7 +1084,8 @@ export async function upsertPosition(input: {
   heading: number | null;
   speedMps: number | null;
 }): Promise<void> {
-  await requirePool().query(
+  const pool = requirePool();
+  await pool.query(
     `INSERT INTO radio_positions
        (agency_id, unit_id, user_id, display_name, channel_name, lat, lon, accuracy_m, heading, speed_mps, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
@@ -1109,15 +1112,147 @@ export async function upsertPosition(input: {
       input.speedMps,
     ],
   );
+  // Append to the GPS log so the console can replay a unit's track.
+  await pool.query(
+    `INSERT INTO radio_position_history
+       (agency_id, unit_id, lat, lon, accuracy_m, heading, speed_mps)
+     VALUES ($1, $2, $3, $4, $5, $6, $7);`,
+    [input.agencyId, input.unitId, input.lat, input.lon, input.accuracyM, input.heading, input.speedMps],
+  );
+  // Trim the log occasionally so history never grows without bound (~90-day window).
+  if (Math.random() < 0.01) {
+    await pool.query(
+      `DELETE FROM radio_position_history WHERE recorded_at < now() - interval '90 days';`,
+    );
+  }
 }
 
 export async function listPositions(agencyId: number): Promise<RadioPosition[]> {
   const res = await requirePool().query<RadioPosition>(
-    `SELECT unit_id, user_id, display_name, channel_name, lat, lon, accuracy_m, heading, speed_mps, updated_at
-     FROM radio_positions WHERE agency_id = $1 ORDER BY updated_at DESC;`,
+    `SELECT p.unit_id, p.user_id, p.display_name, p.channel_name, p.lat, p.lon,
+            p.accuracy_m, p.heading, p.speed_mps, p.updated_at, u.device_type
+     FROM radio_positions p
+     LEFT JOIN users u ON u.id = p.user_id
+     WHERE p.agency_id = $1 ORDER BY p.updated_at DESC;`,
     [agencyId],
   );
   return res.rows;
+}
+
+// --- GPS log (position history) -----------------------------------------
+
+export interface PositionSample {
+  lat: number;
+  lon: number;
+  accuracy_m: number | null;
+  heading: number | null;
+  speed_mps: number | null;
+  recorded_at: string;
+}
+
+/**
+ * A single radio's recorded GPS fixes, oldest first, optionally time-bounded.
+ * A dense range is evenly down-sampled to roughly `targetSamples` points
+ * (always keeping the first and last fix) so the track stays light to plot.
+ */
+export async function listPositionHistory(opts: {
+  agencyId: number;
+  unitId: string;
+  from?: string;
+  to?: string;
+  targetSamples?: number;
+}): Promise<PositionSample[]> {
+  const target = Math.min(Math.max(Math.trunc(opts.targetSamples ?? 1500) || 1500, 50), 5000);
+  const where: string[] = ["agency_id = $1", "unit_id = $2"];
+  const vals: unknown[] = [opts.agencyId, opts.unitId];
+  let i = 3;
+  const from = opts.from?.trim();
+  if (from) {
+    where.push(`recorded_at >= $${i++}::timestamptz`);
+    vals.push(from);
+  }
+  const to = opts.to?.trim();
+  if (to) {
+    where.push(`recorded_at <= $${i++}::timestamptz`);
+    vals.push(to);
+  }
+  vals.push(target);
+  const res = await requirePool().query<PositionSample>(
+    `WITH log AS (
+       SELECT lat, lon, accuracy_m, heading, speed_mps, recorded_at,
+              row_number() OVER (ORDER BY recorded_at ASC) AS rn,
+              count(*) OVER () AS total
+       FROM radio_position_history
+       WHERE ${where.join(" AND ")}
+     )
+     SELECT lat, lon, accuracy_m, heading, speed_mps, recorded_at
+     FROM log
+     WHERE rn = 1 OR rn = total OR (rn - 1) % GREATEST(1, (total / $${i})::int) = 0
+     ORDER BY recorded_at ASC;`,
+    vals,
+  );
+  return res.rows;
+}
+
+// --- geofences (map overlay zones) --------------------------------------
+
+export interface GeofenceRow {
+  id: number;
+  name: string;
+  shape: string;
+  color: string | null;
+  center_lat: number;
+  center_lon: number;
+  radius_m: number;
+  created_by: string | null;
+  created_at: string;
+}
+
+const GEOFENCE_COLS =
+  "id, name, shape, color, center_lat, center_lon, radius_m, created_by, created_at";
+
+export async function listGeofences(agencyId: number): Promise<GeofenceRow[]> {
+  const res = await requirePool().query<GeofenceRow>(
+    `SELECT ${GEOFENCE_COLS} FROM geofences WHERE agency_id = $1 ORDER BY created_at DESC;`,
+    [agencyId],
+  );
+  return res.rows;
+}
+
+export async function createGeofence(input: {
+  agencyId: number;
+  name: string;
+  shape: string;
+  color: string | null;
+  centerLat: number;
+  centerLon: number;
+  radiusM: number;
+  createdBy: string | null;
+}): Promise<GeofenceRow> {
+  const res = await requirePool().query<GeofenceRow>(
+    `INSERT INTO geofences (agency_id, name, shape, color, center_lat, center_lon, radius_m, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING ${GEOFENCE_COLS};`,
+    [
+      input.agencyId,
+      input.name,
+      input.shape,
+      input.color,
+      input.centerLat,
+      input.centerLon,
+      input.radiusM,
+      input.createdBy,
+    ],
+  );
+  return res.rows[0]!;
+}
+
+export async function deleteGeofence(id: number, agencyId: number): Promise<boolean> {
+  const res = await requirePool().query(
+    `DELETE FROM geofences WHERE id = $1 AND agency_id = $2;`,
+    [id, agencyId],
+  );
+  return (res.rowCount ?? 0) > 0;
 }
 
 // --- alerts (emergencies + pages) ---------------------------------------
