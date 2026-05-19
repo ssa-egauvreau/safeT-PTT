@@ -7,6 +7,7 @@ import {
   type PointerEvent,
 } from "react";
 import type { Permission, UserChannel } from "../api";
+import { api } from "../api";
 import { VoiceChannelClient, type VoiceState, type ToneOutKind } from "../voice/voiceClient";
 import { ChannelRoster } from "./ChannelRoster";
 import { sounds } from "../sounds";
@@ -267,6 +268,8 @@ export function ChannelPanel({
     const next = !marker;
     client.setChannelMarker(next);
     setMarker(next);
+    // Also flag the channel server-side so radios show the 10-33 warning icon.
+    void api.setChannelTen33(channel.name, next).catch(() => undefined);
   }
 
   function sendTone(kind: ToneOutKind) {

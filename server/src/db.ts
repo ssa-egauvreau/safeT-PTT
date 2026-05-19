@@ -311,6 +311,17 @@ export async function ensureSchema(): Promise<void> {
     );
   `);
 
+  // 10-33 channel markers — a dispatcher flags a channel for emergency traffic.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS channel_markers (
+      agency_id INT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      channel_name TEXT NOT NULL,
+      active BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (agency_id, channel_name)
+    );
+  `);
+
   // --- migrate any pre-existing single-tenant data into the default agency ---
   const def = await p.query<{ id: number }>(
     `INSERT INTO agencies (name, slug)

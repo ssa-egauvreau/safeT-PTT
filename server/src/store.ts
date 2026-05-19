@@ -1387,6 +1387,30 @@ export async function listInboxAlerts(
   return res.rows;
 }
 
+/** Sets or clears the 10-33 marker for one channel of an agency. */
+export async function setChannelTen33(
+  agencyId: number,
+  channelName: string,
+  active: boolean,
+): Promise<void> {
+  await requirePool().query(
+    `INSERT INTO channel_markers (agency_id, channel_name, active)
+       VALUES ($1, $2, $3)
+     ON CONFLICT (agency_id, channel_name)
+       DO UPDATE SET active = EXCLUDED.active, updated_at = now();`,
+    [agencyId, channelName, active],
+  );
+}
+
+/** Channel names currently flagged 10-33 for an agency. */
+export async function listTen33Channels(agencyId: number): Promise<string[]> {
+  const res = await requirePool().query<{ channel_name: string }>(
+    `SELECT channel_name FROM channel_markers WHERE agency_id = $1 AND active = TRUE;`,
+    [agencyId],
+  );
+  return res.rows.map((r) => r.channel_name);
+}
+
 // --- agency sounds (custom radio tones) ----------------------------------
 
 export interface AgencySoundMeta {

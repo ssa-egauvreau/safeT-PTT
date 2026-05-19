@@ -51,6 +51,8 @@ import {
   listChannels,
   listChannelsForUser,
   listInboxAlerts,
+  listTen33Channels,
+  setChannelTen33,
   listMemberships,
   listPositions,
   listPositionHistory,
@@ -1515,7 +1517,8 @@ export function createApiRouter(): Router {
       const since = Number(req.query.since ?? 0);
       const alerts = await listInboxAlerts(radioAgencyId(req), unit, channel, Number.isFinite(since) ? since : 0);
       const lastId = alerts.length > 0 ? alerts[alerts.length - 1]!.id : Number.isFinite(since) ? since : 0;
-      res.json({ alerts, lastId });
+      const ten33 = await listTen33Channels(radioAgencyId(req));
+      res.json({ alerts, lastId, ten33 });
     } catch (error) {
       fail(res, error);
     }
@@ -1552,6 +1555,23 @@ export function createApiRouter(): Router {
   });
 
   // --- console: live map + alerts ----------------------------------------
+
+  // Dispatcher toggles the 10-33 marker for a channel; radios poll this via
+  // /radio/inbox and show a warning icon while their tuned channel is flagged.
+  router.post("/channels/ten33", requireAgencyOperator, async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const channel = String(body.channel ?? "").trim();
+      if (!channel) {
+        res.status(400).json({ error: "missing_channel" });
+        return;
+      }
+      await setChannelTen33(req.authUser!.agencyId!, channel, body.active === true);
+      res.json({ ok: true });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
 
   router.get("/locations", requireAgencyMember, async (req, res) => {
     try {

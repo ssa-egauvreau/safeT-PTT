@@ -48,6 +48,8 @@ data class RadioOkDto(
 data class InboxResponseDto(
     @SerializedName("alerts") val alerts: List<InboxAlertDto> = emptyList(),
     @SerializedName("lastId") val lastId: Long = 0,
+    /** Channel names a dispatcher has flagged 10-33. */
+    @SerializedName("ten33") val ten33: List<String> = emptyList(),
 )
 
 data class InboxAlertDto(

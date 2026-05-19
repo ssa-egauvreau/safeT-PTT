@@ -838,6 +838,12 @@ class RadioViewModel(
             } catch (_: Exception) {
                 null
             } ?: continue
+            val ten33Active = channel != null && response.ten33.any {
+                it.trim().equals(channel, ignoreCase = true)
+            }
+            if (ten33Active != _uiState.value.channelTen33) {
+                _uiState.update { it.copy(channelTen33 = ten33Active) }
+            }
             if (primed) {
                 response.alerts
                     .filter { it.fromUnit?.trim()?.uppercase(Locale.US) != unitIdUpper }

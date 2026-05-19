@@ -363,6 +363,10 @@ export const api = {
     request<{ alert: Alert }>("POST", "/v1/alerts", input),
   clearAlert: (id: number) => request<{ alert: Alert }>("POST", `/v1/alerts/${id}/clear`),
 
+  /** Toggles the 10-33 channel marker so radios on that channel show a warning icon. */
+  setChannelTen33: (channelName: string, active: boolean) =>
+    request<{ ok: boolean }>("POST", "/v1/channels/ten33", { channel: channelName, active }),
+
   channelRoster: (channel: string) =>
     request<{ members: ChannelMember[] }>("GET", `/v1/channels/roster?channel=${encodeURIComponent(channel)}`),
 

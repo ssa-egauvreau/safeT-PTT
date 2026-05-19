@@ -786,6 +786,14 @@ private fun LcdHandsetFillChannelBlock(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (state.channelTen33) {
+                    LcdEmergencyGlyphIcon(
+                        color = p.statusAmber,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(24.dp),
+                    )
+                }
             }
             if (hasTalk) {
                 if (showEmergencyBanner) {
