@@ -44,6 +44,26 @@ let loopbackPort = 8080;
 let ffmpegReady: Promise<boolean> | null = null;
 let ffmpegMissingLogged = false;
 
+/** Live ingest level + gate state for one stream bridge — drives the console meter. */
+interface BridgeStatus {
+  level: number;
+  keyed: boolean;
+  updatedAt: number;
+}
+const bridgeStatuses = new Map<number, BridgeStatus>();
+
+/**
+ * Most recent ingest status for a stream bridge. `running` is false once the
+ * status goes stale, so a stalled or stopped ingest reads as not running.
+ */
+export function getBridgeStatus(id: number): { level: number; keyed: boolean; running: boolean } {
+  const status = bridgeStatuses.get(id);
+  if (!status || Date.now() - status.updatedAt > 4000) {
+    return { level: 0, keyed: false, running: false };
+  }
+  return { level: status.level, keyed: status.keyed, running: true };
+}
+
 /** Fields that, when changed, require the ingest to be rebuilt from scratch. */
 function signatureOf(b: AgencyBridgeRow): string {
   return JSON.stringify([
@@ -111,6 +131,7 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
       let child: ChildProcessWithoutNullStreams | null = null;
       let carry: Buffer = Buffer.alloc(0);
       let lastActiveMs = 0;
+      let meterLevel = 0;
 
       const ws = new WebSocket(loopbackUrl);
       activeWs = ws;
@@ -187,11 +208,16 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
             const frame = carry.subarray(0, FRAME_BYTES);
             carry = carry.subarray(FRAME_BYTES);
             const now = Date.now();
-            if (frameRms(frame) >= bridge.vox_threshold) {
+            const rms = frameRms(frame);
+            if (rms >= bridge.vox_threshold) {
               lastActiveMs = now;
             }
             // VOX gate: forward while audio is present and through the hang tail.
             const gateOpen = lastActiveMs !== 0 && now - lastActiveMs < bridge.vox_hang_ms;
+            // Publish a slow-decaying level so the console meter still catches
+            // activity between its (~1 s) polls.
+            meterLevel = Math.max(rms, meterLevel * 0.96);
+            bridgeStatuses.set(bridge.id, { level: meterLevel, keyed: gateOpen, updatedAt: now });
             if (gateOpen && ws.readyState === WebSocket.OPEN) {
               try {
                 ws.send(frame);
@@ -266,6 +292,7 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
     signature: signatureOf(bridge),
     stop: () => {
       stopped = true;
+      bridgeStatuses.delete(bridge.id);
       if (activeChild) {
         try {
           activeChild.kill("SIGKILL");
@@ -337,4 +364,5 @@ export function stopBridgeWorker(): void {
     run.stop();
   }
   running.clear();
+  bridgeStatuses.clear();
 }

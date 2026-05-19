@@ -13,6 +13,8 @@ interface RadioUiSoundPlayer {
     fun stopTalkPermitLoop()
     fun startBusyLoop()
     fun stopBusyLoop()
+    /** One-shot busy/alert tone — used as the periodic lost-link alert. */
+    fun playBusyTone()
     fun playEmergencyAlert()
     /** One-shot beep at the current volume level (legacy / screen). */
     fun playVolumeCheck()

@@ -363,7 +363,7 @@ a {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: flex-start;
 }
 .field {
   display: flex;
@@ -375,6 +375,123 @@ a {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+.field-hint {
+  margin: 0;
+  max-width: 320px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.field-hint code {
+  font-size: 0.92em;
+  color: var(--text-dim);
+}
+.card > .field-hint {
+  margin-top: 10px;
+  max-width: none;
+}
+
+/* --- radio bridges: setup help + audio meter --- */
+.bridge-help {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-2);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  padding: 12px 14px;
+  margin: 0 0 18px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.bridge-help strong {
+  display: block;
+  color: var(--text);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin: 12px 0 4px;
+}
+.bridge-help strong:first-child {
+  margin-top: 0;
+}
+.bridge-help p {
+  margin: 4px 0;
+}
+.bridge-help ol,
+.bridge-help ul {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+.bridge-help li {
+  margin: 3px 0;
+}
+.bridge-help em {
+  color: var(--text);
+  font-style: normal;
+  font-weight: 600;
+}
+.bridge-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+.bridge-meter-bar {
+  position: relative;
+  flex: 1 1 auto;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.bridge-meter-fill {
+  height: 100%;
+  background: var(--accent-2);
+  transition: width 0.1s linear;
+}
+.bridge-meter-fill.keyed {
+  background: #22c55e;
+}
+.bridge-meter-mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--amber);
+}
+.bridge-meter-status {
+  flex: 0 0 auto;
+  min-width: 104px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.bridge-meter-status.keyed {
+  color: #22c55e;
+  font-weight: 600;
+}
+.bridge-meter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 2px;
+}
+.bridge-meter-caption {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.bridge-meter-row .bridge-meter {
+  flex: 1 1 auto;
+  margin: 0;
+}
+.bridge-status-note {
+  margin: 6px 0 10px;
 }
 
 /* --- tables --- */
@@ -1467,8 +1584,34 @@ code.mono {
   margin-top: 7px;
 }
 
-.alerts-panel {
+/* --- pop-out console sections --- */
+.alerts-slot {
   margin-top: 24px;
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.section-head h3 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+.section-popout {
+  flex: 0 0 auto;
+}
+.section-panel.windowed,
+.alerts-panel.windowed {
+  position: fixed;
+  inset: 0;
+  overflow: auto;
+  padding: 16px;
+  background: var(--bg);
 }
 .alert-row {
   display: flex;
@@ -1709,6 +1852,100 @@ code.mono {
 .toneout-btn.priority:not(:disabled) {
   color: var(--amber);
   border-color: var(--amber);
+}
+
+/* custom soundboard tone-outs */
+.toneout-custom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.toneout-btn.custom {
+  flex: 1 1 28%;
+  min-width: 84px;
+}
+.toneout-btn.custom.looping {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--channel-active-bg);
+}
+.toneout-label {
+  display: block;
+  width: 100%;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.toneout-mode {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.toneout-btn.custom.looping .toneout-mode {
+  color: var(--accent);
+}
+.tone-out-img {
+  display: inline-block;
+  flex: none;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  border-radius: 3px;
+}
+
+/* admin: soundboard tone-out editor */
+.toneout-icon-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.toneout-icon-pick {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-dim);
+}
+.toneout-icon-pick:hover {
+  border-color: var(--accent-2);
+}
+.toneout-icon-pick.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.toneout-icon-grid input[type="color"] {
+  width: 42px;
+  height: 34px;
+  padding: 1px;
+}
+.toneout-image-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.filebtn {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.toneout-row-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.toneout-tags {
+  display: inline-flex;
+  gap: 6px;
 }
 .stopall-btn {
   width: 100%;

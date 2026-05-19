@@ -360,6 +360,10 @@ class MainActivity : ComponentActivity() {
                 HardwareButtonRelay.sendEvent(HardwareButtonEvent.VolumeCheckReleased)
                 return true
             }
+            repository.getMapping(HardwareAction.TOGGLE_DAY_NIGHT).contains(keyCode) -> {
+                HardwareButtonRelay.sendEvent(HardwareButtonEvent.ToggleDayNightReleased)
+                return true
+            }
         }
         return super.onKeyUp(keyCode, event)
     }

@@ -14,6 +14,8 @@ export interface BridgeRunnerCallbacks {
   onKeyed: (keyed: boolean) => void;
   /** Inbound channel audio present — only meaningful for a bidirectional bridge. */
   onReceiving: (receiving: boolean) => void;
+  /** Smoothed input level (0–1) of the captured device — drives the audio meter. */
+  onLevel?: (level: number) => void;
 }
 
 export interface BridgeRunnerConfig {
@@ -76,6 +78,7 @@ export class BridgeRunnerClient {
   private playHead = 0;
 
   private lastVoxMs = 0;
+  private meterLevel = 0;
   private keyed = false;
   private lastInboundMs = 0;
   private receiving = false;
@@ -214,7 +217,11 @@ export class BridgeRunnerClient {
   private onCaptureFrame(buffer: ArrayBuffer): void {
     const pcm = new Int16Array(buffer);
     const now = Date.now();
-    if (frameRms(pcm) >= this.config.voxThreshold) {
+    const rms = frameRms(pcm);
+    // Fast-attack, slow-decay smoothing keeps the input meter steady to read.
+    this.meterLevel = Math.max(rms, this.meterLevel * 0.8);
+    this.callbacks.onLevel?.(this.meterLevel);
+    if (rms >= this.config.voxThreshold) {
       this.lastVoxMs = now;
     }
     const open = this.lastVoxMs !== 0 && now - this.lastVoxMs < this.config.voxHangMs;

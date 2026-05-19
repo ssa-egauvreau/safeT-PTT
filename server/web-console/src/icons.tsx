@@ -272,3 +272,38 @@ export function IconLock(props: IconProps) {
     </StrokeIcon>
   );
 }
+
+/** Built-in glyphs an admin can assign to a custom soundboard tone-out. */
+export const TONE_OUT_ICON_KINDS = [
+  "waveform",
+  "bell",
+  "beacon",
+  "alert",
+  "bolt",
+  "routine",
+  "priority",
+  "status",
+  "radio",
+  "headphones",
+] as const;
+
+export type ToneOutIconKind = (typeof TONE_OUT_ICON_KINDS)[number];
+
+const TONE_OUT_ICON_MAP: Record<ToneOutIconKind, (props: IconProps) => ReactNode> = {
+  waveform: IconWaveform,
+  bell: IconBell,
+  beacon: IconBeacon,
+  alert: IconAlertTriangle,
+  bolt: IconBolt,
+  routine: IconToneRoutine,
+  priority: IconTonePriority,
+  status: IconToneStatus,
+  radio: IconRadio,
+  headphones: IconHeadphones,
+};
+
+/** Renders one built-in soundboard glyph by its kind, falling back to a waveform. */
+export function ToneOutIcon({ kind, ...props }: { kind: string } & IconProps) {
+  const Icon = TONE_OUT_ICON_MAP[kind as ToneOutIconKind] ?? IconWaveform;
+  return <Icon {...props} />;
+}

@@ -6,11 +6,12 @@ import {
   type DragEvent,
   type PointerEvent,
 } from "react";
-import type { Permission, UserChannel } from "../api";
+import type { Permission, ToneOut, UserChannel } from "../api";
 import { api } from "../api";
 import { VoiceChannelClient, type VoiceState, type ToneOutKind } from "../voice/voiceClient";
 import { ChannelRoster } from "./ChannelRoster";
 import { sounds } from "../sounds";
+import { useToneOuts, loadTonePcm, ToneOutBadge } from "../toneOuts";
 import {
   IconBolt,
   IconBeacon,
@@ -67,6 +68,9 @@ export function ChannelPanel({
   const [volume, setVolume] = useState(() => loadVolume(channel.id));
   const [muted, setMuted] = useState(() => loadMuted(channel.id));
   const [receiving, setReceiving] = useState(false);
+  /** Custom soundboard tone-outs currently looping on this channel. */
+  const [loopingIds, setLoopingIds] = useState<Set<number>>(new Set());
+  const toneOuts = useToneOuts();
 
   const clientRef = useRef<VoiceChannelClient | null>(null);
   /** Whether the operator is currently holding PTT — gates the looping busy tone. */
@@ -276,10 +280,38 @@ export function ChannelPanel({
     clientRef.current?.sendToneOut(kind);
   }
 
+  /** Fires a custom soundboard tone-out — or stops it if it is a running loop. */
+  async function fireToneOut(toneOut: ToneOut) {
+    const client = clientRef.current;
+    if (!client) {
+      return;
+    }
+    const loop = toneOut.play_mode === "loop";
+    if (loop && loopingIds.has(toneOut.id)) {
+      client.stopCustomTone(toneOut.id);
+      setLoopingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(toneOut.id);
+        return next;
+      });
+      return;
+    }
+    try {
+      const pcm = await loadTonePcm(toneOut.id);
+      client.playCustomTone(toneOut.id, pcm, loop);
+      if (loop) {
+        setLoopingIds((prev) => new Set(prev).add(toneOut.id));
+      }
+    } catch {
+      /* the clip failed to load or decode — nothing to play */
+    }
+  }
+
   function stopAllSounds() {
     clientRef.current?.stopAllTones();
     sounds.stopAll();
     setMarker(false);
+    setLoopingIds(new Set());
   }
 
   function toggleTxMode() {
@@ -307,6 +339,7 @@ export function ChannelPanel({
     setVoiceState("connecting");
     setVoiceDetail(null);
     setMarker(false);
+    setLoopingIds(new Set());
     connect();
   }
 
@@ -455,6 +488,35 @@ export function ChannelPanel({
             Status
           </button>
         </div>
+        {toneOuts.some((t) => t.has_audio) && (
+          <div className="toneout-custom">
+            {toneOuts
+              .filter((t) => t.has_audio)
+              .map((toneOut) => {
+                const looping = loopingIds.has(toneOut.id);
+                const isLoop = toneOut.play_mode === "loop";
+                return (
+                  <button
+                    key={toneOut.id}
+                    className={looping ? "toneout-btn custom looping" : "toneout-btn custom"}
+                    disabled={!connected || !canTransmit}
+                    onClick={() => void fireToneOut(toneOut)}
+                    title={
+                      isLoop
+                        ? looping
+                          ? `Stop "${toneOut.name}" loop`
+                          : `Loop "${toneOut.name}"`
+                        : `Play "${toneOut.name}"`
+                    }
+                  >
+                    <ToneOutBadge toneOut={toneOut} size={16} />
+                    <span className="toneout-label">{toneOut.name}</span>
+                    {isLoop && <span className="toneout-mode">{looping ? "■ loop" : "↻ loop"}</span>}
+                  </button>
+                );
+              })}
+          </div>
+        )}
         <button className="stopall-btn" onClick={stopAllSounds}>
           <IconStop size={16} />
           Stop All Sounds

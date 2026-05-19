@@ -10,6 +10,7 @@ import {
   type Role,
 } from "./auth.js";
 import { dropAgencyVoiceConnections, listChannelRoster } from "./voiceRelay.js";
+import { getBridgeStatus } from "./bridgeWorker.js";
 import {
   AGENCY_ROLES,
   countActiveAdmins,
@@ -71,6 +72,16 @@ import {
   isDeviceType,
   isSoundKind,
   listAgencySounds,
+  TONE_OUT_PLAY_MODES,
+  listToneOuts,
+  createToneOut,
+  updateToneOut,
+  setToneOutAudio,
+  setToneOutIcon,
+  clearToneOutIcon,
+  getToneOutAudio,
+  getToneOutIcon,
+  deleteToneOut,
   resolveAgencyByKey,
   setAgencyLogo,
   setAgencySound,
@@ -95,6 +106,9 @@ const SOUND_MAX_BYTES = "1mb";
 
 /** Upper bound for an uploaded agency logo. */
 const LOGO_MAX_BYTES = "512kb";
+
+/** Upper bound for an uploaded soundboard tone-out clip. */
+const TONE_OUT_AUDIO_MAX = "4mb";
 
 /** Reads a device-category value from request input, or null when absent/invalid. */
 function asDeviceType(value: unknown): string | null {
@@ -931,6 +945,18 @@ export function createApiRouter(): Router {
     }
   });
 
+  // Live ingest level + gate state per stream bridge — drives the audio meter.
+  router.get("/admin/bridges/status", requireAdmin, async (req, res) => {
+    try {
+      const bridges = await listBridges(req.authUser!.agencyId!);
+      res.json({
+        statuses: bridges.map((bridge) => ({ id: bridge.id, ...getBridgeStatus(bridge.id) })),
+      });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
   router.post("/admin/bridges", requireAdmin, async (req, res) => {
     try {
       const agencyId = req.authUser!.agencyId!;
@@ -1335,6 +1361,204 @@ export function createApiRouter(): Router {
       res.setHeader("Content-Type", logo.mime);
       res.setHeader("Cache-Control", "no-cache");
       res.send(logo.logo);
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // --- custom soundboard tone-outs ---------------------------------------
+
+  router.get("/tone-outs", requireAgencyMember, async (req, res) => {
+    try {
+      res.json({ toneOuts: await listToneOuts(req.authUser!.agencyId!) });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.get("/tone-outs/:id/audio", requireAgencyMember, async (req, res) => {
+    try {
+      const record = await getToneOutAudio(Number(req.params.id), req.authUser!.agencyId!);
+      if (!record) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      res.setHeader("Content-Type", record.mime);
+      res.send(record.audio);
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.get("/tone-outs/:id/icon", requireAgencyMember, async (req, res) => {
+    try {
+      const record = await getToneOutIcon(Number(req.params.id), req.authUser!.agencyId!);
+      if (!record) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      res.setHeader("Content-Type", record.mime);
+      res.setHeader("Cache-Control", "no-cache");
+      res.send(record.image);
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.post("/admin/tone-outs", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const name = String(body.name ?? "").trim();
+      if (!name) {
+        res.status(400).json({ error: "missing_name" });
+        return;
+      }
+      const colorRaw = String(body.iconColor ?? "").trim();
+      const toneOut = await createToneOut(agencyId, {
+        name: name.slice(0, 60),
+        playMode: oneOf(body.playMode, TONE_OUT_PLAY_MODES, "once"),
+        iconKind: String(body.iconKind ?? "waveform").trim().slice(0, 32) || "waveform",
+        iconColor: /^#[0-9a-fA-F]{6}$/.test(colorRaw) ? colorRaw : "#22c5e5",
+      });
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "tone_out_create",
+        target: name,
+        ip: clientIp(req),
+      });
+      res.status(201).json({ toneOut });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.patch("/admin/tone-outs/:id", requireAdmin, async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const patch: { name?: string; playMode?: string; iconKind?: string; iconColor?: string } = {};
+      if (body.name !== undefined) {
+        const name = String(body.name).trim();
+        if (!name) {
+          res.status(400).json({ error: "missing_name" });
+          return;
+        }
+        patch.name = name.slice(0, 60);
+      }
+      if (body.playMode !== undefined) {
+        patch.playMode = oneOf(body.playMode, TONE_OUT_PLAY_MODES, "once");
+      }
+      if (body.iconKind !== undefined) {
+        patch.iconKind = String(body.iconKind).trim().slice(0, 32) || "waveform";
+      }
+      if (body.iconColor !== undefined) {
+        const color = String(body.iconColor).trim();
+        patch.iconColor = /^#[0-9a-fA-F]{6}$/.test(color) ? color : "#22c5e5";
+      }
+      const toneOut = await updateToneOut(Number(req.params.id), req.authUser!.agencyId!, patch);
+      if (!toneOut) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      res.json({ toneOut });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.put(
+    "/admin/tone-outs/:id/audio",
+    requireAdmin,
+    raw({ type: () => true, limit: TONE_OUT_AUDIO_MAX }),
+    async (req, res) => {
+      try {
+        const mime = (req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+        if (!mime.startsWith("audio/") && mime !== "application/octet-stream") {
+          res.status(415).json({ error: "bad_audio_type" });
+          return;
+        }
+        const body: unknown = req.body;
+        if (!Buffer.isBuffer(body) || body.length === 0) {
+          res.status(400).json({ error: "missing_audio" });
+          return;
+        }
+        const ok = await setToneOutAudio(
+          Number(req.params.id),
+          req.authUser!.agencyId!,
+          body,
+          mime,
+        );
+        if (!ok) {
+          res.status(404).json({ error: "not_found" });
+          return;
+        }
+        res.json({ ok: true, byte_size: body.length });
+      } catch (error) {
+        fail(res, error);
+      }
+    },
+  );
+
+  router.put(
+    "/admin/tone-outs/:id/icon",
+    requireAdmin,
+    raw({ type: () => true, limit: LOGO_MAX_BYTES }),
+    async (req, res) => {
+      try {
+        const mime = (req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+        if (!mime.startsWith("image/")) {
+          res.status(415).json({ error: "bad_image_type" });
+          return;
+        }
+        const body: unknown = req.body;
+        if (!Buffer.isBuffer(body) || body.length === 0) {
+          res.status(400).json({ error: "missing_image" });
+          return;
+        }
+        const ok = await setToneOutIcon(Number(req.params.id), req.authUser!.agencyId!, body, mime);
+        if (!ok) {
+          res.status(404).json({ error: "not_found" });
+          return;
+        }
+        res.json({ ok: true });
+      } catch (error) {
+        fail(res, error);
+      }
+    },
+  );
+
+  router.delete("/admin/tone-outs/:id/icon", requireAdmin, async (req, res) => {
+    try {
+      const ok = await clearToneOutIcon(Number(req.params.id), req.authUser!.agencyId!);
+      if (!ok) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.delete("/admin/tone-outs/:id", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const ok = await deleteToneOut(Number(req.params.id), agencyId);
+      if (!ok) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "tone_out_delete",
+        target: String(req.params.id),
+        ip: clientIp(req),
+      });
+      res.json({ ok: true });
     } catch (error) {
       fail(res, error);
     }

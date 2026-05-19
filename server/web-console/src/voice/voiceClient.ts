@@ -176,6 +176,8 @@ export class VoiceChannelClient {
   private transmitting = false;
   private markerTimer: number | null = null;
   private readonly localTones = new Set<AudioBufferSourceNode>();
+  /** Active looping soundboard tone-outs, keyed by tone-out id. */
+  private readonly customLoops = new Map<number, number>();
   private digitalTx = true;
   private gestureUnbind: (() => void) | null = null;
 
@@ -533,6 +535,43 @@ export class VoiceChannelClient {
     this.playLocalTone(tone);
   }
 
+  /**
+   * Fires a custom soundboard tone-out — keys the supplied PCM onto the channel
+   * and plays it locally. In loop mode it re-keys the clip until stopped.
+   */
+  playCustomTone(id: number, pcm: Int16Array, loop: boolean): void {
+    this.stopCustomTone(id);
+    const fire = (): void => {
+      const ws = this.ws;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      ws.send(pcm.buffer);
+      this.playLocalTone(pcm);
+    };
+    fire();
+    if (loop) {
+      const durationMs = Math.max(250, Math.round((pcm.length / TARGET_RATE) * 1000));
+      this.customLoops.set(id, window.setInterval(fire, durationMs));
+    }
+  }
+
+  /** Stops a looping tone-out (a one-shot tone-out simply plays out on its own). */
+  stopCustomTone(id: number): void {
+    const handle = this.customLoops.get(id);
+    if (handle !== undefined) {
+      window.clearInterval(handle);
+      this.customLoops.delete(id);
+    }
+  }
+
+  private stopCustomLoops(): void {
+    for (const handle of this.customLoops.values()) {
+      window.clearInterval(handle);
+    }
+    this.customLoops.clear();
+  }
+
   private stopLocalTones(): void {
     for (const source of this.localTones) {
       try {
@@ -548,12 +587,14 @@ export class VoiceChannelClient {
   /** Stop All Sounds — silences the channel marker and any tone-out / page tones locally. */
   stopAllTones(): void {
     this.setChannelMarker(false);
+    this.stopCustomLoops();
     this.stopLocalTones();
   }
 
   /** Tears everything down; the client cannot be reused afterward. */
   close(): void {
     this.setChannelMarker(false);
+    this.stopCustomLoops();
     this.stopLocalTones();
     this.unbindAudioResume();
     if (this.rxWatchdog !== null) {

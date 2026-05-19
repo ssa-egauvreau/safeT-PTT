@@ -11,6 +11,7 @@ import com.securityradio.ptt.data.remote.RadioApi
 import com.securityradio.ptt.device.AssetRadioUiSoundPlayer
 import com.securityradio.ptt.device.AudioRecordPttCapture
 import com.securityradio.ptt.device.ChannelSpeechHelper
+import com.securityradio.ptt.device.ConnectivityMonitor
 import com.securityradio.ptt.device.CustomSoundDownloader
 import com.securityradio.ptt.device.CustomSoundStore
 import com.securityradio.ptt.device.HardwareMappingRepository
@@ -45,6 +46,9 @@ class RadioAppGraph(val application: Application) {
     val soundPlayer: RadioUiSoundPlayer = AssetRadioUiSoundPlayer(application, customSoundStore)
 
     val localUnitIdentifier: LocalUnitIdentifier = LocalUnitIdentifier(application)
+
+    /** Device internet up/down feed for the lost-link alert. */
+    val connectivityMonitor: ConnectivityMonitor = ConnectivityMonitor(application).also { it.start() }
 
     val lastRxAudioRecorder = LastRxAudioRecorder()
 

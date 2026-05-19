@@ -173,6 +173,11 @@ class AssetRadioUiSoundPlayer(
         main.post { stopBusyLoopInternal() }
     }
 
+    override fun playBusyTone() {
+        // Alarm routing keeps the lost-link alert audible on rugged loudspeakers.
+        playOneShot(FILE_BUSY, busyAlarmAttrs)
+    }
+
     override fun playEmergencyAlert() {
         playOneShot(FILE_EMERGENCY)
     }
@@ -282,9 +287,11 @@ class AssetRadioUiSoundPlayer(
         }
     }
 
-    private fun playOneShot(fileName: String) {
+    private fun playOneShot(fileName: String, attrs: AudioAttributes = uiAudioAttrs) {
         main.post {
-            val player = MediaPlayer().applyUiAudio()
+            val player = MediaPlayer()
+            player.setAudioAttributes(attrs)
+            player.setVolume(1f, 1f)
             if (!applySource(player, fileName)) {
                 player.release()
                 return@post

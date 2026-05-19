@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, describeError, type Bridge } from "../api";
 import { Topbar } from "../Topbar";
+import { BridgeMeter } from "./BridgeMeter";
 import { BridgeRunnerClient, type BridgeRunState } from "../voice/bridgeRunner";
 
 /** Picks a sensible default input device — one whose label matches the hint. */
@@ -31,6 +32,7 @@ function BridgeRunnerRow({
   const [runState, setRunState] = useState<BridgeRunState>("idle");
   const [keyed, setKeyed] = useState(false);
   const [receiving, setReceiving] = useState(false);
+  const [level, setLevel] = useState(0);
   const [detail, setDetail] = useState<string | null>(null);
   const runnerRef = useRef<BridgeRunnerClient | null>(null);
 
@@ -48,6 +50,7 @@ function BridgeRunnerRow({
     setDetail(null);
     setKeyed(false);
     setReceiving(false);
+    setLevel(0);
     const runner = new BridgeRunnerClient(
       {
         bridgeId: bridge.id,
@@ -64,11 +67,13 @@ function BridgeRunnerRow({
           if (state === "closed" || state === "error") {
             setKeyed(false);
             setReceiving(false);
+            setLevel(0);
             runnerRef.current = null;
           }
         },
         onKeyed: setKeyed,
         onReceiving: setReceiving,
+        onLevel: setLevel,
       },
     );
     runnerRef.current = runner;
@@ -78,6 +83,7 @@ function BridgeRunnerRow({
   function stop() {
     runnerRef.current?.stop();
     runnerRef.current = null;
+    setLevel(0);
   }
 
   let status = "Idle";
@@ -132,6 +138,15 @@ function BridgeRunnerRow({
             </select>
           </div>
         )}
+      </div>
+      <div className="bridge-meter-row">
+        <span className="bridge-meter-caption">Input level</span>
+        <BridgeMeter
+          level={level}
+          threshold={bridge.vox_threshold}
+          keyed={keyed}
+          active={running}
+        />
       </div>
       <div className="sim-channels" style={{ marginTop: 4 }}>
         {running ? (

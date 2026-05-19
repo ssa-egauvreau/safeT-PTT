@@ -6,6 +6,8 @@ package com.securityradio.ptt.presentation
 sealed interface RadioUiEvent {
     data object ToggleDayNight : RadioUiEvent
     data class SetThemeMode(val mode: ThemeMode) : RadioUiEvent
+    /** UI layer reports the resolved system dark-mode so AUTO can be flipped correctly. */
+    data class SystemDarkChanged(val dark: Boolean) : RadioUiEvent
     data object PttPressed : RadioUiEvent
     data object PttReleased : RadioUiEvent
     data object EmergencyToggle : RadioUiEvent

@@ -233,6 +233,26 @@ export async function ensureSchema(): Promise<void> {
     );
   `);
 
+  // Custom soundboard tone-outs — operator-fired audio clips that supplement
+  // the built-in Routine / Priority / Status tones in the console.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS agency_tone_outs (
+      id SERIAL PRIMARY KEY,
+      agency_id INT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      play_mode TEXT NOT NULL DEFAULT 'once',
+      icon_kind TEXT NOT NULL DEFAULT 'waveform',
+      icon_color TEXT NOT NULL DEFAULT '#22c5e5',
+      icon_image BYTEA,
+      icon_mime TEXT,
+      audio BYTEA,
+      audio_mime TEXT,
+      audio_bytes INT NOT NULL DEFAULT 0,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
   // Simulcast channels — one transmission fanned out to several real channels.
   await p.query(`
     CREATE TABLE IF NOT EXISTS simulcast_channels (

@@ -14,11 +14,14 @@ import com.securityradio.ptt.device.ChannelSpeechHelper
 import com.securityradio.ptt.device.CustomSoundDownloader
 import com.securityradio.ptt.device.DeviceProfilePreference
 import com.securityradio.ptt.device.DeviceProfileResolver
+import com.securityradio.ptt.device.ResolvedDeviceProfile
 import com.securityradio.ptt.device.HardwareAction
 import com.securityradio.ptt.device.HardwareButtonEvent
 import com.securityradio.ptt.device.HardwareButtonRelay
 import com.securityradio.ptt.device.HardwareMappingRepository
+import com.securityradio.ptt.device.BatteryStatusProbe
 import com.securityradio.ptt.device.BluetoothStatusProbe
+import com.securityradio.ptt.device.ConnectivityMonitor
 import com.securityradio.ptt.device.LastRxAudioRecorder
 import android.app.Application
 import com.securityradio.ptt.device.LocalUnitIdentifier
@@ -65,6 +68,7 @@ class RadioViewModel(
     private val locationReporter: LocationReporter,
     private val customSoundDownloader: CustomSoundDownloader,
     private val lastRxAudioRecorder: LastRxAudioRecorder,
+    private val connectivityMonitor: ConnectivityMonitor,
 ) : ViewModel() {
 
     @Volatile
@@ -87,6 +91,22 @@ class RadioViewModel(
 
     private var pttToneJob: Job? = null
     private var mappingJob: Job? = null
+
+    /** Lost-link alert loop (busy tone + cycling banner) and the RECONNECTED auto-clear. */
+    private var offlineJob: Job? = null
+    private var reconnectClearJob: Job? = null
+
+    /** Null until the first connectivity reading; used to fire on edges only. */
+    private var lastConnectivityOnline: Boolean? = null
+
+    /** Resolved device dark-mode, reported by the Compose layer; flips [ThemeMode.AUTO] correctly. */
+    @Volatile
+    private var systemDark: Boolean = false
+
+    /** Day/night hardware key: hold timer and whether this hold already flipped the screen. */
+    private var dayNightHoldJob: Job? = null
+    @Volatile
+    private var dayNightFlippedThisHold: Boolean = false
 
     @Volatile
     private var pttMicLiveThisHold: Boolean = false
@@ -124,11 +144,13 @@ class RadioViewModel(
                 localShortUnitId = unitIdUpper,
                 sessionDisplayName = radioPreferences.getSessionDisplayName(),
                 listenVolumeMuted = radioPreferences.isListenVolumeMuted(),
+                batteryPercent = BatteryStatusProbe.percent(application),
                 bluetoothOn = BluetoothStatusProbe.isBluetoothOn(application),
                 hasReplayBuffer = lastRxAudioRecorder.hasLastTransmission(),
                 hardwareMappings = hardwareMappingRepository.getAllMappings(),
                 themeMode = radioPreferences.getThemeMode(),
                 announceChannelNameOnTune = radioPreferences.isAnnounceChannelOnTuneEnabled(),
+                displayRotated180 = radioPreferences.isDisplayRotated180(),
                 agencyRadioKey = radioPreferences.getAgencyRadioKey(),
                 deviceProfilePreference = radioPreferences.getDeviceProfilePreference(),
                 resolvedDeviceProfile = DeviceProfileResolver.resolve(radioPreferences.getDeviceProfilePreference()),
@@ -188,7 +210,8 @@ class RadioViewModel(
                     HardwareButtonEvent.VolumeCheckPressed -> soundPlayer.startVolumeCheckLoop()
                     HardwareButtonEvent.VolumeCheckReleased -> soundPlayer.stopVolumeCheckLoop()
                     HardwareButtonEvent.VolumeCheckTapped -> soundPlayer.playVolumeCheck()
-                    HardwareButtonEvent.ToggleDayNightPressed -> onEvent(RadioUiEvent.ToggleDayNight)
+                    HardwareButtonEvent.ToggleDayNightPressed -> onDayNightKeyDown()
+                    HardwareButtonEvent.ToggleDayNightReleased -> onDayNightKeyUp()
                 }
             }
         }
@@ -204,12 +227,85 @@ class RadioViewModel(
                 delay(STATUS_REFRESH_MS)
                 val bt = BluetoothStatusProbe.isBluetoothOn(application)
                 val replay = lastRxAudioRecorder.hasLastTransmission()
+                val battery = BatteryStatusProbe.percent(application)
                 val snap = _uiState.value
-                if (bt != snap.bluetoothOn || replay != snap.hasReplayBuffer) {
-                    _uiState.update { it.copy(bluetoothOn = bt, hasReplayBuffer = replay) }
+                if (bt != snap.bluetoothOn ||
+                    replay != snap.hasReplayBuffer ||
+                    battery != snap.batteryPercent
+                ) {
+                    _uiState.update {
+                        it.copy(bluetoothOn = bt, hasReplayBuffer = replay, batteryPercent = battery)
+                    }
                 }
             }
         }
+        viewModelScope.launch {
+            connectivityMonitor.online.collect { online -> onConnectivityChanged(online) }
+        }
+    }
+
+    /**
+     * Reacts to device internet coming and going. The first reading only seeds the
+     * baseline (so a normal online start makes no noise); later edges drive the
+     * lost-link alert and the reconnect chime.
+     */
+    private fun onConnectivityChanged(online: Boolean) {
+        val previous = lastConnectivityOnline
+        lastConnectivityOnline = online
+        if (previous == online) return
+        if (!online) {
+            startOfflineHandling()
+        } else if (previous != null) {
+            onConnectionRestored()
+        }
+    }
+
+    /** Cycles NO CONNECTION / RECONNECTING and re-sounds the busy tone until link returns. */
+    private fun startOfflineHandling() {
+        reconnectClearJob?.cancel()
+        reconnectClearJob = null
+        offlineJob?.cancel()
+        _uiState.update { it.copy(networkLabel = "OFFLINE") }
+        offlineJob = viewModelScope.launch {
+            soundPlayer.playBusyTone()
+            var sinceToneMs = 0L
+            var showNoConnection = true
+            while (isActive) {
+                val banner = if (showNoConnection) {
+                    RadioUiState.BANNER_NO_CONNECTION
+                } else {
+                    RadioUiState.BANNER_RECONNECTING
+                }
+                _uiState.update { it.copy(connectivityBanner = banner) }
+                showNoConnection = !showNoConnection
+                delay(OFFLINE_BANNER_CYCLE_MS)
+                sinceToneMs += OFFLINE_BANNER_CYCLE_MS
+                if (sinceToneMs >= OFFLINE_TONE_INTERVAL_MS) {
+                    soundPlayer.playBusyTone()
+                    sinceToneMs = 0L
+                }
+            }
+        }
+    }
+
+    /** Link returned: stop the alert, sound the channel tone, flash RECONNECTED briefly. */
+    private fun onConnectionRestored() {
+        offlineJob?.cancel()
+        offlineJob = null
+        soundPlayer.playChannelSwitch()
+        _uiState.update { it.copy(connectivityBanner = RadioUiState.BANNER_RECONNECTED) }
+        reconnectClearJob?.cancel()
+        reconnectClearJob = viewModelScope.launch {
+            delay(RECONNECTED_BANNER_MS)
+            _uiState.update {
+                if (it.connectivityBanner == RadioUiState.BANNER_RECONNECTED) {
+                    it.copy(connectivityBanner = "")
+                } else {
+                    it
+                }
+            }
+        }
+        viewModelScope.launch { syncCatalog(playConnectSoundIfNetwork = false) }
     }
 
     /** Menu / non-PTT control click sound (same as channel switch WAV). */
@@ -236,10 +332,50 @@ class RadioViewModel(
         _wakeUiRequests.emit(reason)
     }
 
-    private fun cycleThemeMode(current: ThemeMode): ThemeMode = when (current) {
-        ThemeMode.AUTO -> ThemeMode.DAY
-        ThemeMode.DAY -> ThemeMode.NIGHT
-        ThemeMode.NIGHT -> ThemeMode.AUTO
+    /** Day/night control: flips the *displayed* theme so one press always changes the screen. */
+    private fun applyDayNightToggle() {
+        soundPlayer.playChannelSwitch()
+        val currentlyNight = _uiState.value.themeMode.isLcdNight(systemDark)
+        val nextMode = if (currentlyNight) ThemeMode.DAY else ThemeMode.NIGHT
+        radioPreferences.setThemeMode(nextMode)
+        _uiState.update { it.copy(themeMode = nextMode) }
+    }
+
+    /** Day/night hardware key pressed: arm the IRC590 hold-to-flip timer. */
+    private fun onDayNightKeyDown() {
+        dayNightFlippedThisHold = false
+        dayNightHoldJob?.cancel()
+        dayNightHoldJob = viewModelScope.launch {
+            delay(DAY_NIGHT_HOLD_FLIP_MS)
+            if (_uiState.value.resolvedDeviceProfile == ResolvedDeviceProfile.IRC590) {
+                dayNightFlippedThisHold = true
+                flipDisplay180()
+            }
+        }
+    }
+
+    /** Day/night hardware key released: a quick tap toggles day/night; a 2 s hold already flipped. */
+    private fun onDayNightKeyUp() {
+        dayNightHoldJob?.cancel()
+        dayNightHoldJob = null
+        if (dayNightFlippedThisHold) {
+            dayNightFlippedThisHold = false
+            return
+        }
+        applyDayNightToggle()
+    }
+
+    /** Rotates the whole LCD 180° (IRC590 day/night key long-press) and persists it. */
+    private fun flipDisplay180() {
+        val next = !_uiState.value.displayRotated180
+        radioPreferences.setDisplayRotated180(next)
+        soundPlayer.playChannelSwitch()
+        _uiState.update {
+            it.copy(
+                displayRotated180 = next,
+                statusMessage = if (next) "DISPLAY FLIPPED 180" else "DISPLAY UPRIGHT",
+            )
+        }
     }
 
     fun onMicPermissionResult(granted: Boolean) {
@@ -253,11 +389,9 @@ class RadioViewModel(
 
     fun onEvent(event: RadioUiEvent) {
         when (event) {
-            RadioUiEvent.ToggleDayNight -> {
-                soundPlayer.playChannelSwitch()
-                val nextMode = cycleThemeMode(_uiState.value.themeMode)
-                radioPreferences.setThemeMode(nextMode)
-                _uiState.update { it.copy(themeMode = nextMode) }
+            RadioUiEvent.ToggleDayNight -> applyDayNightToggle()
+            is RadioUiEvent.SystemDarkChanged -> {
+                systemDark = event.dark
             }
             is RadioUiEvent.SetThemeMode -> {
                 soundPlayer.playChannelSwitch()
@@ -1173,5 +1307,9 @@ class RadioViewModel(
         const val INBOX_POLL_MS = 5_000L
         const val STATUS_REFRESH_MS = 2_000L
         const val SOUNDS_VERSION_POLL_MS = 60_000L
+        const val OFFLINE_BANNER_CYCLE_MS = 2_000L
+        const val OFFLINE_TONE_INTERVAL_MS = 10_000L
+        const val RECONNECTED_BANNER_MS = 2_000L
+        const val DAY_NIGHT_HOLD_FLIP_MS = 2_000L
     }
 }
