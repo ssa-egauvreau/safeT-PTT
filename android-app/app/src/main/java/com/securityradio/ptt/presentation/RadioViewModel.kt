@@ -51,7 +51,7 @@ class RadioViewModel(
     private val pttMicCapture: PttMicCapture,
     private val channelsApi: ChannelsApi,
     private val radioApi: RadioApi,
-    localUnitIdentifier: LocalUnitIdentifier,
+    private val localUnitIdentifier: LocalUnitIdentifier,
     private val hardwareMappingRepository: HardwareMappingRepository,
     private val radioPreferences: RadioPreferences,
     private val speechHelper: ChannelSpeechHelper,
