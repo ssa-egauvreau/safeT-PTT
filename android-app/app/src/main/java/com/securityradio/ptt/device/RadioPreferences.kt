@@ -59,6 +59,7 @@ class RadioPreferences(context: Context) {
             .remove(KEY_AUTH_TOKEN)
             .remove(KEY_SESSION_USERNAME)
             .remove(KEY_SESSION_AGENCY_SLUG)
+            .remove(KEY_SESSION_AGENCY_NAME)
             .remove(KEY_SESSION_UNIT_ID)
             .remove(KEY_SESSION_DISPLAY_NAME)
             .remove(KEY_SESSION_INSTALL_TOKEN)
@@ -111,6 +112,12 @@ class RadioPreferences(context: Context) {
         prefs.edit().putString(KEY_SESSION_AGENCY_SLUG, slug.trim().lowercase()).apply()
     }
 
+    fun getSessionAgencyName(): String = prefs.getString(KEY_SESSION_AGENCY_NAME, "").orEmpty()
+
+    fun setSessionAgencyName(name: String) {
+        prefs.edit().putString(KEY_SESSION_AGENCY_NAME, name.trim()).apply()
+    }
+
     fun getSessionUsername(): String = prefs.getString(KEY_SESSION_USERNAME, "").orEmpty()
 
     fun setSessionUsername(username: String) {
@@ -161,6 +168,7 @@ class RadioPreferences(context: Context) {
         private const val KEY_DEVICE_PROFILE = "device_profile_preference"
         private const val KEY_AUTH_TOKEN = "auth_token"
         private const val KEY_SESSION_AGENCY_SLUG = "session_agency_slug"
+        private const val KEY_SESSION_AGENCY_NAME = "session_agency_name"
         private const val KEY_SESSION_USERNAME = "session_username"
         private const val KEY_SESSION_UNIT_ID = "session_unit_id"
         private const val KEY_SESSION_DISPLAY_NAME = "session_display_name"

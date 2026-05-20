@@ -39,6 +39,7 @@ class AssetRadioUiSoundPlayer(
     private var busyTonePlayer: MediaPlayer? = null
     private var volumeCheckPlayer: MediaPlayer? = null
     private var volumeCheckCutoffRunnable: Runnable? = null
+    private var volumeCheckLoopRestartRunnable: Runnable? = null
 
     /**
      * Strong reference to the emergency one-shot so the rugged-handset OS (e.g. IRC590) cannot
@@ -261,11 +262,20 @@ class AssetRadioUiSoundPlayer(
         volumeCheckCutoffRunnable = null
     }
 
+    private fun cancelVolumeCheckLoopRestart() {
+        volumeCheckLoopRestartRunnable?.let { main.removeCallbacks(it) }
+        volumeCheckLoopRestartRunnable = null
+    }
+
     private fun stopVolumeCheckLoopInternal() {
         cancelVolumeCheckCutoff()
+        cancelVolumeCheckLoopRestart()
         volumeCheckPlayer?.runCatching {
             setOnCompletionListener(null)
-            stop()
+            setOnSeekCompleteListener(null)
+            if (isPlaying) {
+                pause()
+            }
             release()
         }
         volumeCheckPlayer = null
@@ -316,15 +326,16 @@ class AssetRadioUiSoundPlayer(
         }
         return try {
             player.apply {
-                isLooping = true
-                setOnPreparedListener { it.start() }
+                // Gapless-style loop: [isLooping] clips on IRC590; restart slightly before the
+                // file ends and re-seek to a sync point (WMP-style seamless loop).
+                isLooping = false
+                setOnPreparedListener { prepared ->
+                    prepared.start()
+                    scheduleVolumeCheckGaplessRestart(prepared)
+                }
                 setOnCompletionListener { mp ->
                     if (mp !== volumeCheckPlayer) return@setOnCompletionListener
-                    try {
-                        mp.seekTo(0)
-                        mp.start()
-                    } catch (_: IllegalStateException) {
-                    }
+                    restartVolumeCheckAtLoopPoint(mp)
                 }
                 setOnErrorListener { mp, _, _ ->
                     if (volumeCheckPlayer === mp) volumeCheckPlayer = null
@@ -336,6 +347,57 @@ class AssetRadioUiSoundPlayer(
         } catch (_: Exception) {
             player.release()
             null
+        }
+    }
+
+    /** Schedule a restart slightly before EOF so there is no audible gap between passes. */
+    private fun scheduleVolumeCheckGaplessRestart(mp: MediaPlayer) {
+        cancelVolumeCheckLoopRestart()
+        val durationMs =
+            try {
+                mp.duration
+            } catch (_: Exception) {
+                -1
+            }
+        if (durationMs < 80) return
+        val leadMs = VOLUME_CHECK_LOOP_LEAD_MS
+        val delayMs = (durationMs - leadMs).coerceAtLeast(0L)
+        val runnable = Runnable {
+            volumeCheckLoopRestartRunnable = null
+            if (mp !== volumeCheckPlayer) return@Runnable
+            restartVolumeCheckAtLoopPoint(mp)
+        }
+        volumeCheckLoopRestartRunnable = runnable
+        main.postDelayed(runnable, delayMs)
+    }
+
+    /** Re-seek to the loop start and play again without stop/release (avoids boundary clicks). */
+    private fun restartVolumeCheckAtLoopPoint(mp: MediaPlayer) {
+        cancelVolumeCheckLoopRestart()
+        try {
+            mp.setOnSeekCompleteListener(null)
+            if (mp.isPlaying) {
+                mp.pause()
+            }
+            val loopStartMs = VOLUME_CHECK_LOOP_START_MS
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                mp.seekTo(loopStartMs, MediaPlayer.SEEK_CLOSEST_SYNC)
+            } else {
+                @Suppress("DEPRECATION")
+                mp.seekTo(loopStartMs.toInt())
+            }
+            mp.setOnSeekCompleteListener { player ->
+                player.setOnSeekCompleteListener(null)
+                if (player !== volumeCheckPlayer) return@setOnSeekCompleteListener
+                try {
+                    if (!player.isPlaying) {
+                        player.start()
+                    }
+                    scheduleVolumeCheckGaplessRestart(player)
+                } catch (_: IllegalStateException) {
+                }
+            }
+        } catch (_: IllegalStateException) {
         }
     }
 
@@ -477,5 +539,9 @@ class AssetRadioUiSoundPlayer(
         const val FILE_VOLUME_CHECK = "volume.wav"
         /** TM7 volume knob: one short beep, not the entire WAV. */
         const val VOLUME_CHECK_MAX_MS = 1_000L
+        /** Skip the first few ms on loop (reduces boundary click on some handsets). */
+        const val VOLUME_CHECK_LOOP_START_MS = 20L
+        /** Restart this many ms before EOF for gapless looping. */
+        const val VOLUME_CHECK_LOOP_LEAD_MS = 35L
     }
 }

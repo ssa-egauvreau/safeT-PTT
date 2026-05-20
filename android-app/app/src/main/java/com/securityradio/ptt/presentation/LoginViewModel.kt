@@ -78,6 +78,10 @@ class LoginViewModel(
                 }
                 prefs.setAuthToken(res.token)
                 prefs.setSessionAgencySlug(slug)
+                prefs.setSessionAgencyName(
+                    res.user.agencyName?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: slug.replace('-', ' ').replaceFirstChar { it.titlecase(Locale.getDefault()) },
+                )
                 prefs.setSessionUsername(username)
                 val accountUnit = res.user.unitId?.trim()?.takeIf { it.isNotEmpty() }
                     ?: username.uppercase(Locale.US)

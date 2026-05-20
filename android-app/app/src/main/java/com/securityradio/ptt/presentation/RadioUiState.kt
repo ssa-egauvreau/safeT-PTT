@@ -50,6 +50,10 @@ data class RadioUiState(
     val localShortUnitId: String,
     /** Signed-in operator display name (shown under unit id while keyed). */
     val sessionDisplayName: String,
+    /** Portal username for settings / account display. */
+    val sessionUsername: String = "",
+    /** Agency name from sign-in (settings account tab). */
+    val sessionAgencyName: String = "",
     /** Unit id shown large on the main LCD while keyed (TX/RX/emergency). */
     val activeTalkUnitId: String,
     /** Display name under [activeTalkUnitId] (smaller type). */
@@ -188,6 +192,8 @@ data class RadioUiState(
             micHint = "MIC: ALLOW ACCESS",
             localShortUnitId = "",
             sessionDisplayName = "",
+            sessionUsername = "",
+            sessionAgencyName = "",
             activeTalkUnitId = "",
             activeTalkDisplayName = "",
             rxAttributedLine = "",

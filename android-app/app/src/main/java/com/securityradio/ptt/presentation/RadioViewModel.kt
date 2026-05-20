@@ -183,6 +183,10 @@ class RadioViewModel(
             it.copy(
                 localShortUnitId = unitIdUpper,
                 sessionDisplayName = radioPreferences.getSessionDisplayName(),
+                sessionUsername = radioPreferences.getSessionUsername(),
+                sessionAgencyName = radioPreferences.getSessionAgencyName().ifBlank {
+                    radioPreferences.getSessionAgencySlug()
+                },
                 externalMicConnected = externalMicAtStart,
                 batteryPercent = BatteryStatusProbe.percent(application),
                 bluetoothOn = BluetoothStatusProbe.isBluetoothOn(application),
@@ -1517,6 +1521,10 @@ class RadioViewModel(
             it.copy(
                 localShortUnitId = refreshed,
                 sessionDisplayName = radioPreferences.getSessionDisplayName(),
+                sessionUsername = radioPreferences.getSessionUsername(),
+                sessionAgencyName = radioPreferences.getSessionAgencyName().ifBlank {
+                    radioPreferences.getSessionAgencySlug()
+                },
             )
         }
         locationReporter.configure(refreshed)
