@@ -26,6 +26,7 @@ import com.securityradio.ptt.device.PttHapticFeedback
 import com.securityradio.ptt.device.PttMicCapture
 import com.securityradio.ptt.device.RadioPreferences
 import com.securityradio.ptt.device.RadioUiSoundPlayer
+import com.securityradio.ptt.device.ServerReachabilityMonitor
 import com.securityradio.ptt.device.VoiceRelayTransport
 import com.securityradio.ptt.domain.ChannelRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -54,6 +55,9 @@ class RadioAppGraph(val application: Application) {
 
     /** Device internet up/down feed for the lost-link alert. */
     val connectivityMonitor: ConnectivityMonitor = ConnectivityMonitor(application).also { it.start() }
+
+    /** Backend reachability feed; trips when API calls keep failing even though the OS says we're online. */
+    val serverReachabilityMonitor: ServerReachabilityMonitor = ServerReachabilityMonitor()
 
     val externalMicMonitor: ExternalMicMonitor = ExternalMicMonitor(application).also { it.start() }
 
@@ -140,6 +144,7 @@ class RadioAppGraph(val application: Application) {
     val channelRepository: ChannelRepository = RadioChannelGateway(
         api = channelsApi,
         localFallback = stubChannelRepository,
+        serverReachabilityMonitor = serverReachabilityMonitor,
     )
 
     init {

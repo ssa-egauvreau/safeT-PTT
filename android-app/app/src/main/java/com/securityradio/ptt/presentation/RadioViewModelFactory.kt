@@ -29,6 +29,7 @@ class RadioViewModelFactory(
                 lastRxAudioRecorder = graph.lastRxAudioRecorder,
                 rxMessageHistory = graph.rxMessageHistory,
                 connectivityMonitor = graph.connectivityMonitor,
+                serverReachabilityMonitor = graph.serverReachabilityMonitor,
                 externalMicMonitor = graph.externalMicMonitor,
             ) as T
         }

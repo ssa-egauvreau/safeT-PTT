@@ -34,6 +34,7 @@ import com.securityradio.ptt.device.PttHapticFeedback
 import com.securityradio.ptt.device.PttMicCapture
 import com.securityradio.ptt.device.RadioPreferences
 import com.securityradio.ptt.device.RadioUiSoundPlayer
+import com.securityradio.ptt.device.ServerReachabilityMonitor
 import com.securityradio.ptt.device.VoiceControlEvent
 import com.securityradio.ptt.device.VoiceRelayTransport
 import com.securityradio.ptt.domain.ChannelCatalogOrigin
@@ -53,6 +54,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -76,6 +79,7 @@ class RadioViewModel(
     private val lastRxAudioRecorder: LastRxAudioRecorder,
     private val rxMessageHistory: RxMessageHistory,
     private val connectivityMonitor: ConnectivityMonitor,
+    private val serverReachabilityMonitor: ServerReachabilityMonitor,
     private val externalMicMonitor: ExternalMicMonitor,
 ) : ViewModel() {
 
@@ -267,7 +271,12 @@ class RadioViewModel(
             }
         }
         viewModelScope.launch {
-            connectivityMonitor.online.collect { online -> onConnectivityChanged(online) }
+            combine(
+                connectivityMonitor.online,
+                serverReachabilityMonitor.reachable,
+            ) { osOnline, serverReachable -> osOnline && serverReachable }
+                .distinctUntilChanged()
+                .collect { online -> onConnectivityChanged(online) }
         }
         viewModelScope.launch {
             externalMicMonitor.connected.collect { connected ->
