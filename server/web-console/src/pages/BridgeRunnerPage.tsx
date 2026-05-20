@@ -16,6 +16,37 @@ function defaultInput(devices: MediaDeviceInfo[], hint: string | null): string {
   return devices[0]?.deviceId ?? "";
 }
 
+/** Hold up to 3 s between WS-close and the auto-reconnect so the server has time to come back. */
+const BRIDGE_RECONNECT_DELAY_MS = 3000;
+
+interface StoredDeviceSelection {
+  input?: string;
+  output?: string;
+}
+
+function storedSelectionKey(bridgeId: number): string {
+  return `safetPtt.bridgeRunner.devices.${bridgeId}`;
+}
+
+function readStoredSelection(bridgeId: number): StoredDeviceSelection | null {
+  try {
+    const raw = localStorage.getItem(storedSelectionKey(bridgeId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredDeviceSelection;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSelection(bridgeId: number, sel: StoredDeviceSelection): void {
+  try {
+    localStorage.setItem(storedSelectionKey(bridgeId), JSON.stringify(sel));
+  } catch {
+    /* private mode or quota — selection won't persist this session, no crash */
+  }
+}
+
 /** One runnable audio-device bridge: device selection, start/stop, live status. */
 function BridgeRunnerRow({
   bridge,
@@ -27,30 +58,78 @@ function BridgeRunnerRow({
   outputs: MediaDeviceInfo[];
 }) {
   const bidirectional = bridge.direction === "bidirectional";
-  const [inputId, setInputId] = useState(() => defaultInput(inputs, bridge.device_hint));
-  const [outputId, setOutputId] = useState(() => outputs[0]?.deviceId ?? "");
+  /*
+   * Hydrate from localStorage so a tab reload (e.g. after a Railway redeploy nudged the operator
+   * to refresh) keeps the chosen line-in selected. Fall back to the label-hint default if the
+   * stored device id is no longer enumerable.
+   */
+  const [inputId, setInputId] = useState(() => {
+    const stored = readStoredSelection(bridge.id)?.input;
+    if (stored && inputs.some((d) => d.deviceId === stored)) {
+      return stored;
+    }
+    return defaultInput(inputs, bridge.device_hint);
+  });
+  const [outputId, setOutputId] = useState(() => {
+    const stored = readStoredSelection(bridge.id)?.output;
+    if (stored && outputs.some((d) => d.deviceId === stored)) {
+      return stored;
+    }
+    return outputs[0]?.deviceId ?? "";
+  });
   const [runState, setRunState] = useState<BridgeRunState>("idle");
   const [keyed, setKeyed] = useState(false);
   const [receiving, setReceiving] = useState(false);
   const [level, setLevel] = useState(0);
   const [detail, setDetail] = useState<string | null>(null);
+  /** True between an unexpected WS close and the next reconnect attempt — drives the status pill. */
+  const [reconnecting, setReconnecting] = useState(false);
   const runnerRef = useRef<BridgeRunnerClient | null>(null);
+  /*
+   * Want-to-be-running flag separates "user clicked Stop" (don't reconnect) from "the WS dropped
+   * out from under us" (reconnect). Held in a ref so the long-lived onState callback always sees
+   * the current value without re-binding.
+   */
+  const wantRunningRef = useRef(false);
+  const reconnectTimerRef = useRef<number | null>(null);
+
+  function clearReconnectTimer() {
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }
 
   // A running bridge must be torn down if the operator navigates away.
   useEffect(() => {
-    return () => runnerRef.current?.stop();
+    return () => {
+      clearReconnectTimer();
+      wantRunningRef.current = false;
+      runnerRef.current?.stop();
+    };
   }, []);
 
-  const running = runState === "connecting" || runState === "running";
+  // Persist the selection on every change so the next mount can restore it.
+  useEffect(() => {
+    writeStoredSelection(bridge.id, { input: inputId, output: outputId });
+  }, [bridge.id, inputId, outputId]);
+
+  /*
+   * Treat the reconnect window as "running" for UI purposes — the controls stay locked and the
+   * Stop button is the way to cancel an in-flight reconnect.
+   */
+  const running = runState === "connecting" || runState === "running" || reconnecting;
 
   function start() {
-    if (running || !inputId) {
-      return;
-    }
+    if (!inputId) return;
+    if (runState === "connecting" || runState === "running") return;
     setDetail(null);
     setKeyed(false);
     setReceiving(false);
     setLevel(0);
+    setReconnecting(false);
+    clearReconnectTimer();
+    wantRunningRef.current = true;
     const runner = new BridgeRunnerClient(
       {
         bridgeId: bridge.id,
@@ -69,6 +148,26 @@ function BridgeRunnerRow({
             setReceiving(false);
             setLevel(0);
             runnerRef.current = null;
+            if (state === "closed" && wantRunningRef.current) {
+              /*
+               * Server-side WS drops (Railway redeploys, network blips) shouldn't force the
+               * operator to babysit the bridge — schedule a quiet reconnect and reuse the same
+               * device selection. Errors don't retry: those usually mean a config or device
+               * issue that another attempt won't fix.
+               */
+              setReconnecting(true);
+              clearReconnectTimer();
+              reconnectTimerRef.current = window.setTimeout(() => {
+                reconnectTimerRef.current = null;
+                if (wantRunningRef.current) {
+                  setReconnecting(false);
+                  start();
+                }
+              }, BRIDGE_RECONNECT_DELAY_MS);
+            } else if (state === "error") {
+              wantRunningRef.current = false;
+              setReconnecting(false);
+            }
           }
         },
         onKeyed: setKeyed,
@@ -81,6 +180,9 @@ function BridgeRunnerRow({
   }
 
   function stop() {
+    wantRunningRef.current = false;
+    clearReconnectTimer();
+    setReconnecting(false);
     runnerRef.current?.stop();
     runnerRef.current = null;
     setLevel(0);
@@ -97,6 +199,9 @@ function BridgeRunnerRow({
   } else if (runState === "error") {
     status = "Error";
     statusClass = "pill off";
+  } else if (reconnecting) {
+    status = "Reconnecting…";
+    statusClass = "pill";
   } else if (runState === "closed") {
     status = "Stopped";
     statusClass = "pill off";
