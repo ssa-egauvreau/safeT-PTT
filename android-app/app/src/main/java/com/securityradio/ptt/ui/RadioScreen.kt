@@ -51,9 +51,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -885,11 +887,15 @@ private fun LcdHandsetFillChannelBlock(
                             .size(48.dp),
                     )
                 }
+                LcdSettingsIcon(
+                    color = p.statusBlue,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(bottom = 4.dp)
+                        .size(28.dp)
+                        .clickable { onEvent(RadioUiEvent.OpenMappingSettings) },
+                )
             }
-            LcdHandsetSettingsRow(
-                onEvent = onEvent,
-                styles = styles,
-            )
             if (hasTalk) {
                 if (showEmergencyBanner) {
                     Text(
@@ -978,29 +984,6 @@ private fun LcdHandsetMetaRow(
     }
 }
 
-/** Single settings control — bottom-right under the channel name. */
-@Composable
-private fun LcdHandsetSettingsRow(
-    onEvent: (RadioUiEvent) -> Unit,
-    styles: LcdTextStyles,
-) {
-    val p = RadioLcdTheme.palette
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 4.dp),
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        LcdSettingsIcon(
-            color = p.statusBlue,
-            modifier = Modifier
-                .size(28.dp)
-                .clickable { onEvent(RadioUiEvent.OpenMappingSettings) },
-        )
-    }
-}
-
 /** One handset stat — an icon with its number — for zone, channel position and radios online. */
 @Composable
 private fun LcdHandsetStat(
@@ -1039,127 +1022,133 @@ private fun LcdHandsetToolbar(
     val online = state.networkLabel == "ONLINE"
     val scanPulse = state.scanBackgroundActive
     val accentOnEmergency = if (state.isEmergencyActive) Color.White else p.textPrimary
-    val iconSize = if (showBatteryStatus) 28.dp else 32.dp
-    val iconGap = if (showBatteryStatus) 6.dp else 8.dp
-    val timeFontSize = if (showBatteryStatus) 17.sp else 22.sp
-    val minHeight = if (showBatteryStatus) 38.dp else 42.dp
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = minHeight),
-    ) {
+    val iconSize = if (showBatteryStatus) 28.dp else 26.dp
+    val iconGap = if (showBatteryStatus) 6.dp else 5.dp
+    val signalWidth = if (showBatteryStatus) 36.dp else 34.dp
+    val signalHeight = if (showBatteryStatus) 24.dp else 22.dp
+    val timeFontSize = if (showBatteryStatus) 17.sp else 20.sp
+    val minHeight = if (showBatteryStatus) 38.dp else 40.dp
+    val density = LocalDensity.current
+    var leftIconsWidthPx by remember { mutableIntStateOf(0) }
+    val leftIconsWidth = with(density) { leftIconsWidthPx.toDp() }
+
+    Column(modifier = modifier) {
         Row(
             modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxWidth(0.55f),
+                .fillMaxWidth()
+                .heightIn(min = minHeight),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(iconGap),
         ) {
-            LcdSignalBarsIcon(
-                bars = if (online) 4 else 1,
-                maxBars = 4,
-                colorActive = if (online) p.statusGreen else p.statusAmber,
-                colorInactive = p.textMuted,
-                modifier = Modifier.size(
-                    if (showBatteryStatus) 36.dp else 42.dp,
-                    if (showBatteryStatus) 24.dp else 28.dp,
-                ),
-            )
-            LcdBluetoothIcon(
-                on = state.bluetoothOn,
-                active = p.statusBlue,
-                muted = p.textMuted,
-                modifier = Modifier.size(iconSize),
-            )
-            LcdGpsIcon(
-                active = p.statusGreen,
-                muted = p.textMuted,
-                locked = true,
-                modifier = Modifier.size(iconSize),
-            )
-            LcdScanIcon(
-                on = state.scanActive,
-                active = if (scanPulse) p.statusAmber else p.statusGreen,
-                muted = p.textMuted,
-                modifier = Modifier
-                    .size(iconSize)
-                    .clickable {
-                        if (state.scanActive) {
-                            onEvent(RadioUiEvent.OpenScanPicker)
-                        } else {
-                            onEvent(RadioUiEvent.ToggleScanLongPress)
-                        }
-                    },
-            )
-            LcdReplayIcon(
-                ready = p.statusAmber,
-                muted = p.textMuted,
-                playing = state.replayBanner.isNotEmpty(),
-                modifier = Modifier
-                    .size(iconSize)
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = { onEvent(RadioUiEvent.PlayLastTransmission) },
-                            onLongPress = { onEvent(RadioUiEvent.ToggleMessageHistory) },
-                        )
-                    },
-            )
-            LcdVolumeIcon(
-                muted = p.textMuted,
-                active = p.statusGreen,
-                isMuted = !state.externalMicConnected,
-                modifier = Modifier.size(iconSize),
-            )
-        }
-        Text(
-            text = state.systemTime.uppercase(Locale.US),
-            style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = timeFontSize),
-            color = accentOnEmergency,
-            maxLines = 1,
-            modifier = Modifier.align(Alignment.Center),
-        )
-        if (showBatteryStatus) {
             Row(
-                modifier = Modifier.align(Alignment.CenterEnd),
+                modifier = Modifier.onSizeChanged { leftIconsWidthPx = it.width },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(iconGap),
             ) {
-                LcdBatteryIcon(
-                    percent = state.batteryPercent,
-                    outline = if (state.isEmergencyActive) Color.White else p.textSecondary,
-                    fillHigh = p.statusGreen,
-                    fillLow = p.statusAmber,
-                    fillCritical = p.statusRed,
-                    modifier = Modifier.size(width = 32.dp, height = 16.dp),
+                LcdSignalBarsIcon(
+                    bars = if (online) 4 else 1,
+                    maxBars = 4,
+                    colorActive = if (online) p.statusGreen else p.statusAmber,
+                    colorInactive = p.textMuted,
+                    modifier = Modifier.size(signalWidth, signalHeight),
                 )
+                LcdBluetoothIcon(
+                    on = state.bluetoothOn,
+                    active = p.statusBlue,
+                    muted = p.textMuted,
+                    modifier = Modifier.size(iconSize),
+                )
+                LcdGpsIcon(
+                    active = p.statusGreen,
+                    muted = p.textMuted,
+                    locked = true,
+                    modifier = Modifier.size(iconSize),
+                )
+                LcdScanIcon(
+                    on = state.scanActive,
+                    active = if (scanPulse) p.statusAmber else p.statusGreen,
+                    muted = p.textMuted,
+                    modifier = Modifier
+                        .size(iconSize)
+                        .clickable {
+                            if (state.scanActive) {
+                                onEvent(RadioUiEvent.OpenScanPicker)
+                            } else {
+                                onEvent(RadioUiEvent.ToggleScanLongPress)
+                            }
+                        },
+                )
+                LcdReplayIcon(
+                    ready = p.statusAmber,
+                    muted = p.textMuted,
+                    playing = state.replayBanner.isNotEmpty(),
+                    modifier = Modifier
+                        .size(iconSize)
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onTap = { onEvent(RadioUiEvent.PlayLastTransmission) },
+                                onLongPress = { onEvent(RadioUiEvent.ToggleMessageHistory) },
+                            )
+                        },
+                )
+                LcdVolumeIcon(
+                    muted = p.textMuted,
+                    active = p.statusGreen,
+                    isMuted = !state.externalMicConnected,
+                    modifier = Modifier.size(iconSize),
+                )
+            }
+            Text(
+                text = state.systemTime.uppercase(Locale.US),
+                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = timeFontSize),
+                color = accentOnEmergency,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f),
+            )
+            if (showBatteryStatus) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(iconGap),
+                ) {
+                    LcdBatteryIcon(
+                        percent = state.batteryPercent,
+                        outline = if (state.isEmergencyActive) Color.White else p.textSecondary,
+                        fillHigh = p.statusGreen,
+                        fillLow = p.statusAmber,
+                        fillCritical = p.statusRed,
+                        modifier = Modifier.size(width = 32.dp, height = 16.dp),
+                    )
+                    Text(
+                        text = "${state.batteryPercent}%",
+                        style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 16.sp),
+                        color = if (state.isEmergencyActive) Color.White else p.textSecondary,
+                        maxLines = 1,
+                    )
+                }
+            } else if (leftIconsWidth > 0.dp) {
+                Spacer(modifier = Modifier.width(leftIconsWidth))
+            }
+        }
+        if (scanPulse && state.scanBackgroundChannel.isNotBlank()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LcdScanIcon(
+                    on = true,
+                    active = p.statusAmber,
+                    muted = p.textMuted,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "${state.batteryPercent}%",
-                    style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 16.sp),
-                    color = if (state.isEmergencyActive) Color.White else p.textSecondary,
+                    text = "SCAN RX · ${state.scanBackgroundChannel}",
+                    style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
+                    color = p.statusAmber,
                     maxLines = 1,
                 )
             }
-        }
-    }
-    if (scanPulse && state.scanBackgroundChannel.isNotBlank()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            LcdScanIcon(
-                on = true,
-                active = p.statusAmber,
-                muted = p.textMuted,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "SCAN RX · ${state.scanBackgroundChannel}",
-                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
-                color = p.statusAmber,
-                maxLines = 1,
-            )
         }
     }
 }
