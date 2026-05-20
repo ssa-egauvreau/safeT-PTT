@@ -227,6 +227,10 @@ export function ChannelPanel({
   const startTx = useCallback(async () => {
     const client = clientRef.current;
     if (!client) {
+      // The button is normally disabled while !connected, but a navigation/re-mount
+      // race could leave the panel briefly with no client; surface the state instead
+      // of silently swallowing the press.
+      setVoiceDetail("Voice not ready — wait for the channel to reconnect.");
       return;
     }
     pttHeldRef.current = true;
@@ -243,6 +247,10 @@ export function ChannelPanel({
         setVoiceDetail("Channel busy — another unit is transmitting.");
       } else if (code === "listen_only") {
         setVoiceDetail("You have listen-only access on this channel.");
+      } else if (code === "not_connected") {
+        // Distinct message so the operator knows the voice socket dropped
+        // (e.g. after a tab navigation race) rather than blaming the mic.
+        setVoiceDetail("Voice disconnected — reconnecting…");
       } else {
         setVoiceDetail("Microphone unavailable or permission denied.");
       }
