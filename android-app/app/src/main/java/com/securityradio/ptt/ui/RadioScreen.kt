@@ -63,7 +63,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.securityradio.ptt.device.DeviceProfilePreference
@@ -111,6 +113,8 @@ private const val HANDSET_EMERGENCY_PANEL_HI = 0.95f
 private const val HANDSET_EMERGENCY_BORDER_LO = 0.65f
 private const val HANDSET_EMERGENCY_WASH_LO = 0.28f
 private const val HANDSET_EMERGENCY_WASH_HI = 0.92f
+private const val HANDSET_IDLE_CHANNEL_MIN_SP = 28f
+private const val HANDSET_IDLE_CHANNEL_MAX_SP = 64f
 
 /**
  * Outer frame: day / night LCD cross-fade and palette scope.
@@ -936,12 +940,15 @@ private fun LcdHandsetFillChannelBlock(
             LcdPermissionBadge(permission = state.currentChannelPermission, styles = styles)
             val scanRxLive =
                 state.scanBackgroundActive && state.scanBackgroundChannel.isNotBlank()
+            val remoteEmergencyLive = showEmergencyBanner
             val showHandsetTalker =
-                showTalkPanel && (!scanRxLive || state.isPttPressed || state.isEmergencyActive)
+                showTalkPanel &&
+                    !remoteEmergencyLive &&
+                    (!scanRxLive || state.isPttPressed || state.isEmergencyActive)
             val homeChannelLarge = !showHandsetTalker
             val channelBlockWeight =
                 when {
-                    homeChannelLarge -> 2.15f
+                    remoteEmergencyLive || homeChannelLarge -> 2.25f
                     else -> 0.48f
                 }
             val channelBlockMaxHeight =
@@ -959,69 +966,80 @@ private fun LcdHandsetFillChannelBlock(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                val channelText = state.channelLabel.uppercase(Locale.US)
-                val density = LocalDensity.current
-                val blockMaxHeight = maxHeight
-                val blockMaxWidth = maxWidth
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Box(
-                        modifier = if (homeChannelLarge) {
-                            Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                        } else {
-                            Modifier.fillMaxWidth()
-                        },
-                        contentAlignment = Alignment.Center,
+                if (remoteEmergencyLive) {
+                    LcdHandsetRemoteEmergencyBlock(
+                        channelName = state.channelLabel,
+                        unitId = talkUnit,
+                        channelColor = chrome.channelTextColor,
+                        emergencyColor = p.statusEmergency,
+                        styles = styles,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    val channelText = state.channelLabel.uppercase(Locale.US)
+                    val density = LocalDensity.current
+                    val blockMaxHeight = maxHeight
+                    val blockMaxWidth = maxWidth
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
                     ) {
-                        val channelFont = with(density) {
-                            val heightFactor = if (homeChannelLarge) 0.94f else 0.88f
-                            val widthFactor = if (homeChannelLarge) 0.44f else 0.5f
-                            val boxH =
-                                if (homeChannelLarge) {
-                                    blockMaxHeight * if (scanRxLive) 0.72f else 0.94f
-                                } else {
-                                    blockMaxHeight * heightFactor
-                                }
-                            val byHeight = boxH
-                            val byWidth = blockMaxWidth /
-                                (channelText.length.coerceAtLeast(3) * widthFactor)
-                            minOf(byHeight, byWidth).toSp()
-                        }.value.let { raw ->
-                            if (homeChannelLarge) {
-                                raw.coerceIn(26f, 58f)
+                        Box(
+                            modifier = if (homeChannelLarge) {
+                                Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
                             } else {
-                                raw.coerceIn(16f, 24f)
-                            }
-                        }.sp
-                        Text(
-                            text = channelText,
-                            style = styles.channel.copy(
-                                fontSize = channelFont,
-                                lineHeight = (channelFont.value * 1.05f).sp,
-                            ),
-                            color = chrome.channelTextColor,
-                            maxLines = if (homeChannelLarge) 1 else 2,
-                            overflow = TextOverflow.Ellipsis,
-                            softWrap = !homeChannelLarge,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 4.dp),
-                        )
-                    }
-                    if (scanRxLive) {
-                        LcdHandsetScanRxStrip(
-                            channelName = state.scanBackgroundChannel,
-                            unitId = talkUnit,
-                            displayName = talkName,
-                            styles = styles,
-                            modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
-                        )
+                                Modifier.fillMaxWidth()
+                            },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            val channelFont = with(density) {
+                                val heightFactor = if (homeChannelLarge) 0.96f else 0.88f
+                                val widthFactor = if (homeChannelLarge) 0.42f else 0.5f
+                                val boxH =
+                                    if (homeChannelLarge) {
+                                        blockMaxHeight * if (scanRxLive) 0.72f else 0.96f
+                                    } else {
+                                        blockMaxHeight * heightFactor
+                                    }
+                                val byHeight = boxH
+                                val byWidth = blockMaxWidth /
+                                    (channelText.length.coerceAtLeast(3) * widthFactor)
+                                minOf(byHeight, byWidth).toSp()
+                            }.value.let { raw ->
+                                if (homeChannelLarge) {
+                                    raw.coerceIn(HANDSET_IDLE_CHANNEL_MIN_SP, HANDSET_IDLE_CHANNEL_MAX_SP)
+                                } else {
+                                    raw.coerceIn(16f, 24f)
+                                }
+                            }.sp
+                            Text(
+                                text = channelText,
+                                style = styles.channel.copy(
+                                    fontSize = channelFont,
+                                    lineHeight = (channelFont.value * 1.05f).sp,
+                                ),
+                                color = chrome.channelTextColor,
+                                maxLines = if (homeChannelLarge) 1 else 2,
+                                overflow = TextOverflow.Ellipsis,
+                                softWrap = !homeChannelLarge,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp),
+                            )
+                        }
+                        if (scanRxLive) {
+                            LcdHandsetScanRxStrip(
+                                channelName = state.scanBackgroundChannel,
+                                unitId = talkUnit,
+                                displayName = talkName,
+                                styles = styles,
+                                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
+                            )
+                        }
                     }
                 }
                 if (state.channelTen33) {
@@ -1042,17 +1060,6 @@ private fun LcdHandsetFillChannelBlock(
                 )
             }
             if (showHandsetTalker) {
-                if (showEmergencyBanner) {
-                    Text(
-                        text = "EMERGENCY",
-                        style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 12.sp),
-                        color = p.statusEmergency,
-                        maxLines = 1,
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                }
                 LcdHandsetTalkerBlock(
                     unitId = talkUnit.ifBlank { state.localShortUnitId.trim().uppercase(Locale.US) },
                     displayName = when {
@@ -1542,6 +1549,125 @@ private fun handsetScanRxLabel(
             else -> ""
         }
     return if (who.isNotEmpty()) "SCAN RX · $channel — $who" else "SCAN RX · $channel"
+}
+
+private fun handsetScaledLineSp(
+    density: Density,
+    maxHeight: Dp,
+    maxWidth: Dp,
+    text: String,
+    heightFraction: Float,
+    minSp: Float,
+    maxSp: Float,
+    widthCharsPerSp: Float = 0.48f,
+): TextUnit {
+    return with(density) {
+        val byHeight = maxHeight.value * heightFraction
+        val byWidth = maxWidth.value / (text.length.coerceAtLeast(2) * widthCharsPerSp)
+        minOf(byHeight, byWidth).coerceIn(minSp, maxSp).sp
+    }
+}
+
+/** Remote unit emergency — large channel, EMERGENCY, and unit id (TM7 / IRC590). */
+@Composable
+private fun LcdHandsetRemoteEmergencyBlock(
+    channelName: String,
+    unitId: String,
+    channelColor: Color,
+    emergencyColor: Color,
+    styles: LcdTextStyles,
+    modifier: Modifier = Modifier,
+) {
+    val channel = channelName.trim().uppercase(Locale.US)
+    val unit = unitId.trim().uppercase(Locale.US)
+    BoxWithConstraints(
+        modifier = modifier,
+        contentAlignment = Alignment.Center,
+    ) {
+        val density = LocalDensity.current
+        val channelSp =
+            handsetScaledLineSp(
+                density = density,
+                maxHeight = maxHeight,
+                maxWidth = maxWidth,
+                text = channel,
+                heightFraction = 0.36f,
+                minSp = HANDSET_IDLE_CHANNEL_MIN_SP,
+                maxSp = HANDSET_IDLE_CHANNEL_MAX_SP,
+                widthCharsPerSp = 0.42f,
+            )
+        val emergencySp =
+            handsetScaledLineSp(
+                density = density,
+                maxHeight = maxHeight,
+                maxWidth = maxWidth,
+                text = "EMERGENCY",
+                heightFraction = 0.24f,
+                minSp = 24f,
+                maxSp = 48f,
+            )
+        val unitSp =
+            handsetScaledLineSp(
+                density = density,
+                maxHeight = maxHeight,
+                maxWidth = maxWidth,
+                text = unit.ifEmpty { "—" },
+                heightFraction = 0.36f,
+                minSp = HANDSET_IDLE_CHANNEL_MIN_SP,
+                maxSp = HANDSET_IDLE_CHANNEL_MAX_SP,
+                widthCharsPerSp = 0.5f,
+            )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = channel,
+                style = styles.channel.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = channelSp,
+                    lineHeight = (channelSp.value * 1.05f).sp,
+                ),
+                color = channelColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "EMERGENCY",
+                style = styles.channel.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = emergencySp,
+                    lineHeight = (emergencySp.value * 1.05f).sp,
+                ),
+                color = emergencyColor,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (unit.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = unit,
+                    style = styles.channel.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = unitSp,
+                        lineHeight = (unitSp.value * 1.05f).sp,
+                    ),
+                    color = emergencyColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
 }
 
 /** Amber scan traffic line under the large home channel name. */
