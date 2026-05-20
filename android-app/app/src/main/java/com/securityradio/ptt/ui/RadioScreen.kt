@@ -518,10 +518,9 @@ private fun LcdStatusBar(
                 }
             }
         }
-        if (layout.minimalStatusBar) Row(
+        if (layout.minimalStatusBar) Box(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = state.systemTime.uppercase(Locale.US),
@@ -529,8 +528,9 @@ private fun LcdStatusBar(
                 color = p.textPrimary,
             )
             Row(
+                modifier = Modifier.align(Alignment.CenterEnd),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 LcdBatteryIcon(
                     percent = state.batteryPercent,
@@ -538,11 +538,11 @@ private fun LcdStatusBar(
                     fillHigh = p.statusGreen,
                     fillLow = p.statusAmber,
                     fillCritical = p.statusRed,
-                    modifier = Modifier.size(width = 28.dp, height = 14.dp),
+                    modifier = Modifier.size(width = 36.dp, height = 18.dp),
                 )
                 Text(
                     text = "${state.batteryPercent}%",
-                    style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp),
+                    style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 28.sp),
                     color = p.textSecondary,
                 )
             }
@@ -628,6 +628,23 @@ private fun rememberHandsetLocalEmergencyFlashColor(active: Boolean): Color {
     } else {
         Color.Transparent
     }
+}
+
+/** Throbbing alpha for the 10-33 "emergency traffic only" channel band; 0f when off. */
+@Composable
+private fun rememberTen33PulseAlpha(active: Boolean): Float {
+    if (!active) return 0f
+    val transition = rememberInfiniteTransition(label = "ten33_band_pulse")
+    val phase by transition.animateFloat(
+        initialValue = 0.28f,
+        targetValue = 0.78f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 700),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "ten33_band_pulse_alpha",
+    )
+    return phase
 }
 
 /** Orange when scan is on; pulses while a scan channel is receiving. */
@@ -1021,14 +1038,25 @@ private fun LcdHandsetFillChannelBlock(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
+                        val ten33Alpha = rememberTen33PulseAlpha(state.channelTen33)
                         Box(
-                            modifier = if (homeChannelLarge) {
-                                Modifier
-                                    .weight(1f)
-                                    .fillMaxWidth()
-                            } else {
-                                Modifier.fillMaxWidth()
-                            },
+                            modifier = (
+                                if (homeChannelLarge) {
+                                    Modifier
+                                        .weight(1f)
+                                        .fillMaxWidth()
+                                } else {
+                                    Modifier.fillMaxWidth()
+                                }
+                            ).then(
+                                if (state.channelTen33) {
+                                    Modifier
+                                        .background(p.statusAmber.copy(alpha = ten33Alpha))
+                                        .border(2.dp, p.statusAmber, RoundedCornerShape(2.dp))
+                                } else {
+                                    Modifier
+                                }
+                            ),
                             contentAlignment = Alignment.Center,
                         ) {
                             val idleChannelRange = handsetIdleChannelSpRange(state.resolvedDeviceProfile)
@@ -1092,14 +1120,6 @@ private fun LcdHandsetFillChannelBlock(
                             )
                         }
                     }
-                }
-                if (state.channelTen33) {
-                    LcdEmergencyGlyphIcon(
-                        color = p.statusAmber,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .size(48.dp),
-                    )
                 }
                 if (!remoteEmergencyLive) {
                     LcdSettingsIcon(
@@ -3006,42 +3026,6 @@ fun HardwareMappingDialog(
                             ),
                         ) {
                             Text("SIGN OUT".uppercase(Locale.US))
-                        }
-                        HorizontalDivider(color = p.divider)
-                        Text(
-                            text = "LEGACY RADIO KEY (OPTIONAL)",
-                            style = styles.body.copy(fontWeight = FontWeight.Bold),
-                            color = p.textPrimary,
-                        )
-                        Text(
-                            text = if (state.agencyRadioKey.isBlank()) {
-                                "Not used while signed in. Only needed for older setups without username/password."
-                            } else {
-                                "Legacy override — sign out to use key-based access instead of your account."
-                            },
-                            style = styles.status,
-                            color = p.textMuted,
-                        )
-                        var agencyKeyDraft by remember(state.agencyRadioKey) {
-                            mutableStateOf(state.agencyRadioKey)
-                        }
-                        OutlinedTextField(
-                            value = agencyKeyDraft,
-                            onValueChange = { agencyKeyDraft = it },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("AGENCY RADIO KEY") },
-                        )
-                        TextButton(
-                            onClick = { onEvent(RadioUiEvent.SaveAgencyRadioKey(agencyKeyDraft)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = agencyKeyDraft.trim() != state.agencyRadioKey,
-                            colors = ButtonDefaults.textButtonColors(
-                                containerColor = p.softKeyInactiveFill,
-                                contentColor = p.textPrimary,
-                            ),
-                        ) {
-                            Text("SAVE AGENCY KEY".uppercase(Locale.US))
                         }
                         HorizontalDivider(color = p.divider)
                         Text(

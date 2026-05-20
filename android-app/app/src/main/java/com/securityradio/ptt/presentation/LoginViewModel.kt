@@ -30,7 +30,7 @@ class LoginViewModel(
 
     private val _uiState = MutableStateFlow(
         LoginUiState(
-            agencySlug = prefs.getSessionAgencySlug().ifBlank { "default" },
+            agencySlug = prefs.getSessionAgencySlug(),
             username = prefs.getSessionUsername(),
         ),
     )
