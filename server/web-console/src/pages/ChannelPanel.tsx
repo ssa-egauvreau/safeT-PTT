@@ -38,6 +38,9 @@ import {
   volumeKey,
 } from "./consoleShared";
 
+/** How long to wait between a server-driven WS close and the next auto-reconnect attempt. */
+const VOICE_RECONNECT_DELAY_MS = 3000;
+
 interface ChannelPanelProps {
   channel: UserChannel;
   /** Whether the keyboard PTT key controls this panel. */
@@ -75,6 +78,13 @@ export function ChannelPanel({
   const clientRef = useRef<VoiceChannelClient | null>(null);
   /** Whether the operator is currently holding PTT — gates the looping busy tone. */
   const pttHeldRef = useRef(false);
+  /*
+   * Auto-reconnect on server-driven close (Railway redeploy, transient network blip). The flag
+   * separates "operator hit reconnect / closed the panel" (no retry) from "the WS dropped under
+   * us" (3 s wait, then re-call connect()). Mirrors the bridge runner and radio portal patterns.
+   */
+  const wantConnectedRef = useRef(true);
+  const reconnectTimerRef = useRef<number | null>(null);
 
   // --- panel layout: drag-to-reorder + drag-to-resize --------------------
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -149,11 +159,33 @@ export function ChannelPanel({
     }
   }
 
+  function clearReconnectTimer() {
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }
+
   const connect = useCallback(() => {
+    clearReconnectTimer();
+    wantConnectedRef.current = true;
     const client = new VoiceChannelClient(channel.name, {
       onState: (state, detail) => {
         setVoiceState(state);
         setVoiceDetail(detail ?? null);
+        // Auto-reconnect on server-driven close (Railway redeploy, transient network blip) so
+        // the operator doesn't have to click the manual "Reconnect" button every redeploy.
+        // Errors don't retry — those usually mean a config/permission issue another attempt
+        // won't fix. The "Reconnect" button is still wired up for the error case.
+        if (state === "closed" && wantConnectedRef.current) {
+          clearReconnectTimer();
+          reconnectTimerRef.current = window.setTimeout(() => {
+            reconnectTimerRef.current = null;
+            if (wantConnectedRef.current) connect();
+          }, VOICE_RECONNECT_DELAY_MS);
+        } else if (state === "error") {
+          wantConnectedRef.current = false;
+        }
       },
       onPermission: (perm) => setPermission(perm),
       onReceiving: (rx) => setReceiving(rx),
@@ -177,6 +209,8 @@ export function ChannelPanel({
   useEffect(() => {
     connect();
     return () => {
+      wantConnectedRef.current = false;
+      clearReconnectTimer();
       clientRef.current?.close();
       clientRef.current = null;
       sounds.busyLoopStop();
@@ -335,6 +369,9 @@ export function ChannelPanel({
   }
 
   function reconnect() {
+    // Manual button — cancel any in-flight auto-reconnect first so we don't race a second connect()
+    // against the pending timer.
+    clearReconnectTimer();
     clientRef.current?.close();
     setVoiceState("connecting");
     setVoiceDetail(null);
