@@ -95,6 +95,11 @@ interface ClientMeta {
   yields: boolean;
   /** Last time a "channel busy" notice was sent to this client (throttling). */
   lastBusyMs: number;
+  /**
+   * Until this timestamp, binary frames are 10-33 marker tones: relay to listeners
+   * but do not claim `/v1/air` (so handsets do not show "dispatcher transmitting").
+   */
+  markerToneUntilMs: number;
 }
 
 /** Throttle for the per-client "channel busy" notice. */
@@ -566,6 +571,7 @@ export function attachVoiceRelay(
             simulcastTargets: null,
             yields: identity.kind === "bridge" ? identity.yields : false,
             lastBusyMs: 0,
+            markerToneUntilMs: 0,
           });
           wss.emit("connection", ws, req);
         });
@@ -730,6 +736,12 @@ export function attachVoiceRelay(
           };
           if (json.type === "join") {
             void handleJoin(ws, meta, json);
+            return;
+          }
+          // 10-33 marker: the next PCM frame(s) are alert audio only, not keyed voice.
+          if (json.type === "marker_tone") {
+            meta.markerToneUntilMs = Date.now() + 30_000;
+            return;
           }
           return;
         }
@@ -754,6 +766,45 @@ export function attachVoiceRelay(
           return;
         }
         const priority = meta.permission === "talk_priority";
+        const markerOnly = meta.markerToneUntilMs > Date.now();
+
+        // 10-33 marker tone — audibility without occupying the channel on /v1/air.
+        if (markerOnly) {
+          if (meta.simulcastTargets) {
+            for (const target of meta.simulcastTargets) {
+              broadcastExcept(ws, target.channelKey, payload);
+              recordFrame(
+                {
+                  agencyId: meta.agencyId,
+                  channelNorm: target.channelNorm,
+                  channelName: target.channelName,
+                  channelId: target.channelId,
+                  userId: meta.userId,
+                  unitId: meta.unitId,
+                  displayName: meta.displayName,
+                },
+                payload,
+              );
+            }
+          } else if (meta.channelKey) {
+            broadcastExcept(ws, meta.channelKey, payload);
+            recordFrame(
+              {
+                agencyId: meta.agencyId,
+                channelNorm: meta.channelNorm!,
+                channelName: meta.channelName,
+                channelId: meta.channelId,
+                userId: meta.userId,
+                unitId: meta.unitId,
+                displayName: meta.displayName,
+              },
+              payload,
+            );
+          }
+          // One WebSocket binary message carries the whole marker clip.
+          meta.markerToneUntilMs = 0;
+          return;
+        }
 
         // Simulcast — fan the frame out to every member channel it can claim.
         if (meta.simulcastTargets) {

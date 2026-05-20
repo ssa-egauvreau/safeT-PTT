@@ -322,7 +322,10 @@ export function ChannelPanel({
     client.setChannelMarker(next);
     setMarker(next);
     // Also flag the channel server-side so radios show the 10-33 warning icon.
-    void api.setChannelTen33(channel.name, next).catch(() => undefined);
+    void api.setChannelTen33(channel.name, next).catch(() => {
+      client.setChannelMarker(!next);
+      setMarker(!next);
+    });
   }
 
   function sendTone(kind: ToneOutKind) {

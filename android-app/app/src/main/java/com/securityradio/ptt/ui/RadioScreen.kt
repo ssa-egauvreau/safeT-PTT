@@ -1345,7 +1345,7 @@ private fun LcdHandsetFillChannelBlock(
     val showTalkPanel =
         talkUnit.isNotEmpty() ||
             state.isPttPressed ||
-            state.rxAttributedLine.isNotBlank() ||
+            (state.rxAttributedLine.isNotBlank() && !state.channelTen33) ||
             state.isEmergencyActive
 
     val emergencyBorderColor =
@@ -2619,7 +2619,8 @@ private fun channelDisplayChrome(
             channelTextColor = p.statusGreen,
             talkLineColor = p.statusGreen,
         )
-        state.rxAttributedLine.isNotBlank() && !state.rxFromScan -> ChannelDisplayChrome(
+        state.rxAttributedLine.isNotBlank() && !state.rxFromScan && !state.channelTen33 ->
+            ChannelDisplayChrome(
             borderColor = p.rxHighlight,
             borderWidth = 2.dp,
             washColor = p.rxHighlight.copy(alpha = 0.14f),

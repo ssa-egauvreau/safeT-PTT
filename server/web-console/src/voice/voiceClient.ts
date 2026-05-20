@@ -516,19 +516,16 @@ export class VoiceChannelClient {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       return;
     }
-    void loadMarker1033Pcm()
-      .then((pcm) => {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-          return;
-        }
-        ws.send(pcm.buffer);
-        this.playLocalTone(pcm);
-      })
-      .catch(() => {
-        const beep = markerBeepPcm();
-        ws.send(beep.buffer);
-        this.playLocalTone(beep);
-      });
+    const sendPcm = (pcm: Int16Array): void => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      // Tell the relay this PCM is a 10-33 marker, not keyed voice (no /v1/air talker).
+      ws.send(JSON.stringify({ type: "marker_tone" }));
+      ws.send(pcm.buffer);
+      this.playLocalTone(pcm);
+    };
+    void loadMarker1033Pcm().then(sendPcm).catch(() => sendPcm(markerBeepPcm()));
   }
 
   /** Keys a police-style alert tone onto the channel and plays it locally. */

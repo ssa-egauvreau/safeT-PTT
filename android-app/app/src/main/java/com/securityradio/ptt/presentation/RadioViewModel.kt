@@ -1641,10 +1641,23 @@ class RadioViewModel(
                 null
             } ?: continue
             val ten33Active = channel != null && response.ten33.any {
-                it.trim().equals(channel, ignoreCase = true)
+                channelNamesMatch(it, channel)
             }
-            if (ten33Active != _uiState.value.channelTen33) {
-                _uiState.update { it.copy(channelTen33 = ten33Active) }
+            val wasTen33 = _uiState.value.channelTen33
+            if (ten33Active != wasTen33) {
+                _uiState.update { snap ->
+                    snap.copy(
+                        channelTen33 = ten33Active,
+                        // Marker tones could leave RX/talker hints on screen; clear when 10-33 ends.
+                        rxAttributedLine =
+                            if (wasTen33 && !ten33Active) "" else snap.rxAttributedLine,
+                        activeTalkUnitId =
+                            if (wasTen33 && !ten33Active) "" else snap.activeTalkUnitId,
+                        activeTalkDisplayName =
+                            if (wasTen33 && !ten33Active) "" else snap.activeTalkDisplayName,
+                        rxFromScan = if (wasTen33 && !ten33Active) false else snap.rxFromScan,
+                    )
+                }
             }
             if (primed) {
                 response.alerts
