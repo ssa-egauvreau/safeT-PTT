@@ -15,10 +15,15 @@ export function getPool(): pg.Pool | null {
     return null;
   }
   if (!pool) {
+    // Cap on concurrent Postgres connections per node. Default 20 is comfortable for the typical
+    // polling load (Android handsets at ~5 req/s/user + the dispatch console); the prior cap of
+    // 5 throttled requests under any moderate concurrency. Override via DB_POOL_MAX env when
+    // running multiple Node instances behind a load balancer to keep total pool size sane.
+    const max = Math.max(1, Math.min(200, Number(process.env.DB_POOL_MAX ?? 20) || 20));
     pool = new Pool({
       connectionString: url,
       ssl: url.includes("localhost") ? false : { rejectUnauthorized: false },
-      max: 5,
+      max,
     });
   }
   return pool;

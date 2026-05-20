@@ -314,7 +314,10 @@ export function attachVoiceRelay(
 ): WebSocketServer {
   const requiredKey = options.radioApiKey?.trim();
 
-  const wss = new WebSocketServer({ noServer: true });
+  // Cap per-frame size. Voice frames are ~13 B IMBE or ~640 B/20ms PCM; a JSON control frame is
+  // tiny. The ws library default is 100 MB which would let a buggy/malicious client allocate
+  // hundreds of MB of buffer memory per frame. 64 KB is well over any legitimate frame.
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     void (async () => {
