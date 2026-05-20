@@ -80,7 +80,11 @@ android {
             buildConfigField("String", "RADIO_API_KEY", "\"${radioApiKeyRaw.escapeForBuildConfig()}\"")
         }
         release {
-            isMinifyEnabled = false
+            // R8 + resource shrinking — see app/proguard-rules.pro for the keep rules covering
+            // Retrofit interfaces, Gson DTOs, the P25 JNI bridge, sealed event hierarchies, etc.
+            // Compose / OkHttp / kotlinx.coroutines ship their own consumer rules.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
