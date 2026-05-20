@@ -23,9 +23,10 @@ class InricoHardwareService : AccessibilityService() {
             HardwareButtonRelay.sendRawKeyCode(keyCode)
         }
 
-        // Never intercept the hardware volume knob — it must reach the OS so it
-        // still adjusts the volume. The foreground activity plays the one-shot
-        // volume-check tone for it.
+        // Never intercept the hardware volume knob from this service — let it
+        // propagate to MainActivity, which owns the volume adjustment (and
+        // optional VolumeCheck tap event) with the burst debounce the TM7+'s
+        // multi-event-per-detent knob needs.
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
             return super.onKeyEvent(event)
         }
