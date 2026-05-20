@@ -961,6 +961,8 @@ private fun LcdHandsetFillChannelBlock(
             ) {
                 val channelText = state.channelLabel.uppercase(Locale.US)
                 val density = LocalDensity.current
+                val blockMaxHeight = maxHeight
+                val blockMaxWidth = maxWidth
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -981,12 +983,12 @@ private fun LcdHandsetFillChannelBlock(
                             val widthFactor = if (homeChannelLarge) 0.44f else 0.5f
                             val boxH =
                                 if (homeChannelLarge) {
-                                    constraints.maxHeight * if (scanRxLive) 0.72f else 0.94f
+                                    blockMaxHeight * if (scanRxLive) 0.72f else 0.94f
                                 } else {
-                                    constraints.maxHeight * heightFactor
+                                    blockMaxHeight * heightFactor
                                 }
                             val byHeight = boxH
-                            val byWidth = constraints.maxWidth /
+                            val byWidth = blockMaxWidth /
                                 (channelText.length.coerceAtLeast(3) * widthFactor)
                             minOf(byHeight, byWidth).toSp()
                         }.value.let { raw ->
@@ -1345,7 +1347,7 @@ private fun LcdHandsetToolbarIrc590(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 36.dp),
+                .heightIn(min = 42.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
