@@ -2037,7 +2037,7 @@ private fun channelDisplayChrome(
             channelTextColor = p.statusGreen,
             talkLineColor = p.statusGreen,
         )
-        state.rxAttributedLine.isNotBlank() -> ChannelDisplayChrome(
+        state.rxAttributedLine.isNotBlank() && !state.rxFromScan -> ChannelDisplayChrome(
             borderColor = p.rxHighlight,
             borderWidth = 2.dp,
             washColor = p.rxHighlight.copy(alpha = 0.14f),
@@ -2071,6 +2071,9 @@ private fun channelTalkLine(state: RadioUiState): String {
             val id = state.localShortUnitId.trim()
             if (id.isNotEmpty()) "TX: UNIT $id • YOU" else "TX: LOCAL MIC"
         }
+        // Scan-only RX is shown via the yellow SCAN RX banner; suppress the home-channel talk
+        // line so the channel area doesn't read "RX: …" for traffic on a side channel.
+        state.rxFromScan -> ""
         else -> state.rxAttributedLine
     }
 }
@@ -2556,29 +2559,41 @@ private fun RowScope.LcdLegendKey(
 ) {
     val p = RadioLcdTheme.palette
     val interaction = remember { MutableInteractionSource() }
-    val gestureModifier =
-        if (onLongClick != null) {
-            Modifier.pointerInput(onLongClick) {
+    val baseModifier = Modifier
+        .weight(1f)
+        .fillMaxHeight()
+    val cellShape = RoundedCornerShape(0.dp)
+    // The clickable Surface(onClick = ...) and a manual detectTapGestures cannot share the same
+    // node: Surface's internal pointerInput consumes the tap before the manual one sees it. That
+    // is why TM7+'s on-screen REPLAY and DAY/NIGHT keys were inert — they had an onLongClick set,
+    // which routed through a no-op Surface.onClick and a detached gesture handler. Drop down to a
+    // non-clickable Surface and own both gestures when long-press is in play.
+    if (onLongClick != null) {
+        Surface(
+            modifier = baseModifier.pointerInput(onClick, onLongClick) {
                 detectTapGestures(
                     onTap = { onClick() },
                     onLongPress = { onLongClick() },
                 )
+            },
+            shape = cellShape,
+            color = p.softKeyInactiveFill,
+        ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                content()
             }
-        } else {
-            Modifier
         }
-    Surface(
-        onClick = if (onLongClick == null) onClick else ({ }),
-        modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight()
-            .then(gestureModifier),
-        shape = RoundedCornerShape(0.dp),
-        color = p.softKeyInactiveFill,
-        interactionSource = interaction,
-    ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-            content()
+    } else {
+        Surface(
+            onClick = onClick,
+            modifier = baseModifier,
+            shape = cellShape,
+            color = p.softKeyInactiveFill,
+            interactionSource = interaction,
+        ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                content()
+            }
         }
     }
 }

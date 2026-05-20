@@ -1760,14 +1760,22 @@ class RadioViewModel(
             } catch (_: Exception) {
                 null
             }
+            // Home-channel attribution wins; scan-side attribution is a separate fall-back so
+            // the UI can tell which one drove the display and suppress the blue RX overlay for
+            // scan-only traffic (#8). Yellow SCAN RX banner uses scanBackgroundActive separately.
+            val homeAirLine = rxLineFromLiveVoice(air, snap)
             val scanAirLine = rxLineFromScanAir(snap)
-            val voiceLine = rxLineFromLiveVoice(air, snap).ifBlank { scanAirLine }
-            val mockLine = dto?.let { mergedRxAttributedLine(it, snap) }.orEmpty()
-            val merged = voiceLine.ifBlank { mockLine }
+            val mockHomeLine = dto?.let { mockMainAttribution(it, snap) }.orEmpty()
+            val mockScanLine = dto?.let { mockScanAttribution(it, snap) }.orEmpty()
+            val homeLine = homeAirLine.ifBlank { mockHomeLine }
+            val scanLine = scanAirLine.ifBlank { mockScanLine }
+            val merged = homeLine.ifBlank { scanLine }
+            val mergedFromScan = homeLine.isBlank() && scanLine.isNotBlank()
             val (talkUnit, talkName) = resolveActiveTalkAttribution(snap, air, dto)
 
             if (merged.isNotEmpty() ||
                 snap.rxAttributedLine.isNotEmpty() ||
+                mergedFromScan != snap.rxFromScan ||
                 talkUnit != snap.activeTalkUnitId ||
                 talkName != snap.activeTalkDisplayName
             ) {
@@ -1789,6 +1797,7 @@ class RadioViewModel(
                 _uiState.update {
                     it.copy(
                         rxAttributedLine = merged,
+                        rxFromScan = mergedFromScan,
                         lastRxReplayCaption = replayCaption,
                         activeTalkUnitId = talkUnit,
                         activeTalkDisplayName = talkName,
@@ -1915,10 +1924,10 @@ class RadioViewModel(
         return (activeOnSide to scanCh.uppercase(Locale.US))
     }
 
-    private fun mergedRxAttributedLine(dto: TalkActivityDto, s: RadioUiState): String {
+    /** RX attribution for the tuned home channel only (talk-activity main segment). */
+    private fun mockMainAttribution(dto: TalkActivityDto, s: RadioUiState): String {
         val tuned = s.channelLabel.trim()
         if (tuned.isEmpty() || tuned == "----") return ""
-
         val main = dto.main
         if (main != null && main.active && channelNamesMatch(main.channel, tuned)) {
             // The relay keeps the slot occupied for VOICE_AIR_TTL_MS (~2s) after
@@ -1928,16 +1937,22 @@ class RadioViewModel(
             if (isLocalUnitTalker(s, main)) return ""
             return formatTalker(main, "RX")
         }
+        return ""
+    }
+
+    /** RX attribution for a side-channel scan hit (talk-activity scan segment). */
+    private fun mockScanAttribution(dto: TalkActivityDto, s: RadioUiState): String {
+        val tuned = s.channelLabel.trim()
+        if (tuned.isEmpty() || tuned == "----") return ""
 
         val scanSeg = dto.scan ?: return ""
+        val scanCh = scanSeg.channel.trim().lowercase(Locale.US)
+        if (!scanSeg.active || scanCh.isEmpty() || !s.scanActive) return ""
+        if (channelNamesMatch(scanSeg.channel, tuned)) return ""
 
         val includedNamesLower = s.scanIncludedChannelIndices
             .mapNotNull { ix -> s.channelCatalog.getOrNull(ix)?.trim()?.lowercase(Locale.US) }
             .toSet()
-
-        val scanCh = scanSeg.channel.trim().lowercase(Locale.US)
-        if (!scanSeg.active || scanCh.isEmpty() || !s.scanActive) return ""
-        if (channelNamesMatch(scanSeg.channel, tuned)) return ""
 
         val scanIsOnSideChannel = scanCh in includedNamesLower
         return if (scanIsOnSideChannel && !isLocalUnitTalker(s, scanSeg)) {
