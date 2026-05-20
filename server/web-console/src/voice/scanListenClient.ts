@@ -70,7 +70,9 @@ export class ScanListenClient {
       if (name.toLowerCase() === homeLower) continue;
       wanted.add(name);
     }
-    // Drop sockets no longer in the scan list.
+    // Drop sockets no longer in the scan list. Emit an idle callback for each removed channel
+    // so the UI doesn't get stuck on "SCAN RX · <channel>" when an actively-receiving channel
+    // is removed from the picker (or auto-removed because it became the new home channel).
     for (const existing of Array.from(this.clients.keys())) {
       if (!wanted.has(existing)) {
         const client = this.clients.get(existing);
@@ -80,6 +82,11 @@ export class ScanListenClient {
           /* already closing */
         }
         this.clients.delete(existing);
+        try {
+          this.callbacks.onChannelActivity?.(existing, false);
+        } catch {
+          /* listener errors must not block the next removal */
+        }
       }
     }
     // Add sockets for new entries.
