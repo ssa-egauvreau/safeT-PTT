@@ -194,13 +194,21 @@ class AssetRadioUiSoundPlayer(
     }
 
     private fun stopEmergencyAlertInternal() {
-        emergencyPlayer?.runCatching {
-            setOnCompletionListener(null)
-            setOnPreparedListener(null)
-            stop()
-            release()
-        }
+        val player = emergencyPlayer
         emergencyPlayer = null
+        if (player != null) {
+            // stop() throws IllegalStateException when the player is still in the Preparing
+            // state (which a fast re-press can hit before onPrepared has fired). Keep release()
+            // in its own runCatching so a stop() throw does not leak the native resources or
+            // leave its listeners alive.
+            runCatching {
+                player.setOnCompletionListener(null)
+                player.setOnPreparedListener(null)
+                player.setOnErrorListener(null)
+            }
+            runCatching { player.stop() }
+            runCatching { player.release() }
+        }
         abandonEmergencyFocus()
     }
 
