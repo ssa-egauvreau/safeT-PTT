@@ -82,6 +82,35 @@ export function RadioPortal() {
     };
   }, []);
 
+  // --- hydrate emergency state from the server on mount ---
+  // emergencyActive is a local toggle, but the server-side alert is the source of truth: it
+  // persists across reloads and other devices. Without this hydration step, a page reload while
+  // this unit already has an active emergency would leave emergencyActive=false locally and the
+  // next EMER hold would POST active=true again — creating a duplicate alert instead of clearing.
+  useEffect(() => {
+    const unit = (user?.unitId?.trim() || user?.username?.trim() || "").toUpperCase();
+    if (!unit) return;
+    let cancelled = false;
+    api
+      .alerts()
+      .then((res) => {
+        if (cancelled) return;
+        const mine = res.alerts.some(
+          (a) =>
+            a.active &&
+            a.kind?.toLowerCase() === "emergency" &&
+            (a.from_unit ?? "").toUpperCase() === unit,
+        );
+        if (mine) setEmergencyActive(true);
+      })
+      .catch(() => {
+        /* leave local state at false; the user can still re-trigger if needed */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.unitId, user?.username]);
+
   function clearVoiceReconnectTimer() {
     if (voiceReconnectTimerRef.current !== null) {
       window.clearTimeout(voiceReconnectTimerRef.current);
