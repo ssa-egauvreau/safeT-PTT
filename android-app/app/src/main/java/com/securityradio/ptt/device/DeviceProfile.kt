@@ -7,6 +7,7 @@ import java.util.Locale
 enum class DeviceProfilePreference(val label: String) {
     AUTO("Auto-detect"),
     RESPONSIVE("Responsive (default)"),
+    UNIVERSAL("Universal touch cockpit"),
     S200("Inrico S200"),
     TM7_PLUS("Inrico TM-7 Plus"),
     IRC590("Inrico IRC590"),
@@ -15,6 +16,7 @@ enum class DeviceProfilePreference(val label: String) {
 /** Effective handset layout after resolving [DeviceProfilePreference]. */
 enum class ResolvedDeviceProfile(val label: String) {
     RESPONSIVE("Responsive"),
+    UNIVERSAL("Universal touch cockpit"),
     S200("Inrico S200"),
     TM7_PLUS("Inrico TM-7 Plus"),
     IRC590("Inrico IRC590"),
@@ -48,6 +50,12 @@ data class RadioLayoutPolicy(
     val showBatteryStatus: Boolean = true,
     /** IRC590: status icons, clock, and zone/channel/radios each on their own row. */
     val handsetToolbarMultiRow: Boolean = false,
+    /**
+     * Universal touch cockpit (#15): one full-screen layout with a centred circular PTT, a
+     * long-press emergency badge, and on-screen channel up/down + replay + scan. When this flag is
+     * set the standard column dispatch is bypassed in favour of [com.securityradio.ptt.ui.LcdUniversalCockpit].
+     */
+    val universalCockpit: Boolean = false,
 )
 
 object DeviceProfileResolver {
@@ -55,6 +63,7 @@ object DeviceProfileResolver {
     fun resolve(preference: DeviceProfilePreference, model: String = Build.MODEL): ResolvedDeviceProfile {
         return when (preference) {
             DeviceProfilePreference.RESPONSIVE -> ResolvedDeviceProfile.RESPONSIVE
+            DeviceProfilePreference.UNIVERSAL -> ResolvedDeviceProfile.UNIVERSAL
             DeviceProfilePreference.S200 -> ResolvedDeviceProfile.S200
             DeviceProfilePreference.TM7_PLUS -> ResolvedDeviceProfile.TM7_PLUS
             DeviceProfilePreference.IRC590 -> ResolvedDeviceProfile.IRC590
@@ -116,6 +125,26 @@ object DeviceProfileResolver {
             handsetToolbarMultiRow = true,
         )
         ResolvedDeviceProfile.RESPONSIVE -> responsivePolicy(isCompact = false, isUltraCompact = false)
+        ResolvedDeviceProfile.UNIVERSAL -> RadioLayoutPolicy(
+            // The cockpit is rendered as its own composable so the column-level toggles below are
+            // mostly irrelevant — only universalCockpit is read.
+            showSoftKeyRow = false,
+            showStateBanner = false,
+            showFullStatusBar = false,
+            showChannelTunerButtons = false,
+            showMainDetailLines = false,
+            showRadiosOnlineLine = true,
+            showScanConfigureLink = false,
+            softKeysTwoRows = false,
+            compactSpacing = true,
+            compactPtt = true,
+            minimalStatusBar = false,
+            showOnScreenPtt = false,
+            showOnScreenEmergency = false,
+            handsetStatusDisplay = false,
+            showHardwareKeyLegend = false,
+            universalCockpit = true,
+        )
     }
 
     fun responsivePolicy(isCompact: Boolean, isUltraCompact: Boolean): RadioLayoutPolicy {
@@ -154,6 +183,7 @@ object DeviceProfileResolver {
         ResolvedDeviceProfile.TM7_PLUS -> tm7PlusDefaults(action)
         ResolvedDeviceProfile.S200,
         ResolvedDeviceProfile.RESPONSIVE,
+        ResolvedDeviceProfile.UNIVERSAL,
         -> s200StyleDefaults(action)
     }
 
