@@ -16,6 +16,20 @@ import { VOICE_WS_PATH, attachVoiceRelay, peekVoiceTransmittingTalker } from "./
 import { startBridgeWorker } from "./bridgeWorker.js";
 
 const app = express();
+// Behind Railway / Cloudflare / any reverse proxy, `req.ip`, `req.protocol`, and `req.hostname`
+// otherwise reflect the upstream proxy IP/scheme instead of the real client. clientIp() already
+// parses X-Forwarded-For manually, but downstream code (req.secure, req.hostname, future rate
+// limiters) wants Express's built-ins to be correct too. "trust proxy: true" honors X-Forwarded-*
+// from any upstream — fine on Railway where the only ingress is the LB.
+app.set("trust proxy", true);
+// HSTS — Railway is HTTPS-always, so tell browsers to refuse plaintext for a year. Skip in dev
+// where the operator might hit localhost over plain HTTP.
+if (process.env.NODE_ENV === "production") {
+  app.use((_req, res, next) => {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    next();
+  });
+}
 app.use(express.json({ limit: "2mb" }));
 app.use(authenticate);
 
@@ -215,6 +229,9 @@ async function main(): Promise<void> {
   void initServerImbe();
 
   const server = createServer(app);
+  // Bound memory in the face of a header-bombing attack — Node's default is unlimited and a
+  // single connection could otherwise queue thousands of huge headers before they're parsed.
+  server.maxHeadersCount = 100;
   attachVoiceRelay(server, { radioApiKey });
 
   server.listen(port, () => {
