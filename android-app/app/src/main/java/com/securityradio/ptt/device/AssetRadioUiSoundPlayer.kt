@@ -38,6 +38,7 @@ class AssetRadioUiSoundPlayer(
     private var talkPermitPlayer: MediaPlayer? = null
     private var busyTonePlayer: MediaPlayer? = null
     private var volumeCheckPlayer: MediaPlayer? = null
+    private var volumeCheckCutoffRunnable: Runnable? = null
     private var busyFocusRequest: AudioFocusRequest? = null
 
     /** Pre-O [AudioFocusRequest] equivalent; must abandon with same instance. */
@@ -183,7 +184,7 @@ class AssetRadioUiSoundPlayer(
     }
 
     override fun playVolumeCheck() {
-        playOneShot(FILE_VOLUME_CHECK)
+        playVolumeCheckCapped(VOLUME_CHECK_MAX_MS)
     }
 
     override fun startVolumeCheckLoop() {
@@ -227,13 +228,56 @@ class AssetRadioUiSoundPlayer(
         deactivateBusySpeakerRouting()
     }
 
+    private fun cancelVolumeCheckCutoff() {
+        volumeCheckCutoffRunnable?.let { main.removeCallbacks(it) }
+        volumeCheckCutoffRunnable = null
+    }
+
     private fun stopVolumeCheckLoopInternal() {
+        cancelVolumeCheckCutoff()
         volumeCheckPlayer?.runCatching {
             setOnCompletionListener(null)
             stop()
             release()
         }
         volumeCheckPlayer = null
+    }
+
+    /** Plays the volume-check tone but stops after [maxMs] (TM7 volume knob / short beep). */
+    private fun playVolumeCheckCapped(maxMs: Long) {
+        main.post {
+            stopVolumeCheckLoopInternal()
+            val player = MediaPlayer().applyUiAudio()
+            if (!applySource(player, FILE_VOLUME_CHECK)) {
+                player.release()
+                return@post
+            }
+            volumeCheckPlayer = player
+            try {
+                player.setOnPreparedListener { prepared ->
+                    prepared.start()
+                    val cutoff = Runnable { stopVolumeCheckLoopInternal() }
+                    volumeCheckCutoffRunnable = cutoff
+                    main.postDelayed(cutoff, maxMs)
+                }
+                player.setOnCompletionListener { completed ->
+                    cancelVolumeCheckCutoff()
+                    if (volumeCheckPlayer === completed) volumeCheckPlayer = null
+                    completed.release()
+                }
+                player.setOnErrorListener { mp, _, _ ->
+                    cancelVolumeCheckCutoff()
+                    if (volumeCheckPlayer === mp) volumeCheckPlayer = null
+                    mp.release()
+                    true
+                }
+                player.prepareAsync()
+            } catch (_: Exception) {
+                cancelVolumeCheckCutoff()
+                volumeCheckPlayer = null
+                player.release()
+            }
+        }
     }
 
     private fun createVolumeCheckLoopMediaPlayer(): MediaPlayer? {
@@ -391,5 +435,7 @@ class AssetRadioUiSoundPlayer(
         const val FILE_EMERGENCY = "emergency.wav"
         const val FILE_BUSY = "busy.wav"
         const val FILE_VOLUME_CHECK = "volume.wav"
+        /** TM7 volume knob: one short beep, not the entire WAV. */
+        const val VOLUME_CHECK_MAX_MS = 1_000L
     }
 }
