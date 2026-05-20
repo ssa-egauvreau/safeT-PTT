@@ -429,7 +429,10 @@ private fun LcdStatusBar(
                         modifier = Modifier.size(14.dp),
                     )
                     LcdScanIcon(
-                        active = p.statusAmber,
+                        active = rememberScanIconActiveColor(
+                            scanActive = state.scanActive,
+                            scanReceiving = state.scanBackgroundActive,
+                        ),
                         muted = p.textMuted,
                         on = state.scanActive,
                         modifier = Modifier.size(16.dp, 12.dp),
@@ -581,6 +584,25 @@ private fun rememberEmergencyFlashAlpha(active: Boolean): Float {
         label = "emergency_flash_alpha",
     )
     return if (active) anim else 0f
+}
+
+/** Orange when scan is on; pulses while a scan channel is receiving. */
+@Composable
+private fun rememberScanIconActiveColor(scanActive: Boolean, scanReceiving: Boolean): Color {
+    val p = RadioLcdTheme.palette
+    if (!scanActive) return p.statusAmber
+    if (!scanReceiving) return p.statusAmber
+    val transition = rememberInfiniteTransition(label = "scan_rx_icon_flash")
+    val flash by transition.animateFloat(
+        initialValue = 0.42f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 450),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "scan_rx_icon_flash_alpha",
+    )
+    return p.statusAmber.copy(alpha = flash.coerceIn(0.42f, 1f))
 }
 
 @Composable
@@ -1111,13 +1133,17 @@ private fun LcdHandsetToolbar(
 private fun LcdHandsetToolbarStatusIcons(
     state: RadioUiState,
     online: Boolean,
-    scanPulse: Boolean,
+    scanReceiving: Boolean,
     iconSize: Dp,
     signalWidth: Dp,
     signalHeight: Dp,
     onEvent: (RadioUiEvent) -> Unit,
 ) {
     val p = RadioLcdTheme.palette
+    val scanIconColor = rememberScanIconActiveColor(
+        scanActive = state.scanActive,
+        scanReceiving = scanReceiving,
+    )
     LcdSignalBarsIcon(
         bars = if (online) 4 else 1,
         maxBars = 4,
@@ -1139,7 +1165,7 @@ private fun LcdHandsetToolbarStatusIcons(
     )
     LcdScanIcon(
         on = state.scanActive,
-        active = if (scanPulse) p.statusAmber else p.statusGreen,
+        active = scanIconColor,
         muted = p.textMuted,
         modifier = Modifier
             .size(iconSize)
@@ -1196,7 +1222,7 @@ private fun LcdHandsetToolbarIrc590(
 ) {
     val p = RadioLcdTheme.palette
     val online = state.networkLabel == "ONLINE"
-    val scanPulse = state.scanBackgroundActive
+    val scanReceiving = state.scanBackgroundActive
     val accentOnEmergency = if (state.isEmergencyActive) Color.White else p.textPrimary
     val iconSize = 28.dp
     val signalWidth = 36.dp
@@ -1217,7 +1243,7 @@ private fun LcdHandsetToolbarIrc590(
             LcdHandsetToolbarStatusIcons(
                 state = state,
                 online = online,
-                scanPulse = scanPulse,
+                scanReceiving = scanReceiving,
                 iconSize = iconSize,
                 signalWidth = signalWidth,
                 signalHeight = signalHeight,
@@ -1303,7 +1329,7 @@ private fun LcdHandsetToolbarTm7(
 ) {
     val p = RadioLcdTheme.palette
     val online = state.networkLabel == "ONLINE"
-    val scanPulse = state.scanBackgroundActive
+    val scanReceiving = state.scanBackgroundActive
     val accentOnEmergency = if (state.isEmergencyActive) Color.White else p.textPrimary
     val iconSize = 26.dp
     val iconGap = 5.dp
@@ -1327,7 +1353,7 @@ private fun LcdHandsetToolbarTm7(
                 LcdHandsetToolbarStatusIcons(
                     state = state,
                     online = online,
-                    scanPulse = scanPulse,
+                    scanReceiving = scanReceiving,
                     iconSize = iconSize,
                     signalWidth = signalWidth,
                     signalHeight = signalHeight,
@@ -1363,6 +1389,10 @@ private fun LcdHandsetToolbarScanBanner(
 ) {
     val p = RadioLcdTheme.palette
     if (state.scanActive && state.scanBackgroundChannel.isNotBlank()) {
+        val bannerScanColor = rememberScanIconActiveColor(
+            scanActive = true,
+            scanReceiving = true,
+        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1372,7 +1402,7 @@ private fun LcdHandsetToolbarScanBanner(
         ) {
             LcdScanIcon(
                 on = true,
-                active = p.statusAmber,
+                active = bannerScanColor,
                 muted = p.textMuted,
                 modifier = Modifier.size(20.dp),
             )
@@ -2293,14 +2323,14 @@ private fun MessageHistoryRow(
                 modifier = Modifier.size(56.dp),
             ) {
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                    if (playing || paused) {
+                    if (playing) {
                         LcdPauseIcon(
                             color = Color.White,
                             modifier = Modifier.size(32.dp),
                         )
                     } else {
                         LcdPlayIcon(
-                            color = p.textOnButton,
+                            color = if (paused) Color.White else p.textOnButton,
                             modifier = Modifier.size(32.dp),
                         )
                     }
