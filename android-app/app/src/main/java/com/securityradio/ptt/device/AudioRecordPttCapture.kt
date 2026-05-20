@@ -153,9 +153,11 @@ class AudioRecordPttCapture(
     }
 
     /**
-     * Scales 16-bit little-endian PCM samples in place by [gain] and hard-clips to the int16 ceiling.
-     * Hard-clipping (as opposed to wrapping) keeps a hot input from inverting into a square wave —
-     * it just sits at the ceiling, which is acoustically less ugly.
+     * Scales 16-bit little-endian PCM samples in place by [gain], with a soft-knee limiter so a
+     * hot input doesn't hit the int16 ceiling as a hard clip (which sounds like a buzzy square
+     * wave). Below ~0.85 of full-scale, samples pass through unchanged. Above the knee, the
+     * excess is attenuated to 30 % of its size, then hard-capped at the ceiling as a final
+     * safety net so wrap-around can't happen even with extreme gain.
      */
     private fun applyGainInPlace(buffer: ByteArray, len: Int, gain: Float) {
         var i = 0
@@ -163,10 +165,21 @@ class AudioRecordPttCapture(
             val lo = buffer[i].toInt() and 0xFF
             val hi = buffer[i + 1].toInt() // signed sign-extend
             val sample = (hi shl 8) or lo
-            val scaled = (sample * gain).toInt().coerceIn(-32768, 32767)
+            val scaled = softLimitInt16((sample * gain).toInt())
             buffer[i] = (scaled and 0xFF).toByte()
             buffer[i + 1] = ((scaled shr 8) and 0xFF).toByte()
             i += 2
+        }
+    }
+
+    private fun softLimitInt16(sample: Int): Int {
+        if (sample in -SOFT_KNEE..SOFT_KNEE) return sample
+        return if (sample > 0) {
+            val compressed = SOFT_KNEE + (sample - SOFT_KNEE) * 3 / 10
+            if (compressed > 32767) 32767 else compressed
+        } else {
+            val compressed = -SOFT_KNEE + (sample + SOFT_KNEE) * 3 / 10
+            if (compressed < -32768) -32768 else compressed
         }
     }
 
@@ -230,5 +243,10 @@ class AudioRecordPttCapture(
     override fun release() {
         stopCapture()
         supervisor.cancel()
+    }
+
+    private companion object {
+        /** Soft-knee threshold for the manual gain limiter; ~0.85 of int16 full-scale. */
+        const val SOFT_KNEE = 27800
     }
 }
