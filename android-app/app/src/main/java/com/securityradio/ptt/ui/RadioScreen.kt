@@ -54,7 +54,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -767,6 +766,38 @@ private fun LcdMainChannelBlock(
     }
 }
 
+/** Unit id + display name for the large handset talker block (TX, RX, or emergency). */
+private fun handsetTalkAttribution(state: RadioUiState): Pair<String, String> {
+    if (state.isEmergencyActive) {
+        val unit = state.activeTalkUnitId.ifBlank { state.localShortUnitId }.trim().uppercase(Locale.US)
+        val name = state.activeTalkDisplayName.trim().ifBlank { "YOU" }
+        return unit to name
+    }
+    if (state.isPttPressed) {
+        val unit = state.localShortUnitId.trim().uppercase(Locale.US)
+        val name = state.sessionDisplayName.trim().ifBlank { "YOU" }
+        return unit to name
+    }
+    if (state.activeTalkUnitId.isNotBlank()) {
+        return state.activeTalkUnitId.trim().uppercase(Locale.US) to state.activeTalkDisplayName.trim()
+    }
+    if (!state.isEmergencyActive && state.remoteEmergencyUnit != null) {
+        return state.remoteEmergencyUnit.trim().uppercase(Locale.US) to ""
+    }
+    val rx = state.rxAttributedLine.trim()
+    if (rx.isNotEmpty()) {
+        val colon = rx.indexOf(':')
+        if (colon > 0) {
+            val after = rx.substring(colon + 1).trim()
+            val sep = after.indexOf('•').takeUnless { it < 0 } ?: after.length
+            val unit = after.substring(0, sep).trim().uppercase(Locale.US)
+            val name = after.substring(sep).removePrefix("•").trim()
+            if (unit.isNotEmpty()) return unit to name
+        }
+    }
+    return "" to ""
+}
+
 @Composable
 private fun LcdHandsetFillChannelBlock(
     state: RadioUiState,
@@ -789,21 +820,14 @@ private fun LcdHandsetFillChannelBlock(
         .ifEmpty { state.zoneLabel.trim().uppercase(Locale.US) }
     val channelValue = state.channelPosition.replace(" ", "")
     val radiosValue = state.radiosOnlineOnChannel?.toString() ?: "—"
-    val talkUnit = when {
-        state.isEmergencyActive ->
-            state.activeTalkUnitId.ifBlank { state.localShortUnitId }.trim().uppercase(Locale.US)
-        state.activeTalkUnitId.isNotBlank() -> state.activeTalkUnitId.trim().uppercase(Locale.US)
-        !state.isEmergencyActive && state.remoteEmergencyUnit != null ->
-            state.remoteEmergencyUnit.trim().uppercase(Locale.US)
-        else -> ""
-    }
-    val talkName = when {
-        state.isEmergencyActive -> state.activeTalkDisplayName.trim()
-        state.activeTalkUnitId.isNotBlank() -> state.activeTalkDisplayName.trim()
-        else -> ""
-    }
+    val (talkUnit, talkName) = handsetTalkAttribution(state)
     val talkColor = chrome.talkLineColor
     val showEmergencyBanner = state.remoteEmergencyUnit != null && !state.isEmergencyActive
+    val showTalkPanel =
+        talkUnit.isNotEmpty() ||
+            state.isPttPressed ||
+            state.rxAttributedLine.isNotBlank() ||
+            state.isEmergencyActive
 
     Box(
         modifier = modifier
@@ -819,7 +843,6 @@ private fun LcdHandsetFillChannelBlock(
                     .background(chrome.washColor),
             )
         }
-        val hasTalk = talkUnit.isNotEmpty()
         val showWarnings = !state.micPermissionGranted || state.channelSyncError != null
         Column(
             modifier = Modifier
@@ -848,8 +871,9 @@ private fun LcdHandsetFillChannelBlock(
             LcdPermissionBadge(permission = state.currentChannelPermission, styles = styles)
             BoxWithConstraints(
                 modifier = Modifier
-                    .weight(if (hasTalk) 2.15f else 3.35f)
-                    .fillMaxWidth(),
+                    .weight(if (showTalkPanel) 0.72f else 1.6f)
+                    .fillMaxWidth()
+                    .heightIn(max = if (showTalkPanel) 52.dp else 80.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 if (state.scanActive && state.scanBackgroundChannel.isNotBlank()) {
@@ -865,14 +889,13 @@ private fun LcdHandsetFillChannelBlock(
                 }
                 val channelText = state.channelLabel.uppercase(Locale.US)
                 val density = LocalDensity.current
-                // Scale the channel name to fill the block — height-capped, then
-                // narrowed if the label is long so a wide name still fits.
+                // Keep the channel label compact so the talker block has most of the height.
                 val channelFont = with(density) {
-                    val byHeight = constraints.maxHeight * 0.68f
+                    val byHeight = constraints.maxHeight * 0.9f
                     val byWidth = constraints.maxWidth /
-                        (channelText.length.coerceAtLeast(3) * 0.66f)
+                        (channelText.length.coerceAtLeast(3) * 0.52f)
                     minOf(byHeight, byWidth).toSp()
-                }.value.coerceIn(32f, 132f).sp
+                }.value.coerceIn(18f, 40f).sp
                 Text(
                     text = channelText,
                     style = styles.channel.copy(
@@ -902,7 +925,7 @@ private fun LcdHandsetFillChannelBlock(
                         .clickable { onEvent(RadioUiEvent.OpenMappingSettings) },
                 )
             }
-            if (hasTalk) {
+            if (showTalkPanel) {
                 if (showEmergencyBanner) {
                     Text(
                         text = "EMERGENCY",
@@ -915,13 +938,17 @@ private fun LcdHandsetFillChannelBlock(
                     Spacer(modifier = Modifier.height(2.dp))
                 }
                 LcdHandsetTalkerBlock(
-                    unitId = talkUnit,
-                    displayName = talkName,
+                    unitId = talkUnit.ifBlank { state.localShortUnitId.trim().uppercase(Locale.US) },
+                    displayName = when {
+                        talkName.isNotBlank() -> talkName
+                        state.isPttPressed -> "TRANSMITTING"
+                        else -> ""
+                    },
                     unitColor = talkColor,
                     nameColor = talkColor.copy(alpha = 0.9f),
                     styles = styles,
                     modifier = Modifier
-                        .weight(1.75f)
+                        .weight(2.35f)
                         .fillMaxWidth(),
                 )
             }
@@ -1231,12 +1258,12 @@ private fun LcdHandsetTalkerBlock(
         // Caps leave headroom so the unit id and name always fit the block —
         // the name was being clipped at the bottom on the smaller IRC590 screen.
         val unitSp = with(density) {
-            val cap = if (hasName) maxH.value * 0.38f else maxH.value * 0.5f
-            cap.coerceIn(22f, 44f).sp
+            val cap = if (hasName) maxH.value * 0.48f else maxH.value * 0.58f
+            cap.coerceIn(26f, 56f).sp
         }
         val nameSp = with(density) {
-            val cap = maxH.value * 0.2f
-            cap.coerceIn(12f, 20f).sp
+            val cap = maxH.value * 0.26f
+            cap.coerceIn(14f, 24f).sp
         }
         Column(
             modifier = Modifier.fillMaxWidth(),
