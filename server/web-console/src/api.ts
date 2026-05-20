@@ -419,6 +419,26 @@ export const api = {
   channelRoster: (channel: string) =>
     request<{ members: ChannelMember[] }>("GET", `/v1/channels/roster?channel=${encodeURIComponent(channel)}`),
 
+  /** Fires the same /radio/emergency endpoint the Android handsets use; surfaces as an alert. */
+  radioEmergency: (input: {
+    unitId: string;
+    channel: string | null;
+    active: boolean;
+    displayName?: string | null;
+    message?: string | null;
+  }) =>
+    request<{ ok?: boolean; alert?: unknown; cleared?: number }>(
+      "POST",
+      "/v1/radio/emergency",
+      {
+        unit_id: input.unitId,
+        channel: input.channel,
+        active: input.active,
+        display_name: input.displayName ?? null,
+        message: input.message ?? null,
+      },
+    ),
+
   unitAliases: () => request<{ aliases: UnitAlias[] }>("GET", "/v1/unit-aliases"),
   setUnitAlias: (unitId: string, label: string) =>
     request<{ alias: UnitAlias }>("PUT", "/v1/admin/unit-aliases", { unitId, label }),

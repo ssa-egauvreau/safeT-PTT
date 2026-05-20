@@ -6,7 +6,11 @@ import { ThemeToggle } from "./ThemeToggle";
 import { IconRadio, IconShield, IconLogOut, IconWaveform, SafetMark } from "./icons";
 
 /** Shared top menu bar with Command / Bridges / Control / Platform navigation. */
-export function Topbar({ section }: { section: "console" | "admin" | "owner" | "bridges" }) {
+export function Topbar({
+  section,
+}: {
+  section: "console" | "admin" | "owner" | "bridges" | "radio";
+}) {
   const { user, logout } = useAuth();
   const sectionLabel =
     section === "admin"
@@ -15,7 +19,10 @@ export function Topbar({ section }: { section: "console" | "admin" | "owner" | "
         ? "Platform"
         : section === "bridges"
           ? "Bridges"
-          : "Command";
+          : section === "radio"
+            ? "Radio"
+            : "Command";
+  const isRadioRole = user?.role === "radio";
 
   const [agencyLogo, setAgencyLogo] = useState<string | null>(null);
   const [logoNonce, setLogoNonce] = useState(0);
@@ -67,16 +74,29 @@ export function Topbar({ section }: { section: "console" | "admin" | "owner" | "
       <nav className="topnav">
         {section !== "owner" && (
           <>
-            <Link className={section === "console" ? "nav-tab active" : "nav-tab"} to="/console">
-              <IconRadio size={15} /> Command
-            </Link>
-            <Link className={section === "bridges" ? "nav-tab active" : "nav-tab"} to="/bridges">
-              <IconWaveform size={15} /> Bridges
-            </Link>
-            {user?.role === "admin" && (
-              <Link className={section === "admin" ? "nav-tab active" : "nav-tab"} to="/admin">
-                <IconShield size={15} /> Control
+            {isRadioRole ? (
+              // Radio-role accounts only see their own portal — the dispatch console, bridges
+              // page, and admin panel are not available to them.
+              <Link className={section === "radio" ? "nav-tab active" : "nav-tab"} to="/radio">
+                <IconRadio size={15} /> Radio
               </Link>
+            ) : (
+              <>
+                <Link className={section === "console" ? "nav-tab active" : "nav-tab"} to="/console">
+                  <IconRadio size={15} /> Command
+                </Link>
+                <Link className={section === "bridges" ? "nav-tab active" : "nav-tab"} to="/bridges">
+                  <IconWaveform size={15} /> Bridges
+                </Link>
+                <Link className={section === "radio" ? "nav-tab active" : "nav-tab"} to="/radio">
+                  <IconRadio size={15} /> Radio
+                </Link>
+                {user?.role === "admin" && (
+                  <Link className={section === "admin" ? "nav-tab active" : "nav-tab"} to="/admin">
+                    <IconShield size={15} /> Control
+                  </Link>
+                )}
+              </>
             )}
           </>
         )}
