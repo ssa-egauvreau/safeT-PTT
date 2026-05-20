@@ -215,6 +215,11 @@ async function main(): Promise<void> {
   void initServerImbe();
 
   const server = createServer(app);
+  // Cap any single HTTP request at 60 s wall-clock. Node's default is unlimited; without this
+  // a slowloris-style client (drips a byte every minute) could hold an Express request handler
+  // forever. 60 s is well above the legitimate worst case (large transmission audio download)
+  // because that endpoint streams body bytes, which resets the timer.
+  server.requestTimeout = 60_000;
   attachVoiceRelay(server, { radioApiKey });
 
   server.listen(port, () => {

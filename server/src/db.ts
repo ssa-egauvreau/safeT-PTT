@@ -19,6 +19,10 @@ export function getPool(): pg.Pool | null {
       connectionString: url,
       ssl: url.includes("localhost") ? false : { rejectUnauthorized: false },
       max: 5,
+      // Bound the wait if the pool is saturated or Postgres is unreachable — without this, a
+      // request waiting on a free connection hangs until the client gives up, piling on more
+      // and more concurrent waiters. 5 s converts a stuck DB into a clean 503 path.
+      connectionTimeoutMillis: 5_000,
     });
   }
   return pool;
