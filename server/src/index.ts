@@ -24,6 +24,12 @@ import { startBridgeWorker } from "./bridgeWorker.js";
 const app = express();
 // Tiny info-leak (and a few free bytes per response) — Express ships this header by default.
 app.disable("x-powered-by");
+// Behind Railway / Cloudflare / any reverse proxy, `req.ip`, `req.protocol`, and `req.hostname`
+// otherwise reflect the upstream proxy IP/scheme instead of the real client. clientIp() already
+// parses X-Forwarded-For manually, but downstream code (req.secure, req.hostname, future rate
+// limiters) wants Express's built-ins to be correct too. "trust proxy: true" honors X-Forwarded-*
+// from any upstream — fine on Railway where the only ingress is the LB.
+app.set("trust proxy", true);
 // Lightweight security headers — no extra dep, just static response headers on every reply.
 // X-Content-Type-Options stops browsers from MIME-sniffing a JSON response as HTML/JS.
 // X-Frame-Options blocks embedding the console in an iframe (cheap clickjacking guard).
@@ -34,6 +40,14 @@ app.use((_req, res, next) => {
   res.setHeader("Referrer-Policy", "no-referrer");
   next();
 });
+// HSTS — Railway is HTTPS-always, so tell browsers to refuse plaintext for a year. Skip in dev
+// where the operator might hit localhost over plain HTTP.
+if (process.env.NODE_ENV === "production") {
+  app.use((_req, res, next) => {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    next();
+  });
+}
 // gzip every response above ~1 KB (default threshold). Most of what's served is JSON state polls
 // and the Vite bundle — both compress ~70-80 %, which is real money on Railway egress + faster
 // page loads. Excludes the voice WebSocket path (handled outside Express).
@@ -255,6 +269,9 @@ async function main(): Promise<void> {
   // already-active connection has time to finish reading request headers.
   server.keepAliveTimeout = 65_000;
   server.headersTimeout = 66_000;
+  // Bound memory in the face of a header-bombing attack — Node's default is unlimited and a
+  // single connection could otherwise queue thousands of huge headers before they're parsed.
+  server.maxHeadersCount = 100;
   attachVoiceRelay(server, { radioApiKey });
 
   server.listen(port, () => {
