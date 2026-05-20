@@ -64,6 +64,8 @@ type Identity =
       bridgeName: string;
       /** When set, the bridge may only key this channel (a remote runner). */
       forcedChannel?: string;
+      /** Set for desktop `runBridge` sockets authenticated with a user token. */
+      ownerUserId?: number;
     };
 
 /** One member channel a simulcast transmission fans out to. */
@@ -168,16 +170,20 @@ export function dropAgencyVoiceConnections(agencyId: number): number {
 }
 
 /**
- * Closes every account-bound voice socket for one user. Called from the login
- * handler so a fresh sign-in immediately silences any prior browser session for
- * the same account. Key-authenticated handsets and the bridge worker are not
- * user-bound and are intentionally left untouched.
+ * Closes every voice socket tied to one user account. Called from the login
+ * handler so a fresh sign-in immediately silences any prior browser session and
+ * any desktop `runBridge` runner for the same account. Key-authenticated
+ * handsets and the in-process loopback bridge worker are not user-bound.
  */
 export function dropUserVoiceConnections(userId: number): number {
   let closed = 0;
   for (const [ws, meta] of clientMeta) {
-    if (meta.identity.kind !== "account") continue;
-    if (meta.identity.user.id !== userId) continue;
+    const ownedByUser =
+      (meta.identity.kind === "account" && meta.identity.user.id === userId) ||
+      (meta.identity.kind === "bridge" &&
+        meta.identity.ownerUserId != null &&
+        meta.identity.ownerUserId === userId);
+    if (!ownedByUser) continue;
     try {
       ws.close(1008, "session superseded");
     } catch {
@@ -403,6 +409,7 @@ export function attachVoiceRelay(
               yields: bridge.yield_to_units,
               bridgeName: bridge.name,
               forcedChannel: bridge.target_channel,
+              ownerUserId: user.id,
             };
           } else {
             identity = { kind: "account", user };
@@ -520,6 +527,7 @@ export function attachVoiceRelay(
       // a simulcast channel too, so one ingest fans out to several channels.
       unitId = meta.identity.bridgeName.trim().toUpperCase() || "BRIDGE";
       displayName = meta.identity.bridgeName;
+      userId = meta.identity.ownerUserId ?? null;
       permission = "talk";
     } else {
       // A key-authenticated handset cannot key a simulcast channel.
