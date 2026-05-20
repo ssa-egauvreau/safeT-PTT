@@ -6,7 +6,7 @@ The repo ships **small default beeps** so the app plays sound immediately. Repla
   ptt_permit.wav       — played once per PTT press when air is clear (stable); not looped while holding PTT
   emergency.wav        — played once when the emergency latch is turned ON
   busy.wav             — Busy-OutofRange tone: loops while PTT is held on a busy channel or listen-only;
-                         plays 1.5s (then silence) when link is lost, repeating every 15s until ONLINE again
+                         plays 2s (then silence) when link is lost, repeating every 15s until ONLINE again
   volume.wav           — IRC590 volume-check key (232); copy from your Zello/Motorola tone pack
 
 See docs/custom-radio-sounds.md for the exact source paths on your PC.

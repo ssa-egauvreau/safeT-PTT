@@ -44,6 +44,6 @@ The marker replays every **12 seconds** while 10-33 is active on a channel panel
 **Behavior:**
 
 - **Channel busy** or **listen-only** while you hold PTT: the tone **loops** until you release PTT.
-- **No connection / lost link**: play **1.5 seconds**, then stop; if still offline after **15 seconds**, play 1.5s again. When connection returns, the sound **stops immediately**.
+- **No connection / lost link**: play **2 seconds**, then stop; if still offline after **15 seconds**, play 2s again. When connection returns, the sound **stops immediately**.
 
 Agencies can also upload a custom busy tone under **Admin → Sounds → busy** (server kind `busy`).

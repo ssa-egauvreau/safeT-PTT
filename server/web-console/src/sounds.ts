@@ -52,7 +52,7 @@ let busyAlertStopTimer: number | null = null;
 /** Repeats the 1.5s lost-link alert every 15s while the browser reports offline. */
 let lostLinkAlertInterval: number | null = null;
 
-const BUSY_ALERT_MS = 1500;
+const BUSY_ALERT_MS = 2000;
 const LOST_LINK_ALERT_INTERVAL_MS = 15_000;
 
 /** Server tone-set version last seen — a change means the tones must be re-pulled. */

@@ -19,7 +19,7 @@ import android.os.Looper
  * - channel_switch.wav
  * - ptt_permit.wav
  * - emergency.wav
- * - busy.wav (channel busy + listen-only loop while PTT held; 1.5s bursts when link is lost)
+ * - busy.wav (channel busy + listen-only loop while PTT held; 2s bursts when link is lost)
  */
 class AssetRadioUiSoundPlayer(
     private val app: Application,
@@ -36,12 +36,16 @@ class AssetRadioUiSoundPlayer(
         }
 
     private var talkPermitPlayer: MediaPlayer? = null
-    private var busyTonePlayer: MediaPlayer? = null
+    private var busyLoopPlayerA: MediaPlayer? = null
+    private var busyLoopPlayerB: MediaPlayer? = null
+    private var busyLoopSwapRunnable: Runnable? = null
     private var busyAlertPlayer: MediaPlayer? = null
     private var busyAlertCutoffRunnable: Runnable? = null
     private var volumeCheckPlayer: MediaPlayer? = null
     private var volumeCheckCutoffRunnable: Runnable? = null
-    private var volumeCheckLoopRestartRunnable: Runnable? = null
+    private var volumeLoopPlayerA: MediaPlayer? = null
+    private var volumeLoopPlayerB: MediaPlayer? = null
+    private var volumeLoopSwapRunnable: Runnable? = null
 
     /**
      * Strong reference to the emergency one-shot so the rugged-handset OS (e.g. IRC590) cannot
@@ -144,8 +148,18 @@ class AssetRadioUiSoundPlayer(
         main.post {
             stopTalkPermitLoopInternal()
             stopBusyLoopInternal()
-            val player = createBusyLoopMediaPlayer(FILE_BUSY) ?: return@post
-            busyTonePlayer = player
+            startGaplessPingPongLoop(
+                fileName = FILE_BUSY,
+                playerA = { busyLoopPlayerA },
+                playerB = { busyLoopPlayerB },
+                setPlayers = { a, b ->
+                    busyLoopPlayerA = a
+                    busyLoopPlayerB = b
+                },
+                cancelSwap = ::cancelBusyLoopSwap,
+                setSwapRunnable = { busyLoopSwapRunnable = it },
+                isActive = { busyLoopPlayerA != null && busyLoopPlayerB != null },
+            )
         }
     }
 
@@ -224,8 +238,18 @@ class AssetRadioUiSoundPlayer(
         main.post {
             stopVolumeCheckLoopInternal()
             stopTalkPermitLoopInternal()
-            val player = createVolumeCheckLoopMediaPlayer() ?: return@post
-            volumeCheckPlayer = player
+            startGaplessPingPongLoop(
+                fileName = FILE_VOLUME_CHECK,
+                playerA = { volumeLoopPlayerA },
+                playerB = { volumeLoopPlayerB },
+                setPlayers = { a, b ->
+                    volumeLoopPlayerA = a
+                    volumeLoopPlayerB = b
+                },
+                cancelSwap = ::cancelVolumeLoopSwap,
+                setSwapRunnable = { volumeLoopSwapRunnable = it },
+                isActive = { volumeLoopPlayerA != null && volumeLoopPlayerB != null },
+            )
         }
     }
 
@@ -252,13 +276,17 @@ class AssetRadioUiSoundPlayer(
         talkPermitPlayer = null
     }
 
+    private fun cancelBusyLoopSwap() {
+        busyLoopSwapRunnable?.let { main.removeCallbacks(it) }
+        busyLoopSwapRunnable = null
+    }
+
     private fun stopBusyLoopInternal() {
-        busyTonePlayer?.runCatching {
-            setOnCompletionListener(null)
-            stop()
-            release()
-        }
-        busyTonePlayer = null
+        cancelBusyLoopSwap()
+        releaseLoopPlayer(busyLoopPlayerA)
+        releaseLoopPlayer(busyLoopPlayerB)
+        busyLoopPlayerA = null
+        busyLoopPlayerB = null
     }
 
     private fun cancelBusyAlertCutoff() {
@@ -318,14 +346,18 @@ class AssetRadioUiSoundPlayer(
         volumeCheckCutoffRunnable = null
     }
 
-    private fun cancelVolumeCheckLoopRestart() {
-        volumeCheckLoopRestartRunnable?.let { main.removeCallbacks(it) }
-        volumeCheckLoopRestartRunnable = null
+    private fun cancelVolumeLoopSwap() {
+        volumeLoopSwapRunnable?.let { main.removeCallbacks(it) }
+        volumeLoopSwapRunnable = null
     }
 
     private fun stopVolumeCheckLoopInternal() {
         cancelVolumeCheckCutoff()
-        cancelVolumeCheckLoopRestart()
+        cancelVolumeLoopSwap()
+        releaseLoopPlayer(volumeLoopPlayerA)
+        releaseLoopPlayer(volumeLoopPlayerB)
+        volumeLoopPlayerA = null
+        volumeLoopPlayerB = null
         volumeCheckPlayer?.runCatching {
             setOnCompletionListener(null)
             setOnSeekCompleteListener(null)
@@ -374,87 +406,135 @@ class AssetRadioUiSoundPlayer(
         }
     }
 
-    private fun createVolumeCheckLoopMediaPlayer(): MediaPlayer? {
+    private fun releaseLoopPlayer(player: MediaPlayer?) {
+        player?.runCatching {
+            setOnCompletionListener(null)
+            setOnPreparedListener(null)
+            setOnSeekCompleteListener(null)
+            setOnErrorListener(null)
+            if (isPlaying) {
+                pause()
+            }
+            release()
+        }
+    }
+
+    private fun createLoopMediaPlayer(fileName: String): MediaPlayer? {
         val player = MediaPlayer().applyUiAudio()
-        if (!applySource(player, FILE_VOLUME_CHECK)) {
+        if (!applySource(player, fileName)) {
             player.release()
             return null
         }
-        return try {
-            player.apply {
-                // Gapless-style loop: [isLooping] clips on IRC590; restart slightly before the
-                // file ends and re-seek to a sync point (WMP-style seamless loop).
-                isLooping = false
-                setOnPreparedListener { prepared ->
-                    prepared.start()
-                    scheduleVolumeCheckGaplessRestart(prepared)
-                }
-                setOnCompletionListener { mp ->
-                    if (mp !== volumeCheckPlayer) return@setOnCompletionListener
-                    restartVolumeCheckAtLoopPoint(mp)
-                }
-                setOnErrorListener { mp, _, _ ->
-                    if (volumeCheckPlayer === mp) volumeCheckPlayer = null
-                    mp.release()
-                    true
-                }
-                prepareAsync()
-            }
-        } catch (_: Exception) {
-            player.release()
-            null
-        }
+        player.isLooping = false
+        return player
     }
 
-    /** Schedule a restart slightly before EOF so there is no audible gap between passes. */
-    private fun scheduleVolumeCheckGaplessRestart(mp: MediaPlayer) {
-        cancelVolumeCheckLoopRestart()
-        val durationMs =
-            try {
-                mp.duration
-            } catch (_: Exception) {
-                -1
-            }
-        if (durationMs < 80) return
-        val leadMs = VOLUME_CHECK_LOOP_LEAD_MS
-        val delayMs = (durationMs - leadMs).coerceAtLeast(0L)
-        val runnable = Runnable {
-            volumeCheckLoopRestartRunnable = null
-            if (mp !== volumeCheckPlayer) return@Runnable
-            restartVolumeCheckAtLoopPoint(mp)
-        }
-        volumeCheckLoopRestartRunnable = runnable
-        main.postDelayed(runnable, delayMs)
-    }
-
-    /** Re-seek to the loop start and play again without stop/release (avoids boundary clicks). */
-    private fun restartVolumeCheckAtLoopPoint(mp: MediaPlayer) {
-        cancelVolumeCheckLoopRestart()
+    private fun seekGaplessLoopStart(player: MediaPlayer) {
         try {
-            mp.setOnSeekCompleteListener(null)
-            if (mp.isPlaying) {
-                mp.pause()
-            }
-            val loopStartMs = VOLUME_CHECK_LOOP_START_MS
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                mp.seekTo(loopStartMs, MediaPlayer.SEEK_CLOSEST_SYNC)
+                player.seekTo(GAPLESS_LOOP_START_MS, MediaPlayer.SEEK_CLOSEST_SYNC)
             } else {
                 @Suppress("DEPRECATION")
-                mp.seekTo(loopStartMs.toInt())
-            }
-            mp.setOnSeekCompleteListener { player ->
-                player.setOnSeekCompleteListener(null)
-                if (player !== volumeCheckPlayer) return@setOnSeekCompleteListener
-                try {
-                    if (!player.isPlaying) {
-                        player.start()
-                    }
-                    scheduleVolumeCheckGaplessRestart(player)
-                } catch (_: IllegalStateException) {
-                }
+                player.seekTo(GAPLESS_LOOP_START_MS.toInt())
             }
         } catch (_: IllegalStateException) {
         }
+    }
+
+    /**
+     * Two [MediaPlayer] instances alternate with a short crossfade window so rugged handsets
+     * never hit the clicky [isLooping] or seek-to-zero-at-EOF path.
+     */
+    private fun startGaplessPingPongLoop(
+        fileName: String,
+        playerA: () -> MediaPlayer?,
+        playerB: () -> MediaPlayer?,
+        setPlayers: (MediaPlayer?, MediaPlayer?) -> Unit,
+        cancelSwap: () -> Unit,
+        setSwapRunnable: (Runnable?) -> Unit,
+        isActive: () -> Boolean,
+    ) {
+        val a = createLoopMediaPlayer(fileName) ?: return
+        val b = createLoopMediaPlayer(fileName) ?: run {
+            a.release()
+            return
+        }
+        setPlayers(a, b)
+        var readyCount = 0
+        fun onBothReady() {
+            readyCount++
+            if (readyCount < 2 || !isActive()) return
+            try {
+                seekGaplessLoopStart(a)
+                a.start()
+                scheduleGaplessPingPongSwap(
+                    current = a,
+                    next = b,
+                    cancelSwap = cancelSwap,
+                    setSwapRunnable = setSwapRunnable,
+                    isActive = isActive,
+                )
+            } catch (_: IllegalStateException) {
+            }
+        }
+        a.setOnPreparedListener { onBothReady() }
+        b.setOnPreparedListener { onBothReady() }
+        a.setOnErrorListener { mp, _, _ ->
+            if (playerA() === mp || playerB() === mp) {
+                setPlayers(null, null)
+                mp.release()
+            }
+            true
+        }
+        b.setOnErrorListener { mp, _, _ ->
+            if (playerA() === mp || playerB() === mp) {
+                setPlayers(null, null)
+                mp.release()
+            }
+            true
+        }
+        a.prepareAsync()
+        b.prepareAsync()
+    }
+
+    private fun scheduleGaplessPingPongSwap(
+        current: MediaPlayer,
+        next: MediaPlayer,
+        cancelSwap: () -> Unit,
+        setSwapRunnable: (Runnable?) -> Unit,
+        isActive: () -> Boolean,
+    ) {
+        cancelSwap()
+        val durationMs =
+            try {
+                current.duration
+            } catch (_: Exception) {
+                -1
+            }
+        if (durationMs < 100) return
+        val delayMs = (durationMs - GAPLESS_LOOP_LEAD_MS).coerceAtLeast(0L)
+        val runnable = Runnable {
+            setSwapRunnable(null)
+            if (!isActive()) return@Runnable
+            try {
+                seekGaplessLoopStart(next)
+                if (!next.isPlaying) {
+                    next.start()
+                }
+                current.pause()
+                seekGaplessLoopStart(current)
+                scheduleGaplessPingPongSwap(
+                    current = next,
+                    next = current,
+                    cancelSwap = cancelSwap,
+                    setSwapRunnable = setSwapRunnable,
+                    isActive = isActive,
+                )
+            } catch (_: IllegalStateException) {
+            }
+        }
+        setSwapRunnable(runnable)
+        main.postDelayed(runnable, delayMs)
     }
 
     /** Points [player] at the agency-custom tone when one is cached, else the bundled asset. */
@@ -548,44 +628,6 @@ class AssetRadioUiSoundPlayer(
         }
     }
 
-    /**
-     * Busy loop on the UI sonification path (same stream as channel-switch / talk-permit) so its
-     * volume tracks the rest of the radio's tones. Manual seek+restart on completion because some
-     * handset builds ignore [isLooping] for certain WAV PCM assets while emulators behave.
-     */
-    private fun createBusyLoopMediaPlayer(fileName: String): MediaPlayer? {
-        val player = MediaPlayer()
-        player.setAudioAttributes(uiAudioAttrs)
-        player.setVolume(1f, 1f)
-        if (!applySource(player, fileName)) {
-            player.release()
-            return null
-        }
-        return try {
-            player.apply {
-                isLooping = false
-                setOnPreparedListener { it.start() }
-                setOnCompletionListener { mp ->
-                    if (mp !== busyTonePlayer) return@setOnCompletionListener
-                    try {
-                        mp.seekTo(0)
-                        mp.start()
-                    } catch (_: IllegalStateException) {
-                    }
-                }
-                setOnErrorListener { mp, _, _ ->
-                    if (busyTonePlayer === mp) busyTonePlayer = null
-                    mp.release()
-                    true
-                }
-                prepareAsync()
-            }
-        } catch (_: Exception) {
-            player.release()
-            null
-        }
-    }
-
     companion object {
         const val SOUNDS_DIR = "sounds"
         const val FILE_CHANNEL_SWITCH = "channel_switch.wav"
@@ -593,13 +635,13 @@ class AssetRadioUiSoundPlayer(
         const val FILE_EMERGENCY = "emergency.wav"
         const val FILE_BUSY = "busy.wav"
         /** No-connection / lost-link: play this much of busy.wav, then silence until the next alert. */
-        const val BUSY_ALERT_MAX_MS = 1_500L
+        const val BUSY_ALERT_MAX_MS = 2_000L
         const val FILE_VOLUME_CHECK = "volume.wav"
         /** TM7 volume knob: one short beep, not the entire WAV. */
         const val VOLUME_CHECK_MAX_MS = 1_000L
-        /** Skip the first few ms on loop (reduces boundary click on some handsets). */
-        const val VOLUME_CHECK_LOOP_START_MS = 20L
-        /** Restart this many ms before EOF for gapless looping. */
-        const val VOLUME_CHECK_LOOP_LEAD_MS = 35L
+        /** Skip the first few ms on each loop leg (reduces boundary click on some handsets). */
+        const val GAPLESS_LOOP_START_MS = 12L
+        /** Crossfade window: start the standby player this many ms before the active clip ends. */
+        const val GAPLESS_LOOP_LEAD_MS = 72L
     }
 }

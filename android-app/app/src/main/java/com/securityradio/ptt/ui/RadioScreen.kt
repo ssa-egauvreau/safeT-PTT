@@ -113,10 +113,10 @@ import java.util.Locale
 import kotlinx.coroutines.withTimeoutOrNull
 
 private val HANDSET_CLOCK_FONT_IRC590 = 44.sp
-private val HANDSET_ZONE_LINE_SP_IRC590 = 26.sp
+private val HANDSET_ZONE_LINE_SP_IRC590 = 30.sp
 private val HANDSET_PERMISSION_LISTEN_SP_IRC590 = 32.sp
 private val HANDSET_PERMISSION_PRIORITY_SP_IRC590 = 24.sp
-private val HANDSET_ZONE_LINE_SP_DEFAULT = 20.sp
+private val HANDSET_ZONE_LINE_SP_DEFAULT = 26.sp
 private val HANDSET_CLOCK_FONT_TM7 = 28.sp
 private const val HANDSET_EMERGENCY_FLASH_LO = 0.38f
 private const val HANDSET_EMERGENCY_FLASH_HI = 0.92f
@@ -1602,12 +1602,7 @@ private fun LcdHandsetZonePositionLine(
     styles: LcdTextStyles,
     modifier: Modifier = Modifier,
 ) {
-    val label =
-        when (deviceProfile) {
-            ResolvedDeviceProfile.IRC590 ->
-                handsetZonePositionLabel(zoneValue, "").trim()
-            else -> handsetZonePositionLabel(zoneValue, channelValue)
-        }
+    val label = handsetZonePositionLabel(zoneValue, channelValue)
     if (label.isEmpty()) return
     val p = RadioLcdTheme.palette
     val fontSp =
@@ -1628,7 +1623,7 @@ private fun LcdHandsetZonePositionLine(
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 2.dp, bottom = 4.dp),
+            .padding(top = 0.dp, bottom = 2.dp),
     )
 }
 
@@ -1669,7 +1664,7 @@ private fun LcdPermissionBadge(
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 2.dp),
     )
 }
 
@@ -1759,6 +1754,7 @@ private fun LcdHandsetToolbar(
         LcdHandsetToolbarTm7(
             state = state,
             emergencyFlashAlpha = emergencyFlashAlpha,
+            channelValue = channelValue,
             radiosValue = radiosValue,
             radiosKnown = radiosKnown,
             onEvent = onEvent,
@@ -1861,6 +1857,86 @@ private fun LcdHandsetToolbarStatusIcons(
     }
 }
 
+/** Channel index, centered clock, and radios-online — shared by IRC590 and TM7 toolbars. */
+@Composable
+private fun LcdHandsetToolbarClockMetaRow(
+    state: RadioUiState,
+    channelValue: String,
+    radiosValue: String,
+    radiosKnown: Boolean,
+    clockFontSize: TextUnit,
+    accentOnEmergency: Color,
+    styles: LcdTextStyles,
+    modifier: Modifier = Modifier,
+) {
+    val p = RadioLcdTheme.palette
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 50.dp),
+    ) {
+        val statIconSize = minOf(maxWidth / 8f, maxHeight * 0.72f).coerceIn(28.dp, 40.dp)
+        val statFontSize = (statIconSize.value * 0.58f).coerceIn(18f, 26f).sp
+        val channelLabel = channelValue.ifBlank { "—" }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                LcdHandsetStat(
+                    value = channelLabel,
+                    valueColor = p.textSecondary,
+                    styles = styles,
+                    compact = true,
+                    valueFontSize = statFontSize,
+                ) {
+                    LcdListChannelIcon(
+                        color = p.textMuted,
+                        modifier = Modifier.size(statIconSize),
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier.weight(1.15f),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = state.systemTime.uppercase(Locale.US),
+                    style = styles.status.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = clockFontSize,
+                        lineHeight = (clockFontSize.value * 1.08f).sp,
+                    ),
+                    color = accentOnEmergency,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                LcdHandsetStat(
+                    value = radiosValue,
+                    valueColor = if (radiosKnown) p.statusGreen else p.textMuted,
+                    styles = styles,
+                    compact = true,
+                    valueFontSize = statFontSize,
+                ) {
+                    LcdGlobeIcon(
+                        color = if (radiosKnown) p.statusGreen else p.textMuted,
+                        modifier = Modifier.size(statIconSize),
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun LcdHandsetToolbarIrc590(
     state: RadioUiState,
@@ -1941,68 +2017,15 @@ private fun LcdHandsetToolbarIrc590(
                 }
             }
         }
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 50.dp),
-        ) {
-            val statIconSize = minOf(maxWidth / 8f, maxHeight * 0.72f).coerceIn(28.dp, 40.dp)
-            val statFontSize = (statIconSize.value * 0.58f).coerceIn(18f, 26f).sp
-            val channelLabel = channelValue.ifBlank { "—" }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    LcdHandsetStat(
-                        value = channelLabel,
-                        valueColor = p.textSecondary,
-                        styles = styles,
-                        compact = true,
-                        valueFontSize = statFontSize,
-                    ) {
-                        LcdListChannelIcon(
-                            color = p.textMuted,
-                            modifier = Modifier.size(statIconSize),
-                        )
-                    }
-                }
-                Text(
-                    text = state.systemTime.uppercase(Locale.US),
-                    style = styles.status.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = HANDSET_CLOCK_FONT_IRC590,
-                        lineHeight = (HANDSET_CLOCK_FONT_IRC590.value * 1.08f).sp,
-                    ),
-                    color = accentOnEmergency,
-                    maxLines = 1,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .weight(1.15f)
-                        .padding(horizontal = 4.dp),
-                )
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.CenterEnd,
-                ) {
-                    LcdHandsetStat(
-                        value = radiosValue,
-                        valueColor = if (radiosKnown) p.statusGreen else p.textMuted,
-                        styles = styles,
-                        compact = true,
-                        valueFontSize = statFontSize,
-                    ) {
-                        LcdGlobeIcon(
-                            color = if (radiosKnown) p.statusGreen else p.textMuted,
-                            modifier = Modifier.size(statIconSize),
-                        )
-                    }
-                }
-            }
-        }
+        LcdHandsetToolbarClockMetaRow(
+            state = state,
+            channelValue = channelValue,
+            radiosValue = radiosValue,
+            radiosKnown = radiosKnown,
+            clockFontSize = HANDSET_CLOCK_FONT_IRC590,
+            accentOnEmergency = accentOnEmergency,
+            styles = styles,
+        )
         LcdHandsetToolbarScanBanner(state = state, styles = styles)
     }
 }
@@ -2011,6 +2034,7 @@ private fun LcdHandsetToolbarIrc590(
 private fun LcdHandsetToolbarTm7(
     state: RadioUiState,
     @Suppress("UNUSED_PARAMETER") emergencyFlashAlpha: Float,
+    channelValue: String,
     radiosValue: String,
     radiosKnown: Boolean,
     onEvent: (RadioUiEvent) -> Unit,
@@ -2022,50 +2046,42 @@ private fun LcdHandsetToolbarTm7(
     val scanReceiving = state.scanBackgroundActive
     val accentOnEmergency = if (state.isEmergencyActive) Color.White else p.textPrimary
     val iconSize = 26.dp
-    val iconGap = 5.dp
     val signalWidth = 34.dp
     val signalHeight = 22.dp
-    val timeFontSize = HANDSET_CLOCK_FONT_TM7
+    val rowPad = 3.dp
     val minHeight = 40.dp
 
-    Column(modifier = modifier) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(rowPad),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = minHeight),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.weight(1f, fill = false),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(iconGap),
-            ) {
-                LcdHandsetToolbarStatusIcons(
-                    state = state,
-                    online = online,
-                    scanReceiving = scanReceiving,
-                    iconSize = iconSize,
-                    signalWidth = signalWidth,
-                    signalHeight = signalHeight,
-                    onEvent = onEvent,
-                )
-            }
-            Text(
-                text = state.systemTime.uppercase(Locale.US),
-                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = timeFontSize),
-                color = accentOnEmergency,
-                maxLines = 1,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 4.dp),
-            )
-            LcdHandsetMetaRow(
-                radiosValue = radiosValue,
-                radiosKnown = radiosKnown,
-                styles = styles,
+            LcdHandsetToolbarStatusIcons(
+                state = state,
+                online = online,
+                scanReceiving = scanReceiving,
+                iconSize = iconSize,
+                signalWidth = signalWidth,
+                signalHeight = signalHeight,
+                onEvent = onEvent,
+                modifier = Modifier.fillMaxWidth(),
+                edgeToEdge = true,
             )
         }
+        LcdHandsetToolbarClockMetaRow(
+            state = state,
+            channelValue = channelValue,
+            radiosValue = radiosValue,
+            radiosKnown = radiosKnown,
+            clockFontSize = HANDSET_CLOCK_FONT_TM7,
+            accentOnEmergency = accentOnEmergency,
+            styles = styles,
+        )
         LcdHandsetToolbarScanBanner(state = state, styles = styles)
     }
 }
