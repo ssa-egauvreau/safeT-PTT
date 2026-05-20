@@ -12,6 +12,7 @@ import com.securityradio.ptt.device.AssetRadioUiSoundPlayer
 import com.securityradio.ptt.device.AudioRecordPttCapture
 import com.securityradio.ptt.device.ChannelSpeechHelper
 import com.securityradio.ptt.device.ConnectivityMonitor
+import com.securityradio.ptt.device.ExternalMicMonitor
 import com.securityradio.ptt.device.CustomSoundDownloader
 import com.securityradio.ptt.device.CustomSoundStore
 import com.securityradio.ptt.device.HardwareMappingRepository
@@ -54,15 +55,14 @@ class RadioAppGraph(val application: Application) {
     /** Device internet up/down feed for the lost-link alert. */
     val connectivityMonitor: ConnectivityMonitor = ConnectivityMonitor(application).also { it.start() }
 
+    val externalMicMonitor: ExternalMicMonitor = ExternalMicMonitor(application).also { it.start() }
+
     val rxMessageHistory = RxMessageHistory()
 
     val lastRxAudioRecorder = LastRxAudioRecorder(messageHistory = rxMessageHistory)
 
     private val inboundVoicePlayer = InboundVoicePlayer(
         lastRxRecorder = lastRxAudioRecorder,
-        listenGainProvider = {
-            if (radioPreferences.isListenVolumeMuted()) 0f else 1f
-        },
     )
 
     private val authTokenProvider: () -> String = { radioPreferences.getAuthToken() }

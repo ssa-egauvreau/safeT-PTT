@@ -94,8 +94,8 @@ data class RadioUiState(
     /** Android "display over other apps" — needed on some OEMs to return the radio UI to the front. */
     val needsOverlayPermission: Boolean,
 
-    /** Mutes live received voice (hardware volume icon). */
-    val listenVolumeMuted: Boolean,
+    /** Wired / USB / Bluetooth headset mic present (status-bar speaker icon). */
+    val externalMicConnected: Boolean,
     /** Bluetooth radio enabled (status icon). */
     val bluetoothOn: Boolean,
     /**
@@ -184,7 +184,7 @@ data class RadioUiState(
             deviceProfilePreference = DeviceProfilePreference.AUTO,
             resolvedDeviceProfile = ResolvedDeviceProfile.RESPONSIVE,
             needsOverlayPermission = false,
-            listenVolumeMuted = false,
+            externalMicConnected = false,
             bluetoothOn = false,
             connectivityBanner = "",
             replayBanner = "",

@@ -23,6 +23,7 @@ import com.securityradio.ptt.device.HardwareMappingRepository
 import com.securityradio.ptt.device.BatteryStatusProbe
 import com.securityradio.ptt.device.BluetoothStatusProbe
 import com.securityradio.ptt.device.ConnectivityMonitor
+import com.securityradio.ptt.device.ExternalMicMonitor
 import com.securityradio.ptt.device.LastRxAudioRecorder
 import com.securityradio.ptt.device.RxMessageHistory
 import android.app.Application
@@ -75,6 +76,7 @@ class RadioViewModel(
     private val lastRxAudioRecorder: LastRxAudioRecorder,
     private val rxMessageHistory: RxMessageHistory,
     private val connectivityMonitor: ConnectivityMonitor,
+    private val externalMicMonitor: ExternalMicMonitor,
 ) : ViewModel() {
 
     @Volatile
@@ -160,11 +162,15 @@ class RadioViewModel(
             }
         }
         locationReporter.configure(unitIdUpper)
+        val audioManager =
+            application.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager
+        val externalMicAtStart =
+            audioManager?.let { ExternalMicMonitor.hasExternalMicInput(it) } ?: false
         _uiState.update {
             it.copy(
                 localShortUnitId = unitIdUpper,
                 sessionDisplayName = radioPreferences.getSessionDisplayName(),
-                listenVolumeMuted = radioPreferences.isListenVolumeMuted(),
+                externalMicConnected = externalMicAtStart,
                 batteryPercent = BatteryStatusProbe.percent(application),
                 bluetoothOn = BluetoothStatusProbe.isBluetoothOn(application),
                 hardwareMappings = hardwareMappingRepository.getAllMappings(),
@@ -262,6 +268,13 @@ class RadioViewModel(
         }
         viewModelScope.launch {
             connectivityMonitor.online.collect { online -> onConnectivityChanged(online) }
+        }
+        viewModelScope.launch {
+            externalMicMonitor.connected.collect { connected ->
+                if (_uiState.value.externalMicConnected != connected) {
+                    _uiState.update { it.copy(externalMicConnected = connected) }
+                }
+            }
         }
     }
 
@@ -566,11 +579,6 @@ class RadioViewModel(
             RadioUiEvent.ToggleMessageHistory -> toggleMessageHistory()
             RadioUiEvent.CloseMessageHistory -> closeMessageHistory()
             is RadioUiEvent.PlayHistoryMessage -> playHistoryMessage(event.entryId)
-            RadioUiEvent.ToggleListenVolume -> {
-                val muted = !radioPreferences.isListenVolumeMuted()
-                radioPreferences.setListenVolumeMuted(muted)
-                _uiState.update { it.copy(listenVolumeMuted = muted) }
-            }
             is RadioUiEvent.SaveAgencyRadioKey -> {
                 val key = event.key.trim()
                 radioPreferences.setAgencyRadioKey(key)

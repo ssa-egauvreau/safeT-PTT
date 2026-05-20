@@ -98,12 +98,6 @@ class RadioPreferences(context: Context) {
         prefs.edit().putString(KEY_SESSION_DISPLAY_NAME, name.trim()).apply()
     }
 
-    fun isListenVolumeMuted(): Boolean = prefs.getBoolean(KEY_LISTEN_VOLUME_MUTED, false)
-
-    fun setListenVolumeMuted(muted: Boolean) {
-        prefs.edit().putBoolean(KEY_LISTEN_VOLUME_MUTED, muted).apply()
-    }
-
     /** Screen flipped 180° (IRC590 day/night key long-press). */
     fun isDisplayRotated180(): Boolean = prefs.getBoolean(KEY_DISPLAY_ROTATED_180, false)
 
@@ -137,7 +131,6 @@ class RadioPreferences(context: Context) {
         const val KEY_SESSION_UNIT_ID = "session_unit_id"
         const val KEY_SESSION_DISPLAY_NAME = "session_display_name"
         const val KEY_SESSION_INSTALL_TOKEN = "session_install_token"
-        const val KEY_LISTEN_VOLUME_MUTED = "listen_volume_muted"
         const val KEY_DISPLAY_ROTATED_180 = "display_rotated_180"
         const val DEFAULT_VOICE_ANNOUNCE = true
     }

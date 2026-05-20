@@ -276,6 +276,7 @@ fun LcdReplayIcon(
     }
 }
 
+/** Speaker glyph: green when [isMuted] is false (e.g. external mic connected), gray when true. */
 @Composable
 fun LcdVolumeIcon(
     muted: Color,

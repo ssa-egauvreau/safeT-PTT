@@ -93,6 +93,7 @@ object DeviceProfileResolver {
             showOnScreenEmergency = false,
             handsetStatusDisplay = true,
             showHardwareKeyLegend = true,
+            showBatteryStatus = false,
         )
         ResolvedDeviceProfile.IRC590 -> RadioLayoutPolicy(
             showSoftKeyRow = false,

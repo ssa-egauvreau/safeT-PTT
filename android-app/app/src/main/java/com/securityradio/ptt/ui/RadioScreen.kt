@@ -397,10 +397,8 @@ private fun LcdStatusBar(
                     LcdVolumeIcon(
                         muted = p.textMuted,
                         active = p.statusGreen,
-                        isMuted = state.listenVolumeMuted,
-                        modifier = Modifier
-                            .size(26.dp)
-                            .clickable { onEvent(RadioUiEvent.ToggleListenVolume) },
+                        isMuted = !state.externalMicConnected,
+                        modifier = Modifier.size(26.dp),
                     )
                 }
                 Text(
@@ -598,6 +596,7 @@ private fun LcdMainChannelBlock(
             state = state,
             chrome = chrome,
             emergencyFlashAlpha = emergencyFlashAlpha,
+            showBatteryStatus = layout.showBatteryStatus,
             onEvent = onEvent,
             onRequestMicPermission = onRequestMicPermission,
             styles = styles,
@@ -772,6 +771,7 @@ private fun LcdHandsetFillChannelBlock(
     state: RadioUiState,
     chrome: ChannelDisplayChrome,
     emergencyFlashAlpha: Float,
+    showBatteryStatus: Boolean,
     onEvent: (RadioUiEvent) -> Unit,
     onRequestMicPermission: () -> Unit,
     styles: LcdTextStyles,
@@ -827,6 +827,7 @@ private fun LcdHandsetFillChannelBlock(
         ) {
             LcdHandsetToolbar(
                 state = state,
+                showBatteryStatus = showBatteryStatus,
                 onEvent = onEvent,
                 styles = styles,
             )
@@ -1094,36 +1095,36 @@ private fun LcdHandsetToolbar(
             LcdVolumeIcon(
                 muted = p.textMuted,
                 active = p.statusGreen,
-                isMuted = state.listenVolumeMuted,
-                modifier = Modifier
-                    .size(iconSize)
-                    .clickable { onEvent(RadioUiEvent.ToggleListenVolume) },
+                isMuted = !state.externalMicConnected,
+                modifier = Modifier.size(iconSize),
             )
         }
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(iconGap),
         ) {
             Text(
                 text = state.systemTime.uppercase(Locale.US),
-                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 17.sp),
+                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = timeFontSize),
                 color = accentOnEmergency,
                 maxLines = 1,
             )
-            LcdBatteryIcon(
-                percent = state.batteryPercent,
-                outline = if (state.isEmergencyActive) Color.White else p.textSecondary,
-                fillHigh = p.statusGreen,
-                fillLow = p.statusAmber,
-                fillCritical = p.statusRed,
-                modifier = Modifier.size(width = 32.dp, height = 16.dp),
-            )
-            Text(
-                text = "${state.batteryPercent}%",
-                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 16.sp),
-                color = if (state.isEmergencyActive) Color.White else p.textSecondary,
-                maxLines = 1,
-            )
+            if (showBatteryStatus) {
+                LcdBatteryIcon(
+                    percent = state.batteryPercent,
+                    outline = if (state.isEmergencyActive) Color.White else p.textSecondary,
+                    fillHigh = p.statusGreen,
+                    fillLow = p.statusAmber,
+                    fillCritical = p.statusRed,
+                    modifier = Modifier.size(width = 32.dp, height = 16.dp),
+                )
+                Text(
+                    text = "${state.batteryPercent}%",
+                    style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 16.sp),
+                    color = if (state.isEmergencyActive) Color.White else p.textSecondary,
+                    maxLines = 1,
+                )
+            }
             LcdSettingsIcon(
                 color = if (state.isEmergencyActive) Color.White else p.statusBlue,
                 modifier = Modifier
