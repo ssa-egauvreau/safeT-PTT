@@ -11,7 +11,18 @@ export function getSunsetSafetyBundledPrompt(): string {
     return cachedPrompt;
   }
   const path = join(PROMPT_DIR, "sunsetSafetySystemPrompt.txt");
-  cachedPrompt = readFileSync(path, "utf8");
+  try {
+    cachedPrompt = readFileSync(path, "utf8");
+  } catch (err) {
+    const code = err && typeof err === "object" && "code" in err ? String(err.code) : "";
+    if (code === "ENOENT") {
+      throw new Error(
+        `${path} is missing. Run "npm run build" in the server folder so copy-server-assets copies the Sunset Safety prompt into dist.`,
+        { cause: err },
+      );
+    }
+    throw err;
+  }
   return cachedPrompt;
 }
 
