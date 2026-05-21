@@ -121,6 +121,7 @@ import {
 import { applyChannelTen33Marker } from "./aiDispatch/ten33Marker.js";
 import { listAiDispatchLog } from "./aiDispatch/activityLog.js";
 import { handleTen8Webhook, handleTen8WebhookGet } from "./ten8/webhook.js";
+import { handleAndroidUpdateApk, handleAndroidUpdateManifest } from "./appUpdate.js";
 import { listTen8ActiveIncidents, listTen8WebhookLog } from "./ten8/store.js";
 
 /** Legacy global radio key — lets a handset fetch its agency's custom tones. */
@@ -301,6 +302,10 @@ export function createApiRouter(): Router {
 
   router.get("/webhooks/10-8", handleTen8WebhookGet);
   router.post("/webhooks/10-8", handleTen8Webhook);
+
+  // Public, unauthenticated: the sideloaded Android fleet polls these to self-update.
+  router.get("/app/android/version", handleAndroidUpdateManifest);
+  router.get("/app/android/apk", handleAndroidUpdateApk);
 
   // Reject API calls from an account whose agency was disabled (or deleted)
   // after its token was issued, or whose own account row has been disabled or

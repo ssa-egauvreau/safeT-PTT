@@ -166,6 +166,9 @@ class MainActivity : ComponentActivity() {
 
         RadioPresenceService.start(this)
         window.decorView.post { setupMp22DisplayAndInputDiagnostics() }
+
+        // Sideloaded fleet self-update: throttled check on launch, auto-installs if newer.
+        appGraph.appUpdater.checkAndInstallAsync()
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {

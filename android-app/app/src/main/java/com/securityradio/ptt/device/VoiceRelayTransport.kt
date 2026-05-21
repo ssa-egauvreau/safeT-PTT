@@ -88,6 +88,10 @@ class VoiceRelayTransport(
     private var lastP25TxEnabled: Boolean? = null
     private val pcmFrameScratch = ByteArray(P25ImbeNative.Frames.PCM_16K_FRAME_BYTES)
 
+    /** Speech conditioning for the IMBE uplink; reset at the start of each talk-spurt. */
+    private val txConditioner = ImbeTxConditioner()
+    private var lastConsumeNs = 0L
+
     /** Two-byte sentinel so random PCM blobs are unlikely to collide; followed by an 11-byte codeword. */
     private val imbeWsMagic = byteArrayOf(0xF5.toByte(), 0xAB.toByte())
 
@@ -259,12 +263,20 @@ class VoiceRelayTransport(
             return
         }
 
+        // A gap between mic frames means a fresh key-up — re-learn the noise floor.
+        val now = System.nanoTime()
+        if (now - lastConsumeNs > TX_GAP_RESET_NS) {
+            txConditioner.reset()
+        }
+        lastConsumeNs = now
+
         appendAccumulator(buffer, length)
         while (pcmAccLen >= pcmFrameScratch.size) {
             System.arraycopy(pcmAcc, 0, pcmFrameScratch, 0, pcmFrameScratch.size)
             System.arraycopy(pcmAcc, pcmFrameScratch.size, pcmAcc, 0, pcmAccLen - pcmFrameScratch.size)
             pcmAccLen -= pcmFrameScratch.size
 
+            txConditioner.conditionLe16(pcmFrameScratch, pcmFrameScratch.size)
             val imbeIn = P25ImbeNative.Frames.downsampleAvg16kToImbe(pcmFrameScratch)
             val codeword11 = P25ImbeNative.encodeFrame(imbeIn) ?: continue
             val packet = ByteArray(2 + codeword11.size)
@@ -392,5 +404,8 @@ class VoiceRelayTransport(
 
     private companion object {
         private const val TAG = "VoiceRelay"
+
+        /** A pause this long between mic frames marks a new talk-spurt (≈300 ms). */
+        private const val TX_GAP_RESET_NS = 300_000_000L
     }
 }

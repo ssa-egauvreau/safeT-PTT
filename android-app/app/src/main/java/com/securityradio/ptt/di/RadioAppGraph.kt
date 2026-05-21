@@ -8,6 +8,7 @@ import com.securityradio.ptt.data.remote.AuthApi
 import com.securityradio.ptt.data.remote.ChannelsApi
 import com.securityradio.ptt.data.remote.NetworkModule
 import com.securityradio.ptt.data.remote.RadioApi
+import com.securityradio.ptt.device.AppUpdater
 import com.securityradio.ptt.device.AssetRadioUiSoundPlayer
 import com.securityradio.ptt.device.AudioRecordPttCapture
 import com.securityradio.ptt.device.MicCaptureConfig
@@ -42,6 +43,13 @@ class RadioAppGraph(val application: Application) {
     }
 
     val radioPreferences = RadioPreferences(application)
+
+    /** Over-the-air APK self-updater for the sideloaded fleet. */
+    val appUpdater: AppUpdater = AppUpdater(
+        context = application,
+        httpApiBaseUrl = BuildConfig.API_BASE_URL,
+        currentVersionCode = BuildConfig.VERSION_CODE.toLong(),
+    )
 
     val pttHapticFeedback = PttHapticFeedback(application)
 

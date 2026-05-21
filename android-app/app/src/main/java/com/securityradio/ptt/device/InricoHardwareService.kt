@@ -3,6 +3,7 @@ package com.securityradio.ptt.device
 import android.accessibilityservice.AccessibilityService
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import com.securityradio.ptt.RadioApplication
 
 class InricoHardwareService : AccessibilityService() {
@@ -11,7 +12,53 @@ class InricoHardwareService : AccessibilityService() {
         (application as RadioApplication).graph.hardwareMappingRepository
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    /**
+     * Auto-confirm the system "Install" dialog during an OTA update. Touchless radios can't tap it
+     * and the PTT keycode is proprietary, so while [AppUpdateInstallGate] is armed (i.e. we just
+     * launched an update install) we click the installer's confirm button. The armed window keeps
+     * this from ever clicking install dialogs the user didn't trigger.
+     */
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null || !AppUpdateInstallGate.isActive()) return
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        ) {
+            return
+        }
+        val pkg = event.packageName?.toString() ?: return
+        if (!pkg.contains("packageinstaller", ignoreCase = true)) return
+        val root = rootInActiveWindow ?: return
+        if (clickConfirmButton(root)) {
+            AppUpdateInstallGate.disarm()
+        }
+    }
+
+    private fun clickConfirmButton(root: AccessibilityNodeInfo): Boolean {
+        for (label in CONFIRM_LABELS) {
+            val matches = root.findAccessibilityNodeInfosByText(label) ?: continue
+            for (node in matches) {
+                val text = node.text?.toString()?.trim().orEmpty()
+                // Exact label match only, so prose like "Do you want to install…" never triggers.
+                if (CONFIRM_LABELS.any { it.equals(text, ignoreCase = true) } && clickNodeOrAncestor(node)) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private fun clickNodeOrAncestor(start: AccessibilityNodeInfo?): Boolean {
+        var node = start
+        var depth = 0
+        while (node != null && depth < 5) {
+            if (node.isClickable) {
+                return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            }
+            node = node.parent
+            depth++
+        }
+        return false
+    }
 
     override fun onInterrupt() {}
 
@@ -71,5 +118,10 @@ class InricoHardwareService : AccessibilityService() {
         }
 
         return super.onKeyEvent(event)
+    }
+
+    private companion object {
+        /** Positive confirm-button labels on the system installer (never "Cancel"/"Settings"). */
+        val CONFIRM_LABELS = listOf("Install", "Update", "Continue", "OK")
     }
 }

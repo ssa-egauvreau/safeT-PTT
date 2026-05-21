@@ -2,6 +2,7 @@
 // PCM, and (when permitted) captures the microphone and transmits.
 
 import { getToken, type Permission } from "../api";
+import { ImbeTxConditioner } from "./imbeTxConditioner";
 import { imbeDecode, imbeEncode, imbeReady, initImbe } from "./imbeVocoder";
 import { loadMarker1033Pcm } from "./marker1033";
 
@@ -187,6 +188,7 @@ export class VoiceChannelClient {
   /** Active looping soundboard tone-outs, keyed by tone-out id. */
   private readonly customLoops = new Map<number, number>();
   private digitalTx = true;
+  private readonly txConditioner = new ImbeTxConditioner();
   private gestureUnbind: (() => void) | null = null;
 
   private lastInboundMs = 0;
@@ -483,6 +485,7 @@ export class VoiceChannelClient {
       await this.capCtx.resume();
     }
 
+    this.txConditioner.reset();
     this.capSource = this.capCtx.createMediaStreamSource(this.micStream);
     // Parallel analyser tap for the TX waveform (the worklet path is untouched).
     this.capAnalyser = this.capCtx.createAnalyser();
@@ -495,8 +498,11 @@ export class VoiceChannelClient {
         return;
       }
       if (this.digitalTx && imbeReady()) {
-        // Encode to P25 IMBE so transmissions carry the digital-voice character.
-        for (const frame of encodeImbeFrames(new Int16Array(event.data))) {
+        // Condition then encode to P25 IMBE so transmissions carry the
+        // digital-voice character without riding background noise.
+        const pcm = new Int16Array(event.data);
+        this.txConditioner.process(pcm);
+        for (const frame of encodeImbeFrames(pcm)) {
           ws.send(frame);
         }
       } else {
