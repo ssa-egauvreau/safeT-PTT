@@ -8,8 +8,8 @@ import com.securityradio.ptt.DisplayRouter
  * Pins the activity to a stable orientation so rugged handsets do not boot "sideways"
  * after firmware OTA or scrcpy display-off/reboot (sensor state can be wrong once).
  *
- * Inrico IRC590 / TM-7 / S200 layouts are portrait-first. MP22 dual-display units lock to
- * whichever axis matches the display the activity is on (physical panel vs virtual scrcpy).
+ * IRC590 and TM-7 Plus use a **horizontal** (landscape) panel. S200 and phones stay portrait.
+ * MP22 dual-display units lock to whichever axis matches the active display.
  */
 object HandsetOrientation {
 
@@ -33,8 +33,8 @@ object HandsetOrientation {
         return when (resolved) {
             ResolvedDeviceProfile.IRC590,
             ResolvedDeviceProfile.TM7_PLUS,
+            -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             ResolvedDeviceProfile.S200,
-            -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             ResolvedDeviceProfile.RESPONSIVE,
             ResolvedDeviceProfile.UNIVERSAL,
             -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT

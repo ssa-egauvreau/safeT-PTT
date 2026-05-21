@@ -42,7 +42,6 @@
             android:launchMode="singleTop"
             android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
-            android:screenOrientation="portrait"
             android:theme="@style/Theme.SecurityRadio" />
 
         <service
