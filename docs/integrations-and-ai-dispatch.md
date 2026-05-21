@@ -8,7 +8,7 @@ safeT separates **who configures what**:
 | **Per agency (Admin → Integrations)** | Each tenant’s admin | ElevenLabs API key & voice, **agency system prompt** (10-codes, call signs), outbound webhook |
 | **Per channel (dispatch console)** | Channel panel | Turn AI dispatcher on/off per channel (like 10-33 marker) |
 
-License plate lookup, VIN decode, and similar tools will use **Integrations → Lookups** when those portal features are added.
+**10-8 Systems (CAD + webhook)** and **plate/VIN lookup** are configured per agency under **Admin → Integrations**, not Railway Variables. Railway is only for platform-wide AI (Anthropic/OpenAI) and optional global fallbacks (see below).
 
 ---
 
@@ -48,7 +48,9 @@ Restart the service after changing env vars.
 - **ElevenLabs voice ID** — Voice from your ElevenLabs library.
 - **AI dispatcher system prompt** — **Your agency’s** instructions: local 10-codes, unit/call sign format, tone, and radio policy. If this field is empty, **Sunset Safety** agencies use the built-in prompt exported from the 10-8 AI dashboard; other agencies use `AI_DISPATCH_SYSTEM_PROMPT` from Railway.
 - **Outbound webhook URL** — Optional HTTPS URL; safeT POSTs JSON when the AI dispatcher sends a reply.
-- **License plate / VIN** — Shown as *Coming soon*; reserved for portal lookup features.
+- **Lookups** — PlateToVIN key, optional VIN (Auto.dev) key, default plate state.
+- **Webhooks** — **10-8 webhook bearer token** (what 10-8 sends as `Authorization: Bearer …`).
+- **10-8 CAD** — API key + secret, optional base URL, **live CAD writes** (`1` = post comments, `0` = shadow/log only).
 
 Secrets are stored per `agency_id` in Postgres (`agency_integrations`). The API never returns full secret values—only masked hints (e.g. `••••abcd` for keys, or character count for the multiline prompt).
 
@@ -91,8 +93,8 @@ Point **10-8 Systems** incident export at:
 
 `https://YOUR_SAFET_HOST/v1/webhooks/10-8?agency=YOUR_AGENCY_SLUG`
 
-- **Auth:** Bearer token — set `ten8_webhook_secret` under **Admin → Integrations → Webhooks**, or Railway `TEN8_WEBHOOK_SECRET`.
-- **Agency:** `agency` query must match your agency slug (or set Railway `TEN8_WEBHOOK_AGENCY_SLUG`).
+- **Auth:** Bearer token — set **10-8 webhook bearer token** under **Admin → Integrations → Webhooks** (recommended). Railway `TEN8_WEBHOOK_SECRET` is an optional operator fallback only.
+- **Agency:** `agency` query must match your agency slug (e.g. `?agency=metro-fire`). Railway `TEN8_WEBHOOK_AGENCY_SLUG` is optional if you always use the query param.
 
 Active incidents appear on **Command → AI dispatch activity log**.
 
@@ -103,6 +105,8 @@ Active incidents appear on **Command → AI dispatch activity log**.
 - **License plate lookup API key** — PlateToVIN.com key (912 plate readbacks).
 - **VIN lookup API key** — Auto.dev (optional; uses plate key if empty).
 - **Default plate state** — e.g. `CA`.
+
+Do **not** put plate keys in Railway for normal agency setup. Optional env fallbacks (`PLATE_LOOKUP_DEFAULT_STATE`, `PLATE_LOOKUP_PROVIDER`) exist for operators only; per-agency keys in Integrations take precedence.
 
 ## 10-8 CAD writes (optional)
 
