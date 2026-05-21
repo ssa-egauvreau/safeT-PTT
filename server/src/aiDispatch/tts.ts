@@ -1,4 +1,5 @@
 import { getAgencyIntegrationValue } from "../store.js";
+import { prepareTextForTts } from "./speech/prepareTextForTts.js";
 
 /** Eleven v3 — expressive dispatcher voice (higher latency than Flash/Turbo). */
 const DEFAULT_MODEL_ID = "eleven_v3";
@@ -59,7 +60,7 @@ export async function synthesizeElevenLabsMp3(agencyId: number, text: string): P
       accept: "audio/mpeg",
     },
     body: JSON.stringify({
-      text: text.slice(0, 2_000),
+      text: prepareTextForTts(text).slice(0, 2_000),
       model_id: elevenLabsModelId(),
       voice_settings: elevenLabsVoiceSettings(),
     }),
