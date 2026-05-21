@@ -1035,6 +1035,35 @@ export async function listTransmissions(opts: {
 }
 
 /** Audio bytes for one transmission. When `agencyId` is given, the row must belong to it. */
+export interface TransmissionDispatchContext {
+  id: number;
+  agency_id: number;
+  channel_name: string;
+  unit_id: string | null;
+  display_name: string | null;
+  started_at: string;
+}
+
+export async function getTransmissionDispatchContext(id: number): Promise<TransmissionDispatchContext | null> {
+  const res = await requirePool().query<TransmissionDispatchContext>(
+    `SELECT id, agency_id, channel_name, unit_id, display_name, started_at
+       FROM transmissions WHERE id = $1;`,
+    [id],
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function getChannelAiDispatchRow(
+  agencyId: number,
+  channelName: string,
+): Promise<{ enabled: boolean; yields_to_units: boolean } | null> {
+  const res = await requirePool().query<{ enabled: boolean; yields_to_units: boolean }>(
+    `SELECT enabled, yields_to_units FROM channel_ai_dispatch WHERE agency_id = $1 AND channel_name = $2;`,
+    [agencyId, channelName],
+  );
+  return res.rows[0] ?? null;
+}
+
 export async function getTransmissionAudio(
   id: number,
   agencyId?: number,

@@ -55,6 +55,10 @@ import {
   listInboxAlerts,
   listTen33Channels,
   setChannelTen33,
+  setChannelAiDispatch,
+  listChannelAiDispatchEnabled,
+  getChannelAiDispatchRow,
+  getAgencyIntegrationValue,
   listMemberships,
   listPositions,
   listPositionHistory,
@@ -101,6 +105,7 @@ import {
 import { getPool } from "./db.js";
 import { getCachedAuth, invalidateCachedAuth, setCachedAuth } from "./sessionCache.js";
 import { handleListIntegrations, handleSetIntegration } from "./integrations/adminApi.js";
+import { getAiDispatchPlatformStatus } from "./aiDispatch/platformConfig.js";
 
 /** Legacy global radio key — lets a handset fetch its agency's custom tones. */
 const radioApiKey = process.env.RADIO_API_KEY?.trim();
@@ -409,6 +414,7 @@ export function createApiRouter(): Router {
       if (me.role === "admin" || me.role === "dispatcher") {
         const all = await listChannels(me.agencyId!);
         const sims = await listSimulcasts(me.agencyId!);
+        const aiEnabled = new Set(await listChannelAiDispatchEnabled(me.agencyId!));
         res.json({
           channels: [
             ...all.map((c) => ({
@@ -418,6 +424,7 @@ export function createApiRouter(): Router {
               zone: c.zone,
               permission: "talk_priority",
               simulcast: false,
+              ai_dispatch_enabled: aiEnabled.has(c.name),
             })),
             // Simulcast channels carry a negative id so they never collide with
             // a real channel id in the console's open-channel set.
@@ -1929,6 +1936,64 @@ export function createApiRouter(): Router {
 
   // Dispatcher toggles the 10-33 marker for a channel; radios poll this via
   // /radio/inbox and show a warning icon while their tuned channel is flagged.
+  router.get("/ai-dispatch/status", requireAgencyMember, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const platform = getAiDispatchPlatformStatus();
+      const elevenKey = await getAgencyIntegrationValue(agencyId, "elevenlabs_api_key");
+      const voiceId = await getAgencyIntegrationValue(agencyId, "elevenlabs_voice_id");
+      const prompt = await getAgencyIntegrationValue(agencyId, "ai_dispatch_system_prompt");
+      res.json({
+        platform_enabled: platform.enabled,
+        platform_llm_configured: platform.llmConfigured,
+        agency_tts_configured: !!elevenKey && !!voiceId,
+        agency_prompt_configured: !!prompt,
+        model: platform.model,
+        dispatch_unit_id: platform.dispatchUnitId,
+      });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.post("/channels/ai-dispatch", requireAgencyOperator, async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const channel = String(body.channel ?? "").trim();
+      if (!channel) {
+        res.status(400).json({ error: "missing_channel" });
+        return;
+      }
+      const enabled = body.enabled === true;
+      await setChannelAiDispatch(req.authUser!.agencyId!, channel, enabled);
+      await writeAudit({
+        agencyId: req.authUser!.agencyId!,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: enabled ? "ai_dispatch_on" : "ai_dispatch_off",
+        target: channel,
+        ip: clientIp(req),
+      });
+      res.json({ ok: true, enabled });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.get("/channels/ai-dispatch", requireAgencyOperator, async (req, res) => {
+    try {
+      const channel = String(req.query.channel ?? "").trim();
+      if (!channel) {
+        res.status(400).json({ error: "missing_channel" });
+        return;
+      }
+      const row = await getChannelAiDispatchRow(req.authUser!.agencyId!, channel);
+      res.json({ enabled: row?.enabled === true });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
   router.post("/channels/ten33", requireAgencyOperator, async (req, res) => {
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;

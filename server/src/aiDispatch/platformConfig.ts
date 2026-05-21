@@ -1,7 +1,9 @@
 /**
  * Platform-wide AI dispatcher settings — set on Railway (or host env), not per agency.
- * Per-agency API keys (ElevenLabs, webhooks, future plate/VIN keys) live in agency_integrations.
+ * Per-agency API keys, system prompt, and webhooks live in agency_integrations.
  */
+
+import { getAgencyIntegrationValue } from "../store.js";
 
 export interface AiDispatchPlatformConfig {
   enabled: boolean;
@@ -59,4 +61,24 @@ export function getAiDispatchPlatformStatus(): {
     model: c.llmModel,
     dispatchUnitId: c.dispatchUnitId,
   };
+}
+
+/** Agency prompt overrides Railway default when set in Admin → Integrations. */
+export async function resolveAiDispatchSystemPrompt(agencyId: number): Promise<string> {
+  const custom = await getAgencyIntegrationValue(agencyId, "ai_dispatch_system_prompt");
+  if (custom?.trim()) {
+    return custom.trim();
+  }
+  return getAiDispatchPlatformConfig().defaultSystemPrompt;
+}
+
+export function normalizeDispatchUnitId(unitId: string): string {
+  return unitId.trim().toUpperCase();
+}
+
+export function isAiDispatchUnit(unitId: string | null | undefined): boolean {
+  if (!unitId?.trim()) {
+    return false;
+  }
+  return normalizeDispatchUnitId(unitId) === normalizeDispatchUnitId(getAiDispatchPlatformConfig().dispatchUnitId);
 }

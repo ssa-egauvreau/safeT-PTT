@@ -12,6 +12,9 @@ export function maskSecret(value: string, kind: IntegrationFieldKind): string | 
     }
     return `••••${trimmed.slice(-4)}`;
   }
+  if (kind === "multiline") {
+    return `${trimmed.length.toLocaleString()} characters configured`;
+  }
   if (kind === "url" && trimmed.length > 48) {
     return `${trimmed.slice(0, 24)}…${trimmed.slice(-12)}`;
   }

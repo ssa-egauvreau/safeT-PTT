@@ -67,6 +67,9 @@ export function ChannelPanel({
   const [voiceDetail, setVoiceDetail] = useState<string | null>(null);
   const [permission, setPermission] = useState<Permission>(channel.permission);
   const [marker, setMarker] = useState(false);
+  const [aiDispatch, setAiDispatch] = useState(channel.ai_dispatch_enabled === true);
+  const [aiDispatchReady, setAiDispatchReady] = useState(false);
+  const [aiDispatchHint, setAiDispatchHint] = useState<string | null>(null);
   const [txDigital, setTxDigital] = useState(() => loadTxDigital(channel.id));
   const [volume, setVolume] = useState(() => loadVolume(channel.id));
   const [muted, setMuted] = useState(() => loadMuted(channel.id));
@@ -313,6 +316,51 @@ export function ChannelPanel({
     void startTx();
   }
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [status, row] = await Promise.all([
+          api.getAiDispatchStatus(),
+          api.getChannelAiDispatch(channel.name),
+        ]);
+        if (cancelled) {
+          return;
+        }
+        setAiDispatch(row.enabled);
+        setAiDispatchReady(true);
+        const hints: string[] = [];
+        if (!status.platform_enabled) {
+          hints.push("AI dispatcher is off on the server (Railway).");
+        } else if (!status.platform_llm_configured) {
+          hints.push("Server LLM API key is not set.");
+        }
+        if (!status.agency_tts_configured) {
+          hints.push("Set ElevenLabs key and voice under Admin → Integrations.");
+        }
+        setAiDispatchHint(hints.length > 0 ? hints.join(" ") : null);
+      } catch {
+        if (!cancelled) {
+          setAiDispatchReady(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [channel.name]);
+
+  function toggleAiDispatch() {
+    if (!aiDispatchReady) {
+      return;
+    }
+    const next = !aiDispatch;
+    setAiDispatch(next);
+    void api.setChannelAiDispatch(channel.name, next).catch(() => {
+      setAiDispatch(!next);
+    });
+  }
+
   function toggleMarker() {
     const client = clientRef.current;
     if (!client) {
@@ -515,6 +563,26 @@ export function ChannelPanel({
         <span>{marker ? "10-33 MARKER ON" : "10-33 CHANNEL MARKER"}</span>
       </button>
       {marker && <div className="marker-note">Emergency traffic — marker tone every 12s</div>}
+
+      <button
+        className={aiDispatch ? "marker-button active" : "marker-button"}
+        disabled={!aiDispatchReady}
+        onClick={toggleAiDispatch}
+        title={
+          aiDispatchHint ??
+          "When on, unit transmissions on this channel can trigger an AI dispatcher reply on the air."
+        }
+      >
+        <span>{aiDispatch ? "AI DISPATCH ON" : "AI DISPATCH OFF"}</span>
+      </button>
+      {aiDispatchHint && (
+        <div className="marker-note muted">{aiDispatchHint}</div>
+      )}
+      {aiDispatch && !aiDispatchHint && (
+        <div className="marker-note">
+          Unit traffic is transcribed; AI replies as {channel.name} traffic when configured.
+        </div>
+      )}
 
       <div className="toneout">
         <div className="toneout-row">

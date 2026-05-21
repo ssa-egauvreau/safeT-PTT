@@ -76,6 +76,8 @@ export interface UserChannel {
   zone: string | null;
   /** True for a simulcast channel — keying it transmits on several real channels. */
   simulcast?: boolean;
+  /** Per-channel AI dispatcher (dispatch console only). */
+  ai_dispatch_enabled?: boolean;
 }
 
 export interface Simulcast {
@@ -196,7 +198,7 @@ export interface IntegrationItem {
   key: string;
   label: string;
   description: string;
-  kind: "secret" | "text" | "url";
+  kind: "secret" | "text" | "url" | "multiline";
   availability: "active" | "coming_soon";
   placeholder?: string;
   configured: boolean;
@@ -438,6 +440,28 @@ export const api = {
   /** Toggles the 10-33 channel marker so radios on that channel show a warning icon. */
   setChannelTen33: (channelName: string, active: boolean) =>
     request<{ ok: boolean }>("POST", "/v1/channels/ten33", { channel: channelName, active }),
+
+  getAiDispatchStatus: () =>
+    request<{
+      platform_enabled: boolean;
+      platform_llm_configured: boolean;
+      agency_tts_configured: boolean;
+      agency_prompt_configured: boolean;
+      model: string;
+      dispatch_unit_id: string;
+    }>("GET", "/v1/ai-dispatch/status"),
+
+  setChannelAiDispatch: (channelName: string, enabled: boolean) =>
+    request<{ ok: boolean; enabled: boolean }>("POST", "/v1/channels/ai-dispatch", {
+      channel: channelName,
+      enabled,
+    }),
+
+  getChannelAiDispatch: (channelName: string) =>
+    request<{ enabled: boolean }>(
+      "GET",
+      `/v1/channels/ai-dispatch?channel=${encodeURIComponent(channelName)}`,
+    ),
 
   channelRoster: (channel: string) =>
     request<{ members: ChannelMember[] }>("GET", `/v1/channels/roster?channel=${encodeURIComponent(channel)}`),

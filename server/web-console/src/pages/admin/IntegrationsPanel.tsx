@@ -148,7 +148,8 @@ function IntegrationRow(props: {
 }) {
   const { item, draft, busy, onDraftChange, onSave, onClear } = props;
   const comingSoon = item.availability === "coming_soon";
-  const inputType = item.kind === "secret" ? "password" : "text";
+  const inputType = item.kind === "secret" ? "password" : item.kind === "url" ? "url" : "text";
+  const isMultiline = item.kind === "multiline";
 
   return (
     <div
@@ -175,19 +176,31 @@ function IntegrationRow(props: {
       </p>
       {!comingSoon && (
         <>
-          <input
-            type={inputType}
-            className="input"
-            style={{ width: "100%", maxWidth: "32rem" }}
-            placeholder={
-              item.configured && item.kind === "secret"
-                ? "Leave blank to keep current; paste new value to replace"
-                : item.placeholder ?? ""
-            }
-            value={draft ?? ""}
-            onChange={(e) => onDraftChange(e.target.value)}
-            autoComplete="off"
-          />
+          {isMultiline ? (
+            <textarea
+              className="input"
+              rows={10}
+              style={{ width: "100%", maxWidth: "42rem", fontFamily: "inherit" }}
+              placeholder={item.placeholder ?? "Agency-specific 10-codes, call signs, tone…"}
+              value={draft ?? ""}
+              onChange={(e) => onDraftChange(e.target.value)}
+              autoComplete="off"
+            />
+          ) : (
+            <input
+              type={inputType}
+              className="input"
+              style={{ width: "100%", maxWidth: "32rem" }}
+              placeholder={
+                item.configured && item.kind === "secret"
+                  ? "Leave blank to keep current; paste new value to replace"
+                  : item.placeholder ?? ""
+              }
+              value={draft ?? ""}
+              onChange={(e) => onDraftChange(e.target.value)}
+              autoComplete="off"
+            />
+          )}
           <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
             <button type="button" className="btn" disabled={busy} onClick={onSave}>
               {busy ? "Saving…" : "Save"}

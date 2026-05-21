@@ -1,6 +1,7 @@
 // Background transcription of recorded transmissions using a self-hosted Whisper
 // model (transformers.js / ONNX). Best-effort: failures never block recording.
 
+import { enqueueAiDispatchForTransmission } from "./aiDispatch/engine.js";
 import { decodeWavToFloat32 } from "./wav.js";
 import { getTransmissionAudio, listPendingTranscriptionIds, setTranscript } from "./store.js";
 
@@ -53,7 +54,11 @@ async function transcribeOne(id: number): Promise<void> {
       return;
     }
     const result = await run(samples, { chunk_length_s: 30, stride_length_s: 5 });
-    await setTranscript(id, "done", (result?.text ?? "").trim());
+    const text = (result?.text ?? "").trim();
+    await setTranscript(id, "done", text);
+    if (text) {
+      enqueueAiDispatchForTransmission(id);
+    }
   } catch (error) {
     console.warn(`Transcription failed for transmission ${id}`, error);
     await setTranscript(id, "failed", null).catch(() => undefined);

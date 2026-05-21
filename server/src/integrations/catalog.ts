@@ -3,7 +3,7 @@
  * Platform-wide AI dispatcher behavior is configured via Railway env (see aiDispatch/platformConfig.ts).
  */
 
-export type IntegrationFieldKind = "secret" | "text" | "url";
+export type IntegrationFieldKind = "secret" | "text" | "url" | "multiline";
 
 export type IntegrationAvailability = "active" | "coming_soon";
 
@@ -36,6 +36,18 @@ export const INTEGRATION_DEFINITIONS: IntegrationDefinition[] = [
     group: "ai_dispatch",
     availability: "active",
     placeholder: "e.g. 21m00Tcm4TlvDq8ikWAM",
+  },
+  {
+    key: "ai_dispatch_system_prompt",
+    label: "AI dispatcher system prompt",
+    description:
+      "Instructions for your agency only: 10-codes, call signs, tone, and local radio policy. " +
+      "If empty, the server default from Railway is used.",
+    kind: "multiline",
+    group: "ai_dispatch",
+    availability: "active",
+    placeholder:
+      "Example: You are dispatch for Metro Fire. Use 10-4 for acknowledge. Units are called by number…",
   },
   {
     key: "outbound_webhook_url",

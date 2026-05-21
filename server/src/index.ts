@@ -19,6 +19,7 @@ import {
   closeAllVoiceConnections,
   peekVoiceTransmittingTalker,
 } from "./voiceRelay.js";
+import { configureAiDispatchEngine } from "./aiDispatch/engine.js";
 import { startBridgeWorker } from "./bridgeWorker.js";
 
 const app = express();
@@ -284,6 +285,7 @@ async function main(): Promise<void> {
     console.log(`Voice relay WebSocket path ${VOICE_WS_PATH}`);
     console.log(`DATABASE_URL ${process.env.DATABASE_URL ? "configured" : "not set (in-memory defaults)"}`);
     // The radio-bridge worker ingests stream-URL bridges onto their channels.
+    configureAiDispatchEngine({ port });
     startBridgeWorker({ port });
   });
 

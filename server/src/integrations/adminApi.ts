@@ -95,7 +95,12 @@ export async function handleSetIntegration(req: Request, res: Response): Promise
   }
 
   const body = req.body as { value?: unknown };
-  const value = body?.value === undefined || body?.value === null ? "" : String(body.value).trim();
+  let value = body?.value === undefined || body?.value === null ? "" : String(body.value).trim();
+  const maxLen = def.kind === "multiline" ? 16_000 : 4_096;
+  if (value.length > maxLen) {
+    res.status(400).json({ error: "value_too_long" });
+    return;
+  }
 
   if (def.kind === "url" && value.length > 0) {
     try {
