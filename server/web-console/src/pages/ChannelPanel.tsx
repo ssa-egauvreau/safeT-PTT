@@ -432,24 +432,26 @@ export function ChannelPanel({
           <span className="ch-card-label">{channel.name}</span>
           {channel.simulcast && <span className="chan-sim-tag">SIM</span>}
         </button>
-        {monitoring && (
-          <span className={`state-chip ${voiceState}`}>{STATE_LABEL[voiceState]}</span>
-        )}
-        {monitoring && receiving && !transmitting && <span className="state-chip busy">BUSY</span>}
         {monitoring &&
-          (primary ? (
-            <span className="cp-primary" title="Keyboard PTT controls this channel">
-              PTT
+          (!expanded && connected ? (
+            <span
+              className={`ch-mini-wave${transmitting ? " tx" : receiving ? " rx" : ""}`}
+              title={transmitting ? "On air" : receiving ? "Receiving" : "Listening"}
+            >
+              <Waveform
+                getLevel={() => clientRef.current?.getLevel() ?? 0}
+                active={transmitting || receiving}
+                variant={transmitting ? "tx" : "rx"}
+                bars={10}
+                height={18}
+              />
             </span>
           ) : (
-            <button
-              className="ch-setprimary"
-              onClick={onMakePrimary}
-              title="Use the keyboard PTT for this channel"
-            >
-              Set PTT
-            </button>
+            <span className={`state-chip ${voiceState}`}>{STATE_LABEL[voiceState]}</span>
           ))}
+        {monitoring && expanded && receiving && !transmitting && (
+          <span className="state-chip busy">BUSY</span>
+        )}
         <button
           className={monitoring ? "ch-power active" : "ch-power"}
           onClick={onToggleMonitor}
@@ -483,6 +485,24 @@ export function ChannelPanel({
       <div className="live-meta">
         Permission: <strong>{PERMISSION_LABEL[permission]}</strong>
       </div>
+
+      {monitoring && (
+        <div className="cp-ptt-assign">
+          {primary ? (
+            <span className="cp-primary" title="Keyboard PTT controls this channel">
+              Keyboard PTT
+            </span>
+          ) : (
+            <button
+              className="ch-setprimary"
+              onClick={onMakePrimary}
+              title="Use the keyboard PTT for this channel"
+            >
+              Set as keyboard PTT
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="volume-row">
         <button
