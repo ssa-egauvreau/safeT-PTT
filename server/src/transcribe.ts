@@ -8,6 +8,13 @@ import { decodeWavToFloat32 } from "./wav.js";
 
 const ENABLED = (process.env.TRANSCRIPTION ?? "on").trim().toLowerCase() !== "off";
 const MODEL = process.env.WHISPER_MODEL?.trim() || "Xenova/whisper-tiny.en";
+/**
+ * Quantization for the ONNX weights. Default fp32 loads ~4x the memory and is the slowest on CPU;
+ * a memory-constrained Railway instance can OOM mid-inference, leaving transmissions stuck on
+ * "Transcribing…". q8 quarters the footprint and is much faster on CPU. Override with WHISPER_DTYPE
+ * (fp32 / fp16 / q8 / q4) if a model lacks quantized weights.
+ */
+const DTYPE = process.env.WHISPER_DTYPE?.trim() || "q8";
 /** After a failed model load, wait before retrying (Railway OOM / cold start). */
 const LOAD_RETRY_MS = Number(process.env.WHISPER_LOAD_RETRY_MS) || 120_000;
 /**
@@ -67,12 +74,19 @@ async function ensurePipeline(): Promise<WhisperPipeline | null> {
       try {
         const moduleName = "@huggingface/transformers";
         const transformers = (await import(moduleName)) as {
-          pipeline: (task: string, model: string) => Promise<WhisperPipeline>;
+          pipeline: (
+            task: string,
+            model: string,
+            options?: Record<string, unknown>,
+          ) => Promise<WhisperPipeline>;
         };
-        pipelineFn = await transformers.pipeline("automatic-speech-recognition", MODEL);
+        pipelineFn = await transformers.pipeline("automatic-speech-recognition", MODEL, {
+          dtype: DTYPE,
+          device: "cpu",
+        });
         state = "ready";
         lastLoadFailedAt = 0;
-        console.log(`Transcriber ready (model ${MODEL}).`);
+        console.log(`Transcriber ready (model ${MODEL}, dtype ${DTYPE}).`);
       } catch (error) {
         state = "broken";
         lastLoadFailedAt = Date.now();
