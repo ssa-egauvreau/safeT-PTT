@@ -8,6 +8,14 @@ function bearerToken(req: Request): string | null {
   if (h.toLowerCase().startsWith("bearer ")) {
     return h.slice(7).trim();
   }
+  // 10-8 Systems' webhook config can't send custom headers, so also accept the shared secret as a
+  // URL query param (?token= / ?secret= / ?key=) appended to the webhook URL. Sent over HTTPS.
+  for (const key of ["token", "secret", "key"] as const) {
+    const v = req.query[key];
+    if (typeof v === "string" && v.trim()) {
+      return v.trim();
+    }
+  }
   return null;
 }
 
@@ -84,7 +92,8 @@ export async function handleTen8Webhook(req: Request, res: Response): Promise<vo
 export async function handleTen8WebhookGet(_req: Request, res: Response): Promise<void> {
   res.json({
     ok: true,
-    message: "10-8 webhook endpoint. POST JSON incident exports with Bearer auth.",
-    url_hint: "POST /v1/webhooks/10-8?agency=YOUR_AGENCY_SLUG",
+    message:
+      "10-8 webhook endpoint. POST JSON incident exports. Auth via Bearer header OR a ?token= query param matching TEN8_WEBHOOK_SECRET / ten8_webhook_secret.",
+    url_hint: "POST /v1/webhooks/10-8?agency=YOUR_AGENCY_SLUG&token=YOUR_WEBHOOK_SECRET",
   });
 }

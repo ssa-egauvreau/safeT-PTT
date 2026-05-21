@@ -108,9 +108,9 @@ Migrate from the **10-8 alert dashboard** Railway project into **Admin → Integ
 
 Point **10-8 Systems** incident export at:
 
-`https://YOUR_SAFET_HOST/v1/webhooks/10-8?agency=YOUR_AGENCY_SLUG`
+`https://YOUR_SAFET_HOST/v1/webhooks/10-8?agency=YOUR_AGENCY_SLUG&token=YOUR_WEBHOOK_SECRET`
 
-- **Auth:** Bearer = value from **10-8 incident export bearer token** (same as old `WEBHOOK_SECRET`).
+- **Auth:** the shared secret (`TEN8_WEBHOOK_SECRET` env, or `ten8_webhook_secret` in Integrations) may be sent **either** as `Authorization: Bearer …` **or**, when 10-8 can't set headers, as the `token=` (also accepts `secret=`/`key=`) query param shown above. In production a secret is required; unauthenticated posts get **401**.
 - **Agency:** `agency` query must match your agency slug.
 
 Active incidents appear on **Command → AI dispatch activity log**.
