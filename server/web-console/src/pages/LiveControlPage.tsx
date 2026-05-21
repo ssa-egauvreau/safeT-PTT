@@ -32,6 +32,7 @@ export function LiveControlPage() {
   const [allChannels, setAllChannels] = useState<string[]>([]);
   const [reason, setReason] = useState<(typeof MOVE_REASONS)[number]>("Reassigned");
   const [dragOver, setDragOver] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,22 +81,55 @@ export function LiveControlPage() {
       .sort((a, b) => a.channel.localeCompare(b.channel));
   }, [allChannels, rosters]);
 
-  async function move(unitId: string, fromChannel: string, toChannel: string) {
-    if (fromChannel === toChannel) {
+  // unit_id -> the channel it's currently on (for bulk moves across channels).
+  const unitChannel = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const group of channels) {
+      for (const m of group.members) {
+        map.set(m.unit_id, group.channel);
+      }
+    }
+    return map;
+  }, [channels]);
+
+  function toggleSelected(unitId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(unitId)) {
+        next.delete(unitId);
+      } else {
+        next.add(unitId);
+      }
+      return next;
+    });
+  }
+
+  async function moveMany(units: string[], toChannel: string) {
+    const moves = units.filter((u) => unitChannel.get(u) !== toChannel);
+    if (moves.length === 0) {
       return;
     }
     setStatus(null);
+    setError(null);
     try {
-      const res = await api.moveUnit({ unitId, fromChannel, toChannel, reason });
-      setStatus(
-        res.reached > 0
-          ? `Moved ${aliasFor(unitId)} to ${toChannel}.`
-          : `${aliasFor(unitId)} isn't connected — move not delivered.`,
+      const results = await Promise.all(
+        moves.map((unitId) =>
+          api.moveUnit({ unitId, fromChannel: unitChannel.get(unitId) ?? null, toChannel, reason }),
+        ),
       );
+      const reached = results.filter((r) => r.reached > 0).length;
+      setStatus(
+        moves.length === 1
+          ? results[0]!.reached > 0
+            ? `Moved ${aliasFor(moves[0]!)} to ${toChannel}.`
+            : `${aliasFor(moves[0]!)} isn't connected — move not delivered.`
+          : `Moved ${reached}/${moves.length} units to ${toChannel}.`,
+      );
+      setSelected(new Set());
       const fresh = await api.channelRosters();
       setRosters(fresh.channels);
     } catch {
-      setError(`Could not move ${aliasFor(unitId)}.`);
+      setError("Could not complete the move.");
     }
   }
 
@@ -118,9 +152,18 @@ export function LiveControlPage() {
         </div>
 
         <p className="lcc-hint">
-          Drag a unit from one channel onto another to move them live. They&apos;ll retune and see a
-          &ldquo;you were moved&rdquo; banner. Every move is written to the audit log.
+          Click units to select several, then drag any one onto a channel to move them together.
+          Moved units retune and see a &ldquo;you were moved&rdquo; banner; every move is audit-logged.
         </p>
+
+        {selected.size > 0 && (
+          <div className="lcc-selbar">
+            <span>{selected.size} selected</span>
+            <button className="btn sm" onClick={() => setSelected(new Set())}>
+              Clear selection
+            </button>
+          </div>
+        )}
 
         {error && <div className="banner error">{error}</div>}
         {status && <div className="banner info">{status}</div>}
@@ -139,10 +182,12 @@ export function LiveControlPage() {
                 e.preventDefault();
                 setDragOver(null);
                 const unit = e.dataTransfer.getData("text/unit");
-                const from = e.dataTransfer.getData("text/from");
-                if (unit) {
-                  void move(unit, from, group.channel);
+                if (!unit) {
+                  return;
                 }
+                // Dragging a selected unit moves the whole selection; otherwise just it.
+                const units = selected.has(unit) ? [...selected] : [unit];
+                void moveMany(units, group.channel);
               }}
             >
               <div className="lcc-channel-head">
@@ -156,14 +201,14 @@ export function LiveControlPage() {
                 group.members.map((m) => (
                   <div
                     key={`${m.unit_id}-${m.kind}`}
-                    className="lcc-unit"
+                    className={`lcc-unit${selected.has(m.unit_id) ? " selected" : ""}`}
                     draggable
+                    onClick={() => toggleSelected(m.unit_id)}
                     onDragStart={(e) => {
                       e.dataTransfer.setData("text/unit", m.unit_id);
-                      e.dataTransfer.setData("text/from", group.channel);
                       e.dataTransfer.effectAllowed = "move";
                     }}
-                    title="Drag to another channel to move this unit"
+                    title="Click to select · drag to another channel to move"
                   >
                     <IconUser size={13} />
                     <span className="lcc-unit-name">{m.display_name || aliasFor(m.unit_id)}</span>
