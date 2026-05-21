@@ -3,11 +3,11 @@ import { prepareTextForTts } from "./speech/prepareTextForTts.js";
 import { getTtsPrecacheHit, scheduleAgencyTtsPrecache } from "./ttsPrecache.js";
 
 /**
- * Expressive dispatcher voice. `eleven_v3` needs an ElevenLabs account with v3 API access; this
- * deployment has it. If a future key lacks v3 access the TTS call 4xxs and the dispatcher goes
- * silent — set ELEVENLABS_MODEL_ID=eleven_turbo_v2_5 (real-time, broadly available) to fall back.
+ * Real-time dispatcher voice. `eleven_v3` is not served on the synchronous /text-to-speech
+ * endpoint used below, so selecting it makes the call 4xx and the dispatcher go silent. Default to
+ * `eleven_turbo_v2_5` (real-time, broadly available); set ELEVENLABS_MODEL_ID to override.
  */
-const DEFAULT_MODEL_ID = "eleven_v3";
+const DEFAULT_MODEL_ID = "eleven_turbo_v2_5";
 
 /**
  * Stability presets (UI labels → API value):
