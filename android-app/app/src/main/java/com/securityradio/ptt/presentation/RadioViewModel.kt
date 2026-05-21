@@ -101,6 +101,9 @@ class RadioViewModel(
 
     private var lastWakeEmittedAtMs: Long = 0L
 
+    /** Keeps the "MOVED TO" banner on screen past the immediate re-join "VOICE ON" ack. */
+    private var moveBannerUntilMs: Long = 0L
+
     private var channelNames: List<String> = emptyList()
     private var channelIndex: Int = 0
 
@@ -234,27 +237,37 @@ class RadioViewModel(
         }
         viewModelScope.launch {
             voiceRelay.controlEvents.collect { event ->
-                val hint = when (event) {
+                val hint: String? = when (event) {
                     is VoiceControlEvent.Joined ->
-                        "VOICE ON ${event.channel.uppercase(Locale.US)}"
+                        // A dispatcher move re-joins the target channel immediately after, so the
+                        // "VOICE ON" ack would otherwise stomp the "MOVED TO" banner before the
+                        // operator can read it. Hold the banner for a short window after a move.
+                        if (SystemClock.elapsedRealtime() < moveBannerUntilMs) {
+                            null
+                        } else {
+                            "VOICE ON ${event.channel.uppercase(Locale.US)}"
+                        }
                     is VoiceControlEvent.Error -> voiceErrorHint(event.code)
                     is VoiceControlEvent.Busy -> {
                         val peer = event.holderUnit?.trim()?.uppercase(Locale.US)
                         if (peer != null) "CHANNEL BUSY — $peer" else "CHANNEL BUSY"
                     }
                     is VoiceControlEvent.Moved -> {
-                        // Dispatcher retuned this radio (Live Channel Control). Tune to the
-                        // target channel and announce the move.
+                        // Dispatcher retuned this radio (Live Channel Control). Tune to the target
+                        // channel, speak the move, and keep the banner up past the re-join ack.
+                        val by = event.by?.trim()?.takeIf { it.isNotEmpty() }
                         tuneToChannelByName(event.channel)
                         soundPlayer.playChannelSwitch {
-                            speechHelper.speakChannelTuneIfEnabled(event.channel)
+                            speechHelper.speakMoved(event.channel, by)
                         }
-                        val by = event.by?.trim()?.uppercase(Locale.US)
+                        moveBannerUntilMs = SystemClock.elapsedRealtime() + MOVE_BANNER_MS
                         val dest = event.channel.uppercase(Locale.US)
-                        if (by != null) "MOVED TO $dest BY $by" else "MOVED TO $dest"
+                        if (by != null) "MOVED TO $dest BY ${by.uppercase(Locale.US)}" else "MOVED TO $dest"
                     }
                 }
-                _uiState.update { it.copy(statusMessage = hint) }
+                if (hint != null) {
+                    _uiState.update { it.copy(statusMessage = hint) }
+                }
             }
         }
         viewModelScope.launch {
@@ -2133,6 +2146,8 @@ class RadioViewModel(
 
     private companion object {
         const val CLOCK_TICK_MS = 1_000L
+        /** How long the "MOVED TO" banner survives the immediate re-join "VOICE ON" ack. */
+        const val MOVE_BANNER_MS = 6_000L
         const val AIR_POLL_MS = 250L
         const val AIR_AUDIO_STABLE_POLLS = 1
         const val TALK_ACTIVITY_POLL_MS = 1200L

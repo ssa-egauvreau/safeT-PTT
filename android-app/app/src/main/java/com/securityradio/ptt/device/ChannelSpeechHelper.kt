@@ -33,6 +33,19 @@ class ChannelSpeechHelper(
         speak(utter, flush = false)
     }
 
+    /**
+     * A dispatcher live-move is an unsolicited retune the operator did not initiate, so it is always
+     * announced (independent of the tune-announce preference) and flushes any queued tune speech.
+     */
+    fun speakMoved(channelDisplayName: String, by: String?) {
+        if (!ready.get()) return
+        val channel = channelDisplayName.trim()
+        if (channel.isEmpty() || channel == "----") return
+        val mover = by?.trim().orEmpty()
+        val phrase = if (mover.isEmpty()) "Moved to $channel" else "Moved to $channel by $mover"
+        speak(phrase, flush = true)
+    }
+
     fun speakLastTransmissionSummary(text: String) {
         if (!ready.get()) return
         val line = text.trim()
