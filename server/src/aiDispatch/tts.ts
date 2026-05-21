@@ -3,18 +3,16 @@ import { recordElevenLabsCall } from "../integrations/health.js";
 import { prepareTextForTts } from "./speech/prepareTextForTts.js";
 import { getTtsPrecacheHit, scheduleAgencyTtsPrecache } from "./ttsPrecache.js";
 
-/**
- * Fast — radio acks, Copy/913, short status (~75ms class latency on Flash).
- */
-const DEFAULT_FAST_MODEL_ID = "eleven_flash_v2_5";
+/** Legacy Flash path — only when [resolveTtsProfile] returns `fast` and env overrides model. */
+const DEFAULT_FAST_MODEL_ID = "eleven_v3";
 
 /**
- * Expressive / long — plate readbacks, web answers, callouts.
- * The synchronous /text-to-speech endpoint often returns 4xx for `eleven_v3`; default to
- * turbo (real-time, widely available). Set ELEVENLABS_LONG_MODEL_ID=eleven_v3 if your
- * ElevenLabs plan supports v3 on this endpoint.
+ * Default TTS — Eleven v3 (fleet-preferred expressive voice).
+ * If the sync API returns 4xx for v3, [synthesizeElevenLabsMp3] retries with turbo.
  */
-const DEFAULT_EXPRESSIVE_MODEL_ID = "eleven_turbo_v2_5";
+const DEFAULT_EXPRESSIVE_MODEL_ID = "eleven_v3";
+
+const FALLBACK_MODEL_ID = "eleven_turbo_v2_5";
 
 /** Under this length (after prep), use fast unless speech kind forces expressive. */
 const DEFAULT_FAST_MAX_CHARS = 140;
@@ -78,7 +76,7 @@ export function resolveTtsProfile(text: string, kind: TtsSpeechKind = "auto"): T
     return "expressive";
   }
   if (kind === "radio_ack") {
-    return "fast";
+    return "expressive";
   }
   const prepared = text.trim();
   if (prepared.length > fastMaxChars()) {
@@ -88,11 +86,22 @@ export function resolveTtsProfile(text: string, kind: TtsSpeechKind = "auto"): T
   if (sentences >= 2 && prepared.length > 80) {
     return "expressive";
   }
-  return "fast";
+  const flashModel = process.env.ELEVENLABS_FAST_MODEL_ID?.trim();
+  if (flashModel && flashModel.includes("flash")) {
+    return "fast";
+  }
+  return "expressive";
+}
+
+function isV3Model(modelId: string): boolean {
+  return modelId.toLowerCase().includes("v3");
 }
 
 function modelAndSettings(profile: TtsProfile): { model_id: string; voice_settings: ElevenVoiceSettings } {
-  if (profile === "fast") {
+  const model_id = profile === "fast" ? fastModelId() : expressiveModelId();
+  const useExpressiveTuning = profile === "expressive" || isV3Model(model_id);
+
+  if (!useExpressiveTuning) {
     const raw = process.env.ELEVENLABS_FAST_STABILITY?.trim();
     const settings = { ...FAST_VOICE_SETTINGS };
     if (raw !== undefined && raw !== "") {
@@ -101,7 +110,7 @@ function modelAndSettings(profile: TtsProfile): { model_id: string; voice_settin
         settings.stability = Math.min(1, Math.max(0, stability));
       }
     }
-    return { model_id: fastModelId(), voice_settings: settings };
+    return { model_id, voice_settings: settings };
   }
 
   const raw = process.env.ELEVENLABS_STABILITY?.trim();
@@ -112,7 +121,15 @@ function modelAndSettings(profile: TtsProfile): { model_id: string; voice_settin
       settings.stability = Math.min(1, Math.max(0, stability));
     }
   }
-  return { model_id: expressiveModelId(), voice_settings: settings };
+  return { model_id, voice_settings: settings };
+}
+
+function fallbackModels(primaryModelId: string): string[] {
+  const out = [primaryModelId];
+  if (isV3Model(primaryModelId) && primaryModelId !== FALLBACK_MODEL_ID) {
+    out.push(FALLBACK_MODEL_ID);
+  }
+  return out;
 }
 
 export async function synthesizeElevenLabsMp3(
@@ -132,37 +149,54 @@ export async function synthesizeElevenLabsMp3(
 
   scheduleAgencyTtsPrecache(agencyId);
 
-  if (!opts?.skipPrecache && profile === "fast") {
+  if (!opts?.skipPrecache) {
     const cached = getTtsPrecacheHit(agencyId, text);
     if (cached && cached.length > 0) {
       return cached;
     }
   }
 
-  const { model_id, voice_settings } = modelAndSettings(profile);
+  const { model_id: primaryModel, voice_settings } = modelAndSettings(profile);
+  const models = fallbackModels(primaryModel);
 
-  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "xi-api-key": apiKey,
-      accept: "audio/mpeg",
-    },
-    body: JSON.stringify({
-      text: pacedText,
-      model_id,
-      voice_settings,
-    }),
-  });
-  if (!res.ok) {
+  for (let i = 0; i < models.length; i++) {
+    const model_id = models[i]!;
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "xi-api-key": apiKey,
+        accept: "audio/mpeg",
+      },
+      body: JSON.stringify({
+        text: pacedText,
+        model_id,
+        voice_settings,
+      }),
+    });
+    if (res.ok) {
+      recordElevenLabsCall(agencyId, true);
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (i > 0) {
+        console.warn(`[ai-dispatch] ElevenLabs used fallback model=${model_id} profile=${profile}`);
+      }
+      return buf.length > 0 ? buf : null;
+    }
+
     const err = await res.text().catch(() => "");
+    const canRetry = i < models.length - 1 && res.status >= 400 && res.status < 500;
+    if (canRetry) {
+      console.warn(
+        `[ai-dispatch] ElevenLabs ${res.status} model=${model_id} — retrying with ${models[i + 1]}`,
+      );
+      continue;
+    }
     console.warn(
       `[ai-dispatch] ElevenLabs ${res.status} profile=${profile} model=${model_id}: ${err.slice(0, 200)}`,
     );
     recordElevenLabsCall(agencyId, false, res.status, err);
     return null;
   }
-  recordElevenLabsCall(agencyId, true);
-  const buf = Buffer.from(await res.arrayBuffer());
-  return buf.length > 0 ? buf : null;
+
+  return null;
 }

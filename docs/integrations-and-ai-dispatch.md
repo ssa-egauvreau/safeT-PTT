@@ -46,9 +46,9 @@ Restart the service after changing env vars.
 
 - **ElevenLabs API key** — TTS for that agency’s AI replies.
 - **ElevenLabs voice ID** — Voice from your ElevenLabs library.
-- **TTS models (dual)** — Short radio acks (Copy, 913, status) use **Flash** (`eleven_flash_v2_5`, low latency). Long speech (plates, web-search answers, long callouts) uses the **expressive** profile (default `eleven_turbo_v2_5` on the sync `/text-to-speech` API — `eleven_v3` often returns 4xx on that endpoint and leaves the dispatcher silent). Set `ELEVENLABS_LONG_MODEL_ID=eleven_v3` if your ElevenLabs plan supports v3 on this endpoint. Optional Railway overrides:
-  - `ELEVENLABS_FAST_MODEL_ID` — default `eleven_flash_v2_5` (set to `eleven_turbo_v2_5` if you prefer)
-  - `ELEVENLABS_LONG_MODEL_ID` or `ELEVENLABS_MODEL_ID` — default `eleven_turbo_v2_5` (override to `eleven_v3` when supported)
+- **TTS model** — Default **`eleven_v3`** for dispatcher speech (short Copy/913 acks and long plate/callout lines). If v3 returns 4xx on the sync API, the server automatically retries **`eleven_turbo_v2_5`** so the channel is not silent. Optional Railway overrides:
+  - `ELEVENLABS_LONG_MODEL_ID` or `ELEVENLABS_MODEL_ID` — default `eleven_v3`
+  - `ELEVENLABS_FAST_MODEL_ID` — only used when you explicitly set a Flash model id containing `flash` (legacy low-latency path)
   - `ELEVENLABS_FAST_MAX_CHARS` — default `140` (longer text auto-switches to expressive)
   - `ELEVENLABS_STABILITY` — expressive Creative default `0.0`; `ELEVENLABS_FAST_STABILITY` — Flash default `0.55`
 - **TTS pronunciation** — Same pipeline as the old 10-8 dispatcher: radio codes (`913` → “nine thirteen”), SSA account codes (`32-08` → “thirty-two oh-eight”), command staff (`27-000` → “twenty seven thousand”), call types, phone digit groups, NATO plate phonetics, and SSML pacing breaks.
