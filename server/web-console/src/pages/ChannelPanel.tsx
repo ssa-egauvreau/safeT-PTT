@@ -8,6 +8,7 @@ import {
 import type { Permission, ToneOut, UserChannel } from "../api";
 import { api } from "../api";
 import { VoiceChannelClient, type VoiceState, type ToneOutKind } from "../voice/voiceClient";
+import { Waveform } from "../voice/Waveform";
 import { ChannelRoster } from "./ChannelRoster";
 import { sounds } from "../sounds";
 import { useToneOuts, loadTonePcm, ToneOutBadge } from "../toneOuts";
@@ -532,6 +533,14 @@ export function ChannelPanel({
                     : "hold to talk"}
         </span>
       </button>
+
+      <div className={`waveform-strip${transmitting ? " tx" : receiving ? " rx" : ""}`}>
+        <Waveform
+          getLevel={() => clientRef.current?.getLevel() ?? 0}
+          active={transmitting || receiving}
+          variant={transmitting ? "tx" : "rx"}
+        />
+      </div>
 
       <button className="txmode-btn" onClick={toggleTxMode}>
         TX MODE: <strong>{txDigital ? "COMPRESSED · FAST" : "HIGH QUALITY · NORMAL SPEED"}</strong>

@@ -927,6 +927,23 @@ code.mono {
   opacity: 0.5;
   cursor: not-allowed;
 }
+.waveform-strip {
+  margin-top: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+  transition: border-color 0.2s ease;
+}
+.waveform-strip.tx {
+  border-color: var(--red);
+}
+.waveform-strip.rx {
+  border-color: var(--accent);
+}
+.waveform {
+  display: block;
+}
 .live-actions {
   display: flex;
   gap: 8px;
@@ -2893,6 +2910,10 @@ code.mono {
   text-transform: uppercase;
   color: var(--text);
   text-align: center;
+}
+.rp-waveform {
+  width: min(280px, 80vw);
+  margin: 2px auto 6px;
 }
 .rp-ptt {
   width: 200px;

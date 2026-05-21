@@ -18,6 +18,8 @@ export interface VoiceCallbacks {
 
 const TARGET_RATE = 16000;
 const CAPTURE_WORKLET_URL = "/pcm-capture-worklet.js";
+/** Small FFT window — enough for a smooth RMS level, cheap to read every frame. */
+const WAVEFORM_FFT_SIZE = 256;
 // Two-byte marker prefixing P25 IMBE digital-voice frames the browser cannot decode.
 const IMBE_MAGIC_0 = 0xf5;
 const IMBE_MAGIC_1 = 0xab;
@@ -169,6 +171,12 @@ export class VoiceChannelClient {
   private volume = 1;
   private muted = false;
 
+  // Analyser taps for waveform visualisation: one on the inbound (RX) chain and
+  // one on the mic (TX) chain. Both are read on demand by getLevel().
+  private playAnalyser: AnalyserNode | null = null;
+  private capAnalyser: AnalyserNode | null = null;
+  private readonly levelBytes = new Uint8Array(WAVEFORM_FFT_SIZE);
+
   private micStream: MediaStream | null = null;
   private capCtx: AudioContext | null = null;
   private capSource: MediaStreamAudioSourceNode | null = null;
@@ -232,6 +240,25 @@ export class VoiceChannelClient {
     return this.volume;
   }
 
+  /**
+   * Current audio amplitude (0–1 RMS) for waveform visualisation — the mic level
+   * while transmitting, otherwise the inbound channel level. Returns 0 when there
+   * is no active analyser (idle / disconnected).
+   */
+  getLevel(): number {
+    const analyser = this.transmitting ? this.capAnalyser : this.playAnalyser;
+    if (!analyser) {
+      return 0;
+    }
+    analyser.getByteTimeDomainData(this.levelBytes);
+    let sum = 0;
+    for (let i = 0; i < this.levelBytes.length; i++) {
+      const v = (this.levelBytes[i] - 128) / 128;
+      sum += v * v;
+    }
+    return Math.sqrt(sum / this.levelBytes.length);
+  }
+
   private setState(state: VoiceState, detail?: string): void {
     this.state = state;
     // Belt-and-braces: any transition back to "listening" guarantees no in-flight TX state
@@ -283,6 +310,11 @@ export class VoiceChannelClient {
     this.playGain = this.playCtx.createGain();
     this.playGain.gain.value = this.muted ? 0 : this.volume;
     this.playGain.connect(this.playCtx.destination);
+    // Analyser tap for the RX waveform. Fed by the inbound sources (see schedulePcm)
+    // rather than the gain node, so the waveform reflects incoming speech even when
+    // the channel is muted or turned down.
+    this.playAnalyser = this.playCtx.createAnalyser();
+    this.playAnalyser.fftSize = WAVEFORM_FFT_SIZE;
     this.playHead = 0;
     void this.playCtx.resume();
     this.armAudioResume();
@@ -399,6 +431,10 @@ export class VoiceChannelClient {
     const source = ctx.createBufferSource();
     source.buffer = frame;
     source.connect(this.playGain ?? ctx.destination);
+    // Pre-gain tap so the RX waveform shows inbound audio regardless of volume/mute.
+    if (this.playAnalyser) {
+      source.connect(this.playAnalyser);
+    }
 
     const now = ctx.currentTime;
     if (this.playHead < now + 0.04) {
@@ -448,6 +484,10 @@ export class VoiceChannelClient {
     }
 
     this.capSource = this.capCtx.createMediaStreamSource(this.micStream);
+    // Parallel analyser tap for the TX waveform (the worklet path is untouched).
+    this.capAnalyser = this.capCtx.createAnalyser();
+    this.capAnalyser.fftSize = WAVEFORM_FFT_SIZE;
+    this.capSource.connect(this.capAnalyser);
     this.capNode = new AudioWorkletNode(this.capCtx, "pcm-capture");
     this.capNode.port.onmessage = (event: MessageEvent) => {
       const ws = this.ws;
@@ -488,6 +528,8 @@ export class VoiceChannelClient {
       this.capSource.disconnect();
       this.capSource = null;
     }
+    // capSource.disconnect() already detached the analyser; just drop the ref.
+    this.capAnalyser = null;
     if (this.state !== "closed" && this.state !== "error") {
       this.setState("listening");
     }
@@ -616,6 +658,7 @@ export class VoiceChannelClient {
       this.capSource.disconnect();
       this.capSource = null;
     }
+    this.capAnalyser = null;
     if (this.micStream) {
       this.micStream.getTracks().forEach((track) => track.stop());
       this.micStream = null;
@@ -629,6 +672,7 @@ export class VoiceChannelClient {
       this.playCtx = null;
     }
     this.playGain = null;
+    this.playAnalyser = null;
     const ws = this.ws;
     this.ws = null;
     if (ws) {

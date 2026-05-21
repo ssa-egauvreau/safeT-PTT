@@ -11,6 +11,7 @@ import {
 import { useAuth } from "../auth";
 import { Topbar } from "../Topbar";
 import { VoiceChannelClient, type VoiceState } from "../voice/voiceClient";
+import { Waveform } from "../voice/Waveform";
 import { ScanListenClient } from "../voice/scanListenClient";
 import { useUnitAliasResolver } from "../unitAliases";
 import { formatDuration, formatTime, transcriptOf } from "./TransmissionLog";
@@ -605,6 +606,14 @@ export function RadioPortal() {
           }
         >
           <div className="rp-status-line">{channelStatus}</div>
+          <div className={`waveform-strip rp-waveform${transmitting ? " tx" : receiving ? " rx" : ""}`}>
+            <Waveform
+              getLevel={() => voiceRef.current?.getLevel() ?? 0}
+              active={transmitting || receiving}
+              variant={transmitting ? "tx" : "rx"}
+              height={36}
+            />
+          </div>
           <button
             type="button"
             className={`rp-ptt ${transmitting ? "tx" : ""} ${!canTransmit ? "disabled" : ""}`}
