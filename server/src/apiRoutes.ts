@@ -2349,8 +2349,9 @@ export function createApiRouter(): Router {
       // Reuse a channel with this name if it already exists, else create it.
       const channel = existing.find((c) => c.name === name) ?? (await createChannel(agencyId, name));
       let reached = 0;
+      const moverName = req.authUser!.displayName.trim() || req.authUser!.username;
       for (const unit of units) {
-        reached += sendMoveCommand(agencyId, unit, channel.name, req.authUser!.username, null);
+        reached += sendMoveCommand(agencyId, unit, channel.name, moverName, null);
       }
       await writeAudit({
         agencyId,
@@ -2384,7 +2385,8 @@ export function createApiRouter(): Router {
         res.status(404).json({ error: "unknown_channel" });
         return;
       }
-      const reached = sendMoveCommand(agencyId, unit, toChannel, req.authUser!.username, fromChannel);
+      const moverName = req.authUser!.displayName.trim() || req.authUser!.username;
+      const reached = sendMoveCommand(agencyId, unit, toChannel, moverName, fromChannel);
       await writeAudit({
         agencyId,
         actorUserId: req.authUser!.id,
