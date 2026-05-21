@@ -116,8 +116,8 @@ data class RadioUiState(
     val connectivityBanner: String,
 
     /**
-     * OTA APK downloaded from the server — operator should reboot so the new build installs.
-     * Cleared automatically once [android.os.Build.VERSION_CODE] reaches the pending build.
+     * OTA status for the radio LCD: available/downloading progress, then reboot-to-install
+     * after the APK is verified. Cleared once [android.os.Build.VERSION_CODE] matches pending.
      */
     val appUpdateBanner: String = "",
 
@@ -164,7 +164,7 @@ data class RadioUiState(
     /** Mirror of [com.securityradio.ptt.device.RadioPreferences.isMicAutoGainEnabled]. */
     val micAutoGainEnabled: Boolean = false,
     /** Mirror of [com.securityradio.ptt.device.RadioPreferences.getMicGainMultiplier]. */
-    val micGainMultiplier: Float = com.securityradio.ptt.device.RadioPreferences.MAX_MIC_GAIN,
+    val micGainMultiplier: Float = RadioPreferences.MAX_MIC_GAIN,
 
     /** MP22 dual-display firmware detected (virtual Display 0 + physical Display 1). */
     val mp22DualDisplay: Boolean = false,

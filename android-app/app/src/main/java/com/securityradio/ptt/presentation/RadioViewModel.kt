@@ -102,6 +102,8 @@ class RadioViewModel(
     @Volatile
     private var mainRadioUiVisible: Boolean = false
 
+    private var appUpdatePollJob: Job? = null
+
     private var lastWakeEmittedAtMs: Long = 0L
 
     /** Keeps the "MOVED TO" banner on screen past the immediate re-join "VOICE ON" ack. */
@@ -212,7 +214,7 @@ class RadioViewModel(
             )
         }
         refreshAppUpdateBanner()
-        appUpdater.setUpdateListener { notice -> onAppUpdateDownloaded(notice) }
+        appUpdater.setProgressListener { progress -> onAppUpdateProgress(progress) }
         viewModelScope.launch {
             while (isActive) {
                 refreshClock()
@@ -412,15 +414,29 @@ class RadioViewModel(
         soundPlayer.playChannelSwitch()
     }
 
-    /** Called on launch and when [AppUpdater] finishes downloading a newer APK. */
+    /** Called on launch and when a verified APK is already waiting for reboot. */
     fun refreshAppUpdateBanner() {
-        val installedCode = BuildConfig.VERSION_CODE.toLong()
         val notice = appUpdater.peekPendingUpdateNotice()
         if (notice == null) {
-            _uiState.update { it.copy(appUpdateBanner = "") }
             return
         }
-        applyAppUpdateBanner(notice.versionName)
+        applyAppUpdateDownloadedBanner(notice.versionName)
+    }
+
+    fun onAppUpdateProgress(progress: AppUpdater.UpdateProgress) {
+        when (progress) {
+            AppUpdater.UpdateProgress.Idle -> {
+                if (appUpdater.peekPendingUpdateNotice() == null) {
+                    _uiState.update { it.copy(appUpdateBanner = "") }
+                }
+            }
+            is AppUpdater.UpdateProgress.Available ->
+                applyAppUpdateAvailableBanner(progress.versionName)
+            is AppUpdater.UpdateProgress.Downloading ->
+                applyAppUpdateDownloadingBanner(progress.versionName)
+            is AppUpdater.UpdateProgress.Downloaded ->
+                onAppUpdateDownloaded(progress.notice)
+        }
     }
 
     fun onAppUpdateDownloaded(notice: AppUpdater.UpdateNotice) {
@@ -429,20 +445,42 @@ class RadioViewModel(
             _uiState.update { it.copy(appUpdateBanner = "") }
             return
         }
-        applyAppUpdateBanner(notice.versionName)
+        applyAppUpdateDownloadedBanner(notice.versionName)
         soundPlayer.playChannelSwitch()
     }
 
-    private fun applyAppUpdateBanner(versionName: String) {
-        val label = versionName.trim().ifBlank { "NEW" }
-        val banner = "UPDATE $label DOWNLOADED — REBOOT RADIO TO INSTALL"
+    private fun applyAppUpdateAvailableBanner(versionName: String) {
+        val label = versionLabel(versionName)
         _uiState.update {
             it.copy(
-                appUpdateBanner = banner,
+                appUpdateBanner = "UPDATE $label AVAILABLE — DOWNLOADING...",
+                statusMessage = "DOWNLOADING UPDATE",
+            )
+        }
+    }
+
+    private fun applyAppUpdateDownloadingBanner(versionName: String) {
+        val label = versionLabel(versionName)
+        _uiState.update {
+            it.copy(
+                appUpdateBanner = "UPDATE $label DOWNLOADING...",
+                statusMessage = "DOWNLOADING UPDATE",
+            )
+        }
+    }
+
+    private fun applyAppUpdateDownloadedBanner(versionName: String) {
+        val label = versionLabel(versionName)
+        _uiState.update {
+            it.copy(
+                appUpdateBanner = "UPDATE $label DOWNLOADED — REBOOT RADIO TO INSTALL",
                 statusMessage = "REBOOT TO INSTALL UPDATE",
             )
         }
     }
+
+    private fun versionLabel(versionName: String): String =
+        versionName.trim().ifBlank { "NEW" }
 
     /** MP22: track which display the activity is on (for setup vs radio screen hints). */
     fun refreshMp22DisplayState(displayId: Int) {
@@ -465,6 +503,23 @@ class RadioViewModel(
     /** Call from MainActivity onStart / onStop while this screen is tied to that activity. */
     fun setMainRadioScreenVisible(visible: Boolean) {
         mainRadioUiVisible = visible
+        if (visible) {
+            startAppUpdatePolling()
+        } else {
+            appUpdatePollJob?.cancel()
+            appUpdatePollJob = null
+        }
+    }
+
+    private fun startAppUpdatePolling() {
+        appUpdatePollJob?.cancel()
+        appUpdatePollJob =
+            viewModelScope.launch {
+                while (isActive) {
+                    appUpdater.checkAndInstallAsync(force = false)
+                    delay(APP_UPDATE_POLL_MS)
+                }
+            }
     }
 
     private fun enqueueBackgroundWakeIfNeeded(reason: String) {
@@ -2170,7 +2225,8 @@ class RadioViewModel(
     }
 
     override fun onCleared() {
-        appUpdater.setUpdateListener(null)
+        appUpdatePollJob?.cancel()
+        appUpdater.setProgressListener(null)
         // Voice and GPS intentionally keep running after the UI is gone — a
         // foreground service holds the process, like a radio left in a pocket.
         // pttMicCapture and soundPlayer are process-scoped singletons whose
@@ -2194,6 +2250,8 @@ class RadioViewModel(
         const val INBOX_POLL_MS = 2_000L
         const val STATUS_REFRESH_MS = 2_000L
         const val SOUNDS_VERSION_POLL_MS = 60_000L
+        /** Foreground OTA poll while the radio screen is visible (matches [AppUpdater.CHECK_INTERVAL_MS]). */
+        const val APP_UPDATE_POLL_MS = 30L * 60 * 1000
         const val CATALOG_POLL_MS = 15_000L
         const val PROFILE_POLL_MS = 15_000L
         const val OFFLINE_BANNER_CYCLE_MS = 2_000L

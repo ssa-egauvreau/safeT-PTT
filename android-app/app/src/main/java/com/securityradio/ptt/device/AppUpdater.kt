@@ -19,11 +19,12 @@ import java.util.concurrent.TimeUnit
 /**
  * Over-the-air self-updater for the sideloaded handset fleet (no Play Store, no MDM).
  *
- * On launch the app polls `/v1/app/android/version`; if the server advertises a
- * higher [currentVersionCode] it downloads the APK, verifies its SHA-256, and
- * hands it to Android's package installer. The fleet is configured to auto-install
- * with no in-app prompt (touchless radios), so [InricoHardwareService] confirms the
- * system installer dialog via [AppUpdateInstallGate].
+ * On launch and every [CHECK_INTERVAL_MS] while the radio screen is visible, polls
+ * `/v1/app/android/version`. If the server advertises a higher [currentVersionCode]
+ * it notifies the UI (available → downloading), downloads the APK, verifies SHA-256,
+ * then prompts reboot. It hands the APK to Android's package installer. The fleet is
+ * configured to auto-install with no in-app prompt (touchless radios), so
+ * [InricoHardwareService] confirms the system installer dialog via [AppUpdateInstallGate].
  *
  * The downloaded APK must be signed with the same key as the installed build or
  * Android rejects the update. On API 26+ the app also needs the one-time
@@ -56,11 +57,26 @@ class AppUpdater(
         val versionName: String,
     )
 
+    /** Live OTA phases for the radio LCD while a check or download is in progress. */
+    sealed class UpdateProgress {
+        data object Idle : UpdateProgress()
+        data class Available(val versionName: String) : UpdateProgress()
+        data class Downloading(val versionName: String) : UpdateProgress()
+        data class Downloaded(val notice: UpdateNotice) : UpdateProgress()
+    }
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private var updateListener: ((UpdateNotice) -> Unit)? = null
+    private var progressListener: ((UpdateProgress) -> Unit)? = null
+    @Volatile
+    private var checkInFlight: Boolean = false
 
     fun setUpdateListener(listener: ((UpdateNotice) -> Unit)?) {
         updateListener = listener
+    }
+
+    fun setProgressListener(listener: ((UpdateProgress) -> Unit)?) {
+        progressListener = listener
     }
 
     /**
@@ -90,17 +106,32 @@ class AppUpdater(
     }
 
     private fun runCheck(force: Boolean) {
+        if (!beginCheck()) return
         try {
             if (!force && !throttleElapsed()) return
             markChecked()
-            val available = fetchAvailable() ?: return
-            if (!canInstall()) {
-                Log.w(TAG, "Update ${available.versionName} ready but install-unknown-apps not granted")
+            val available = fetchAvailable() ?: run {
+                notifyProgress(UpdateProgress.Idle)
                 return
             }
-            val apk = downloadAndVerify(available) ?: return
+            if (!canInstall()) {
+                Log.w(TAG, "Update ${available.versionName} ready but install-unknown-apps not granted")
+                notifyProgress(UpdateProgress.Idle)
+                return
+            }
+            notifyProgress(UpdateProgress.Available(available.versionName))
+            notifyProgress(UpdateProgress.Downloading(available.versionName))
+            val apk = downloadAndVerify(available) ?: run {
+                notifyProgress(UpdateProgress.Idle)
+                return
+            }
             markPendingUpdate(available)
-            notifyUpdateDownloaded(available)
+            val notice =
+                UpdateNotice(
+                    versionCode = available.versionCode,
+                    versionName = available.versionName,
+                )
+            notifyProgress(UpdateProgress.Downloaded(notice))
             AppUpdateInstallGate.arm()
             try {
                 launchInstall(apk)
@@ -111,7 +142,22 @@ class AppUpdater(
             }
         } catch (e: Exception) {
             Log.w(TAG, "update check failed", e)
+            notifyProgress(UpdateProgress.Idle)
+        } finally {
+            endCheck()
         }
+    }
+
+    private fun beginCheck(): Boolean {
+        synchronized(this) {
+            if (checkInFlight) return false
+            checkInFlight = true
+            return true
+        }
+    }
+
+    private fun endCheck() {
+        synchronized(this) { checkInFlight = false }
     }
 
     /** Blocking — returns the published build only if it's newer than this one. Call off the main thread. */
@@ -213,11 +259,16 @@ class AppUpdater(
         mainHandler.post { updateListener?.invoke(notice) }
     }
 
+    private fun notifyProgress(progress: UpdateProgress) {
+        mainHandler.post { progressListener?.invoke(progress) }
+    }
+
     private companion object {
         const val TAG = "AppUpdater"
         const val KEY_LAST_CHECK = "last_check_ms"
         const val KEY_PENDING_VERSION_CODE = "pending_version_code"
         const val KEY_PENDING_VERSION_NAME = "pending_version_name"
-        const val CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000 // poll at most every 6 hours
+        /** Minimum time between server version polls (launch + foreground periodic checks). */
+        const val CHECK_INTERVAL_MS = 30L * 60 * 1000
     }
 }
