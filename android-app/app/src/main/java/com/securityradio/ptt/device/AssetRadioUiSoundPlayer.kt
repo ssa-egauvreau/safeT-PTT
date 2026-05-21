@@ -49,6 +49,16 @@ class AssetRadioUiSoundPlayer(
     private var volumeLoopPlayerB: MediaPlayer? = null
     private var volumeLoopSwapRunnable: Runnable? = null
 
+    /**
+     * Busy audio rides the alarm stream, but a low alarm-volume slider made "channel busy" too
+     * quiet to hear over an engine. While any busy playback is active the alarm stream is pinned to
+     * max and restored to the user's level when it stops. [savedAlarmVolume] is the level captured
+     * at the first boost (null = not boosted); the two flags track which busy source still wants it.
+     */
+    private var savedAlarmVolume: Int? = null
+    private var busyLoopBoosted = false
+    private var busyAlertBoosted = false
+
     /** Parsed WAV length per clip (key includes custom-file mtime when applicable). */
     private val clipDurationMsCache = mutableMapOf<String, Long>()
 
@@ -103,6 +113,25 @@ class AssetRadioUiSoundPlayer(
         setAudioAttributes(busyAttrs)
         setVolume(1f, 1f)
         return this
+    }
+
+    /**
+     * Pins the alarm stream to max while a busy source wants it, restoring the user's saved level
+     * once none do. setStreamVolume can throw under Do-Not-Disturb policy, so every call is guarded.
+     */
+    private fun refreshBusyVolumeBoost() {
+        val wantBoost = busyLoopBoosted || busyAlertBoosted
+        if (wantBoost && savedAlarmVolume == null) {
+            runCatching {
+                val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+                savedAlarmVolume = audioManager.getStreamVolume(AudioManager.STREAM_ALARM)
+                audioManager.setStreamVolume(AudioManager.STREAM_ALARM, max, 0)
+            }
+        } else if (!wantBoost && savedAlarmVolume != null) {
+            val restore = savedAlarmVolume!!
+            savedAlarmVolume = null
+            runCatching { audioManager.setStreamVolume(AudioManager.STREAM_ALARM, restore, 0) }
+        }
     }
 
     private fun acquireEmergencyFocus() {
@@ -166,6 +195,8 @@ class AssetRadioUiSoundPlayer(
         main.post {
             stopTalkPermitLoopInternal()
             stopBusyLoopInternal()
+            busyLoopBoosted = true
+            refreshBusyVolumeBoost()
             startGaplessPingPongLoop(
                 fileName = FILE_BUSY,
                 playerA = { busyLoopPlayerA },
@@ -306,6 +337,8 @@ class AssetRadioUiSoundPlayer(
         releaseLoopPlayer(busyLoopPlayerB)
         busyLoopPlayerA = null
         busyLoopPlayerB = null
+        busyLoopBoosted = false
+        refreshBusyVolumeBoost()
     }
 
     private fun cancelBusyAlertCutoff() {
@@ -323,6 +356,8 @@ class AssetRadioUiSoundPlayer(
             release()
         }
         busyAlertPlayer = null
+        busyAlertBoosted = false
+        refreshBusyVolumeBoost()
     }
 
     /** Lost-link alert: same busy.wav, capped so it does not loop (re-triggered every 15s offline). */
@@ -334,6 +369,8 @@ class AssetRadioUiSoundPlayer(
             return
         }
         busyAlertPlayer = player
+        busyAlertBoosted = true
+        refreshBusyVolumeBoost()
         try {
             player.setOnPreparedListener { prepared ->
                 prepared.start()
