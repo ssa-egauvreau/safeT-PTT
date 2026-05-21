@@ -391,8 +391,14 @@ class RadioViewModel(
                 mp22DualDisplay = true,
                 mp22UsePhysicalDisplay = radioPreferences.isMp22UsePhysicalDisplay(),
                 mp22CurrentDisplayId = displayId,
+                mp22TouchNotReachable = false,
             )
         }
+    }
+
+    fun setMp22TouchNotReachable(notReachable: Boolean) {
+        if (!DisplayRouter.isMp22StyleDualDisplay(application)) return
+        _uiState.update { it.copy(mp22TouchNotReachable = notReachable) }
     }
 
     /** Call from MainActivity onStart / onStop while this screen is tied to that activity. */

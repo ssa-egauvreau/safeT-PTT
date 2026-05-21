@@ -5,6 +5,7 @@
     <string name="accessibility_generic_hint">Turn on safeT Mobile in the list. If you do not see a toggle, use the PC ADB steps shown after install.</string>
     <string name="accessibility_tm7_android10_hint">TM-7 Plus (Android 10): if this page is empty, enable from your PC with USB debugging or scrcpy:</string>
     <string name="accessibility_open_failed">Could not open Accessibility settings. Open Settings → Accessibility manually, or use the Enable TM7 Plus Accessibility.bat script on your PC.</string>
+    <string name="mp22_touch_not_reaching_app">SafeT is on the physical screen but touch is not reaching the app. Touch may still be on the virtual display — use hardware keys or PC/scrcpy on Display 0.</string>
     <string name="presence_channel_name">Radio runtime</string>
     <string name="presence_notification_title">safeT Mobile</string>
     <string name="presence_notification_text">PTT routing active in background. Tap to open.</string>

@@ -159,7 +159,7 @@ class RadioPreferences(context: Context) {
      * (hardware keys). IRC590 and normal devices ignore this.
      */
     fun isMp22UsePhysicalDisplay(): Boolean =
-        prefs.getBoolean(KEY_MP22_USE_PHYSICAL_DISPLAY, false)
+        prefs.getBoolean(KEY_MP22_USE_PHYSICAL_DISPLAY, true)
 
     fun setMp22UsePhysicalDisplay(usePhysical: Boolean) {
         prefs.edit().putBoolean(KEY_MP22_USE_PHYSICAL_DISPLAY, usePhysical).apply()

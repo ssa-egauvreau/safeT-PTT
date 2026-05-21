@@ -162,6 +162,8 @@ data class RadioUiState(
     val mp22UsePhysicalDisplay: Boolean = false,
     /** MP22: which display this activity is on (0 = virtual, 1 = physical). */
     val mp22CurrentDisplayId: Int = 0,
+    /** MP22: on physical display but no touch reached the app (virtual display may still own input). */
+    val mp22TouchNotReachable: Boolean = false,
 ) {
     init {
         require(softKeyLabels.size == SOFT_KEY_COUNT) {

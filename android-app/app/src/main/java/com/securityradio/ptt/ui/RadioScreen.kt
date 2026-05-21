@@ -1404,6 +1404,17 @@ private fun LcdHandsetFillChannelBlock(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+            if (state.mp22DualDisplay && state.mp22TouchNotReachable) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "SafeT is on the physical display but touch input is not reaching the app. " +
+                        "Use hardware keys, or open on the PC setup (virtual) screen.",
+                    style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 13.sp),
+                    color = p.statusAmber,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             val isIrc590Handset = state.resolvedDeviceProfile == ResolvedDeviceProfile.IRC590
             if (!showEmergencyBanner && !isIrc590Handset) {
                 LcdPermissionBadge(
@@ -3807,6 +3818,9 @@ private fun DeviceSettingsTab(
                 SettingsSectionHeader("MP22 — PC SETUP vs RADIO SCREEN", styles, p)
                 Text(
                     text = when {
+                        state.mp22TouchNotReachable ->
+                            "Touch is not reaching SafeT on this screen — input may still be on the virtual display. " +
+                                "Use hardware keys here, or switch to PC setup screen for scrcpy."
                         state.mp22UsePhysicalDisplay && state.mp22CurrentDisplayId != 1 ->
                             "Moving to the physical radio screen… Use hardware keys (PTT, channel) on the device."
                         state.mp22UsePhysicalDisplay ->

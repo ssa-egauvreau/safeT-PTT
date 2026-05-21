@@ -12,6 +12,7 @@ import android.view.Display
 import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -164,6 +165,12 @@ class MainActivity : ComponentActivity() {
         }
 
         RadioPresenceService.start(this)
+        window.decorView.post { setupMp22DisplayAndInputDiagnostics() }
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        ev?.let { Mp22DisplayInputDiagnostics.recordTouchEvent(it) }
+        return super.dispatchTouchEvent(ev)
     }
 
     override fun onStart() {
@@ -182,6 +189,18 @@ class MainActivity : ComponentActivity() {
         checkAllPermissions()
         radioViewModel?.onOverlayPermissionResult(canDrawOverlays())
         reportMp22DisplayToViewModel()
+        setupMp22DisplayAndInputDiagnostics()
+    }
+
+    private fun setupMp22DisplayAndInputDiagnostics() {
+        Mp22DisplayInputDiagnostics.setup(this) {
+            radioViewModel?.setMp22TouchNotReachable(true)
+            Toast.makeText(
+                this,
+                getString(R.string.mp22_touch_not_reaching_app),
+                Toast.LENGTH_LONG,
+            ).show()
+        }
     }
 
     private fun reportMp22DisplayToViewModel() {
