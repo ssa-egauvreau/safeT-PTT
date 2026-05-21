@@ -39,7 +39,9 @@ export function LiveControlPage() {
   useEffect(() => {
     api
       .myChannels()
-      .then((res) => setAllChannels(res.channels.map((c) => c.name)))
+      // Simulcasts are virtual fan-out channels, not real radio_channels — the
+      // move API rejects them, so they can't be live-move targets.
+      .then((res) => setAllChannels(res.channels.filter((c) => !c.simulcast).map((c) => c.name)))
       .catch(() => undefined);
   }, []);
 
