@@ -1,4 +1,4 @@
-import { getAiDispatchPlatformConfig } from "./platformConfig.js";
+import { completeDispatcherLlm } from "./llm.js";
 
 export interface PlateRequestFields {
   plate: string | null;
@@ -111,11 +111,6 @@ export async function parseDispatcherTransmission(opts: {
   channelName: string;
   transcript: string;
 }): Promise<AiDispatchParseResult | null> {
-  const platform = getAiDispatchPlatformConfig();
-  if (!platform.llmApiKey) {
-    return null;
-  }
-
   const pacific = new Date().toLocaleString("en-US", {
     timeZone: "America/Los_Angeles",
     hour12: false,
@@ -129,30 +124,18 @@ export async function parseDispatcherTransmission(opts: {
     `Transcript: ${opts.transcript}\n\n` +
     `Return ONLY the JSON object described in the system prompt.`;
 
-  const res = await fetch(`${platform.llmBaseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${platform.llmApiKey}`,
-    },
-    body: JSON.stringify({
-      model: platform.llmModel,
-      temperature: 0.2,
-      max_tokens: 2500,
-      messages: [
-        { role: "system", content: opts.systemPrompt },
-        { role: "user", content: userContent },
-      ],
-    }),
+  const result = await completeDispatcherLlm({
+    systemPrompt: opts.systemPrompt,
+    userContent,
+    maxTokens: 2500,
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    console.warn(`[ai-dispatch] parse LLM ${res.status}: ${body.slice(0, 200)}`);
+  if (!result?.text) {
     return null;
   }
-  const data = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
-  };
-  const text = data.choices?.[0]?.message?.content?.trim() ?? "";
-  return normalizeAiDispatchParse(tryParseJson(text));
+  if (result.cache_read_tokens != null && result.cache_read_tokens > 0) {
+    console.log(
+      `[ai-dispatch] Anthropic cache read=${result.cache_read_tokens} write=${result.cache_write_tokens ?? 0}`,
+    );
+  }
+  return normalizeAiDispatchParse(tryParseJson(result.text));
 }

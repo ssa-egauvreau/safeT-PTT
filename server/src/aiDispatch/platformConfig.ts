@@ -9,11 +9,16 @@ import {
   getSunsetSafetyBundledPrompt,
 } from "./prompts/sunsetSafety.js";
 
+export type LlmProvider = "anthropic" | "openai";
+
 export interface AiDispatchPlatformConfig {
   enabled: boolean;
+  llmProvider: LlmProvider;
   llmApiKey: string;
   llmBaseUrl: string;
   llmModel: string;
+  /** Anthropic ephemeral prompt cache TTL (large SSA system prompt). */
+  promptCacheTtl: "5m" | "1h";
   defaultSystemPrompt: string;
   dispatchUnitId: string;
   yieldsToUnitsDefault: boolean;
@@ -34,14 +39,31 @@ export function getAiDispatchPlatformConfig(): AiDispatchPlatformConfig {
   if (cached) {
     return cached;
   }
+  const llmApiKey = process.env.AI_DISPATCH_LLM_API_KEY?.trim() ?? "";
+  const providerRaw = process.env.AI_DISPATCH_LLM_PROVIDER?.trim().toLowerCase();
+  const llmProvider: LlmProvider =
+    providerRaw === "openai"
+      ? "openai"
+      : providerRaw === "anthropic" || !providerRaw
+        ? "anthropic"
+        : llmApiKey.startsWith("sk-ant-")
+          ? "anthropic"
+          : "openai";
+  const cacheTtlRaw = process.env.AI_DISPATCH_PROMPT_CACHE_TTL?.trim().toLowerCase();
+  const promptCacheTtl: "5m" | "1h" = cacheTtlRaw === "5m" ? "5m" : "1h";
+
   cached = {
     enabled: envFlag("AI_DISPATCH_ENABLED"),
-    llmApiKey: process.env.AI_DISPATCH_LLM_API_KEY?.trim() ?? "",
+    llmProvider,
+    llmApiKey,
     llmBaseUrl: (process.env.AI_DISPATCH_LLM_BASE_URL?.trim() || "https://api.openai.com/v1").replace(
       /\/$/,
       "",
     ),
-    llmModel: process.env.AI_DISPATCH_LLM_MODEL?.trim() || "gpt-4o-mini",
+    llmModel:
+      process.env.AI_DISPATCH_LLM_MODEL?.trim() ||
+      (llmProvider === "anthropic" ? "claude-sonnet-4-6" : "gpt-4o-mini"),
+    promptCacheTtl,
     defaultSystemPrompt:
       process.env.AI_DISPATCH_SYSTEM_PROMPT?.trim() ||
       "You are a professional public-safety radio dispatcher. Be brief, clear, and use standard 10-codes when appropriate.",
@@ -55,14 +77,18 @@ export function getAiDispatchPlatformConfig(): AiDispatchPlatformConfig {
 export function getAiDispatchPlatformStatus(): {
   enabled: boolean;
   llmConfigured: boolean;
+  llmProvider: LlmProvider;
   model: string;
+  promptCacheTtl: string;
   dispatchUnitId: string;
 } {
   const c = getAiDispatchPlatformConfig();
   return {
     enabled: c.enabled,
     llmConfigured: c.llmApiKey.length > 0,
+    llmProvider: c.llmProvider,
     model: c.llmModel,
+    promptCacheTtl: c.promptCacheTtl,
     dispatchUnitId: c.dispatchUnitId,
   };
 }

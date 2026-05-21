@@ -19,9 +19,11 @@ Set these on the **safeT PTT** service in Railway (not in the Integrations page)
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `AI_DISPATCH_ENABLED` | No | `1` / `true` to allow AI dispatch when agency + channel are configured. Default off. |
-| `AI_DISPATCH_LLM_API_KEY` | For AI | API key for the LLM provider (OpenAI-compatible). |
-| `AI_DISPATCH_LLM_BASE_URL` | No | Default `https://api.openai.com/v1` |
-| `AI_DISPATCH_LLM_MODEL` | No | Default `gpt-4o-mini` |
+| `AI_DISPATCH_LLM_API_KEY` | For AI | **Anthropic:** paste your old `ANTHROPIC_API_KEY` here. **OpenAI:** use an OpenAI `sk-…` key instead. |
+| `AI_DISPATCH_LLM_PROVIDER` | No | `anthropic` (default) or `openai` |
+| `AI_DISPATCH_PROMPT_CACHE_TTL` | No | `1h` for Anthropic prompt caching (same as old 10-8 server). Use `5m` for shorter cache. |
+| `AI_DISPATCH_LLM_BASE_URL` | OpenAI only | Default `https://api.openai.com/v1` — **leave unset for Anthropic** |
+| `AI_DISPATCH_LLM_MODEL` | No | Anthropic default `claude-sonnet-4-6`; OpenAI default `gpt-4o-mini` |
 | `AI_DISPATCH_SYSTEM_PROMPT` | No | **Fallback** dispatcher prompt if the agency leaves Integrations prompt empty |
 | `AI_DISPATCH_UNIT_ID` | No | Unit id on the radio when AI keys up (default `AI-DISPATCH`) |
 | `AI_DISPATCH_YIELDS_DEFAULT` | No | Default `1` — AI yields to live units on a channel |
