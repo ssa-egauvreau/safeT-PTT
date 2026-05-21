@@ -293,6 +293,17 @@ export interface IntegrationHealthPayload {
   checkedAt: string;
 }
 
+/** Published fleet Android build (public /v1/app/android/version). */
+export interface AndroidAppRelease {
+  versionCode: number;
+  versionName: string;
+  /** Path on this server, e.g. /v1/app/android/apk */
+  url: string;
+  sha256: string;
+  mandatory: boolean;
+  notes: string;
+}
+
 export interface Bridge {
   id: number;
   name: string;
@@ -672,6 +683,9 @@ export const api = {
     request<IntegrationsPayload>("PATCH", `/v1/admin/integrations/${encodeURIComponent(key)}`, {
       value,
     }),
+
+  /** Latest OTA APK published for handsets (same feed the radio app polls). */
+  getAndroidAppRelease: () => request<AndroidAppRelease>("GET", "/v1/app/android/version"),
 
   // --- custom radio tones ------------------------------------------------
   listSounds: () => request<{ sounds: AgencySound[] }>("GET", "/v1/admin/sounds"),
