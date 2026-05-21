@@ -13,8 +13,13 @@ export function incidentPayloadHasUnit(inc: { payload: unknown }, targetUnit: st
   if (!targetUnit || !inc.payload || typeof inc.payload !== "object") {
     return false;
   }
+  // Stored payload is the full webhook body { action, incident: { units: [{ unit: "352" }] } }.
   const body = inc.payload as Record<string, unknown>;
-  const units = body.units ?? body.Units;
+  const incident =
+    body.incident && typeof body.incident === "object"
+      ? (body.incident as Record<string, unknown>)
+      : body;
+  const units = incident.units ?? incident.Units;
   if (!Array.isArray(units)) {
     return false;
   }
@@ -24,7 +29,7 @@ export function incidentPayloadHasUnit(inc: { payload: unknown }, targetUnit: st
       return false;
     }
     const row = u as Record<string, unknown>;
-    const id = String(row.id ?? row.unitId ?? row.unit_id ?? "").trim();
+    const id = String(row.unit ?? row.id ?? row.unitId ?? row.unit_id ?? "").trim();
     return normalizeUnitId(id) === want;
   });
 }

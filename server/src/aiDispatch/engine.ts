@@ -32,7 +32,13 @@ import {
 } from "./ten33Marker.js";
 import { shouldSkipDuplicateAiDispatch } from "./dedupe.js";
 import { listTen8ActiveIncidents } from "../ten8/store.js";
-import { ten8AddComment, ten8Configured } from "../ten8/client.js";
+import {
+  ten8AddComment,
+  ten8Configured,
+  ten8CreateIncident,
+  ten8NewIncidentConfigured,
+} from "../ten8/client.js";
+import { lookupSsaProperty } from "./ssaProperties.js";
 import type { PlateLookupResult } from "./plateLookup.js";
 import type { AiDispatchParseResult } from "./parse.js";
 
@@ -175,6 +181,36 @@ function findMatchingOpenIncident(
     }
   }
   return null;
+}
+
+/** Build a 10-8 New Incident API body from a self-dispatch parse. type + summary are required. */
+function buildNewIncidentBody(
+  parsed: AiDispatchParseResult,
+  unit: string,
+  dispatcherName: string,
+): Record<string, unknown> {
+  const type = parsed.code?.trim() || "Officer Initiated";
+  const body: Record<string, unknown> = {
+    type,
+    summary: parsed.summary?.trim() || type,
+    dispatcher: dispatcherName,
+    require_acknowledge: false,
+  };
+  if (unit.trim()) {
+    body.units = unit.trim();
+  }
+  const prop = lookupSsaProperty(parsed.location_code);
+  if (prop) {
+    body.location = [prop.street, prop.city, prop.state, prop.zip].filter(Boolean).join(", ");
+    if (prop.street) body.streetAddress = prop.street;
+    if (prop.city) body.city = prop.city;
+    if (prop.state) body.state = prop.state;
+    if (prop.zip) body.zip = prop.zip;
+    if (prop.locnotes || prop.name) body.locnotes = prop.locnotes || prop.name;
+  } else if (parsed.location_name?.trim()) {
+    body.location = parsed.location_name.trim();
+  }
+  return body;
 }
 
 async function persistAiDispatchLog(opts: {
@@ -323,10 +359,15 @@ async function processTransmission(transmissionId: number): Promise<void> {
       if (await ten8Configured(tx.agency_id)) {
         const cadNote = `[AI] ${parsed.summary}`.slice(0, 500);
         if (parsed.intent === "dispatch") {
-          // Self-dispatch is a NEW call — it should create an incident, not comment on an
-          // existing one. Creation is pending the New Incident API request format; never attach
-          // this to an unrelated open call.
-          ten8Actions.ten8_comment = { skipped: "self_dispatch_new_call" };
+          // Self-dispatch is a NEW call — create an incident, never comment on an unrelated one.
+          if (await ten8NewIncidentConfigured(tx.agency_id)) {
+            const createUnit = (parsed.unit ?? unitId ?? "").trim();
+            const body = buildNewIncidentBody(parsed, createUnit, platform.dispatchUnitId);
+            const res = await ten8CreateIncident(tx.agency_id, body);
+            ten8Actions.ten8_incident = { request: body, ...res };
+          } else {
+            ten8Actions.ten8_incident = { skipped: "new_incident_not_configured" };
+          }
         } else if (parsed.actionable) {
           const active = await listTen8ActiveIncidents(tx.agency_id);
           if (active.length === 0) {

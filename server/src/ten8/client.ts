@@ -72,7 +72,9 @@ export async function ten8AddComment(
 ): Promise<{ ok: boolean; shadow?: boolean; data?: unknown }> {
   const lookup = encodeURIComponent(callId);
   const res = await ten8Fetch(agencyId, "POST", `/v1/incidents/${lookup}/comments`, {
+    officer: "AI Dispatch",
     comment: sanitizeForTen8(comment).slice(0, 4000),
+    type: "comment",
   });
   return { ok: res.ok, shadow: (res.data as { shadow?: boolean })?.shadow === true, data: res.data };
 }
