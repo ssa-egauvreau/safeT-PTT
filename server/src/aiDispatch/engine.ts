@@ -16,6 +16,12 @@ import {
   resolveAiDispatchSystemPrompt,
 } from "./platformConfig.js";
 import { playMp3UrlOnChannel } from "./playback.js";
+import { buildDeterministicDispatchAck } from "./dispatchAck.js";
+import {
+  buildInfoRequestAck,
+  buildInfoRequestResponse,
+  infoRequestNeedsAsync,
+} from "./infoRequest.js";
 import { synthesizeElevenLabsMp3 } from "./tts.js";
 import { postOutboundWebhook } from "./webhook.js";
 import {
@@ -190,11 +196,40 @@ async function processTransmission(transmissionId: number): Promise<void> {
       }
 
       let speakText = plate.speakText || parsed.dispatcher_response?.trim() || "";
+
+      if (parsed.intent === "request_info" && parsed.info_request) {
+        if (infoRequestNeedsAsync(parsed.info_request)) {
+          speakText = buildInfoRequestAck(parsed.unit ?? unitId);
+          const reply = adaptDispatcherResponseForChannel(speakText, tx.channel_name);
+          parsed = { ...parsed, dispatcher_response: reply };
+          await speakDispatcherReply(tx, transmissionId, unitId, transcript, reply, yieldsToUnits);
+          void runAsyncInfoLookup(tx, transmissionId, unitId, transcript, parsed, yieldsToUnits);
+        } else {
+          const answer = await buildInfoRequestResponse(
+            tx.agency_id,
+            parsed.info_request,
+            parsed.unit ?? unitId,
+          );
+          if (answer) {
+            speakText = answer;
+          }
+        }
+      } else {
+        const detAck = buildDeterministicDispatchAck(parsed, parsed.unit ?? unitId);
+        if (detAck) {
+          speakText = detAck;
+        }
+      }
+
       if (!speakText && ten33Activated) {
         speakText = defaultTen33Callout(tx.channel_name);
       }
 
-      if (speakText) {
+      if (speakText && parsed.intent !== "request_info") {
+        const reply = adaptDispatcherResponseForChannel(speakText, tx.channel_name);
+        parsed = { ...parsed, dispatcher_response: reply };
+        await speakDispatcherReply(tx, transmissionId, unitId, transcript, reply, yieldsToUnits);
+      } else if (speakText && parsed.intent === "request_info" && !infoRequestNeedsAsync(parsed.info_request!)) {
         const reply = adaptDispatcherResponseForChannel(speakText, tx.channel_name);
         parsed = { ...parsed, dispatcher_response: reply };
         await speakDispatcherReply(tx, transmissionId, unitId, transcript, reply, yieldsToUnits);
@@ -258,6 +293,34 @@ async function processTransmission(transmissionId: number): Promise<void> {
         durationMs: Date.now() - t0,
       }).catch((e) => console.warn("[ai-dispatch] log insert failed", e));
     }
+  }
+}
+
+async function runAsyncInfoLookup(
+  tx: NonNullable<Awaited<ReturnType<typeof getTransmissionDispatchContext>>>,
+  transmissionId: number,
+  unitId: string,
+  transcript: string,
+  parsed: AiDispatchParseResult,
+  yieldsToUnits: boolean,
+): Promise<void> {
+  if (!parsed.info_request) {
+    return;
+  }
+  try {
+    const answer = await buildInfoRequestResponse(
+      tx.agency_id,
+      parsed.info_request,
+      parsed.unit ?? unitId,
+    );
+    if (!answer) {
+      return;
+    }
+    const reply = adaptDispatcherResponseForChannel(answer, tx.channel_name);
+    await speakDispatcherReply(tx, transmissionId, unitId, transcript, reply, yieldsToUnits);
+    console.log(`[ai-dispatch] info_request async answer agency=${tx.agency_id} type=${parsed.info_request.type}`);
+  } catch (err) {
+    console.warn("[ai-dispatch] async info_request failed", err);
   }
 }
 

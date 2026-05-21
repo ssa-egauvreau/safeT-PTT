@@ -22,3 +22,9 @@ function copyTxtDir(fromRel, toRel) {
 }
 
 copyTxtDir("src/aiDispatch/prompts", "dist/aiDispatch/prompts");
+
+const jsonFrom = join(serverRoot, "src/aiDispatch/data/ssaProperties.json");
+const jsonTo = join(serverRoot, "dist/aiDispatch/data/ssaProperties.json");
+mkdirSync(dirname(jsonTo), { recursive: true });
+cpSync(jsonFrom, jsonTo);
+console.log("[copy-server-assets] ssaProperties.json → dist/aiDispatch/data/");

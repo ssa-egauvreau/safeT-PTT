@@ -57,11 +57,12 @@ export async function listTen8ActiveIncidents(agencyId: number): Promise<
     priority: string | null;
     status: string | null;
     location: string | null;
+    payload: unknown;
     updated_at: string;
   }>
 > {
   const res = await requirePool().query(
-    `SELECT call_id, incident_type, priority, status, location, updated_at
+    `SELECT call_id, incident_type, priority, status, location, payload, updated_at
        FROM ten8_incidents
       WHERE agency_id = $1 AND is_closed = FALSE
       ORDER BY updated_at DESC

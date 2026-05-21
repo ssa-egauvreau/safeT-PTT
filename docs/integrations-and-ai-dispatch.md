@@ -47,7 +47,8 @@ Restart the service after changing env vars.
 - **ElevenLabs API key** — TTS for that agency’s AI replies.
 - **ElevenLabs voice ID** — Voice from your ElevenLabs library.
 - **TTS model** — Server default `eleven_v3` with **Creative** stability (`0.0`). Optional Railway overrides: `ELEVENLABS_MODEL_ID`, `ELEVENLABS_STABILITY` (`0` Creative, `0.5` Natural, `1` Robust).
-- **TTS pronunciation** — Before ElevenLabs speaks, safeT applies the same rules as the old 10-8 dispatcher (`prepareTextForTTS`): `913` → “nine thirteen”, `27-000` → “twenty seven thousand”, call types, NATO plate phonetics, and radio pacing breaks.
+- **TTS pronunciation** — Same pipeline as the old 10-8 dispatcher: radio codes (`913` → “nine thirteen”), SSA account codes (`32-08` → “thirty-two oh-eight”), command staff (`27-000` → “twenty seven thousand”), call types, phone digit groups, NATO plate phonetics, and SSML pacing breaks.
+- **TTS precache** — On startup, common ack phrases from the old server (Copy, `{unit}, 913`, status acks, standby lines) are pre-generated per agency that has ElevenLabs configured, so short replies play instantly.
 - **AI dispatcher system prompt** — **Your agency’s** instructions: local 10-codes, unit/call sign format, tone, and radio policy. If this field is empty, **Sunset Safety** agencies use the built-in prompt exported from the 10-8 AI dashboard; other agencies use `AI_DISPATCH_SYSTEM_PROMPT` from Railway.
 - **Outbound webhook URL** — Optional HTTPS URL; safeT POSTs JSON when the AI dispatcher sends a reply.
 - **Lookups** — PlateToVIN key, optional VIN (Auto.dev) key, default plate state.

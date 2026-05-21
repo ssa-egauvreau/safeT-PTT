@@ -6,15 +6,35 @@ export interface PlateRequestFields {
   vin: string | null;
 }
 
+export interface InfoRequestFields {
+  type:
+    | "address"
+    | "external_address"
+    | "pending_calls"
+    | "active_calls_for_unit"
+    | "phone"
+    | "contact"
+    | "legal_code"
+    | "general_query"
+    | "unknown";
+  account_code: string | null;
+  subject: string | null;
+}
+
 export interface AiDispatchParseResult {
   actionable: boolean;
   intent: string;
+  unit: string | null;
   summary: string;
   confidence: number;
   dispatcher_response: string | null;
   trigger_emergency_tone: boolean;
   recommended_action: string | null;
   plate_request: PlateRequestFields | null;
+  code: string | null;
+  location_code: string | null;
+  location_name: string | null;
+  info_request: InfoRequestFields | null;
 }
 
 const VALID_INTENTS = new Set([
@@ -78,6 +98,46 @@ export function normalizeAiDispatchParse(raw: unknown): AiDispatchParseResult | 
     typeof ai.recommended_action === "string" && ai.recommended_action.trim()
       ? ai.recommended_action.trim()
       : null;
+  const unit =
+    typeof ai.unit === "string" && ai.unit.trim() ? ai.unit.trim() : null;
+  const code = typeof ai.code === "string" && ai.code.trim() ? ai.code.trim() : null;
+  const location_code =
+    typeof ai.location_code === "string" && /^\d{3,5}$/.test(ai.location_code.trim())
+      ? ai.location_code.trim()
+      : null;
+  const location_name =
+    typeof ai.location_name === "string" && ai.location_name.trim()
+      ? ai.location_name.trim()
+      : null;
+
+  let info_request: InfoRequestFields | null = null;
+  if (ai.info_request && typeof ai.info_request === "object" && !Array.isArray(ai.info_request)) {
+    const ir = ai.info_request as Record<string, unknown>;
+    const t = typeof ir.type === "string" ? ir.type.trim().toLowerCase() : null;
+    const validTypes = new Set([
+      "address",
+      "external_address",
+      "pending_calls",
+      "active_calls_for_unit",
+      "phone",
+      "contact",
+      "legal_code",
+      "general_query",
+      "unknown",
+    ]);
+    if (t && validTypes.has(t)) {
+      info_request = {
+        type: t as InfoRequestFields["type"],
+        account_code:
+          typeof ir.account_code === "string" && /^\d{3,5}$/.test(ir.account_code.trim())
+            ? ir.account_code.trim()
+            : null,
+        subject:
+          typeof ir.subject === "string" && ir.subject.trim() ? ir.subject.trim() : null,
+      };
+    }
+  }
+
   let plate_request: PlateRequestFields | null = null;
   if (ai.plate_request && typeof ai.plate_request === "object" && !Array.isArray(ai.plate_request)) {
     const pr = ai.plate_request as Record<string, unknown>;
@@ -96,12 +156,17 @@ export function normalizeAiDispatchParse(raw: unknown): AiDispatchParseResult | 
   return {
     actionable: ai.actionable,
     intent: ai.intent,
+    unit,
     summary: ai.summary.trim(),
     confidence: ai.confidence,
     dispatcher_response,
     trigger_emergency_tone,
     recommended_action,
     plate_request,
+    code,
+    location_code,
+    location_name,
+    info_request,
   };
 }
 

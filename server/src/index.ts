@@ -20,6 +20,7 @@ import {
   peekVoiceTransmittingTalker,
 } from "./voiceRelay.js";
 import { configureAiDispatchEngine } from "./aiDispatch/engine.js";
+import { scheduleAllAgencyTtsPrecache } from "./aiDispatch/ttsPrecache.js";
 import { startBridgeWorker } from "./bridgeWorker.js";
 
 const app = express();
@@ -286,6 +287,7 @@ async function main(): Promise<void> {
     console.log(`DATABASE_URL ${process.env.DATABASE_URL ? "configured" : "not set (in-memory defaults)"}`);
     // The radio-bridge worker ingests stream-URL bridges onto their channels.
     configureAiDispatchEngine({ port });
+    void scheduleAllAgencyTtsPrecache();
     startBridgeWorker({ port });
   });
 

@@ -1,0 +1,786 @@
+{
+  "1019": {
+    "name": "SSA Station / HQ",
+    "street": "1586 N. Batavia St",
+    "city": "Orange",
+    "state": "CA",
+    "zip": "92867",
+    "locnotes": "1019 - SSA Station HQ / 1586 N. Batavia St / Orange CA 92867"
+  },
+  "1302": {
+    "name": "Pioneer Mills",
+    "street": "11835 South St",
+    "city": "Cerritos",
+    "state": "CA",
+    "zip": "90703",
+    "locnotes": "1302 - Pioneer Mills / 11835 South St / 1302 - Pioneer Mills"
+  },
+  "1401": {
+    "name": "Industry Business Center / Sub",
+    "street": "15302 E. Valley Blvd",
+    "city": "City of Industry",
+    "state": "CA",
+    "zip": "91746",
+    "locnotes": "1401 - Industry Business Center / Sub / 15302 E. Valley Blvd / 1401 - Industry Business Center / Sub"
+  },
+  "1701": {
+    "name": "Green Hills Memorial Park",
+    "street": "27501 S Western Ave",
+    "city": "Rancho Palos Verdes",
+    "state": "CA",
+    "zip": "90275",
+    "locnotes": "1701 - Green Hills Memorial Park / 27501 S Western Ave / 1701 - Green Hills Memorial Park"
+  },
+  "1801": {
+    "name": "Beach Chapman Center",
+    "street": "11951 Beach Blvd",
+    "city": "Stanton",
+    "state": "CA",
+    "zip": "90680",
+    "locnotes": "1801 - Beach Chapman Center / 11951 Beach Blvd / 1801 - Beach Chapman Center"
+  },
+  "1802": {
+    "name": "Plaza Court",
+    "street": "11440 Court St",
+    "city": "Stanton",
+    "state": "CA",
+    "zip": "90680",
+    "locnotes": "1802 - Plaza Court / 11440 Court St / 1802 - Plaza Court"
+  },
+  "1804": {
+    "name": "Katella Square",
+    "street": "7129 Katella Ave",
+    "city": "Stanton",
+    "state": "CA",
+    "zip": "90680",
+    "locnotes": "1804 - Katella Square / 7129 Katella Ave / 1804 - Katella Square"
+  },
+  "1805": {
+    "name": "Foothill Town Homes",
+    "street": "29516 Pelican Way",
+    "city": "Laguna Niguel",
+    "state": "CA",
+    "zip": "92677",
+    "locnotes": "1805 - Foothill Town Homes / 29516 Pelican Way / 1805 - Foothill Town Homes"
+  },
+  "1806": {
+    "name": "Santiago Church Lake Forest",
+    "street": "21682 Lake Forest Drive",
+    "city": "Lake Forest",
+    "state": "CA",
+    "zip": "92630",
+    "locnotes": "1806 - Santiago Church Lake Forest / 21682 Lake Forest Drive / 1806 - Santiago Church Lake Forest"
+  },
+  "1807": {
+    "name": "Pacific Corporate Park",
+    "street": "25341 - 25391 Commercentre Lake Forest",
+    "city": "",
+    "state": "CA",
+    "zip": "",
+    "locnotes": "1807 - Pacific Corporate Park / 25341 - 25391 Commercentre Lake Forest / 1807 - Pacific Corporate Park"
+  },
+  "1808": {
+    "name": "Crown Valley Mall",
+    "street": "30202-30272 Crown Valley Parkway",
+    "city": "Laguna Niguel",
+    "state": "CA",
+    "zip": "92677",
+    "locnotes": "1808 - Crown Valley Mall / 30202-30272 Crown Valley Parkway / 1808 - Crown Valley Mall"
+  },
+  "1809": {
+    "name": "Mission Viejo Corporate Center",
+    "street": "27200-27240 La Paz Road",
+    "city": "Mission Viejo",
+    "state": "CA",
+    "zip": "92691",
+    "locnotes": "1809 - Mission Viejo Corporate Center / 27200-27240 La Paz Road / 1809 - Mission Viejo Corporate Center"
+  },
+  "1810": {
+    "name": "Orangewood Creek",
+    "street": "8100 Orangewood Ave",
+    "city": "Stanton",
+    "state": "CA",
+    "zip": "90680",
+    "locnotes": "1810 - Orangewood Creek / 8100 Orangewood Ave / 1810 - Orangewood Creek"
+  },
+  "1811": {
+    "name": "Foothill Ranch Regal / Costco",
+    "street": "26602 Town Centre Dr",
+    "city": "Foothill Ranch",
+    "state": "CA",
+    "zip": "92610",
+    "locnotes": "1811 - Foothill Ranch Regal / Costco / 26602 Town Centre Dr / 1811 - Foothill Ranch Regal / Costco"
+  },
+  "1812": {
+    "name": "Hillview Serrano HOA",
+    "street": "21194 Serra Vista",
+    "city": "Lake Forest",
+    "state": "CA",
+    "zip": "92630",
+    "locnotes": "1812 - Hillview Serrano HOA / 21194 Serra Vista / 1812 - Hillview Serrano HOA"
+  },
+  "1813": {
+    "name": "Mission Viejo Market Place",
+    "street": "26042 Marguerite Pkwy",
+    "city": "Mission Viejo",
+    "state": "CA",
+    "zip": "92692",
+    "locnotes": "1813 - Mission Viejo Market Place / 26042 Marguerite Pkwy / 1813 - Mission Viejo Market Place"
+  },
+  "1814": {
+    "name": "Village Courtyard",
+    "street": "8080 Bever Pl",
+    "city": "Stanton",
+    "state": "CA",
+    "zip": "90860",
+    "locnotes": "1814 - Village Courtyard / 8080 Bever Pl / 1814 - Village Courtyard"
+  },
+  "2201": {
+    "name": "Portarosa HOA Brea",
+    "street": "2538 Cordero Ln",
+    "city": "Brea",
+    "state": "CA",
+    "zip": "92821",
+    "locnotes": "2201 - Portarosa HOA Brea / 2538 Cordero Ln / 2201 - Portarosa HOA Brea"
+  },
+  "2302": {
+    "name": "Kiddie Academy",
+    "street": "7501 Commonwealth Ave",
+    "city": "Buena Park",
+    "state": "CA",
+    "zip": "90621",
+    "locnotes": "2302 - Kiddie Academy / 7501 Commonwealth Ave / 2302 - Kiddie Academy"
+  },
+  "2303": {
+    "name": "Buena Vista Apartments",
+    "street": "8102 Artesia Blvd",
+    "city": "Buena Park",
+    "state": "CA",
+    "zip": "90621",
+    "locnotes": "2303 - Buena Vista Apartments / 8102 Artesia Blvd / 2303 - Buena Vista Apartments"
+  },
+  "2304": {
+    "name": "SJ&P Beach",
+    "street": "6681 Beach Blvd",
+    "city": "Buena Park",
+    "state": "CA",
+    "zip": "90621",
+    "locnotes": "2304 - SJ&P Beach / 6681 Beach Blvd / 2304 - SJ&P Beach"
+  },
+  "2401": {
+    "name": "Serrento Apartments",
+    "street": "949 N Placentia Ave",
+    "city": "Fullerton",
+    "state": "CA",
+    "zip": "92831",
+    "locnotes": "2401 - Serrento Apartments / 949 N Placentia Ave / 2401 - Serrento Apartments"
+  },
+  "2601": {
+    "name": "Daniel's Home Center",
+    "street": "255 S Euclid St",
+    "city": "Anaheim",
+    "state": "CA",
+    "zip": "92802",
+    "locnotes": "2601 - Daniel's Home Center / 255 S Euclid St / 2601 - Daniel's Home Center"
+  },
+  "2602": {
+    "name": "Plaza de Seville (Ball Rd)",
+    "street": "2103 E Ball Rd",
+    "city": "Anaheim",
+    "state": "CA",
+    "zip": "92806",
+    "locnotes": "2602 - Plaza de Seville (Ball Rd) / 2103 E Ball Rd / 2602 - Plaza de Seville (Ball Rd)"
+  },
+  "2603": {
+    "name": "The Heritage",
+    "street": "1235 Sharon Cir",
+    "city": "Anaheim",
+    "state": "CA",
+    "zip": "92804",
+    "locnotes": "2603 - The Heritage / 1235 Sharon Cir / 2603 - The Heritage"
+  },
+  "2604": {
+    "name": "910 S. Euclid Street",
+    "street": "910 S Euclid St",
+    "city": "Anaheim",
+    "state": "CA",
+    "zip": "92802",
+    "locnotes": "2604 - 910 S. Euclid Street / 910 S Euclid St / 2604 - 910 S. Euclid Street"
+  },
+  "2605": {
+    "name": "Valencia Apartments",
+    "street": "2633 E La Palma Ave",
+    "city": "Anaheim",
+    "state": "CA",
+    "zip": "92806",
+    "locnotes": "2605 - Valencia Apartments / 2633 E La Palma Ave / 2605 - Valencia Apartments"
+  },
+  "2607": {
+    "name": "Lincoln Pines Apartments",
+    "street": "2555 W. Lincoln Ave",
+    "city": "Anaheim",
+    "state": "CA",
+    "zip": "92801",
+    "locnotes": "2607 - Lincoln Pines Apartments / 2555 W. Lincoln Ave / 2607 - Lincoln Pines Apartments"
+  },
+  "2608": {
+    "name": "Anaheim Management",
+    "street": "115 N. Gilbert",
+    "city": "Anaheim",
+    "state": "CA",
+    "zip": "92801",
+    "locnotes": "2608 - Anaheim Management / 115 N. Gilbert / 2608 - Anaheim Management"
+  },
+  "2609": {
+    "name": "Cherokee Mobile Home Park",
+    "street": "235 S Beach Blvd",
+    "city": "Anaheim",
+    "state": "CA",
+    "zip": "92804",
+    "locnotes": "2609 - Cherokee Mobile Home Park / 235 S Beach Blvd / 2609 - Cherokee Mobile Home Park"
+  },
+  "2610": {
+    "name": "Lynrose Manor",
+    "street": "2950 W Lynrose Ln",
+    "city": "Anaheim",
+    "state": "CA",
+    "zip": "92804",
+    "locnotes": "2610 - Lynrose Manor / 2950 W Lynrose Ln / 2610 - Lynrose Manor"
+  },
+  "2611": {
+    "name": "Villa Gardens",
+    "street": "1742 W. Lincoln Ave",
+    "city": "Anaheim",
+    "state": "CA",
+    "zip": "92801",
+    "locnotes": "2611 - Villa Gardens / 1742 W. Lincoln Ave / 2611 - Villa Gardens"
+  },
+  "3112": {
+    "name": "Villa McFadden HOA",
+    "street": "1015 South Mantle Lane",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92705",
+    "locnotes": "3112 - Villa McFadden HOA / 1015 South Mantle Lane / 3112 - Villa McFadden HOA"
+  },
+  "3118": {
+    "name": "Wilshire & Minnie Apartments",
+    "street": "1235 E Wilshire Ave",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92707",
+    "locnotes": "3118 - Wilshire & Minnie Apartments / 1235 E Wilshire Ave / 3118 - Wilshire & Minnie Apartments"
+  },
+  "3119": {
+    "name": "Orangewood Business Center",
+    "street": "1701 E Edinger Ave",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92705",
+    "locnotes": "3119 - Orangewood Business Center / 1701 E Edinger Ave / 3119 - Orangewood Business Center"
+  },
+  "3121": {
+    "name": "Normandy Place",
+    "street": "1705 Normandy Pl",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92705",
+    "locnotes": "3121 - Normandy Place / 1705 Normandy Pl / 3121 - Normandy Place"
+  },
+  "3122": {
+    "name": "The Manor",
+    "street": "4120 W 5th St",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92703",
+    "locnotes": "3122 - The Manor / 4120 W 5th St / 3122 - The Manor"
+  },
+  "3123": {
+    "name": "River View West",
+    "street": "701-751 S. Harbor & 3700-3770 W. McFadden",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92704",
+    "locnotes": "3123 - River View West / 701-751 S. Harbor & 3700-3770 W. McFadden / 3123 - River View West"
+  },
+  "3125": {
+    "name": "Santa Ana Towers",
+    "street": "401 W. 1ST Street",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92701",
+    "locnotes": "3125 - Santa Ana Towers / 401 W. 1ST Street / 3125 - Santa Ana Towers"
+  },
+  "3126": {
+    "name": "Satnam Investments (Franklin Square)",
+    "street": "1600 E. 4th St",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92701",
+    "locnotes": "3126 - Satnam Investments (Franklin Square) / 1600 E. 4th St / 3126 - Satnam Investments (Franklin Square)"
+  },
+  "3127": {
+    "name": "City Place HOA",
+    "street": "103 E City Place Dr",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92705",
+    "locnotes": "3127 - City Place HOA / 103 E City Place Dr / 3127 - City Place HOA"
+  },
+  "3128": {
+    "name": "St. Gertrude Business Park",
+    "street": "1555 to 1583 E. Saint Gertrude Place",
+    "city": "",
+    "state": "CA",
+    "zip": "",
+    "locnotes": "3128 - St. Gertrude Business Park / 1555 to 1583 E. Saint Gertrude Place / 3128 - St. Gertrude Business Park"
+  },
+  "3129": {
+    "name": "Shadow Wood HOA",
+    "street": "611-639 N. Bristol",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "",
+    "locnotes": "3129 - Shadow Wood HOA / 611-639 N. Bristol / 3129 - Shadow Wood HOA"
+  },
+  "3130": {
+    "name": "Santa Ana Square",
+    "street": "1212-1234 E 17th Street",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92701",
+    "locnotes": "3130 - Santa Ana Square / 1212-1234 E 17th Street / 3130 - Santa Ana Square"
+  },
+  "3131": {
+    "name": "Bristol Segerstrom",
+    "street": "2860 S. Bristol St.",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "",
+    "locnotes": "3131 - Bristol Segerstrom / 2860 S. Bristol St. / 3131 - Bristol Segerstrom"
+  },
+  "3132": {
+    "name": "Bristol Shops Center",
+    "street": "3005-3047 S Bristol St.",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "",
+    "locnotes": "3132 - Bristol Shops Center / 3005-3047 S Bristol St. / 3132 - Bristol Shops Center"
+  },
+  "3133": {
+    "name": "Floral Park Promendade",
+    "street": "2705-2729 N. Bristol St., 2703 N. Bristol St., 1231-1241 Memory Lane",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "",
+    "locnotes": "3133 - Floral Park Promendade / 2705-2729 N. Bristol St., 2703 N. Bristol St., 1231-1241 Memory Lane / 3133 - Floral Park Promendade"
+  },
+  "3134": {
+    "name": "Main & Edinger Center",
+    "street": "1451-1473 S Main St.",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "",
+    "locnotes": "3134 - Main & Edinger Center / 1451-1473 S Main St. / 3134 - Main & Edinger Center"
+  },
+  "3136": {
+    "name": "Harbor Commerce Center",
+    "street": "3001-3037 Harbor Blvd",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92704",
+    "locnotes": "3136 - Harbor Commerce Center / 3001-3037 Harbor Blvd / 3136 - Harbor Commerce Center"
+  },
+  "3137": {
+    "name": "Town and Country Senior Living",
+    "street": "555 E. Memory Lane",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92706",
+    "locnotes": "3137 - Town and Country Senior Living / 555 E. Memory Lane / 3137 - Town and Country Senior Living"
+  },
+  "3138": {
+    "name": "San Suci 1301 S. Standard",
+    "street": "1301 S. Standard",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "",
+    "locnotes": "3138 - San Suci 1301 S. Standard / 1301 S. Standard / 3138 - San Suci 1301 S. Standard"
+  },
+  "3139": {
+    "name": "Coach Royal MHP",
+    "street": "215 S. Sullivan Street",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92704",
+    "locnotes": "3139 - Coach Royal MHP / 215 S. Sullivan Street / 3139 - Coach Royal MHP"
+  },
+  "3140": {
+    "name": "Country Club MHP",
+    "street": "518 S. Sullivan St",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92704",
+    "locnotes": "3140 - Country Club MHP / 518 S. Sullivan St / 3140 - Country Club MHP"
+  },
+  "3141": {
+    "name": "Stoneridge MHP",
+    "street": "12300 W. Lilac Ave",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92704",
+    "locnotes": "3141 - Stoneridge MHP / 12300 W. Lilac Ave / 3141 - Stoneridge MHP"
+  },
+  "3142": {
+    "name": "CVS 09583",
+    "street": "102 N. Main St",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92701",
+    "locnotes": "3142 - CVS 09583 / 102 N. Main St / 3142 - CVS 09583"
+  },
+  "3143": {
+    "name": "1ST & NEWHOPE",
+    "street": "4521 W 1st St",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92703",
+    "locnotes": "3143 - 1ST & NEWHOPE / 4521 W 1st St / 3143 - 1ST & NEWHOPE"
+  },
+  "3144": {
+    "name": "Harbor/Westminster Shopping Center",
+    "street": "3710-3720 Westminster Blvd",
+    "city": "Santa Ana",
+    "state": "CA",
+    "zip": "92703",
+    "locnotes": "3144 - Harbor/Westminster Shopping Center / 3710-3720 Westminster Blvd / 3144 - Harbor/Westminster Shopping Center"
+  },
+  "3202": {
+    "name": "MagWest Retail Center",
+    "street": "8851 Westminster Blvd.",
+    "city": "Garden Grove",
+    "state": "CA",
+    "zip": "92844",
+    "locnotes": "3202 - MagWest Retail Center / 8851 Westminster Blvd. / 3202 - MagWest Retail Center"
+  },
+  "3204": {
+    "name": "Adland Apartments",
+    "street": "13191 Adland St",
+    "city": "Garden Grove",
+    "state": "CA",
+    "zip": "92843",
+    "locnotes": "3204 - Adland Apartments / 13191 Adland St / 3204 - Adland Apartments"
+  },
+  "3205": {
+    "name": "The Yorkshire Apartments",
+    "street": "11075 Westminster Ave",
+    "city": "Garden Grove",
+    "state": "CA",
+    "zip": "92843",
+    "locnotes": "3205 - The Yorkshire Apartments / 11075 Westminster Ave / 3205 - The Yorkshire Apartments"
+  },
+  "3206": {
+    "name": "Cypress Apartments Garden Grove",
+    "street": "13112 Cypress St",
+    "city": "Garden Grove",
+    "state": "CA",
+    "zip": "92843",
+    "locnotes": "3206 - Cypress Apartments Garden Grove / 13112 Cypress St / 3206 - Cypress Apartments Garden Grove"
+  },
+  "3207": {
+    "name": "Benton Apartments",
+    "street": "13101 Benton St",
+    "city": "Garden Grove",
+    "state": "CA",
+    "zip": "92843",
+    "locnotes": "3207 - Benton Apartments / 13101 Benton St / 3207 - Benton Apartments"
+  },
+  "3208": {
+    "name": "Harbor Chapman Restaraunt Center",
+    "street": "12362 Chapman/12001-12011 Harbor",
+    "city": "Garaden Grove",
+    "state": "CA",
+    "zip": "92840",
+    "locnotes": "3208 - Harbor Chapman Restaraunt Center / 12362 Chapman/12001-12011 Harbor / 3208 - Harbor Chapman Restaraunt Center"
+  },
+  "3209": {
+    "name": "City Villas Apartments",
+    "street": "13061 Lampson Ave",
+    "city": "Garden Grove",
+    "state": "CA",
+    "zip": "92840",
+    "locnotes": "3209 - City Villas Apartments / 13061 Lampson Ave / 3209 - City Villas Apartments"
+  },
+  "3210": {
+    "name": "Village Pines",
+    "street": "10191 Lampson Ave",
+    "city": "Garden Grove",
+    "state": "CA",
+    "zip": "92840",
+    "locnotes": "3210 - Village Pines / 10191 Lampson Ave / 3210 - Village Pines"
+  },
+  "3211": {
+    "name": "Garden Grove Festival Square",
+    "street": "10130 Garden Grove Blvd",
+    "city": "Garden Grove",
+    "state": "CA",
+    "zip": "92844",
+    "locnotes": "3211 - Garden Grove Festival Square / 10130 Garden Grove Blvd / 3211 - Garden Grove Festival Square"
+  },
+  "3212": {
+    "name": "Sotelo Market",
+    "street": "9562 Katella",
+    "city": "Garden Grove",
+    "state": "CA",
+    "zip": "92804",
+    "locnotes": "3212 - Sotelo Market / 9562 Katella / 3212 - Sotelo Market"
+  },
+  "3301": {
+    "name": "DMG HVAC",
+    "street": "1110 W. Taft Ave",
+    "city": "Orange",
+    "state": "CA",
+    "zip": "92865",
+    "locnotes": "3301 - DMG HVAC / 1110 W. Taft Ave / 3301 - DMG HVAC"
+  },
+  "3302": {
+    "name": "Carriage Estates",
+    "street": "201 W. Collins Ave",
+    "city": "Orange",
+    "state": "CA",
+    "zip": "92867",
+    "locnotes": "3302 - Carriage Estates / 201 W. Collins Ave / 3302 - Carriage Estates"
+  },
+  "3401": {
+    "name": "Greenwood at Tustin Legacy",
+    "street": "250 Downs Rd",
+    "city": "Tustin",
+    "state": "CA",
+    "zip": "92782",
+    "locnotes": "3401 - Greenwood at Tustin Legacy / 250 Downs Rd / 3401 - Greenwood at Tustin Legacy"
+  },
+  "3402": {
+    "name": "Tustin Field I",
+    "street": "380 Blue Sky Dr",
+    "city": "Tustin",
+    "state": "CA",
+    "zip": "92782",
+    "locnotes": "3402 - Tustin Field I / 380 Blue Sky Dr / 3402 - Tustin Field I"
+  },
+  "3403": {
+    "name": "Levity",
+    "street": "154 Waypoint",
+    "city": "Tustin",
+    "state": "CA",
+    "zip": "92782",
+    "locnotes": "3403 - Levity / 154 Waypoint / 3403 - Levity"
+  },
+  "3404": {
+    "name": "Ko's Packer Square",
+    "street": "13102-13152 Newport Ave",
+    "city": "Tustin",
+    "state": "CA",
+    "zip": "",
+    "locnotes": "3404 - Ko's Packer Square / 13102-13152 Newport Ave / 3404 - Ko's Packer Square"
+  },
+  "3405": {
+    "name": "Rodrigo's Mexican Grill",
+    "street": "14882 Holt Ave",
+    "city": "Tustin",
+    "state": "CA",
+    "zip": "92780",
+    "locnotes": "3405 - Rodrigo's Mexican Grill / 14882 Holt Ave / 3405 - Rodrigo's Mexican Grill"
+  },
+  "3406": {
+    "name": "Red Hill Plaza",
+    "street": "13805 - 18352 Red Hill Avenue & 1571 El Camino Real",
+    "city": "",
+    "state": "CA",
+    "zip": "",
+    "locnotes": "3406 - Red Hill Plaza / 13805 - 18352 Red Hill Avenue & 1571 El Camino Real / 3406 - Red Hill Plaza"
+  },
+  "3407": {
+    "name": "SJPE Tustin",
+    "street": "14252-14262 Newport Ave",
+    "city": "Tustin",
+    "state": "CA",
+    "zip": "92780",
+    "locnotes": "3407 - SJPE Tustin / 14252-14262 Newport Ave / 3407 - SJPE Tustin"
+  },
+  "3408": {
+    "name": "Anton Legacy Apartments",
+    "street": "3100 Park Ave",
+    "city": "Tustin",
+    "state": "CA",
+    "zip": "92782",
+    "locnotes": "3408 - Anton Legacy Apartments / 3100 Park Ave / 3408 - Anton Legacy Apartments"
+  },
+  "3601": {
+    "name": "Midwood Manor",
+    "street": "4001 Barclay Drive",
+    "city": "Cypress",
+    "state": "CA",
+    "zip": "90630",
+    "locnotes": "3601 - Midwood Manor / 4001 Barclay Drive / 3601 - Midwood Manor"
+  },
+  "3901": {
+    "name": "Concordia University LCR Campus",
+    "street": "16355 Laguna Canyon Rd #1",
+    "city": "Irvine",
+    "state": "CA",
+    "zip": "92618",
+    "locnotes": "3901 - Concordia University LCR Campus / 16355 Laguna Canyon Rd #1 / 3901 - Concordia University LCR Campus"
+  },
+  "3902": {
+    "name": "Concordia University Main ( Turtle Rock )",
+    "street": "1530 Concordia",
+    "city": "Irvine",
+    "state": "CA",
+    "zip": "92612",
+    "locnotes": "3902 - Concordia University Main ( Turtle Rock ) / 1530 Concordia / 3902 - Concordia University Main ( Turtle Rock )"
+  },
+  "3903": {
+    "name": "Jeffrey Corporate Center",
+    "street": "5400-5540 Trabuco Rd",
+    "city": "Irvine",
+    "state": "CA",
+    "zip": "92620",
+    "locnotes": "3903 - Jeffrey Corporate Center / 5400-5540 Trabuco Rd / 3903 - Jeffrey Corporate Center"
+  },
+  "3904": {
+    "name": "Oxford Court",
+    "street": "42 Vassar Aisle",
+    "city": "Irvine",
+    "state": "CA",
+    "zip": "92612",
+    "locnotes": "3904 - Oxford Court / 42 Vassar Aisle / 3904 - Oxford Court"
+  },
+  "4001": {
+    "name": "Fountain Valley Shopping Center",
+    "street": "10950 Warner Ave",
+    "city": "Fountain Valley",
+    "state": "CA",
+    "zip": "92708",
+    "locnotes": "4001 - Fountain Valley Shopping Center / 10950 Warner Ave / 4001 - Fountain Valley Shopping Center"
+  },
+  "4002": {
+    "name": "Centennial Plaza",
+    "street": "18837 Brookhurst St",
+    "city": "Fountain Valley",
+    "state": "CA",
+    "zip": "92708",
+    "locnotes": "4002 - Centennial Plaza / 18837 Brookhurst St / 4002 - Centennial Plaza"
+  },
+  "4202": {
+    "name": "Huntington Beach Properties",
+    "street": "16242 and 16272 Beach Blvd",
+    "city": "Huntington Beach",
+    "state": "CA",
+    "zip": "92647",
+    "locnotes": "4202 - Huntington Beach Properties / 16242 and 16272 Beach Blvd / 4202 - Huntington Beach Properties"
+  },
+  "4203": {
+    "name": "Freeway Industrial Park",
+    "street": "7362 Edinger Ave",
+    "city": "Huntington Beach",
+    "state": "CA",
+    "zip": "92647",
+    "locnotes": "4203 - Freeway Industrial Park / 7362 Edinger Ave / 4203 - Freeway Industrial Park"
+  },
+  "4204": {
+    "name": "Parksville Investments LLC",
+    "street": "7440 Edinger Ave",
+    "city": "Huntington Beach",
+    "state": "CA",
+    "zip": "92647",
+    "locnotes": "4204 - Parksville Investments LLC / 7440 Edinger Ave / 4204 - Parksville Investments LLC"
+  },
+  "4205": {
+    "name": "Bolsa Goldenwest",
+    "street": "15011-15101 Goldenwest & 6886-6952 Bolsa Ave",
+    "city": "Huntington Beach",
+    "state": "CA",
+    "zip": "92647",
+    "locnotes": "4205 - Bolsa Goldenwest / 15011-15101 Goldenwest & 6886-6952 Bolsa Ave / 4205 - Bolsa Goldenwest"
+  },
+  "4401": {
+    "name": "Bank of America Costa Mesa",
+    "street": "548 W 19th St",
+    "city": "Costa Mesa",
+    "state": "CA",
+    "zip": "92627",
+    "locnotes": "4401 - Bank of America Costa Mesa / 548 W 19th St / 4401 - Bank of America Costa Mesa"
+  },
+  "4402": {
+    "name": "Cambridge Park",
+    "street": "3505 Cadillac Ave",
+    "city": "Costa Mesa",
+    "state": "CA",
+    "zip": "92626",
+    "locnotes": "4402 - Cambridge Park / 3505 Cadillac Ave / 4402 - Cambridge Park"
+  },
+  "4405": {
+    "name": "Spirit Auto",
+    "street": "1077 Baker St",
+    "city": "Costa Mesa",
+    "state": "CA",
+    "zip": "92626",
+    "locnotes": "4405 - Spirit Auto / 1077 Baker St / 4405 - Spirit Auto"
+  },
+  "4406": {
+    "name": "Joann St Apartments",
+    "street": "735 Joann St",
+    "city": "Costa Mesa",
+    "state": "CA",
+    "zip": "92627",
+    "locnotes": "4406 - Joann St Apartments / 735 Joann St / 4406 - Joann St Apartments"
+  },
+  "4407": {
+    "name": "Harbor CM",
+    "street": "2640-2666 Harbor BLVD",
+    "city": "Costa Mesa",
+    "state": "CA",
+    "zip": "",
+    "locnotes": "4407 - Harbor CM / 2640-2666 Harbor BLVD / 4407 - Harbor CM"
+  },
+  "4408": {
+    "name": "Super A's Mexican Food",
+    "street": "2949 Fairview Rd",
+    "city": "Costa Mesa",
+    "state": "CA",
+    "zip": "92626",
+    "locnotes": "4408 - Super A's Mexican Food / 2949 Fairview Rd / 4408 - Super A's Mexican Food"
+  },
+  "4701": {
+    "name": "WestMag Center",
+    "street": "8990 Westminster Blvd.",
+    "city": "Westminster",
+    "state": "CA",
+    "zip": "92683",
+    "locnotes": "4701 - WestMag Center / 8990 Westminster Blvd. / 4701 - WestMag Center"
+  },
+  "4801": {
+    "name": "Los Alamitos Luxury Apartments",
+    "street": "3342 Cerritos Ave",
+    "city": "Los Alamitos",
+    "state": "CA",
+    "zip": "90720",
+    "locnotes": "4801 - Los Alamitos Luxury Apartments / 3342 Cerritos Ave / 4801 - Los Alamitos Luxury Apartments"
+  },
+  "5301": {
+    "name": "Town Center Business Park",
+    "street": "10100 Pioneer Blvd",
+    "city": "Santa Fe Springs",
+    "state": "CA",
+    "zip": "90670",
+    "locnotes": "5301 - Town Center Business Park / 10100 Pioneer Blvd / 5301 - Town Center Business Park"
+  },
+  "8001": {
+    "name": "Belmar",
+    "street": "2679 Maricopa St",
+    "city": "Torrance",
+    "state": "CA",
+    "zip": "90503",
+    "locnotes": "8001 - Belmar / 2679 Maricopa St / 8001 - Belmar"
+  }
+}

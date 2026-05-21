@@ -1,10 +1,12 @@
 /**
  * ElevenLabs TTS preparation — ported from 10-8-alert-dashboard prepareTextForTTS().
  * Turns dispatcher text into phrasing radios expect: "913" → "nine thirteen",
- * "27-000" → "twenty seven thousand", "10-8" → "10 8", SSML pacing breaks.
+ * "32-08" → "thirty-two oh-eight", "27-000" → "twenty seven thousand", SSML pacing.
  */
 
 import { CALL_TYPE_SPOKEN, callTypeSpokenKeysByLength } from "./callTypeSpoken.js";
+import { spokenAccountCode } from "./numbers.js";
+import { formatPhoneForTts } from "./phoneSpeech.js";
 
 const COMMAND_STAFF_PRONUNCIATION: Record<string, string> = {
   "27-000": "twenty seven thousand",
@@ -116,6 +118,30 @@ function expandCallTypesForSpeech(text: string): string {
   return out;
 }
 
+/**
+ * SSA account codes in XX-YY form (18-06, 32-08) — before tens-code despace.
+ * Skips 10-XX (ten codes) and 27-0XX (command staff, already expanded).
+ */
+function expandAccountCodesForSpeech(text: string): string {
+  return text.replace(/\b(\d{2})-(\d{2})\b/g, (match, a: string, b: string) => {
+    if (a === "10") {
+      return match;
+    }
+    if (a === "27") {
+      return match;
+    }
+    return spokenAccountCode(`${a}${b}`);
+  });
+}
+
+/** US phone patterns embedded in free text → digit-group TTS form. */
+function expandPhoneNumbersInText(text: string): string {
+  return text.replace(
+    /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,
+    (m) => formatPhoneForTts(m),
+  );
+}
+
 /** Digit-hyphen-digit → spaces so TTS reads "10 8" not "ten dash eight". */
 function despaceHyphensInCodes(text: string): string {
   if (!text) {
@@ -143,6 +169,8 @@ function addSpeechPacing(text: string): string {
 export function prepareTextForTts(text: string): string {
   let out = expandAbbreviationsForSpeech(text);
   out = expandCallTypesForSpeech(out);
+  out = expandAccountCodesForSpeech(out);
+  out = expandPhoneNumbersInText(out);
   out = despaceHyphensInCodes(out);
   out = addSpeechPacing(out);
   return out;

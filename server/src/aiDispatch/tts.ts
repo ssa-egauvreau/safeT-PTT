@@ -1,5 +1,6 @@
 import { getAgencyIntegrationValue } from "../store.js";
 import { prepareTextForTts } from "./speech/prepareTextForTts.js";
+import { getTtsPrecacheHit, scheduleAgencyTtsPrecache } from "./ttsPrecache.js";
 
 /** Eleven v3 — expressive dispatcher voice (higher latency than Flash/Turbo). */
 const DEFAULT_MODEL_ID = "eleven_v3";
@@ -44,12 +45,25 @@ function elevenLabsVoiceSettings(): ElevenVoiceSettings {
   return { ...DEFAULT_VOICE_SETTINGS, stability: Math.min(1, Math.max(0, stability)) };
 }
 
-export async function synthesizeElevenLabsMp3(agencyId: number, text: string): Promise<Buffer | null> {
+export async function synthesizeElevenLabsMp3(
+  agencyId: number,
+  text: string,
+  opts?: { skipPrecache?: boolean },
+): Promise<Buffer | null> {
   const apiKey = await getAgencyIntegrationValue(agencyId, "elevenlabs_api_key");
   const voiceId =
     (await getAgencyIntegrationValue(agencyId, "elevenlabs_voice_id")) ?? "21m00Tcm4TlvDq8ikWAM";
   if (!apiKey) {
     return null;
+  }
+
+  scheduleAgencyTtsPrecache(agencyId);
+
+  if (!opts?.skipPrecache) {
+    const cached = getTtsPrecacheHit(agencyId, text);
+    if (cached && cached.length > 0) {
+      return cached;
+    }
   }
 
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
