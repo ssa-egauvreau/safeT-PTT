@@ -46,6 +46,7 @@ Restart the service after changing env vars.
 
 - **ElevenLabs API key** — TTS for that agency’s AI replies.
 - **ElevenLabs voice ID** — Voice from your ElevenLabs library.
+- **TTS model** — Server default `eleven_v3` with **Creative** stability (`0.0`). Optional Railway overrides: `ELEVENLABS_MODEL_ID`, `ELEVENLABS_STABILITY` (`0` Creative, `0.5` Natural, `1` Robust).
 - **AI dispatcher system prompt** — **Your agency’s** instructions: local 10-codes, unit/call sign format, tone, and radio policy. If this field is empty, **Sunset Safety** agencies use the built-in prompt exported from the 10-8 AI dashboard; other agencies use `AI_DISPATCH_SYSTEM_PROMPT` from Railway.
 - **Outbound webhook URL** — Optional HTTPS URL; safeT POSTs JSON when the AI dispatcher sends a reply.
 - **Lookups** — PlateToVIN key, optional VIN (Auto.dev) key, default plate state.

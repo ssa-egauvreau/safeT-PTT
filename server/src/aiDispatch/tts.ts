@@ -1,5 +1,48 @@
 import { getAgencyIntegrationValue } from "../store.js";
 
+/** Eleven v3 — expressive dispatcher voice (higher latency than Flash/Turbo). */
+const DEFAULT_MODEL_ID = "eleven_v3";
+
+/**
+ * Eleven v3 stability presets (UI labels → API value):
+ *   Creative = 0.0 (widest emotional range)
+ *   Natural  = 0.5
+ *   Robust   = 1.0 (most consistent)
+ */
+const DEFAULT_STABILITY = 0;
+
+type ElevenVoiceSettings = {
+  stability: number;
+  similarity_boost: number;
+  style: number;
+  speed: number;
+  use_speaker_boost: boolean;
+};
+
+const DEFAULT_VOICE_SETTINGS: ElevenVoiceSettings = {
+  stability: DEFAULT_STABILITY,
+  similarity_boost: 0.78,
+  style: 0.32,
+  speed: 1.02,
+  use_speaker_boost: true,
+};
+
+function elevenLabsModelId(): string {
+  return process.env.ELEVENLABS_MODEL_ID?.trim() || DEFAULT_MODEL_ID;
+}
+
+function elevenLabsVoiceSettings(): ElevenVoiceSettings {
+  const raw = process.env.ELEVENLABS_STABILITY?.trim();
+  if (raw === undefined || raw === "") {
+    return { ...DEFAULT_VOICE_SETTINGS };
+  }
+  const stability = Number(raw);
+  if (!Number.isFinite(stability)) {
+    return { ...DEFAULT_VOICE_SETTINGS };
+  }
+  return { ...DEFAULT_VOICE_SETTINGS, stability: Math.min(1, Math.max(0, stability)) };
+}
+
 export async function synthesizeElevenLabsMp3(agencyId: number, text: string): Promise<Buffer | null> {
   const apiKey = await getAgencyIntegrationValue(agencyId, "elevenlabs_api_key");
   const voiceId =
@@ -17,7 +60,8 @@ export async function synthesizeElevenLabsMp3(agencyId: number, text: string): P
     },
     body: JSON.stringify({
       text: text.slice(0, 2_000),
-      model_id: "eleven_turbo_v2_5",
+      model_id: elevenLabsModelId(),
+      voice_settings: elevenLabsVoiceSettings(),
     }),
   });
   if (!res.ok) {
