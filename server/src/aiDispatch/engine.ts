@@ -204,8 +204,15 @@ async function processTransmission(transmissionId: number): Promise<void> {
     const text = await loadTranscriptText(transmissionId);
     if (!text) {
       outcome = "skipped_no_speech";
-      error = "No speech detected in recording (or transcript not ready).";
       transcript = await loadTranscriptRaw(transmissionId);
+      error =
+        transcript === "(transcript unavailable)"
+          ? "Transcription failed (Whisper unavailable — often Railway out of memory). The AI never saw this transmission."
+          : transcript === "(transcription disabled)"
+            ? "Transcription is disabled (TRANSCRIPTION=off). The AI cannot read transmissions."
+            : transcript === "(transcribing…)"
+              ? "Transcript not ready yet (still transcribing)."
+              : "No speech detected in recording.";
       return;
     }
     transcript = text;
