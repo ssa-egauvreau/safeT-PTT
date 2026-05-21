@@ -541,6 +541,13 @@ export const api = {
       reason: input.reason ?? null,
     }),
 
+  /** Live Channel Control: create (or reuse) an emergency channel and pull units in. */
+  createEmergencyChannel: (input: { name?: string; unitIds: string[] }) =>
+    request<{ ok: boolean; channel: string; reached: number }>("POST", "/v1/channels/emergency", {
+      name: input.name ?? null,
+      unit_ids: input.unitIds,
+    }),
+
   /** Fires the same /radio/emergency endpoint the Android handsets use; surfaces as an alert. */
   radioEmergency: (input: {
     unitId: string;

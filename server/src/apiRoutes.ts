@@ -2319,6 +2319,37 @@ export function createApiRouter(): Router {
     }
   });
 
+  // Live Channel Control: spin up an emergency channel and pull units into it.
+  router.post("/channels/emergency", requireAgencyOperator, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const rawName = String(req.body?.name ?? "").trim().slice(0, 60);
+      const units: string[] = Array.isArray(req.body?.unit_ids)
+        ? req.body.unit_ids.map((u: unknown) => String(u).trim().toUpperCase()).filter(Boolean)
+        : [];
+      const name = rawName || `EMERGENCY ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+      const existing = await listChannels(agencyId);
+      // Reuse a channel with this name if it already exists, else create it.
+      const channel = existing.find((c) => c.name === name) ?? (await createChannel(agencyId, name));
+      let reached = 0;
+      for (const unit of units) {
+        reached += sendMoveCommand(agencyId, unit, channel.name, req.authUser!.username, null);
+      }
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "emergency_channel",
+        target: channel.name,
+        detail: { channel: channel.name, units, reached },
+        ip: clientIp(req),
+      });
+      res.json({ ok: true, channel: channel.name, reached });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
   // Live Channel Control: push a live "move to channel" command to a unit.
   router.post("/channels/move", requireAgencyOperator, async (req, res) => {
     try {

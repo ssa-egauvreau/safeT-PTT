@@ -133,6 +133,32 @@ export function LiveControlPage() {
     }
   }
 
+  async function createEmergencyChannel() {
+    const units = [...selected];
+    if (units.length === 0) {
+      return;
+    }
+    const name = window.prompt(
+      "Name the emergency channel:",
+      `EMERGENCY ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+    );
+    if (name === null) {
+      return;
+    }
+    setStatus(null);
+    setError(null);
+    try {
+      const res = await api.createEmergencyChannel({ name: name.trim() || undefined, unitIds: units });
+      setStatus(`Emergency channel "${res.channel}" — ${res.reached}/${units.length} units moved in.`);
+      setSelected(new Set());
+      setAllChannels((prev) => (prev.includes(res.channel) ? prev : [...prev, res.channel]));
+      const fresh = await api.channelRosters();
+      setRosters(fresh.channels);
+    } catch {
+      setError("Could not create the emergency channel.");
+    }
+  }
+
   return (
     <div className="app-shell">
       <Topbar section="console" />
@@ -159,6 +185,9 @@ export function LiveControlPage() {
         {selected.size > 0 && (
           <div className="lcc-selbar">
             <span>{selected.size} selected</span>
+            <button className="btn sm danger" onClick={() => void createEmergencyChannel()}>
+              Create emergency channel
+            </button>
             <button className="btn sm" onClick={() => setSelected(new Set())}>
               Clear selection
             </button>
