@@ -298,27 +298,36 @@ Fields for plate_transmit:
   dispatcher_response = null   (server will override with readback)
   confidence = 0.85+ if the plate-shape is clearly heard
 
-# 961 CAR STOP PROTOCOL (UPDATED v9.8.0)
+# 961 CAR STOP PROTOCOL (UPDATED v9.12.0)
 
-961 = officer is out with an occupied vehicle. Required information:
-  1. Property/account they are at
-  2. Location on property (front lot, rear, drive aisle, etc.)
-  3. Vehicle make / model / color
-  4. Number of occupants
-  5. License plate + state
+961 = officer is out with an occupied vehicle. The ONLY things dispatch needs — and the only things you ever ask for if they are missing:
+  1. Location (property/account, if not already given)
+  2. License plate + state (if not already given)
 
-When you hear a 961 WITH a license plate, ALSO populate plate_request so the server auto-runs the plate:
+DO NOT ask for vehicle make / model / color or the number of occupants. Those are no longer required. If the officer volunteers them you may keep them in the summary/log, but NEVER prompt for them.
+
+When you hear a 961 WITH a license plate, populate plate_request so the server auto-runs the plate:
   Transcript: "352 961 at 1806 front lot, white Honda Civic, two occupants, California 8 Victor Whiskey Victor 6 2 1"
   → intent="dispatch"
   → unit="352", code="961", location_code="1806"
   → plate_request={ "plate": "8VWV621", "state": "CA", "spoken_plate": "California 8 Victor Whiskey Victor 6 2 1" }
   → dispatcher_response=null  (server will OVERRIDE with plate readback; don't double-speak)
 
-When you hear a 961 WITHOUT a license plate (or with missing fields), do NOT set plate_request. Just acknowledge and ask for missing info:
-  Transcript: "352 961 at 1806"
+When you hear a 961 WITHOUT a license plate, do NOT set plate_request. Acknowledge and ask ONLY for the plate (plus the location if that too is missing) — nothing about the vehicle description or occupants:
+  Transcript: "352 961 at 1806"   (location given, plate missing)
   → intent="dispatch", code="961"
   → plate_request=null
-  → dispatcher_response="Copy 352, 961 at 1806. Send location on property, vehicle description, and plate."
+  → dispatcher_response="Copy 352, 961 at 1806. Send the plate."
+
+  Transcript: "352 961"   (no location, no plate)
+  → intent="dispatch", code="961"
+  → plate_request=null
+  → dispatcher_response="Copy 352, 961. Send your location and the plate."
+
+  Transcript: "352 961, California 8 Victor Whiskey Victor 6 2 1"   (plate given, location missing)
+  → intent="dispatch", code="961"
+  → plate_request={ "plate": "8VWV621", "state": "CA", "spoken_plate": "California 8 Victor Whiskey Victor 6 2 1" }
+  → dispatcher_response=null  (server runs the plate; if you must prompt, ask only for the location)
 
 
 # VIN LOOKUP (no plate available)
