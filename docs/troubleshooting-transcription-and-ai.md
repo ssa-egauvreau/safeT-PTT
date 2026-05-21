@@ -76,8 +76,13 @@ After the latest server update, skipped rows appear as **“Skipped — AI OFF o
 
 - `Transcriber ready` — good
 - `Transcriber unavailable` — Whisper failed (try larger plan or redeploy)
+- `Whisper model load exceeded` — the model took too long to load (slow/blocked HF download or OOM). The queue no longer freezes; affected transmissions are marked failed and the load keeps retrying. Tune with `WHISPER_LOAD_TIMEOUT_MS` (default 180000).
 - `Database bootstrap failed` — Postgres problem
 - `[ai-dispatch]` lines — AI ran or skipped
+
+### Stuck on "Transcribing…" forever
+
+Every transmission staying at **Transcribing…** means the model never finished loading and the worker was blocked on it. After this update the worker stops waiting after `WHISPER_LOAD_TIMEOUT_MS` and the AI activity log shows **“Transcription failed (Whisper unavailable…)”** so the cause is visible. The underlying fix is usually a larger Railway memory plan (the model is loaded in-process) or confirming the container can reach the Hugging Face model download.
 
 ## Redeploy
 

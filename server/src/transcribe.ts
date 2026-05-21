@@ -10,6 +10,13 @@ const ENABLED = (process.env.TRANSCRIPTION ?? "on").trim().toLowerCase() !== "of
 const MODEL = process.env.WHISPER_MODEL?.trim() || "Xenova/whisper-tiny.en";
 /** After a failed model load, wait before retrying (Railway OOM / cold start). */
 const LOAD_RETRY_MS = Number(process.env.WHISPER_LOAD_RETRY_MS) || 120_000;
+/**
+ * Cap how long a single transcription worker waits on the model load. Without this a hung or
+ * very slow first-time model download (HF Hub fetch on a cold Railway container) blocks the
+ * whole queue forever — every transmission sits at "Transcribing…". On timeout the worker
+ * gives up on this item while the load keeps running in the background for the next one.
+ */
+const LOAD_TIMEOUT_MS = Number(process.env.WHISPER_LOAD_TIMEOUT_MS) || 180_000;
 
 type TranscriberState = "idle" | "loading" | "ready" | "broken";
 
@@ -54,37 +61,50 @@ async function ensurePipeline(): Promise<WhisperPipeline | null> {
     console.log("[transcribe] retrying Whisper model load after previous failure");
     state = "idle";
   }
-  if (loadPromise) {
-    return loadPromise;
+  if (!loadPromise) {
+    loadPromise = (async () => {
+      state = "loading";
+      try {
+        const moduleName = "@huggingface/transformers";
+        const transformers = (await import(moduleName)) as {
+          pipeline: (task: string, model: string) => Promise<WhisperPipeline>;
+        };
+        pipelineFn = await transformers.pipeline("automatic-speech-recognition", MODEL);
+        state = "ready";
+        lastLoadFailedAt = 0;
+        console.log(`Transcriber ready (model ${MODEL}).`);
+      } catch (error) {
+        state = "broken";
+        lastLoadFailedAt = Date.now();
+        pipelineFn = null;
+        console.warn(
+          "Transcriber unavailable — transmissions will be recorded without transcripts.",
+          error,
+        );
+      } finally {
+        // Cleared here (not on timeout) so a slow load keeps running in the background and the
+        // next worker can reuse it instead of restarting the download.
+        loadPromise = null;
+      }
+      return pipelineFn;
+    })();
   }
 
-  loadPromise = (async () => {
-    state = "loading";
-    try {
-      const moduleName = "@huggingface/transformers";
-      const transformers = (await import(moduleName)) as {
-        pipeline: (task: string, model: string) => Promise<WhisperPipeline>;
-      };
-      pipelineFn = await transformers.pipeline("automatic-speech-recognition", MODEL);
-      state = "ready";
-      lastLoadFailedAt = 0;
-      console.log(`Transcriber ready (model ${MODEL}).`);
-    } catch (error) {
-      state = "broken";
-      lastLoadFailedAt = Date.now();
-      pipelineFn = null;
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
       console.warn(
-        "Transcriber unavailable — transmissions will be recorded without transcripts.",
-        error,
+        `Whisper model load exceeded ${LOAD_TIMEOUT_MS}ms; skipping this transmission while the load continues.`,
       );
-    }
-    return pipelineFn;
-  })();
-
+      resolve(null);
+    }, LOAD_TIMEOUT_MS);
+  });
   try {
-    return await loadPromise;
+    return await Promise.race([loadPromise ?? Promise.resolve(pipelineFn), timeout]);
   } finally {
-    loadPromise = null;
+    if (timer) {
+      clearTimeout(timer);
+    }
   }
 }
 
