@@ -43,6 +43,18 @@ async function verifyWebhookAuth(req: Request, agencyId: number): Promise<boolea
   if (perAgency?.trim() && token === perAgency.trim()) {
     return true;
   }
+  // Explicit opt-in for 10-8 configs that cannot send any auth. Open to anyone who knows the URL
+  // and agency slug, so it's off unless deliberately enabled (env var or per-agency setting).
+  const allowOpenEnv = process.env.TEN8_WEBHOOK_ALLOW_UNAUTHENTICATED?.trim().toLowerCase();
+  if (allowOpenEnv === "1" || allowOpenEnv === "true") {
+    return true;
+  }
+  const allowOpenAgency = (
+    await getAgencyIntegrationValue(agencyId, "ten8_webhook_allow_unauthenticated")
+  )?.trim().toLowerCase();
+  if (allowOpenAgency === "1" || allowOpenAgency === "true") {
+    return true;
+  }
   if (!global && !perAgency?.trim()) {
     return process.env.NODE_ENV !== "production";
   }

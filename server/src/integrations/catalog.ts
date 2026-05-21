@@ -89,10 +89,20 @@ export const INTEGRATION_DEFINITIONS: IntegrationDefinition[] = [
     key: "ten8_webhook_secret",
     label: "10-8 incident export bearer token",
     description:
-      "Same value as WEBHOOK_SECRET on the old 10-8 alert dashboard. 10-8 sends this as Authorization: Bearer … when posting incident exports to safeT.",
+      "Shared secret for incident-export posts. Send it as Authorization: Bearer … OR as ?token= on the webhook URL (for 10-8 configs that can't set headers).",
     kind: "secret",
     group: "webhooks",
     availability: "active",
+  },
+  {
+    key: "ten8_webhook_allow_unauthenticated",
+    label: "Allow unauthenticated 10-8 webhook",
+    description:
+      "Set to 1 to accept incident-export posts with NO secret (use only if 10-8 cannot send any auth — the endpoint becomes open to anyone who knows the URL and your agency slug).",
+    kind: "text",
+    group: "webhooks",
+    availability: "active",
+    placeholder: "1 to allow, blank to require a secret",
   },
   {
     key: "ten8_api_key",
