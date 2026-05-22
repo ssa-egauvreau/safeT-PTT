@@ -8,13 +8,14 @@ import {
   WORKSPACE_ROW_PX,
   WORKSPACE_STACK_COL_START,
   getWorkspaceTile,
+  placeWorkspaceTileAtGrid,
   placeWorkspaceTileBeside,
-  reorderDockedChannels,
   setWorkspaceTileColSpan,
   setWorkspaceTileRowSpan,
   snapWorkspaceColSpan,
   snapWorkspaceRowSpan,
   stackWorkspaceTileBelow,
+  swapWorkspaceTiles,
   useConsoleState,
   workspaceTierFromRowSpan,
   type WorkspaceTileLayout,
@@ -30,16 +31,42 @@ function dropZoneFromPointer(
   const rect = tileEl.getBoundingClientRect();
   const y = (clientY - rect.top) / rect.height;
   const x = (clientX - rect.left) / rect.width;
-  if (y > 0.62) {
+  if (y > 0.78) {
     return "stack";
   }
-  if (x > 0.68) {
+  if (x > 0.72) {
     return "right";
   }
-  if (x < 0.32) {
+  if (x < 0.28) {
     return "left";
   }
   return "reorder";
+}
+
+function gridCellFromPointer(
+  clientX: number,
+  clientY: number,
+  root: HTMLElement,
+): { col: number; row: number } {
+  const rect = root.getBoundingClientRect();
+  const style = getComputedStyle(root);
+  const gap = Number.parseFloat(style.rowGap || style.gap || "8") || 8;
+  const padL = Number.parseFloat(style.paddingLeft || "0") || 0;
+  const padT = Number.parseFloat(style.paddingTop || "0") || 0;
+  const innerW =
+    rect.width -
+    padL -
+    (Number.parseFloat(style.paddingRight || "0") || 0) -
+    gap * (WORKSPACE_COLS - 1);
+  const colW = innerW / WORKSPACE_COLS;
+  const x = clientX - rect.left - padL;
+  const y = clientY - rect.top - padT;
+  const col = Math.max(
+    0,
+    Math.min(WORKSPACE_COLS - 1, Math.floor(x / (colW + gap))),
+  );
+  const row = Math.max(0, Math.floor(y / (WORKSPACE_ROW_PX + gap)));
+  return { col, row };
 }
 
 function insertIndexFromPointer(
@@ -122,6 +149,7 @@ export function ChannelWorkspace({
 }) {
   const rootRef = useRef<HTMLElement | null>(null);
   const [dockDragOver, setDockDragOver] = useState(false);
+  const [moveChannelId, setMoveChannelId] = useState<number | null>(null);
   const [resizeChannelId, setResizeChannelId] = useState<number | null>(null);
   const [resizePreview, setResizePreview] = useState<{
     rowSpan: number;
@@ -159,15 +187,8 @@ export function ChannelWorkspace({
         channelIds,
       );
       if (channelIds.includes(id)) {
-        const next = [...channelIds];
-        const from = next.indexOf(id);
-        next.splice(from, 1);
-        let to = insertAt;
-        if (from < to) {
-          to -= 1;
-        }
-        next.splice(Math.max(0, to), 0, id);
-        reorderDockedChannels(next);
+        const cell = gridCellFromPointer(e.clientX, e.clientY, rootRef.current);
+        placeWorkspaceTileAtGrid(id, cell.col, cell.row);
       } else {
         onDockFromRail(id, insertAt);
       }
@@ -188,6 +209,72 @@ export function ChannelWorkspace({
     return (root.clientWidth - pad - gap * (WORKSPACE_COLS - 1)) / WORKSPACE_COLS;
   }
 
+  function applyMoveDrop(sourceId: number, targetId: number, zone: WorkspaceDropZone) {
+    if (zone === "stack") {
+      stackWorkspaceTileBelow(sourceId, targetId);
+      return;
+    }
+    if (zone === "right") {
+      placeWorkspaceTileBeside(sourceId, targetId, "right");
+      return;
+    }
+    if (zone === "left") {
+      placeWorkspaceTileBeside(sourceId, targetId, "left");
+      return;
+    }
+    swapWorkspaceTiles(sourceId, targetId);
+  }
+
+  function beginMove(e: PointerEvent<HTMLDivElement>, channelId: number) {
+    if (e.button !== 0) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    setMoveChannelId(channelId);
+
+    const onMove = (ev: PointerEvent) => {
+      const hit = document.elementFromPoint(ev.clientX, ev.clientY);
+      const tile = hit?.closest<HTMLElement>("[data-channel-id]");
+      if (tile) {
+        const id = Number(tile.dataset.channelId);
+        if (Number.isFinite(id)) {
+          setDragOverChannelId(id);
+          setDropZone(dropZoneFromPointer(ev.clientX, ev.clientY, tile));
+        }
+      } else {
+        clearDragOver();
+      }
+    };
+
+    const onEnd = (ev: PointerEvent) => {
+      handle.releasePointerCapture(ev.pointerId);
+      const hit = document.elementFromPoint(ev.clientX, ev.clientY);
+      const tile = hit?.closest<HTMLElement>("[data-channel-id]");
+      if (tile) {
+        const targetId = Number(tile.dataset.channelId);
+        if (Number.isFinite(targetId) && targetId !== channelId) {
+          const zone = dropZoneFromPointer(ev.clientX, ev.clientY, tile);
+          applyMoveDrop(channelId, targetId, zone);
+        }
+      } else if (rootRef.current && hit && rootRef.current.contains(hit)) {
+        const cell = gridCellFromPointer(ev.clientX, ev.clientY, rootRef.current);
+        placeWorkspaceTileAtGrid(channelId, cell.col, cell.row);
+      }
+      setMoveChannelId(null);
+      clearDragOver();
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onEnd);
+      handle.removeEventListener("pointercancel", onEnd);
+    };
+
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onEnd);
+    handle.addEventListener("pointercancel", onEnd);
+  }
+
   function beginResize(
     e: PointerEvent<HTMLButtonElement>,
     channelId: number,
@@ -195,6 +282,8 @@ export function ChannelWorkspace({
   ) {
     e.preventDefault();
     e.stopPropagation();
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
     const origin = getWorkspaceTile(channelId);
     const startX = e.clientX;
     const startY = e.clientY;
@@ -204,7 +293,7 @@ export function ChannelWorkspace({
     let liveRowSpan = origin.rowSpan;
     let liveColSpan = origin.colSpan;
 
-    const onMove = (ev: globalThis.PointerEvent) => {
+    const onMove = (ev: PointerEvent) => {
       if (axis === "height" || axis === "both") {
         const deltaRow = Math.round((ev.clientY - startY) / WORKSPACE_ROW_PX);
         liveRowSpan = snapWorkspaceRowSpan(origin.rowSpan + deltaRow);
@@ -215,7 +304,10 @@ export function ChannelWorkspace({
       }
       setResizePreview({ rowSpan: liveRowSpan, colSpan: liveColSpan });
     };
-    const onUp = () => {
+    const onEnd = (ev: PointerEvent) => {
+      if (handle.hasPointerCapture(ev.pointerId)) {
+        handle.releasePointerCapture(ev.pointerId);
+      }
       if (liveRowSpan !== origin.rowSpan) {
         setWorkspaceTileRowSpan(channelId, liveRowSpan);
       }
@@ -224,16 +316,13 @@ export function ChannelWorkspace({
       }
       setResizeChannelId(null);
       setResizePreview(null);
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onEnd);
+      handle.removeEventListener("pointercancel", onEnd);
     };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }
-
-  function onTileDragStart(e: DragEvent<HTMLElement>, channelId: number) {
-    e.dataTransfer.setData("text/channel-id", String(channelId));
-    e.dataTransfer.effectAllowed = "move";
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onEnd);
+    handle.addEventListener("pointercancel", onEnd);
   }
 
   function onTileDragOver(e: DragEvent<HTMLDivElement>, channelId: number) {
@@ -266,27 +355,7 @@ export function ChannelWorkspace({
     const resolvedZone =
       zone ?? (tile ? dropZoneFromPointer(e.clientX, e.clientY, tile) : "reorder");
 
-    if (resolvedZone === "stack") {
-      stackWorkspaceTileBelow(sourceId, targetId);
-      return;
-    }
-    if (resolvedZone === "right") {
-      placeWorkspaceTileBeside(sourceId, targetId, "right");
-      return;
-    }
-    if (resolvedZone === "left") {
-      placeWorkspaceTileBeside(sourceId, targetId, "left");
-      return;
-    }
-    const from = channelIds.indexOf(sourceId);
-    const to = channelIds.indexOf(targetId);
-    if (from < 0 || to < 0) {
-      return;
-    }
-    const next = [...channelIds];
-    next.splice(from, 1);
-    next.splice(to, 0, sourceId);
-    reorderDockedChannels(next);
+    applyMoveDrop(sourceId, targetId, resolvedZone);
   }
 
   return (
@@ -307,8 +376,7 @@ export function ChannelWorkspace({
         <div className="channel-workspace-empty">
           <p>Drag channels here from the list on the left.</p>
           <p className="muted">
-            Drag ⋮⋮ to move · drop on bottom of a tile to stack · drag bottom or right edge to resize ·
-            drag corner for both
+            Press and drag ⋮⋮ to move · bottom edge of a tile to stack · bottom/right edges to resize
           </p>
         </div>
       ) : (
@@ -335,20 +403,21 @@ export function ChannelWorkspace({
           const stackStyle =
             stackLayer > 0
               ? {
-                  marginTop: -14,
+                  marginTop: -8,
                   zIndex: 12 + stackLayer,
                 }
               : isStackLane
-                ? { zIndex: 11 }
+                ? { zIndex: 10 }
                 : isMain
-                  ? { zIndex: 8 }
+                  ? { zIndex: 11 }
                   : undefined;
           return (
             <div
               key={channel.id}
               data-channel-id={channel.id}
               className={`channel-workspace-tile${widthClass}${stackLayer > 0 ? " workspace-tile-stacked" : ""}${!monitoring ? " channel-off" : ""}${
-                resizeChannelId === channel.id ? " resizing" : ""
+                moveChannelId === channel.id ? " moving" : ""
+              }${resizeChannelId === channel.id ? " resizing" : ""
               }${dragOverChannelId === channel.id ? " drag-over" : ""}${dropClass}`}
               style={{
                 gridColumn: `${tile.col + 1} / span ${colSpan}`,
@@ -366,9 +435,8 @@ export function ChannelWorkspace({
             >
               <div
                 className="channel-workspace-drag-handle"
-                draggable
-                onDragStart={(e) => onTileDragStart(e, channel.id)}
-                title="Drag to move · drop on tile edges to stack"
+                onPointerDown={(e) => beginMove(e, channel.id)}
+                title="Press and drag to move · bottom edge of another tile to stack"
               >
                 <span className="channel-workspace-drag-grip" aria-hidden>
                   ⋮⋮

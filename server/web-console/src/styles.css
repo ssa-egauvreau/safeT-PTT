@@ -885,7 +885,7 @@ code.mono {
   min-width: 0;
   width: 100%;
   min-height: 0;
-  align-self: stretch;
+  align-self: start;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -942,6 +942,10 @@ code.mono {
   flex: 1 1 auto;
   min-height: 0;
 }
+.channel-workspace-tile.moving {
+  opacity: 0.88;
+  z-index: 22;
+}
 .channel-workspace-tile.resizing {
   z-index: 24;
 }
@@ -951,7 +955,7 @@ code.mono {
 }
 .channel-workspace-drag-handle {
   position: relative;
-  z-index: 2;
+  z-index: 20;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -1097,11 +1101,11 @@ code.mono {
 }
 .channel-workspace-resize-h {
   position: absolute;
-  z-index: 12;
+  z-index: 30;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 14px;
+  height: 20px;
   border: none;
   background: transparent;
   padding: 0;
@@ -1116,11 +1120,11 @@ code.mono {
 }
 .channel-workspace-resize-w {
   position: absolute;
-  z-index: 12;
+  z-index: 30;
   top: 0;
   right: 0;
-  bottom: 0;
-  width: 14px;
+  bottom: 20px;
+  width: 20px;
   border: none;
   background: transparent;
   padding: 0;
@@ -1135,11 +1139,11 @@ code.mono {
 }
 .channel-workspace-resize-corner {
   position: absolute;
-  z-index: 13;
+  z-index: 31;
   right: 0;
   bottom: 0;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   border: none;
   background: transparent;
   padding: 0;
