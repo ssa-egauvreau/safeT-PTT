@@ -30,9 +30,12 @@ async function ten8Fetch(
   if (!cfg) {
     return { ok: false, status: 0, data: { error: "ten8_not_configured" } };
   }
+  // Strip special characters from everything we send (10-8 only accepts letters, numbers, spaces,
+  // commas, and periods; dashes/brackets/etc. can crash it).
+  const safeBody = body !== undefined ? sanitizeTen8Body(body) : undefined;
   if (!cfg.live && method !== "GET") {
-    console.log(`[ten8] shadow ${method} ${path}`, body ?? "");
-    return { ok: true, status: 200, data: { shadow: true, method, path, body } };
+    console.log(`[ten8] shadow ${method} ${path}`, safeBody ?? "");
+    return { ok: true, status: 200, data: { shadow: true, method, path, body: safeBody } };
   }
   const url = `${cfg.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
   const r = await fetch(url, {
@@ -43,7 +46,7 @@ async function ten8Fetch(
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: safeBody !== undefined ? JSON.stringify(safeBody) : undefined,
   });
   let data: unknown = null;
   try {
@@ -56,13 +59,31 @@ async function ten8Fetch(
 
 /**
  * 10-8's incident API rejects (and can crash on) special characters. Reduce text to letters,
- * numbers, and single spaces before sending — dashes, brackets, parentheses, periods, etc. out.
+ * numbers, spaces, commas, and periods only — dashes, brackets, parentheses, slashes, etc. out.
  */
 function sanitizeForTen8(text: string): string {
   return text
-    .replace(/[^A-Za-z0-9 ]+/g, " ")
+    .replace(/[^A-Za-z0-9 ,.]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Recursively sanitize every string value in a request body before it is sent to 10-8. */
+function sanitizeTen8Body(value: unknown): unknown {
+  if (typeof value === "string") {
+    return sanitizeForTen8(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(sanitizeTen8Body);
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = sanitizeTen8Body(v);
+    }
+    return out;
+  }
+  return value;
 }
 
 export async function ten8AddComment(
@@ -71,9 +92,10 @@ export async function ten8AddComment(
   comment: string,
 ): Promise<{ ok: boolean; shadow?: boolean; data?: unknown }> {
   const lookup = encodeURIComponent(callId);
+  // ten8Fetch sanitizes all string fields before sending.
   const res = await ten8Fetch(agencyId, "POST", `/v1/incidents/${lookup}/comments`, {
     officer: "AI Dispatch",
-    comment: sanitizeForTen8(comment).slice(0, 4000),
+    comment: comment.slice(0, 4000),
     type: "comment",
   });
   return { ok: res.ok, shadow: (res.data as { shadow?: boolean })?.shadow === true, data: res.data };
@@ -138,9 +160,11 @@ export async function ten8CreateIncident(
   if (!cfg) {
     return { ok: false, data: { error: "ten8_new_incident_not_configured" } };
   }
+  // Only letters, numbers, spaces, commas, and periods reach 10-8.
+  const safeBody = sanitizeTen8Body(body) as Record<string, unknown>;
   if (!cfg.live) {
-    console.log("[ten8] shadow POST /incidents", body);
-    return { ok: true, shadow: true, data: { shadow: true, path: "/incidents", body } };
+    console.log("[ten8] shadow POST /incidents", safeBody);
+    return { ok: true, shadow: true, data: { shadow: true, path: "/incidents", body: safeBody } };
   }
   const credentials = Buffer.from(`${cfg.apiKey}:${cfg.apiSecret}`).toString("base64");
   const r = await fetch(`${cfg.baseUrl}/incidents`, {
@@ -150,7 +174,7 @@ export async function ten8CreateIncident(
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(safeBody),
   });
   let data: unknown = null;
   try {
