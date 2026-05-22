@@ -284,6 +284,19 @@ export interface KbDocument {
   updated_at: string;
 }
 
+export interface KbCategory {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface KbCategorySection {
+  id: string;
+  label: string;
+  description: string;
+  categories: KbCategory[];
+}
+
 export interface IntegrationItem {
   key: string;
   label: string;
@@ -725,10 +738,12 @@ export const api = {
 
   // --- AI dispatcher knowledge base --------------------------------------
   listKbDocuments: () =>
-    request<{ documents: KbDocument[]; categories: string[]; embed_model: string }>(
-      "GET",
-      "/v1/admin/kb/documents",
-    ),
+    request<{
+      documents: KbDocument[];
+      categories: string[];
+      category_sections: KbCategorySection[];
+      embed_model: string;
+    }>("GET", "/v1/admin/kb/documents"),
   deleteKbDocument: (id: number) =>
     request<{ ok: boolean }>("DELETE", `/v1/admin/kb/documents/${id}`),
   reindexKbDocument: (id: number) =>

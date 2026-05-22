@@ -1870,11 +1870,137 @@ export async function listChannelAiDispatchEnabled(agencyId: number): Promise<st
 
 // --- AI dispatcher knowledge base (RAG) ----------------------------------
 
-export const KB_CATEGORIES = ["post_order", "route_sheet", "policy", "other"] as const;
-export type KbCategory = (typeof KB_CATEGORIES)[number];
+export const KB_CATEGORY_SECTIONS = [
+  {
+    id: "radio_operations",
+    label: "Radio operations",
+    description: "Radio procedures, channel plans, route information, codes, and call classifications.",
+    categories: [
+      {
+        id: "post_order",
+        label: "Post orders",
+        description: "Site-specific guard instructions and standing orders.",
+      },
+      {
+        id: "route_sheet",
+        label: "Route sheets",
+        description: "Patrol routes, checkpoint sequences, and tour instructions.",
+      },
+      {
+        id: "radio_procedure",
+        label: "Radio procedures",
+        description: "How units should call in, acknowledge, escalate, and use channels.",
+      },
+      {
+        id: "radio_codes",
+        label: "Radio codes",
+        description: "10-codes, signal codes, disposition codes, and local radio shorthand.",
+      },
+      {
+        id: "call_types",
+        label: "Call types",
+        description: "CAD/event types and how dispatch should classify incoming traffic.",
+      },
+    ],
+  },
+  {
+    id: "safety_response",
+    label: "Safety and response",
+    description: "Safety rules, emergency actions, and incident response references.",
+    categories: [
+      {
+        id: "safety_procedure",
+        label: "Safety procedures",
+        description: "Officer safety, site hazards, PPE, and safe-work instructions.",
+      },
+      {
+        id: "emergency_procedure",
+        label: "Emergency procedures",
+        description: "Fire, medical, evacuation, lockdown, and critical incident steps.",
+      },
+      {
+        id: "incident_response",
+        label: "Incident response plans",
+        description: "Response playbooks for alarms, trespassers, disturbances, and other events.",
+      },
+    ],
+  },
+  {
+    id: "policy_law",
+    label: "Policy and legal",
+    description: "Agency policy, SOPs, legal references, and compliance material.",
+    categories: [
+      {
+        id: "policy",
+        label: "Policies and SOPs",
+        description: "Agency rules, standard operating procedures, and internal policy.",
+      },
+      {
+        id: "law_reference",
+        label: "Laws and legal references",
+        description: "Statutes, ordinances, enforcement limits, and legal guidance.",
+      },
+    ],
+  },
+  {
+    id: "client_site",
+    label: "Client and site information",
+    description: "Client preferences, property details, contacts, and escalation information.",
+    categories: [
+      {
+        id: "client_info",
+        label: "Client information",
+        description: "Client expectations, preferences, reporting rules, and special instructions.",
+      },
+      {
+        id: "property_info",
+        label: "Property information",
+        description: "Access points, landmarks, maps, tenants, suites, and local site details.",
+      },
+      {
+        id: "contact_directory",
+        label: "Contacts and escalation",
+        description: "Who to call, after-hours contacts, supervisors, vendors, and escalation paths.",
+      },
+    ],
+  },
+  {
+    id: "general_reference",
+    label: "General reference",
+    description: "Training material and documents that do not fit another category.",
+    categories: [
+      {
+        id: "training",
+        label: "Training material",
+        description: "Training guides, onboarding material, and dispatcher reference examples.",
+      },
+      {
+        id: "other",
+        label: "Other reference",
+        description: "General material that does not fit a more specific category.",
+      },
+    ],
+  },
+] as const;
+
+export type KbCategory = (typeof KB_CATEGORY_SECTIONS)[number]["categories"][number]["id"];
+
+export const KB_CATEGORIES: KbCategory[] = KB_CATEGORY_SECTIONS.flatMap((section) =>
+  section.categories.map((category) => category.id),
+);
 
 export function isKbCategory(value: unknown): value is KbCategory {
   return typeof value === "string" && (KB_CATEGORIES as readonly string[]).includes(value);
+}
+
+export function getKbCategoryLabel(value: string): string {
+  for (const section of KB_CATEGORY_SECTIONS) {
+    const category = section.categories.find((item) => item.id === value);
+    if (category) {
+      return category.label;
+    }
+  }
+  return "Reference";
 }
 
 /** Document metadata for the admin list (never selects the PDF bytes or extracted text). */

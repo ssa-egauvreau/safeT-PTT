@@ -4,7 +4,7 @@
 // Every failure path returns "" so the dispatcher behaves exactly as it does
 // without a knowledge base.
 
-import { listKbChunksForAgency, type KbChunkRow } from "../../store.js";
+import { getKbCategoryLabel, listKbChunksForAgency, type KbChunkRow } from "../../store.js";
 import { embedTexts, getEmbeddingModelName } from "./embeddings.js";
 
 const ENABLED = (process.env.KB_ENABLED ?? "on").trim().toLowerCase() !== "off";
@@ -27,13 +27,6 @@ const MAX_CONTEXT_CHARS = Number(process.env.KB_MAX_CONTEXT_CHARS) || 4000;
 // starts, so retrieval embeds are gated to one in-flight query. Timed-out cold
 // loads can then be aborted before inference instead of piling up stale work.
 let retrievalEmbedInFlight: Promise<number[][] | null> | null = null;
-
-const CATEGORY_LABELS: Record<string, string> = {
-  post_order: "Post order",
-  route_sheet: "Route sheet",
-  policy: "Policy",
-  other: "Reference",
-};
 
 /** Cosine similarity of two equal-length vectors (already normalized → dot product). */
 function cosine(a: number[], b: number[]): number {
@@ -95,7 +88,7 @@ export function formatKnowledgeContext(chunks: RetrievedChunk[]): string {
   const lines: string[] = [];
   let used = 0;
   for (const chunk of chunks) {
-    const label = CATEGORY_LABELS[chunk.category] ?? "Reference";
+    const label = getKbCategoryLabel(chunk.category);
     const entry = `[${label}: ${chunk.title}]\n${chunk.content}`;
     if (used + entry.length > MAX_CONTEXT_CHARS && lines.length > 0) {
       break;

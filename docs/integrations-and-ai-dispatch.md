@@ -95,13 +95,23 @@ Server logs are tagged `[ai-dispatch]`.
 
 ## Knowledge base (RAG) — Admin → Knowledge Base
 
-Give the AI dispatcher agency reference material — **post orders, route sheets, policies** — without stuffing it all into the cached system prompt.
+Give the AI dispatcher agency reference material without stuffing it all into the cached system prompt. The admin page is organized into sections for **radio operations**, **safety and response**, **policy and legal**, **client and site information**, and **general reference**.
 
 **Why not just put it in the prompt?** Prompt caching only makes *re-sending* the same prompt cheaper; it does not raise the context ceiling or help the model find the one relevant paragraph. A handful of documents already overflows it. Instead, the knowledge base uses **retrieval-augmented generation (RAG)**:
 
-1. **Upload (Admin → Knowledge Base):** an admin uploads a PDF, tagging it with a category (post order / route sheet / policy / other) and an optional **property code**.
+1. **Upload (Admin → Knowledge Base):** an admin uploads a PDF into one of the sectioned categories and may add an optional **property code**.
 2. **Index (once, in the background):** the server extracts the PDF text (`pdfjs-dist`), splits it into ~800-character passages, and embeds each one into a 384-dim vector using a local transformers.js model (no per-token API cost). Vectors are stored in Postgres. The document shows **Processing → Ready** (with a chunk count) in the admin table.
 3. **Retrieve (at dispatch time):** the transmission transcript is embedded and compared (cosine similarity, in Node) against that agency's passages. Only the top few matches are injected — into the **user turn, not the cached system prompt**, so the prompt cache hit rate is unaffected. A passage tagged to a property mentioned on the air is boosted.
+
+The current category catalog is:
+
+- **Radio operations:** post orders, route sheets, radio procedures, radio codes, call types.
+- **Safety and response:** safety procedures, emergency procedures, incident response plans.
+- **Policy and legal:** policies/SOPs, laws/legal references.
+- **Client and site information:** client information, property information, contacts/escalation.
+- **General reference:** training material, other reference.
+
+Categories organize the admin page and label retrieved passages for the AI (for example, `[Radio codes: Signal list]`). Property codes are the retrieval signal that changes ranking today; category-specific retrieval boosts can be added later if needed.
 
 This is the practical meaning of the AI "learning" the agency's material: the corpus can grow to hundreds of documents while each LLM call stays small. **Fine-tuning is not used** (the hosted Claude/OpenAI models are not fine-tunable this way, and it would go stale on every document edit).
 

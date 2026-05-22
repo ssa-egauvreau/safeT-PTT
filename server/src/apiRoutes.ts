@@ -101,6 +101,7 @@ import {
   deleteToneOut,
   isKbCategory,
   KB_CATEGORIES,
+  KB_CATEGORY_SECTIONS,
   listKbDocuments,
   createKbDocument,
   getKbDocumentContent,
@@ -1497,6 +1498,7 @@ export function createApiRouter(): Router {
       res.json({
         documents: await listKbDocuments(req.authUser!.agencyId!),
         categories: KB_CATEGORIES,
+        category_sections: KB_CATEGORY_SECTIONS,
         embed_model: getEmbeddingModelName(),
       });
     } catch (error) {

@@ -440,6 +440,89 @@ a {
   margin-top: 10px;
   max-width: none;
 }
+.kb-upload-card .form-row {
+  align-items: flex-end;
+}
+.kb-title-field {
+  flex: 2 1 220px;
+}
+.kb-category-field {
+  flex: 1.6 1 220px;
+}
+.kb-property-field {
+  flex: 0 1 150px;
+}
+.kb-upload-button {
+  flex: 0 0 auto;
+}
+.kb-selected-category {
+  margin-top: 10px;
+}
+.kb-selected-category strong {
+  color: var(--text);
+}
+.kb-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.kb-category-section {
+  margin-bottom: 0;
+}
+.kb-section-head,
+.kb-category-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+.kb-section-head {
+  margin-bottom: 12px;
+}
+.kb-section-head h3,
+.kb-category-head h4 {
+  margin: 0;
+}
+.kb-section-head p,
+.kb-category-head p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.kb-section-count {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.kb-category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+.kb-category-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 12px;
+  min-width: 0;
+}
+.kb-category-empty {
+  margin-top: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.kb-document-table {
+  margin-top: 10px;
+}
+.kb-document-table th,
+.kb-document-table td {
+  padding: 8px 6px;
+  font-size: 12px;
+}
 
 /* --- radio bridges: setup help + audio meter --- */
 .bridge-help {
