@@ -1,6 +1,7 @@
 import { listTen8ActiveIncidents } from "../ten8/store.js";
 import { lookupSsaProperty } from "./ssaProperties.js";
 import { accountCodeDashForm } from "./speech/numbers.js";
+import { prepareLocationForTts } from "./speech/locationSpeech.js";
 import { formatPhoneForTts } from "./speech/phoneSpeech.js";
 import type { InfoRequestFields } from "./parse.js";
 import { isWebSearchConfigured, webSearchAnswer } from "./webSearch.js";
@@ -194,7 +195,7 @@ export async function buildInfoRequestResponse(
       const accountSpoken = accountCodeDashForm(infoRequest.account_code);
       const parts = [`account ${accountSpoken} is ${prop.name}`];
       if (prop.street) {
-        parts.push(`at ${prop.street}`);
+        parts.push(`at ${prepareLocationForTts(prop.street)}`);
       }
       if (prop.city) {
         parts.push(prop.city);
@@ -308,7 +309,7 @@ export async function buildInfoRequestResponse(
         const name =
           (typeof r.name === "string" && r.name) || infoRequest.subject;
         const addressParts = [r.street, r.city, r.state].filter(Boolean).join(", ");
-        return `${csPart}${name}, address is ${addressParts}.`;
+        return `${csPart}${name}, address is ${prepareLocationForTts(addressParts)}.`;
       }
       if (webResult.reason === "no_api_key" || webResult.reason === "anthropic_required") {
         return webNotConfiguredLine(csPart);

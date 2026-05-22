@@ -1,6 +1,8 @@
 import { getAgencyIntegrationValue, listPositions, type RadioPosition } from "../store.js";
 
 const NOMINATIM_REVERSE = "https://nominatim.openstreetmap.org/reverse";
+import { prepareLocationForTts } from "./speech/locationSpeech.js";
+
 const NOMINATIM_USER_AGENT = "SafeT-PTT-AI-Dispatch/1.0 (radio unit location lookup)";
 const POSITION_MAX_AGE_MS = 10 * 60 * 1000;
 
@@ -342,8 +344,9 @@ export async function buildUnitLocationResponse(
   }
 
   if (subject.wantFullAddress) {
-    return `${csPart}on the map unit ${unitSpoken} full address is ${geo.full}.`;
+    return `${csPart}on the map unit ${unitSpoken} full address is ${prepareLocationForTts(geo.full)}.`;
   }
 
-  return `${csPart}on the map it looks like unit ${unitSpoken} is ${geo.natural}.`;
+  const natural = prepareLocationForTts(geo.natural);
+  return `${csPart}on the map it looks like unit ${unitSpoken} is ${natural}.`;
 }

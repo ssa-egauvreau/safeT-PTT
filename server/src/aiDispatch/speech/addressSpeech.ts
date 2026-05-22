@@ -3,6 +3,7 @@
  */
 
 import { digitWord, numberToWords } from "./numbers.js";
+import { US_STATE_SPOKEN } from "./stateSpeech.js";
 
 export function spokenizeAddress(addr: string | null | undefined): string {
   if (!addr) {
@@ -11,9 +12,15 @@ export function spokenizeAddress(addr: string | null | undefined): string {
   let out = String(addr);
 
   out = out.replace(/,?\s*USA\b/i, "").replace(/,?\s*United States\b/i, "");
-  out = out.replace(/,\s*[A-Z]{2}\s+\d{5}(-\d{4})?\b/g, "");
+  out = out.replace(/,\s*([A-Z]{2})\s+(\d{5}(-\d{4})?)\b/g, (_m, abbr: string) => {
+    const state = US_STATE_SPOKEN[abbr.toUpperCase()];
+    return state ? `, ${state}` : _m;
+  });
   out = out.replace(/,?\s*\b\d{5}(-\d{4})?\s*$/, "");
-  out = out.replace(/,\s*[A-Z]{2}\s*$/, "");
+  out = out.replace(/,\s*([A-Z]{2})\s*$/g, (_m, abbr: string) => {
+    const state = US_STATE_SPOKEN[abbr.toUpperCase()];
+    return state ? `, ${state}` : _m;
+  });
 
   out = out.replace(/\b([NSEW])\s/gi, (_m, d: string) => {
     const map: Record<string, string> = { N: "North", S: "South", E: "East", W: "West" };

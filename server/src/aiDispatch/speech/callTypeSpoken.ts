@@ -104,6 +104,22 @@ export const CALL_TYPE_SPOKEN: Record<string, string> = {
   welfare: "welfare check",
 };
 
+/**
+ * Short codes that also appear in addresses or common words — only match lowercase
+ * so "CA" (California) is not read as "citizen assist".
+ */
+export const CALL_TYPE_LOWERCASE_ONLY = new Set([
+  "ca",
+  "c5",
+  "c6",
+  "c7",
+  "fu",
+  "mi",
+  "pc",
+  "ped",
+  "prop",
+]);
+
 /** Longest keys first so "925v" matches before "925". */
 export function callTypeSpokenKeysByLength(): string[] {
   return Object.keys(CALL_TYPE_SPOKEN).sort((a, b) => b.length - a.length);

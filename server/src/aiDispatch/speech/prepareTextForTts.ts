@@ -5,9 +5,15 @@
  * "27-000" → "twenty seven thousand", other dashes → SSML breaks (not "to").
  */
 
-import { CALL_TYPE_SPOKEN, callTypeSpokenKeysByLength } from "./callTypeSpoken.js";
+import { spokenizeAddress } from "./addressSpeech.js";
+import {
+  CALL_TYPE_LOWERCASE_ONLY,
+  CALL_TYPE_SPOKEN,
+  callTypeSpokenKeysByLength,
+} from "./callTypeSpoken.js";
 import { digitWord, spokenAccountCode, twoDigitSpoken } from "./numbers.js";
 import { formatPhoneForTts } from "./phoneSpeech.js";
+import { expandUSStatesForSpeech } from "./stateSpeech.js";
 
 /** SSML pause where a dash appeared — avoids TTS reading hyphen as "to". */
 const DASH_BREAK = '<break time="0.28s" />';
@@ -117,9 +123,26 @@ function expandCallTypesForSpeech(text: string): string {
     if (!spoken) {
       continue;
     }
-    out = replaceWordBounded(out, code, spoken, "gi");
+    const flags = CALL_TYPE_LOWERCASE_ONLY.has(code) ? "g" : "gi";
+    out = replaceWordBounded(out, code, spoken, flags);
   }
   return out;
+}
+
+/** ElevenLabs often spells ALL CAPS "UNIT" letter-by-letter; keep the radio word "unit". */
+function normalizeUnitWordForSpeech(text: string): string {
+  return text.replace(/\bUNIT\b/gi, "unit");
+}
+
+/** LLM / lookup lines that embed a street address after a fixed phrase. */
+function spokenizeEmbeddedAddresses(text: string): string {
+  return text.replace(
+    /\b(full address is|address is)\s+([^.<]+(?:,\s*[^.<]+)*)/gi,
+    (match, _label: string, addr: string) => {
+      const spoken = spokenizeAddress(expandUSStatesForSpeech(addr.trim()));
+      return match.replace(addr, spoken);
+    },
+  );
 }
 
 /**
@@ -221,7 +244,10 @@ function addSpeechPacing(text: string): string {
 
 /** Full pipeline before ElevenLabs (matches legacy 10-8 dispatcher server). */
 export function prepareTextForTts(text: string): string {
-  let out = expandAbbreviationsForSpeech(text);
+  let out = normalizeUnitWordForSpeech(text);
+  out = expandUSStatesForSpeech(out);
+  out = spokenizeEmbeddedAddresses(out);
+  out = expandAbbreviationsForSpeech(out);
   out = expandCallTypesForSpeech(out);
   out = expandAccountCodesForSpeech(out);
   out = expandTenCodesForSpeech(out);
