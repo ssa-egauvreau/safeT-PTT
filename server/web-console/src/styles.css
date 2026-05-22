@@ -904,9 +904,35 @@ code.mono {
   min-height: 0;
   min-width: 0;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: hidden;
   display: grid;
   box-sizing: border-box;
+}
+.channel-workspace-tile .channel-card.workspace[data-tier="8"] .ch-card-body,
+.channel-workspace-tile .channel-card.workspace[data-tier="9"] .ch-card-body,
+.channel-workspace-tile .channel-card.workspace[data-tier="10"] .ch-card-body,
+.channel-workspace-tile .channel-card.workspace[data-tier="11"] .ch-card-body {
+  overflow-y: auto;
+}
+.channel-card.workspace[data-tier="0"] .ch-card-body.workspace-dense,
+.channel-card.workspace[data-tier="1"] .ch-card-body.workspace-dense {
+  display: flex;
+  flex-direction: column;
+  align-content: stretch;
+  grid-template-columns: none;
+}
+.channel-card.workspace[data-tier="0"] .ch-card-body.workspace-dense > .tx-button,
+.channel-card.workspace[data-tier="1"] .ch-card-body.workspace-dense > .tx-button {
+  flex: 1 1 auto;
+  min-height: 52px;
+  grid-column: auto;
+}
+.channel-card.workspace[data-tier="0"] .tx-button-integrated,
+.channel-card.workspace[data-tier="1"] .tx-button-integrated {
+  min-height: 48px;
+}
+.channel-card.workspace[data-tier="0"] .ch-card-head.workspace-head {
+  flex: 0 0 auto;
 }
 .channel-off-overlay {
   position: absolute;

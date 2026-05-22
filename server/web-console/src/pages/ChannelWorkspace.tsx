@@ -11,6 +11,8 @@ import {
   getWorkspaceTile,
   reorderDockedChannels,
   setWorkspaceTileRowSpan,
+  snapWorkspaceRowSpan,
+  workspaceTierFromRowSpan,
 } from "../consoleStore";
 
 function chunkChannels<T>(items: T[], size: number): T[][] {
@@ -120,10 +122,7 @@ export function ChannelWorkspace({
     setResizeChannelId(channelId);
     const onMove = (ev: globalThis.PointerEvent) => {
       const deltaRow = Math.round((ev.clientY - startY) / WORKSPACE_ROW_PX);
-      setWorkspaceTileRowSpan(
-        channelId,
-        Math.max(WORKSPACE_MIN_ROW_SPAN, Math.min(WORKSPACE_MAX_ROW_SPAN, origin + deltaRow)),
-      );
+      setWorkspaceTileRowSpan(channelId, snapWorkspaceRowSpan(origin + deltaRow));
     };
     const onUp = () => {
       setResizeChannelId(null);
@@ -192,7 +191,8 @@ export function ChannelWorkspace({
         <div className="channel-workspace-empty">
           <p>Drag channels here from the list on the left.</p>
           <p className="muted">
-            Up to four per row, equal width · drag left or right to reorder · bottom edge resizes height
+            Up to four per row, equal width · drag left or right to reorder · drag bottom edge to resize
+            (snaps to show more or fewer controls)
           </p>
         </div>
       ) : (
@@ -225,6 +225,7 @@ export function ChannelWorkspace({
                     <ChannelPanel
                       channel={channel}
                       layout="workspace"
+                      workspaceTier={workspaceTierFromRowSpan(tile.rowSpan)}
                       monitoring={monitoring}
                       expanded
                       primary={primary === channel.id}
@@ -239,7 +240,7 @@ export function ChannelWorkspace({
                   <button
                     type="button"
                     className="channel-workspace-resize-h"
-                    aria-label="Resize height"
+                    aria-label="Resize height (snaps to each control section)"
                     onPointerDown={(e) => beginResizeHeight(e, channel.id)}
                   />
                 </div>

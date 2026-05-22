@@ -46,6 +46,8 @@ interface ChannelPanelProps {
   channel: UserChannel;
   /** `workspace` = full panel in the dock; `accordion` = legacy inline card. */
   layout?: "workspace" | "accordion";
+  /** Workspace height tier (0 = XMIT only). From snapped tile rowSpan. */
+  workspaceTier?: number;
   /** Whether live voice is connected for this channel ("on"). */
   monitoring: boolean;
   /** Whether the full control surface is revealed. */
@@ -67,6 +69,7 @@ interface ChannelPanelProps {
 export function ChannelPanel({
   channel,
   layout = "accordion",
+  workspaceTier = 99,
   monitoring,
   expanded,
   primary,
@@ -473,10 +476,20 @@ export function ChannelPanel({
   const connected = voiceState === "listening" || voiceState === "transmitting";
   const canTransmit = permission !== "listen_only";
   const transmitting = voiceState === "transmitting";
+  const wsTier = workspace ? workspaceTier : 99;
+  const showToolbar = wsTier >= 1;
+  const showMeta = wsTier >= 2;
+  const showVolume = wsTier >= 3;
+  const showAudioOut = wsTier >= 4;
+  const showActions = wsTier >= 5;
+  const showTones = wsTier >= 6;
+  const showLiveTx = wsTier >= 7;
+  const showRoster = wsTier >= 8;
 
   return (
     <div
       className={`channel-card${expanded ? " expanded" : ""}${primary ? " primary" : ""}${workspace ? " workspace" : ""}`}
+      data-tier={workspace ? wsTier : undefined}
       style={channel.color ? { borderLeftColor: channel.color, borderLeftWidth: 3 } : undefined}
     >
       <div className={`ch-card-head${workspace ? " workspace-head" : ""}`}>
@@ -505,47 +518,49 @@ export function ChannelPanel({
                 {channel.simulcast && <span className="chan-sim-tag">SIM</span>}
               </div>
             </div>
-            <div className="ch-card-toolbar">
-              {monitoring &&
-                (connected ? (
-                  <span className={`state-chip ${transmitting ? "tx" : receiving ? "rx" : voiceState}`}>
-                    {transmitting ? "ON AIR" : receiving ? "RX" : STATE_LABEL[voiceState]}
-                  </span>
-                ) : (
-                  <span className={`state-chip ${voiceState}`}>{STATE_LABEL[voiceState]}</span>
-                ))}
-              {monitoring && receiving && !transmitting && (
-                <span className="state-chip busy">BUSY</span>
-              )}
-              <button
-                type="button"
-                className={monitoring ? "ch-power active" : "ch-power"}
-                onClick={onToggleMonitor}
-                aria-pressed={monitoring}
-                title={monitoring ? "Turn channel off (stop monitoring)" : "Turn channel on (monitor)"}
-              >
-                <IconHeadphones size={16} />
-                <span>{monitoring ? "ON" : "OFF"}</span>
-              </button>
-              <button
-                type="button"
-                className={transmitting ? "ch-quick-ptt active" : "ch-quick-ptt"}
-                disabled={!monitoring || !connected || !canTransmit}
-                onPointerDown={beginTransmit}
-                onPointerUp={stopTx}
-                onPointerCancel={stopTx}
-                title={
-                  !monitoring
-                    ? "Turn the channel on to talk"
-                    : !canTransmit
-                      ? "Listen-only on this channel"
-                      : "Hold to talk"
-                }
-              >
-                <IconBolt size={16} />
-                <span>{transmitting ? "ON AIR" : "PTT"}</span>
-              </button>
-            </div>
+            {showToolbar && (
+              <div className="ch-card-toolbar">
+                {monitoring &&
+                  (connected ? (
+                    <span className={`state-chip ${transmitting ? "tx" : receiving ? "rx" : voiceState}`}>
+                      {transmitting ? "ON AIR" : receiving ? "RX" : STATE_LABEL[voiceState]}
+                    </span>
+                  ) : (
+                    <span className={`state-chip ${voiceState}`}>{STATE_LABEL[voiceState]}</span>
+                  ))}
+                {monitoring && receiving && !transmitting && (
+                  <span className="state-chip busy">BUSY</span>
+                )}
+                <button
+                  type="button"
+                  className={monitoring ? "ch-power active" : "ch-power"}
+                  onClick={onToggleMonitor}
+                  aria-pressed={monitoring}
+                  title={monitoring ? "Turn channel off (stop monitoring)" : "Turn channel on (monitor)"}
+                >
+                  <IconHeadphones size={16} />
+                  <span>{monitoring ? "ON" : "OFF"}</span>
+                </button>
+                <button
+                  type="button"
+                  className={transmitting ? "ch-quick-ptt active" : "ch-quick-ptt"}
+                  disabled={!monitoring || !connected || !canTransmit}
+                  onPointerDown={beginTransmit}
+                  onPointerUp={stopTx}
+                  onPointerCancel={stopTx}
+                  title={
+                    !monitoring
+                      ? "Turn the channel on to talk"
+                      : !canTransmit
+                        ? "Listen-only on this channel"
+                        : "Hold to talk"
+                  }
+                >
+                  <IconBolt size={16} />
+                  <span>{transmitting ? "ON AIR" : "PTT"}</span>
+                </button>
+              </div>
+            )}
           </>
         ) : (
           <>
@@ -616,11 +631,13 @@ export function ChannelPanel({
 
       {expanded && (
       <div className={`ch-card-body${workspace ? " workspace-dense" : ""}`}>
-      <div className="live-meta">
-        Permission: <strong>{PERMISSION_LABEL[permission]}</strong>
-      </div>
+      {showMeta && (
+        <div className="live-meta">
+          Permission: <strong>{PERMISSION_LABEL[permission]}</strong>
+        </div>
+      )}
 
-      {monitoring && (
+      {showMeta && monitoring && (
         <div className="cp-ptt-assign">
           {primary ? (
             <span className="cp-primary" title="Keyboard PTT controls this channel">
@@ -638,6 +655,7 @@ export function ChannelPanel({
         </div>
       )}
 
+      {showVolume && (
       <div className="volume-row">
         <button
           className="vol-mute"
@@ -657,7 +675,9 @@ export function ChannelPanel({
         />
         <span className="vol-pct">{muted ? "Muted" : `${Math.round(volume * 100)}%`}</span>
       </div>
+      )}
 
+      {showAudioOut && (
       <label className="audio-out-row">
         <span className="audio-out-label">Audio out</span>
         <select
@@ -674,8 +694,9 @@ export function ChannelPanel({
           ))}
         </select>
       </label>
+      )}
 
-      {voiceDetail && (
+      {showMeta && voiceDetail && (
         <div className={`banner ${voiceState === "error" ? "error" : "info"}`}>{voiceDetail}</div>
       )}
 
@@ -705,19 +726,21 @@ export function ChannelPanel({
           <IconBolt size={26} />
           {transmitting ? "ON AIR" : !canTransmit ? "LISTEN ONLY" : receiving ? "BUSY" : "XMIT"}
         </span>
-        <span className="tx-sub">
-          {transmitting
-            ? "release to stop"
-            : !canTransmit
-              ? "no transmit permission"
-              : !connected
-                ? "connecting…"
-                : receiving
-                  ? "channel busy — another unit transmitting"
-                  : primary
-                    ? `hold to talk · ${keyLabel(pttCode)}`
-                    : "hold to talk"}
-        </span>
+        {(wsTier >= 2 || !workspace) && (
+          <span className="tx-sub">
+            {transmitting
+              ? "release to stop"
+              : !canTransmit
+                ? "no transmit permission"
+                : !connected
+                  ? "connecting…"
+                  : receiving
+                    ? "channel busy — another unit transmitting"
+                    : primary
+                      ? `hold to talk · ${keyLabel(pttCode)}`
+                      : "hold to talk"}
+          </span>
+        )}
       </button>
 
       {!workspace && (
@@ -731,7 +754,7 @@ export function ChannelPanel({
         </div>
       )}
 
-      {monitoring && (
+      {showLiveTx && monitoring && (
         <LatestChannelTransmission
           variant="console"
           channelName={channel.name}
@@ -740,6 +763,7 @@ export function ChannelPanel({
         />
       )}
 
+      {showActions && (
       <div className={workspace ? "ch-actions-grid" : "ch-actions-stack"}>
         <button className="txmode-btn ch-action-cell" onClick={toggleTxMode} type="button">
           {workspace ? (
@@ -779,7 +803,8 @@ export function ChannelPanel({
           <span>{aiDispatch ? (workspace ? "AI ON" : "AI DISPATCH ON") : workspace ? "AI OFF" : "AI DISPATCH OFF"}</span>
         </button>
       </div>
-      {(marker || aiDispatchHint || (aiDispatch && !aiDispatchHint)) && (
+      )}
+      {showActions && (marker || aiDispatchHint || (aiDispatch && !aiDispatchHint)) && (
         <div className="ch-action-notes">
           {marker && <span className="marker-note">10-33 marker tone every 12s</span>}
           {aiDispatchHint && <span className="marker-note muted">{aiDispatchHint}</span>}
@@ -789,6 +814,7 @@ export function ChannelPanel({
         </div>
       )}
 
+      {showTones && (
       <div className="toneout">
         <div className={workspace ? "ch-tone-grid" : "toneout-row"}>
           <button
@@ -854,8 +880,9 @@ export function ChannelPanel({
           {workspace ? "Stop all" : "Stop All Sounds"}
         </button>
       </div>
+      )}
 
-      {(voiceState === "error" || voiceState === "closed") && (
+      {showRoster && (voiceState === "error" || voiceState === "closed") && (
         <div className="live-actions">
           <button className="btn sm" onClick={reconnect}>
             Reconnect
@@ -863,7 +890,7 @@ export function ChannelPanel({
         </div>
       )}
 
-      <ChannelRoster channelName={channel.name} />
+      {showRoster && <ChannelRoster channelName={channel.name} />}
       </div>
       )}
     </div>

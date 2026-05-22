@@ -36,8 +36,38 @@ export const WORKSPACE_MIN_COL_SPAN = 3;
 export const WORKSPACE_MAX_COL_SPAN = 12;
 export const WORKSPACE_MIN_ROW_SPAN = 8;
 export const WORKSPACE_MAX_ROW_SPAN = 36;
+/**
+ * Resize snap points (rowSpan). Each step adds another block of controls; smallest is XMIT-only.
+ * Must stay sorted ascending and within min/max row span.
+ */
+export const WORKSPACE_ROW_SNAPS: readonly number[] = [8, 9, 10, 11, 12, 13, 14, 16, 18, 22, 28, 36];
 /** Maximum channel panels side-by-side in one row (equal width, full row). */
 export const WORKSPACE_MAX_PER_ROW = 4;
+
+/** Snap rowSpan to the nearest tier so tile height matches visible controls. */
+export function snapWorkspaceRowSpan(rowSpan: number): number {
+  const clamped = Math.max(WORKSPACE_MIN_ROW_SPAN, Math.min(WORKSPACE_MAX_ROW_SPAN, rowSpan));
+  let best = WORKSPACE_ROW_SNAPS[0]!;
+  let bestDist = Math.abs(clamped - best);
+  for (const snap of WORKSPACE_ROW_SNAPS) {
+    const dist = Math.abs(clamped - snap);
+    if (dist < bestDist) {
+      best = snap;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+/**
+ * Compactness tier for workspace channel cards (0 = XMIT only, higher = more sections).
+ * Aligns with WORKSPACE_ROW_SNAPS indices.
+ */
+export function workspaceTierFromRowSpan(rowSpan: number): number {
+  const snapped = snapWorkspaceRowSpan(rowSpan);
+  const idx = WORKSPACE_ROW_SNAPS.indexOf(snapped);
+  return idx >= 0 ? idx : WORKSPACE_ROW_SNAPS.length - 1;
+}
 
 export interface ConsoleState {
   /** Channel ids with live voice connected ("on" / monitoring). */
@@ -89,7 +119,7 @@ function parseWorkspaceLayout(raw: unknown): Record<string, WorkspaceTileLayout>
         col: Math.max(0, Math.min(WORKSPACE_COLS - 1, col)),
         row: Math.max(0, row),
         colSpan: Math.max(WORKSPACE_MIN_COL_SPAN, Math.min(WORKSPACE_MAX_COL_SPAN, colSpan)),
-        rowSpan: Math.max(WORKSPACE_MIN_ROW_SPAN, Math.min(WORKSPACE_MAX_ROW_SPAN, rowSpan)),
+        rowSpan: snapWorkspaceRowSpan(rowSpan),
       };
     }
   }
@@ -260,7 +290,7 @@ export function relayoutWorkspace(
       col: indexInRow * colSpan,
       row,
       colSpan,
-      rowSpan: prev?.rowSpan ?? WORKSPACE_DEFAULT_ROW_SPAN,
+      rowSpan: snapWorkspaceRowSpan(prev?.rowSpan ?? WORKSPACE_DEFAULT_ROW_SPAN),
     };
   });
   return out;
@@ -269,7 +299,8 @@ export function relayoutWorkspace(
 export function getWorkspaceTile(id: number): WorkspaceTileLayout {
   const key = layoutKey(id);
   if (state.workspaceLayout[key]) {
-    return state.workspaceLayout[key]!;
+    const tile = state.workspaceLayout[key]!;
+    return { ...tile, rowSpan: snapWorkspaceRowSpan(tile.rowSpan) };
   }
   const index = state.expanded.indexOf(id);
   if (index < 0) {
@@ -295,7 +326,7 @@ export function setWorkspaceTileRowSpan(id: number, rowSpan: number): void {
       ...state.workspaceLayout,
       [key]: {
         ...prev,
-        rowSpan: Math.max(WORKSPACE_MIN_ROW_SPAN, Math.min(WORKSPACE_MAX_ROW_SPAN, rowSpan)),
+        rowSpan: snapWorkspaceRowSpan(rowSpan),
       },
     }),
   });
