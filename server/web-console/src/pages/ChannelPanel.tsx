@@ -155,7 +155,7 @@ export function ChannelPanel({
         );
       },
     });
-    client.setDigitalTx(aiDispatch ? false : loadTxDigital(channel.id));
+    client.setDigitalTx(loadTxDigital(channel.id));
     client.setVolume(loadVolume(channel.id));
     client.setMuted(loadMuted(channel.id));
     client.setAudioOutputId(loadAudioOutputId(channel.id));
@@ -316,11 +316,7 @@ export function ChannelPanel({
       return;
     }
     client.setAiDispatchListenPcm(aiDispatch);
-    if (aiDispatch) {
-      client.setDigitalTx(false);
-    } else {
-      client.setDigitalTx(loadTxDigital(channel.id));
-    }
+    client.setDigitalTx(loadTxDigital(channel.id));
   }, [aiDispatch, monitoring, channel.id]);
 
   function toggleAiDispatch() {
@@ -334,10 +330,10 @@ export function ChannelPanel({
     });
     clientRef.current?.setAiDispatchListenPcm(next);
     if (next) {
-      clientRef.current?.setDigitalTx(false);
-      setAiDispatchHint("AI dispatch listens to clear audio (not digital vocoder) on this channel.");
+      setAiDispatchHint(
+        "AI dispatch uses clear audio for transcripts; Fast (vocoder) still keys the channel for other units.",
+      );
     } else {
-      clientRef.current?.setDigitalTx(loadTxDigital(channel.id));
       setAiDispatchHint(null);
     }
   }

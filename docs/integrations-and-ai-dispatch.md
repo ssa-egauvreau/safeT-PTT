@@ -133,9 +133,9 @@ Do **not** put plate keys in Railway for normal agency setup. Optional env fallb
 
 The **transmission log** always records and transcribes **clear PCM** from the radio uplink — not P25 IMBE vocoder audio (Whisper cannot understand vocoded speech).
 
-- Every voice join includes `record_listen_pcm: true` so handsets and the web console **uplink PCM** for recordings and transcripts.
-- When **AI dispatch is ON** for a channel, clients also receive `ai_dispatch_listen_pcm` (same PCM uplink behavior).
-- Other units still hear normal channel audio (including digital voice from peers who are not on an AI channel).
+- Every voice join includes `record_listen_pcm: true`. With **TX mode Fast** (vocoder), clients send **IMBE on the channel** plus a **clear PCM sideband** (magic `0xF6 0xAC`) that the relay records but does not broadcast — so the transmission log and Whisper stay on clear speech.
+- When **AI dispatch is ON** for a channel, clients also receive `ai_dispatch_listen_pcm` (same sideband when using vocoder).
+- Other units still hear normal channel audio (IMBE when peers use Fast mode).
 - Toggling AI dispatch in the console notifies connected voice clients immediately.
 
 ## Unit 10-20 (radio map location)

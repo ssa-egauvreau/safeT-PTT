@@ -41,6 +41,18 @@ import {
   type Permission,
 } from "./store.js";
 import { recordFrame, type FrameAttribution } from "./recorder.js";
+
+/** Sideband PCM for transmission log / AI — not broadcast (pairs with on-air IMBE). */
+const LISTEN_PCM_MAGIC_0 = 0xf6;
+const LISTEN_PCM_MAGIC_1 = 0xac;
+
+function isListenPcmFrame(payload: Buffer): boolean {
+  return payload.length >= 4 && payload[0] === LISTEN_PCM_MAGIC_0 && payload[1] === LISTEN_PCM_MAGIC_1;
+}
+
+function listenPcmBody(payload: Buffer): Buffer {
+  return payload.subarray(2);
+}
 import { getCachedAuth, setCachedAuth } from "./sessionCache.js";
 
 export const VOICE_WS_PATH = "/v1/voice/stream";
@@ -998,6 +1010,32 @@ export function attachVoiceRelay(
         if (payload.length === 0) {
           return;
         }
+
+        // Clear PCM sideband for recorder / AI — never broadcast or key the channel.
+        if (isListenPcmFrame(payload)) {
+          const pcm = listenPcmBody(payload);
+          if (pcm.length > 0) {
+            if (meta.simulcastTargets) {
+              for (const target of meta.simulcastTargets) {
+                recordFrame(
+                  {
+                    ...frameAttribution(meta),
+                    channelNorm: target.channelNorm,
+                    channelName: target.channelName,
+                    channelId: target.channelId,
+                    aiDispatchListenPcm: isAiDispatchChannelCached(meta.agencyId, target.channelName),
+                    recordListenPcm: true,
+                  },
+                  pcm,
+                );
+              }
+            } else if (meta.channelKey) {
+              recordFrame(frameAttribution(meta), pcm);
+            }
+          }
+          return;
+        }
+
         const priority = meta.permission === "talk_priority";
         const markerOnly = meta.markerToneUntilMs > Date.now();
 

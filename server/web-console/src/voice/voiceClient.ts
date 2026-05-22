@@ -26,6 +26,18 @@ const WAVEFORM_FFT_SIZE = 256;
 // Two-byte marker prefixing P25 IMBE digital-voice frames the browser cannot decode.
 const IMBE_MAGIC_0 = 0xf5;
 const IMBE_MAGIC_1 = 0xab;
+/** Recording / AI sideband — relay stores PCM but does not broadcast it (pairs with IMBE on-air). */
+const LISTEN_PCM_MAGIC_0 = 0xf6;
+const LISTEN_PCM_MAGIC_1 = 0xac;
+
+function wrapListenPcm(pcm: ArrayBuffer): ArrayBuffer {
+  const out = new ArrayBuffer(2 + pcm.byteLength);
+  const view = new Uint8Array(out);
+  view[0] = LISTEN_PCM_MAGIC_0;
+  view[1] = LISTEN_PCM_MAGIC_1;
+  view.set(new Uint8Array(pcm), 2);
+  return out;
+}
 
 function voiceSocketUrl(): string {
   const token = getToken() ?? "";
@@ -225,23 +237,17 @@ export class VoiceChannelClient {
     this.digitalTx = on;
   }
 
-  /** Force clear PCM uplink when AI dispatch is listening on this channel. */
+  /** Also uplink clear PCM for AI dispatch (sideband; on-air may stay IMBE). */
   setAiDispatchListenPcm(on: boolean): void {
     this.aiDispatchListenPcm = on;
-    if (on) {
-      this.digitalTx = false;
-    }
   }
 
-  /** Force clear PCM uplink for transmission log transcription. */
+  /** Also uplink clear PCM for transmission log / Whisper (sideband; on-air may stay IMBE). */
   setRecordListenPcm(on: boolean): void {
     this.recordListenPcm = on;
-    if (on) {
-      this.digitalTx = false;
-    }
   }
 
-  private pcmUplinkRequired(): boolean {
+  private listenPcmSidebandRequired(): boolean {
     return this.aiDispatchListenPcm || this.recordListenPcm;
   }
 
@@ -565,16 +571,19 @@ export class VoiceChannelClient {
       if (!this.transmitting || !ws || ws.readyState !== WebSocket.OPEN || !(event.data instanceof ArrayBuffer)) {
         return;
       }
-      if (this.digitalTx && !this.pcmUplinkRequired() && imbeReady()) {
-        // Condition then encode to P25 IMBE so transmissions carry the
-        // digital-voice character without riding background noise.
-        const pcm = new Int16Array(event.data);
+      const pcmBuf = event.data;
+      if (this.digitalTx && imbeReady()) {
+        // On-air: P25 IMBE. Recording / AI may still need clear PCM on a sideband.
+        const pcm = new Int16Array(pcmBuf);
         this.txConditioner.process(pcm);
         for (const frame of encodeImbeFrames(pcm)) {
           ws.send(frame);
         }
+        if (this.listenPcmSidebandRequired()) {
+          ws.send(wrapListenPcm(pcmBuf));
+        }
       } else {
-        ws.send(event.data);
+        ws.send(pcmBuf);
       }
     };
     this.capSource.connect(this.capNode);

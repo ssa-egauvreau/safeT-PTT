@@ -103,6 +103,8 @@ class VoiceRelayTransport(
 
     /** Two-byte sentinel so random PCM blobs are unlikely to collide; followed by an 11-byte codeword. */
     private val imbeWsMagic = byteArrayOf(0xF5.toByte(), 0xAB.toByte())
+    /** Recording / AI sideband — server records only; not broadcast on the channel. */
+    private val listenPcmMagic = byteArrayOf(0xF6.toByte(), 0xAC.toByte())
 
     private var pendingUnitId: String = ""
     private var pendingChannelRaw: String = ""
@@ -224,9 +226,9 @@ class VoiceRelayTransport(
     @Volatile
     private var recordListenPcm: Boolean = false
 
-    private fun pcmUplinkRequired(): Boolean = aiDispatchListenPcm || recordListenPcm
+    private fun listenPcmSidebandRequired(): Boolean = aiDispatchListenPcm || recordListenPcm
 
-    private fun p25UplinkEligible(): Boolean = P25ImbeNative.isAvailable && !pcmUplinkRequired()
+    private fun p25UplinkEligible(): Boolean = P25ImbeNative.isAvailable
 
     private fun reconcileAccumulatorForModeToggle() {
         val cur = p25UplinkEligible()
@@ -299,6 +301,14 @@ class VoiceRelayTransport(
             pcmAccLen = 0
             sendBinaryWs(active, buffer.copyOfRange(0, length))
             return
+        }
+
+        if (listenPcmSidebandRequired()) {
+            val side = ByteArray(2 + length)
+            side[0] = listenPcmMagic[0]
+            side[1] = listenPcmMagic[1]
+            System.arraycopy(buffer, 0, side, 2, length)
+            sendBinaryWs(active, side)
         }
 
         // A gap between mic frames means a fresh key-up — re-learn the noise floor.
