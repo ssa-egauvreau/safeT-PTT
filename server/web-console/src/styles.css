@@ -502,6 +502,12 @@ a {
   flex: 1 1 auto;
   margin: 0;
 }
+.bridges-page-tabs {
+  min-width: 11rem;
+}
+.bridges-settings-embed {
+  margin-top: 0;
+}
 .bridge-status-note {
   margin: 6px 0 10px;
 }

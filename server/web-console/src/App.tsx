@@ -15,8 +15,8 @@ import { ChannelsWindowPage, AlertsWindowPage } from "./pages/ConsoleWindows";
 const MapWindowPage = lazy(() =>
   import("./pages/MapWindowPage").then((m) => ({ default: m.MapWindowPage })),
 );
-const BridgeRunnerPage = lazy(() =>
-  import("./pages/BridgeRunnerPage").then((m) => ({ default: m.BridgeRunnerPage })),
+const BridgesPage = lazy(() =>
+  import("./pages/BridgesPage").then((m) => ({ default: m.BridgesPage })),
 );
 const RadioPortal = lazy(() =>
   import("./pages/RadioPortal").then((m) => ({ default: m.RadioPortal })),
@@ -185,7 +185,7 @@ export function App() {
           ) : user.role === "radio" ? (
             <Navigate to="/radio" replace />
           ) : (
-            <BridgeRunnerPage />
+            <BridgesPage />
           )
         }
       />

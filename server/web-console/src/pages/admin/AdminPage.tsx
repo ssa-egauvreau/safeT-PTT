@@ -6,7 +6,6 @@ import { UnitAliasesPanel } from "./UnitAliasesPanel";
 import { SoundsPanel } from "./SoundsPanel";
 import { ToneOutsPanel } from "./ToneOutsPanel";
 import { BrandingPanel } from "./BrandingPanel";
-import { BridgesPanel } from "./BridgesPanel";
 import { AuditPanel } from "./AuditPanel";
 import { IntegrationsPanel } from "./IntegrationsPanel";
 import { AndroidAppPanel } from "./AndroidAppPanel";
@@ -20,7 +19,6 @@ type TabId =
   | "sounds"
   | "soundboard"
   | "branding"
-  | "bridges"
   | "audit";
 
 const TABS: { id: TabId; label: string }[] = [
@@ -32,7 +30,6 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "sounds", label: "Sounds" },
   { id: "soundboard", label: "Soundboard" },
   { id: "branding", label: "Branding" },
-  { id: "bridges", label: "Radio Bridges" },
   { id: "audit", label: "Audit Log" },
 ];
 
@@ -64,7 +61,6 @@ export function AdminPage() {
           {tab === "sounds" && <SoundsPanel />}
           {tab === "soundboard" && <ToneOutsPanel />}
           {tab === "branding" && <BrandingPanel />}
-          {tab === "bridges" && <BridgesPanel />}
           {tab === "audit" && <AuditPanel />}
         </main>
       </div>

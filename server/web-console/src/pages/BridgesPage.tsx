@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, describeError, type Bridge } from "../api";
+import { useAuth } from "../auth";
 import { Topbar } from "../Topbar";
+import { BridgesPanel } from "./admin/BridgesPanel";
 import { BridgeMeter } from "./BridgeMeter";
 import { BridgeRunnerClient, type BridgeRunState } from "../voice/bridgeRunner";
 
@@ -16,7 +18,6 @@ function defaultInput(devices: MediaDeviceInfo[], hint: string | null): string {
   return devices[0]?.deviceId ?? "";
 }
 
-/** Hold up to 3 s between WS-close and the auto-reconnect so the server has time to come back. */
 const BRIDGE_RECONNECT_DELAY_MS = 3000;
 
 interface StoredDeviceSelection {
@@ -43,7 +44,7 @@ function writeStoredSelection(bridgeId: number, sel: StoredDeviceSelection): voi
   try {
     localStorage.setItem(storedSelectionKey(bridgeId), JSON.stringify(sel));
   } catch {
-    /* private mode or quota — selection won't persist this session, no crash */
+    /* private mode or quota */
   }
 }
 
@@ -58,11 +59,6 @@ function BridgeRunnerRow({
   outputs: MediaDeviceInfo[];
 }) {
   const bidirectional = bridge.direction === "bidirectional";
-  /*
-   * Hydrate from localStorage so a tab reload (e.g. after a Railway redeploy nudged the operator
-   * to refresh) keeps the chosen line-in selected. Fall back to the label-hint default if the
-   * stored device id is no longer enumerable.
-   */
   const [inputId, setInputId] = useState(() => {
     const stored = readStoredSelection(bridge.id)?.input;
     if (stored && inputs.some((d) => d.deviceId === stored)) {
@@ -82,14 +78,8 @@ function BridgeRunnerRow({
   const [receiving, setReceiving] = useState(false);
   const [level, setLevel] = useState(0);
   const [detail, setDetail] = useState<string | null>(null);
-  /** True between an unexpected WS close and the next reconnect attempt — drives the status pill. */
   const [reconnecting, setReconnecting] = useState(false);
   const runnerRef = useRef<BridgeRunnerClient | null>(null);
-  /*
-   * Want-to-be-running flag separates "user clicked Stop" (don't reconnect) from "the WS dropped
-   * out from under us" (reconnect). Held in a ref so the long-lived onState callback always sees
-   * the current value without re-binding.
-   */
   const wantRunningRef = useRef(false);
   const reconnectTimerRef = useRef<number | null>(null);
 
@@ -100,7 +90,6 @@ function BridgeRunnerRow({
     }
   }
 
-  // A running bridge must be torn down if the operator navigates away.
   useEffect(() => {
     return () => {
       clearReconnectTimer();
@@ -109,15 +98,10 @@ function BridgeRunnerRow({
     };
   }, []);
 
-  // Persist the selection on every change so the next mount can restore it.
   useEffect(() => {
     writeStoredSelection(bridge.id, { input: inputId, output: outputId });
   }, [bridge.id, inputId, outputId]);
 
-  /*
-   * Treat the reconnect window as "running" for UI purposes — the controls stay locked and the
-   * Stop button is the way to cancel an in-flight reconnect.
-   */
   const running = runState === "connecting" || runState === "running" || reconnecting;
 
   function start() {
@@ -149,12 +133,6 @@ function BridgeRunnerRow({
             setLevel(0);
             runnerRef.current = null;
             if (state === "closed" && wantRunningRef.current) {
-              /*
-               * Server-side WS drops (Railway redeploys, network blips) shouldn't force the
-               * operator to babysit the bridge — schedule a quiet reconnect and reuse the same
-               * device selection. Errors don't retry: those usually mean a config or device
-               * issue that another attempt won't fix.
-               */
               setReconnecting(true);
               clearReconnectTimer();
               reconnectTimerRef.current = window.setTimeout(() => {
@@ -269,8 +247,7 @@ function BridgeRunnerRow({
   );
 }
 
-/** Operator page for running audio-device bridges from this machine. */
-export function BridgeRunnerPage() {
+function BridgeRunnerSection() {
   const [bridges, setBridges] = useState<Bridge[]>([]);
   const [inputs, setInputs] = useState<MediaDeviceInfo[]>([]);
   const [outputs, setOutputs] = useState<MediaDeviceInfo[]>([]);
@@ -279,11 +256,10 @@ export function BridgeRunnerPage() {
 
   const loadDevices = useCallback(async () => {
     try {
-      // A getUserMedia grant is what unlocks device labels for enumeration.
       const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
       probe.getTracks().forEach((t) => t.stop());
     } catch {
-      /* permission denied — devices still list, just without labels */
+      /* permission denied */
     }
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -307,34 +283,74 @@ export function BridgeRunnerPage() {
   }, [loadDevices]);
 
   return (
+    <>
+      <div className="panel-head">
+        <h2>Run line-in bridges</h2>
+        <span className="count">{bridges.length}</span>
+      </div>
+      <p className="panel-desc">
+        Start an audio-device bridge from this computer — capture a line-in from an external radio or
+        scanner, VOX-gate it, and key it onto a channel. Bidirectional bridges also play channel audio
+        back out to a chosen output device. Stream bridges and VOX settings are configured on the{" "}
+        <strong>Configure bridges</strong> tab (admins).
+      </p>
+
+      {error && <div className="banner error">{error}</div>}
+
+      {loading ? (
+        <div className="empty">Loading…</div>
+      ) : bridges.length === 0 ? (
+        <div className="empty">
+          No enabled line-in bridges. An admin can add one under <strong>Configure bridges</strong>.
+        </div>
+      ) : (
+        bridges.map((bridge) => (
+          <BridgeRunnerRow key={bridge.id} bridge={bridge} inputs={inputs} outputs={outputs} />
+        ))
+      )}
+    </>
+  );
+}
+
+type BridgesView = "runner" | "settings";
+
+/** Radio bridges — run line-in bridges and (for admins) configure all bridge types. */
+export function BridgesPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const [view, setView] = useState<BridgesView>("runner");
+
+  useEffect(() => {
+    if (!isAdmin && view === "settings") {
+      setView("runner");
+    }
+  }, [isAdmin, view]);
+
+  return (
     <div className="app-shell">
       <Topbar section="bridges" />
       <div className="admin-body">
-        <main className="panel">
-          <div className="panel-head">
-            <h2>Radio bridge runner</h2>
-            <span className="count">{bridges.length}</span>
-          </div>
-          <p className="panel-desc">
-            Run an agency audio-device bridge from this machine — capture a line-in feed from an
-            external radio or scanner, VOX-gate it, and key it onto a channel. Bidirectional bridges
-            also play the channel back out to a chosen output device. Bridges and their VOX settings
-            are configured by an admin under Control → Radio Bridges.
-          </p>
-
-          {error && <div className="banner error">{error}</div>}
-
-          {loading ? (
-            <div className="empty">Loading…</div>
-          ) : bridges.length === 0 ? (
-            <div className="empty">
-              No enabled audio-device bridges. An admin can add one under Control → Radio Bridges.
-            </div>
-          ) : (
-            bridges.map((bridge) => (
-              <BridgeRunnerRow key={bridge.id} bridge={bridge} inputs={inputs} outputs={outputs} />
-            ))
+        <aside className="tabs bridges-page-tabs">
+          <button
+            type="button"
+            className={view === "runner" ? "tab active" : "tab"}
+            onClick={() => setView("runner")}
+          >
+            Run bridges
+          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              className={view === "settings" ? "tab active" : "tab"}
+              onClick={() => setView("settings")}
+            >
+              Configure bridges
+            </button>
           )}
+        </aside>
+        <main className="panel">
+          {view === "runner" && <BridgeRunnerSection />}
+          {view === "settings" && isAdmin && <BridgesPanel embedded />}
         </main>
       </div>
     </div>

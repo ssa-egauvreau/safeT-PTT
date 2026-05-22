@@ -231,14 +231,14 @@ function BridgeForm({
         <strong>Yield to real units</strong> drops the bridge off the air whenever a live radio
         keys the channel, so it never talks over a unit. <strong>Enabled</strong> turns the bridge
         on — stream bridges start within seconds; line-in bridges must also be started from the
-        Bridge Runner page.
+        Run bridges tab.
       </p>
     </form>
   );
 }
 
-/** Admin panel for configuring radio bridges. */
-export function BridgesPanel() {
+/** Admin panel for configuring radio bridges (Settings tab or Bridges → Configure). */
+export function BridgesPanel({ embedded = false }: { embedded?: boolean }) {
   const [bridges, setBridges] = useState<Bridge[]>([]);
   const [statuses, setStatuses] = useState<Record<number, BridgeStatus>>({});
   const [channelNames, setChannelNames] = useState<string[]>([]);
@@ -332,14 +332,15 @@ export function BridgesPanel() {
   }
 
   return (
-    <div>
+    <div className={embedded ? "bridges-settings-embed" : undefined}>
       <div className="panel-head">
-        <h2>Radio bridges</h2>
+        <h2>{embedded ? "Configure radio bridges" : "Radio bridges"}</h2>
         <span className="count">{bridges.length}</span>
       </div>
       <p className="panel-desc">
         A radio bridge feeds an outside audio source onto one of your channels — a public scanner
-        stream, or a base radio / scanner wired into a bridge PC's line-in.
+        stream, or a base radio / scanner wired into a bridge PC&apos;s line-in. Line-in bridges are
+        started from the <strong>Run bridges</strong> tab on this page.
       </p>
 
       <div className="bridge-help">
@@ -356,7 +357,7 @@ export function BridgesPanel() {
           </li>
           <li>
             Stream bridges start on the server automatically. Line-in bridges are started by an
-            operator on the <em>Bridge Runner</em> page, which also selects the exact audio device.
+            operator on the <em>Run bridges</em> tab, which also selects the exact audio device.
           </li>
         </ol>
         <strong>VOX gate</strong>
@@ -411,8 +412,8 @@ export function BridgesPanel() {
               </div>
               {bridge.source_type === "audio_device" ? (
                 <p className="field-hint bridge-status-note">
-                  Line-in bridge — watch its live input meter on the <strong>Bridge Runner</strong>{" "}
-                  page while it runs.
+                  Line-in bridge — watch its live input meter on the <strong>Run bridges</strong> tab
+                  while it runs.
                 </p>
               ) : (
                 <BridgeMeter
