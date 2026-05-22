@@ -171,7 +171,7 @@ function migrate(): ConsoleState {
   };
 }
 
-let state: ConsoleState = parse(localStorage.getItem(STATE_KEY)) ?? migrate();
+let state: ConsoleState = withPackedWorkspaceLayout(parse(localStorage.getItem(STATE_KEY)) ?? migrate());
 const listeners = new Set<() => void>();
 
 function commit(next: ConsoleState): void {
@@ -190,7 +190,7 @@ if (typeof window !== "undefined") {
     if (event.key === STATE_KEY) {
       const next = parse(event.newValue);
       if (next) {
-        state = next;
+        state = withPackedWorkspaceLayout(next);
         listeners.forEach((listener) => listener());
       }
     }
@@ -310,14 +310,24 @@ export function relayoutWorkspace(
   return packWorkspaceLayout(expandedIds, previous);
 }
 
+/** Recompute grid positions from saved row spans (fixes stale col/row after layout changes). */
+function withPackedWorkspaceLayout(s: ConsoleState): ConsoleState {
+  if (s.expanded.length === 0) {
+    return { ...s, workspaceLayout: {} };
+  }
+  return {
+    ...s,
+    workspaceLayout: packWorkspaceLayout(s.expanded, s.workspaceLayout),
+  };
+}
+
 export function getWorkspaceTile(id: number): WorkspaceTileLayout {
   const key = layoutKey(id);
-  if (state.workspaceLayout[key]) {
-    const tile = state.workspaceLayout[key]!;
-    return { ...tile, rowSpan: snapWorkspaceRowSpan(tile.rowSpan) };
+  const packed = packWorkspaceLayout(state.expanded, state.workspaceLayout);
+  if (packed[key]) {
+    return packed[key]!;
   }
-  const index = state.expanded.indexOf(id);
-  if (index < 0) {
+  if (state.expanded.indexOf(id) < 0) {
     return {
       col: 0,
       row: 0,
@@ -325,7 +335,12 @@ export function getWorkspaceTile(id: number): WorkspaceTileLayout {
       rowSpan: WORKSPACE_DEFAULT_ROW_SPAN,
     };
   }
-  return relayoutWorkspace(state.expanded, state.workspaceLayout)[key]!;
+  return {
+    col: 0,
+    row: 0,
+    colSpan: WORKSPACE_SLOT_COL_SPAN,
+    rowSpan: WORKSPACE_DEFAULT_ROW_SPAN,
+  };
 }
 
 export function setWorkspaceTileRowSpan(id: number, rowSpan: number): void {

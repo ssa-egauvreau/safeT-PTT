@@ -848,6 +848,7 @@ code.mono {
   position: relative;
   min-width: 0;
   min-height: 0;
+  align-self: stretch;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -870,7 +871,9 @@ code.mono {
 }
 .channel-workspace-tile-inner {
   position: relative;
-  flex: 1 1 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -883,7 +886,7 @@ code.mono {
   box-shadow: 0 8px 24px color-mix(in srgb, #000 35%, transparent);
 }
 .channel-workspace-tile .channel-card.workspace {
-  height: 100%;
+  flex: 1 1 auto;
   min-height: 0;
   width: 100%;
   max-width: 100%;
