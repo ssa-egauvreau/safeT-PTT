@@ -16,16 +16,6 @@ const STATE_KEY = "securityradio.console.state";
 
 /** Bump when workspace layout rules change — triggers one-time localStorage migration. */
 const CURRENT_LAYOUT_VERSION = 7;
-/** Column span for a compact stack tile (right column). */
-export const WORKSPACE_STACK_COL_SPAN = 3;
-/** Main panel width (left); stack lane uses the rest. */
-export const WORKSPACE_MAIN_COL_SPAN = WORKSPACE_COLS - WORKSPACE_STACK_COL_SPAN;
-/** Default row span for new compact stack panels. */
-export const WORKSPACE_STACK_DEFAULT_ROW_SPAN = 6;
-/** First column index for the right-hand stack lane. */
-export const WORKSPACE_STACK_COL_START = WORKSPACE_COLS - WORKSPACE_STACK_COL_SPAN;
-/** Column span for a half-width tile. */
-export const WORKSPACE_HALF_COL_SPAN = 6;
 const MAX_STATE_STORAGE_BYTES = 256 * 1024;
 const MAX_OPEN_CHANNELS = 16;
 const MAX_DOCKED_CHANNELS = 12;
@@ -41,6 +31,16 @@ export interface WorkspaceTileLayout {
 }
 
 export const WORKSPACE_COLS = 12;
+/** Column span for a compact stack tile (right column). */
+export const WORKSPACE_STACK_COL_SPAN = 3;
+/** Main panel width (left); stack lane uses the rest. */
+export const WORKSPACE_MAIN_COL_SPAN = WORKSPACE_COLS - WORKSPACE_STACK_COL_SPAN;
+/** Default row span for new compact stack panels. */
+export const WORKSPACE_STACK_DEFAULT_ROW_SPAN = 6;
+/** First column index for the right-hand stack lane. */
+export const WORKSPACE_STACK_COL_START = WORKSPACE_COLS - WORKSPACE_STACK_COL_SPAN;
+/** Column span for a half-width tile. */
+export const WORKSPACE_HALF_COL_SPAN = 6;
 /** Pixel height per workspace grid row — must fit channel controls without clipping. */
 export const WORKSPACE_ROW_PX = 40;
 export const WORKSPACE_GRID_GAP_PX = 6;
@@ -584,7 +584,9 @@ function resolveWorkspaceOverlaps(
 ): void {
   const keys = expandedIds.map((id) => layoutKey(id)).filter((k) => layout[k]);
   let changed = true;
-  while (changed) {
+  let passes = 0;
+  while (changed && passes < 64) {
+    passes += 1;
     changed = false;
     keys.sort((a, b) => layout[a]!.row - layout[b]!.row || layout[a]!.col - layout[b]!.col);
     for (let i = 0; i < keys.length; i++) {
