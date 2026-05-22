@@ -697,9 +697,11 @@ code.mono {
   font-size: 9px;
 }
 .channel-dock {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-content: start;
+  align-items: start;
   min-height: 280px;
   padding: 12px;
   border: 2px dashed var(--border);
@@ -749,10 +751,17 @@ code.mono {
   font-size: 18px;
 }
 .channel-dock .channel-card.workspace .roster {
-  max-height: 180px;
+  max-height: 120px;
 }
 .ch-card-name-static {
   cursor: default;
+}
+
+/* Workspace grid: 3×3 on wide command monitors */
+@media (min-width: 1500px) {
+  .channel-dock {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 /* Legacy pop-out / fallback */
 .channel-accordion {
@@ -2456,6 +2465,9 @@ code.mono {
   .channel-rail-tile {
     flex: 1 1 140px;
     max-width: 200px;
+  }
+  .channel-dock {
+    grid-template-columns: 1fr;
   }
   .admin-body {
     flex-direction: column;
