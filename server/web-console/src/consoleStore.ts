@@ -15,7 +15,7 @@ import {
 const STATE_KEY = "securityradio.console.state";
 
 /** Bump when workspace layout rules change — triggers one-time localStorage migration. */
-const CURRENT_LAYOUT_VERSION = 8;
+const CURRENT_LAYOUT_VERSION = 9;
 const MAX_STATE_STORAGE_BYTES = 256 * 1024;
 const MAX_OPEN_CHANNELS = 16;
 const MAX_DOCKED_CHANNELS = 12;
@@ -23,29 +23,37 @@ const COMMIT_STORM_LIMIT = 24;
 const COMMIT_STORM_WINDOW_MS = 2000;
 
 /**
- * One channel tile on the auto-flow workspace grid. The grid is a responsive set of equal-width
- * tracks (`repeat(auto-fit, minmax(WORKSPACE_MIN_COL_PX, 1fr))`); a tile spans `colSpan` tracks wide
- * and `rowSpan` row units tall. Tiles flow in docked order and fill / reflow automatically, so there
- * are no absolute coordinates to go stale (which is what made the old 12-column layout fragile).
+ * One channel tile on the workspace grid, sized like an iOS home-screen widget. The grid is a set of
+ * equal "widget columns" (one or two across, depending on width); a tile is one of three sizes that
+ * pack together like puzzle pieces via dense auto-flow:
+ *   - small:  1 column, short   (volume + PTT)
+ *   - medium: 2 columns, short  (full width, compact controls)
+ *   - large:  2 columns, tall   (full width, full control surface)
  */
 export interface WorkspaceTileLayout {
-  /** Track columns the tile spans (1 = one column; clamped to the live column count at render). */
+  /** Widget columns the tile spans (1 = small, 2 = medium/large); clamped to the live column count. */
   colSpan: number;
   /** Height in WORKSPACE_ROW_PX units. */
   rowSpan: number;
 }
 
-/** Minimum width of one grid track; the grid fits as many equal tracks as the width allows. */
-export const WORKSPACE_MIN_COL_PX = 300;
-/** Hard cap on how many tracks a single tile may span. */
-export const WORKSPACE_MAX_COLS = 4;
+export type WorkspaceWidgetSize = "small" | "medium" | "large";
+
+/** Minimum width of one widget column; the grid fits one or two across depending on the width. */
+export const WORKSPACE_MIN_COL_PX = 330;
+/** Widest a widget gets — two columns (an iPhone-style full-width widget). */
+export const WORKSPACE_MAX_COLS = 2;
 /** Pixel height per workspace grid row — must fit channel controls without clipping. */
 export const WORKSPACE_ROW_PX = 40;
 /** Grid gap (px); kept in sync with the CSS so the column-count math matches the browser's layout. */
 export const WORKSPACE_GRID_GAP_PX = 8;
-/** A new tile starts one track wide and reflows to fill. */
-export const WORKSPACE_DEFAULT_COL_SPAN = 1;
-export const WORKSPACE_DEFAULT_ROW_SPAN = 14;
+/** Short widget height (small / medium): compact controls. */
+export const WORKSPACE_SHORT_ROW_SPAN = 7;
+/** Tall widget height (large): full control surface. */
+export const WORKSPACE_TALL_ROW_SPAN = 14;
+/** New tiles dock as a full-width compact (medium) widget. */
+export const WORKSPACE_DEFAULT_COL_SPAN = 2;
+export const WORKSPACE_DEFAULT_ROW_SPAN = WORKSPACE_SHORT_ROW_SPAN;
 export const WORKSPACE_MIN_ROW_SPAN = 5;
 export const WORKSPACE_MAX_ROW_SPAN = 36;
 /**
@@ -53,7 +61,30 @@ export const WORKSPACE_MAX_ROW_SPAN = 36;
  */
 export const WORKSPACE_ROW_SNAPS: readonly number[] = [5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 26, 32, 36];
 
-/** How many equal tracks fit at a container width — used to clamp spans so nothing overflows. */
+/** The three widget sizes, in cycle order. */
+export const WORKSPACE_WIDGET_SIZES: readonly WorkspaceWidgetSize[] = ["small", "medium", "large"];
+
+/** The { colSpan, rowSpan } a given widget size maps to. */
+export function workspacePresetForSize(size: WorkspaceWidgetSize): WorkspaceTileLayout {
+  switch (size) {
+    case "small":
+      return { colSpan: 1, rowSpan: WORKSPACE_SHORT_ROW_SPAN };
+    case "large":
+      return { colSpan: 2, rowSpan: WORKSPACE_TALL_ROW_SPAN };
+    default:
+      return { colSpan: 2, rowSpan: WORKSPACE_SHORT_ROW_SPAN };
+  }
+}
+
+/** Classify a stored tile into one of the three widget sizes. */
+export function workspaceTileSize(tile: WorkspaceTileLayout): WorkspaceWidgetSize {
+  if (tile.colSpan <= 1) {
+    return "small";
+  }
+  return tile.rowSpan >= (WORKSPACE_SHORT_ROW_SPAN + WORKSPACE_TALL_ROW_SPAN) / 2 ? "large" : "medium";
+}
+
+/** How many widget columns fit at a container width (1 on phones, up to 2 otherwise). */
 export function workspaceColsForWidth(width: number, gap = WORKSPACE_GRID_GAP_PX): number {
   if (!Number.isFinite(width) || width <= 0) {
     return 1;
@@ -574,36 +605,29 @@ export function getWorkspaceTile(id: number): WorkspaceTileLayout {
   return defaultWorkspaceTile();
 }
 
-export function setWorkspaceTileRowSpan(id: number, rowSpan: number): void {
+/** Set a docked tile to one of the three widget sizes. */
+export function setWorkspaceTileSize(id: number, size: WorkspaceWidgetSize): void {
   if (!state.expanded.includes(id)) {
     return;
   }
   const key = layoutKey(id);
   const prev = state.workspaceLayout[key] ?? getWorkspaceTile(id);
-  const nextSpan = snapWorkspaceRowSpan(rowSpan);
-  if (prev.rowSpan === nextSpan) {
+  const next = workspacePresetForSize(size);
+  if (prev.colSpan === next.colSpan && prev.rowSpan === next.rowSpan) {
     return;
   }
   commit({
     ...state,
-    workspaceLayout: { ...state.workspaceLayout, [key]: { ...prev, rowSpan: nextSpan } },
+    workspaceLayout: { ...state.workspaceLayout, [key]: next },
   });
 }
 
-export function setWorkspaceTileColSpan(id: number, colSpan: number): void {
-  if (!state.expanded.includes(id)) {
-    return;
-  }
-  const key = layoutKey(id);
-  const prev = state.workspaceLayout[key] ?? getWorkspaceTile(id);
-  const nextSpan = clampWorkspaceColSpan(colSpan);
-  if (prev.colSpan === nextSpan) {
-    return;
-  }
-  commit({
-    ...state,
-    workspaceLayout: { ...state.workspaceLayout, [key]: { ...prev, colSpan: nextSpan } },
-  });
+/** Advance a docked tile to the next widget size (small → medium → large → small). */
+export function cycleWorkspaceTileSize(id: number): void {
+  const current = workspaceTileSize(getWorkspaceTile(id));
+  const idx = WORKSPACE_WIDGET_SIZES.indexOf(current);
+  const next = WORKSPACE_WIDGET_SIZES[(idx + 1) % WORKSPACE_WIDGET_SIZES.length]!;
+  setWorkspaceTileSize(id, next);
 }
 
 /** Reorder the docked sequence so the dragged tile lands before/after the target (drag-to-move). */
