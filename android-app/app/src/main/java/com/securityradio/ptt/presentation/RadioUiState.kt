@@ -42,6 +42,11 @@ data class RadioUiState(
     val isEmergencyActive: Boolean,
     val pttBusyTone: Boolean,
     val statusMessage: String,
+    /**
+     * When non-null, the app version to flash in the zone/channel display area for a few seconds at
+     * launch (IRC590 / TM-7 Plus only). Cleared back to null afterwards.
+     */
+    val versionBanner: String? = null,
     val channelsLoading: Boolean,
     val channelSyncError: String?,
     val channelSourceLabel: String,
@@ -120,6 +125,11 @@ data class RadioUiState(
      * after the APK is verified. Cleared once [android.os.Build.VERSION_CODE] matches pending.
      */
     val appUpdateBanner: String = "",
+    /**
+     * True while an OTA update is downloading/installing — drives the full-screen
+     * "DOWNLOADING UPDATE — DO NOT TURN OFF DEVICE" banner.
+     */
+    val updateInstalling: Boolean = false,
 
     /** Non-blank while the last RX is replaying; holds the "who was talking" caption. */
     val replayBanner: String,

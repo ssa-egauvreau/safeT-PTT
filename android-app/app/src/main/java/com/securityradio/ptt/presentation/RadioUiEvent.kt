@@ -29,6 +29,8 @@ sealed interface RadioUiEvent {
 
     data object OpenMappingSettings : RadioUiEvent
     data object CloseMappingSettings : RadioUiEvent
+    /** Manual OTA update check from the Device settings page. */
+    data object CheckForUpdates : RadioUiEvent
     /** Which tab is selected inside the settings screen (BUTTONS / DEVICE / AUDIO / ACCOUNT). */
     data class SelectSettingsTab(val index: Int) : RadioUiEvent
     data class StartListeningForMapping(val action: com.securityradio.ptt.device.HardwareAction) : RadioUiEvent

@@ -169,6 +169,9 @@ class RadioViewModel(
     private val _uiState = MutableStateFlow(RadioUiState.initial())
     val uiState: StateFlow<RadioUiState> = _uiState.asStateFlow()
 
+    /** Plays the update-alert jingle only once per download (not on every progress tick). */
+    private var updateJinglePlayed = false
+
     init {
         if (radioPreferences.isLoggedIn() && radioPreferences.getSessionUnitId().isBlank()) {
             val fromUsername = radioPreferences.getSessionUsername().trim().uppercase(Locale.US)
@@ -213,8 +216,28 @@ class RadioViewModel(
                 mp22UsePhysicalDisplay = radioPreferences.isMp22UsePhysicalDisplay(),
             )
         }
+        // If a downloaded update finished installing (this build caught up), chime + confirm once.
+        appUpdater.takeInstalledUpdateNotice()?.let { installed ->
+            soundPlayer.playTalkPermitThen({})
+            val msg = "UPDATED TO v${installed.versionName} — INSTALL COMPLETE"
+            _uiState.update { it.copy(statusMessage = msg) }
+            viewModelScope.launch {
+                delay(VERSION_BANNER_MS)
+                _uiState.update { if (it.statusMessage == msg) it.copy(statusMessage = "") else it }
+            }
+        }
         refreshAppUpdateBanner()
         appUpdater.setProgressListener { progress -> onAppUpdateProgress(progress) }
+        // Flash the app version in the zone/channel display for a few seconds at launch, on the
+        // rugged handset profiles only (IRC590 / TM-7 Plus).
+        val launchProfile = uiState.value.resolvedDeviceProfile
+        if (launchProfile == ResolvedDeviceProfile.IRC590 || launchProfile == ResolvedDeviceProfile.TM7_PLUS) {
+            _uiState.update { it.copy(versionBanner = "v${BuildConfig.VERSION_NAME}") }
+            viewModelScope.launch {
+                delay(VERSION_BANNER_MS)
+                _uiState.update { it.copy(versionBanner = null) }
+            }
+        }
         viewModelScope.launch {
             while (isActive) {
                 refreshClock()
@@ -430,26 +453,60 @@ class RadioViewModel(
         when (progress) {
             AppUpdater.UpdateProgress.Idle -> {
                 if (appUpdater.peekPendingUpdateNotice() == null) {
-                    _uiState.update { it.copy(appUpdateBanner = "") }
+                    _uiState.update { it.copy(appUpdateBanner = "", updateInstalling = false) }
                 }
             }
-            is AppUpdater.UpdateProgress.Available ->
+            is AppUpdater.UpdateProgress.Available -> {
+                startUpdateInProgress()
                 applyAppUpdateAvailableBanner(progress.versionName)
-            is AppUpdater.UpdateProgress.Downloading ->
+            }
+            is AppUpdater.UpdateProgress.Downloading -> {
+                startUpdateInProgress()
                 applyAppUpdateDownloadingBanner(progress.versionName)
+            }
             is AppUpdater.UpdateProgress.Downloaded ->
                 onAppUpdateDownloaded(progress.notice)
+            AppUpdater.UpdateProgress.UpToDate -> showUpToDate()
+            AppUpdater.UpdateProgress.CheckFailed -> showUpdateCheckFailed()
+        }
+    }
+
+    /** First time an update download starts, raise the full-screen banner and play the alert jingle. */
+    private fun startUpdateInProgress() {
+        _uiState.update { it.copy(updateInstalling = true) }
+        if (!updateJinglePlayed) {
+            updateJinglePlayed = true
+            soundPlayer.playChannelSwitch()
+        }
+    }
+
+    private fun showUpToDate() {
+        val msg = "UP TO DATE — ON THE LATEST VERSION"
+        _uiState.update { it.copy(statusMessage = msg) }
+        viewModelScope.launch {
+            delay(VERSION_BANNER_MS)
+            _uiState.update { if (it.statusMessage == msg) it.copy(statusMessage = "") else it }
+        }
+    }
+
+    private fun showUpdateCheckFailed() {
+        val msg = "UPDATE CHECK FAILED"
+        _uiState.update { it.copy(statusMessage = msg) }
+        viewModelScope.launch {
+            delay(VERSION_BANNER_MS)
+            _uiState.update { if (it.statusMessage == msg) it.copy(statusMessage = "") else it }
         }
     }
 
     fun onAppUpdateDownloaded(notice: AppUpdater.UpdateNotice) {
         if (notice.versionCode <= BuildConfig.VERSION_CODE.toLong()) {
             appUpdater.clearPendingUpdate()
-            _uiState.update { it.copy(appUpdateBanner = "") }
+            _uiState.update { it.copy(appUpdateBanner = "", updateInstalling = false) }
             return
         }
+        // Keep the full-screen "do not turn off" banner up through the install/reboot.
+        _uiState.update { it.copy(updateInstalling = true) }
         applyAppUpdateDownloadedBanner(notice.versionName)
-        soundPlayer.playChannelSwitch()
     }
 
     private fun applyAppUpdateAvailableBanner(versionName: String) {
@@ -765,6 +822,17 @@ class RadioViewModel(
                 soundPlayer.playChannelSwitch()
                 _uiState.update { it.copy(mappingSettingsVisible = false, currentlyMappingAction = null) }
                 mappingJob?.cancel()
+            }
+            RadioUiEvent.CheckForUpdates -> {
+                soundPlayer.playChannelSwitch()
+                _uiState.update { it.copy(statusMessage = "CHECKING FOR UPDATES…") }
+                appUpdater.checkAndInstallAsync(force = true, manual = true)
+                viewModelScope.launch {
+                    delay(VERSION_BANNER_MS)
+                    _uiState.update {
+                        if (it.statusMessage == "CHECKING FOR UPDATES…") it.copy(statusMessage = "") else it
+                    }
+                }
             }
             RadioUiEvent.DismissSetupDialog -> {
                 _uiState.update { it.copy(setupDialogDismissed = true) }
@@ -2243,6 +2311,7 @@ class RadioViewModel(
 
     private companion object {
         const val CLOCK_TICK_MS = 1_000L
+        const val VERSION_BANNER_MS = 5_000L
         /** How long the "MOVED TO" banner survives the immediate re-join "VOICE ON" ack. */
         const val MOVE_BANNER_MS = 6_000L
         const val AIR_POLL_MS = 250L

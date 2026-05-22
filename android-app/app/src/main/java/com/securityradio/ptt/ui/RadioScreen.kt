@@ -63,6 +63,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
@@ -77,6 +78,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.securityradio.ptt.BuildConfig
 import com.securityradio.ptt.device.AccessibilitySettingsLauncher
 import com.securityradio.ptt.device.DeviceProfilePreference
 import com.securityradio.ptt.device.DeviceProfileResolver
@@ -225,6 +227,42 @@ fun RadioScreen(
             rememberHandsetLocalEmergencyFlashColor(handsetLocalEmergencyActive)
 
         Box(modifier = Modifier.fillMaxSize()) {
+            if (state.updateInstalling) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .zIndex(50f)
+                        .background(palette.statusAmber)
+                        .padding(28.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = "DOWNLOADING UPDATE",
+                            style = styles.channel.copy(fontWeight = FontWeight.Bold),
+                            color = Color.Black,
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            text = "DO NOT TURN OFF DEVICE",
+                            style = styles.zone.copy(fontWeight = FontWeight.Bold),
+                            color = Color.Black,
+                            textAlign = TextAlign.Center,
+                        )
+                        if (state.appUpdateBanner.isNotEmpty()) {
+                            Text(
+                                text = state.appUpdateBanner,
+                                style = styles.status,
+                                color = Color.Black.copy(alpha = 0.75f),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                }
+            }
             if (handsetLocalEmergencyActive) {
                 Box(
                     modifier = Modifier
@@ -1204,7 +1242,8 @@ private fun LcdMainChannelBlock(
                 )
             }
             Text(
-                text = state.channelLabel.uppercase(Locale.US),
+                // At launch the version flashes here for a few seconds (IRC590 / TM-7 Plus).
+                text = (state.versionBanner ?: state.channelLabel).uppercase(Locale.US),
                 style = channelStyle,
                 color = chrome.channelTextColor,
                 maxLines = 1,
@@ -3876,6 +3915,26 @@ private fun DeviceSettingsTab(
             }
             item { HorizontalDivider(color = p.divider) }
         }
+        item {
+            SettingsSectionHeader("SOFTWARE", styles, p)
+            Text(
+                text = "VERSION ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})".uppercase(Locale.US),
+                style = styles.status,
+                color = p.textMuted,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+            TextButton(
+                onClick = { onEvent(RadioUiEvent.CheckForUpdates) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.textButtonColors(
+                    containerColor = p.softKeyInactiveFill,
+                    contentColor = p.textPrimary,
+                ),
+            ) {
+                Text("CHECK FOR UPDATES".uppercase(Locale.US))
+            }
+        }
+        item { HorizontalDivider(color = p.divider) }
         item {
             SettingsSectionHeader("HANDSET LAYOUT", styles, p)
             Text(
