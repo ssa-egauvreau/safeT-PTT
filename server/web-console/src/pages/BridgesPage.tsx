@@ -133,7 +133,13 @@ function BridgeRunnerRow({
       clearReconnectTimer();
       wantRunningRef.current = false;
       runnerRef.current?.stop();
+      // Forget the run-intent on in-app unmount (navigating away from the Bridges tab, which stops
+      // the runner). React does NOT run effect cleanups on a real page reload — the context is torn
+      // down — so a genuine reload leaves the flag set and still auto-resumes. Clearing here only
+      // covers navigation, so a later reload can't resurrect a bridge the operator left stopped.
+      writeWantRunning(bridge.id, false);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
