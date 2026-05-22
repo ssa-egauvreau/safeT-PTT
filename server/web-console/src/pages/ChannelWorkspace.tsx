@@ -4,8 +4,6 @@ import { ChannelPanel } from "./ChannelPanel";
 import {
   WORKSPACE_GRID_GAP_PX,
   WORKSPACE_MAX_PER_ROW,
-  WORKSPACE_MAX_ROW_SPAN,
-  WORKSPACE_MIN_ROW_SPAN,
   WORKSPACE_ROW_PX,
   dockChannel,
   getWorkspaceTile,
@@ -74,10 +72,6 @@ export function ChannelWorkspace({
 
   const channelIds = useMemo(() => dockedChannels.map((c) => c.id), [dockedChannels]);
   const rows = useMemo(() => chunkChannels(dockedChannels, WORKSPACE_MAX_PER_ROW), [dockedChannels]);
-
-  const maxRowSpan = dockedChannels.reduce((m, ch) => {
-    return Math.max(m, getWorkspaceTile(ch.id).rowSpan);
-  }, WORKSPACE_MIN_ROW_SPAN);
 
   useEffect(() => {
     if (channelIds.length === 0) {
@@ -172,8 +166,6 @@ export function ChannelWorkspace({
     reorderDockedChannels(next);
   }
 
-  const rowMinHeight = tilePixelHeight(maxRowSpan);
-
   return (
     <section
       ref={rootRef}
@@ -197,11 +189,7 @@ export function ChannelWorkspace({
         </div>
       ) : (
         rows.map((rowChannels) => (
-          <div
-            key={rowChannels.map((c) => c.id).join("-")}
-            className="channel-workspace-row"
-            style={{ minHeight: rowMinHeight }}
-          >
+          <div key={rowChannels.map((c) => c.id).join("-")} className="channel-workspace-row">
             {rowChannels.map((channel) => {
               const tile = getWorkspaceTile(channel.id);
               const monitoring = open.includes(channel.id);
@@ -212,7 +200,7 @@ export function ChannelWorkspace({
                   className={`channel-workspace-tile${!monitoring ? " channel-off" : ""}${
                     resizeChannelId === channel.id ? " resizing" : ""
                   }${dragOverChannelId === channel.id ? " drag-over" : ""}`}
-                  style={{ minHeight: tilePixelHeight(tile.rowSpan) }}
+                  style={{ height: tilePixelHeight(tile.rowSpan) }}
                   draggable
                   onDragStart={(e) => onTileDragStart(e, channel.id)}
                   onDragOver={(e) => onTileDragOver(e, channel.id)}

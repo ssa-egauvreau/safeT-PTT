@@ -832,7 +832,7 @@ code.mono {
 .channel-workspace-row {
   display: flex;
   flex-direction: row;
-  align-items: stretch;
+  align-items: flex-start;
   gap: 6px;
   min-width: 0;
 }
@@ -850,13 +850,19 @@ code.mono {
 .channel-workspace-tile {
   position: relative;
   flex: 1 1 0;
+  flex-grow: 1;
+  flex-shrink: 1;
+  align-self: flex-start;
   min-width: 0;
   max-width: 100%;
-  min-height: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border: 1px solid var(--border);
   border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 40%, transparent);
 }
 .channel-workspace-tile.drag-over {
   outline: 2px solid var(--accent);
@@ -865,13 +871,15 @@ code.mono {
 .channel-workspace-tile.resizing {
   z-index: 5;
 }
+.channel-workspace-tile:has(.channel-card.primary) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
 .channel-workspace-tile-inner {
   position: relative;
-  flex: 1 1 auto;
-  height: 100%;
+  flex: 1 1 0;
   min-height: 0;
   min-width: 0;
-  padding-bottom: 12px;
   overflow: hidden;
 }
 .channel-workspace-tile-inner:active {
@@ -890,6 +898,10 @@ code.mono {
   flex-direction: column;
   overflow: hidden;
   box-sizing: border-box;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .channel-workspace-tile .channel-card.workspace .ch-card-head.workspace-head {
   flex: 0 0 auto;
@@ -923,13 +935,13 @@ code.mono {
 }
 .channel-card.workspace[data-tier="0"] .ch-card-body.workspace-dense > .tx-button,
 .channel-card.workspace[data-tier="1"] .ch-card-body.workspace-dense > .tx-button {
-  flex: 1 1 auto;
-  min-height: 52px;
+  flex: 1 1 0;
+  min-height: 0;
   grid-column: auto;
 }
 .channel-card.workspace[data-tier="0"] .tx-button-integrated,
 .channel-card.workspace[data-tier="1"] .tx-button-integrated {
-  min-height: 48px;
+  min-height: 0;
 }
 .channel-card.workspace[data-tier="0"] .ch-card-head.workspace-head {
   flex: 0 0 auto;
@@ -946,10 +958,10 @@ code.mono {
 .channel-workspace-resize-h {
   position: absolute;
   z-index: 12;
-  left: 8px;
-  right: 8px;
+  left: 0;
+  right: 0;
   bottom: 0;
-  height: 14px;
+  height: 12px;
   border: none;
   background: transparent;
   padding: 0;
