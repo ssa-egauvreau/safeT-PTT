@@ -68,7 +68,7 @@ export function useChannelLiveRx({
     async function pollAir() {
       try {
         if (scanWatchList) {
-          const ta = await api.talkActivity({ home: channelName, scan: scanWatchList });
+          const ta = await api.talkActivity({ home: channelName!, scan: scanWatchList });
           if (cancelled) return;
           const preferScan =
             scanRxChannel &&
@@ -91,7 +91,7 @@ export function useChannelLiveRx({
           return;
         }
 
-        const air = await api.air(channelName);
+        const air = await api.air(channelName!);
         if (cancelled) return;
         if (homeReceiving && air.occupied && air.transmitting_unit_id) {
           applyTalker(air.transmitting_unit_id, air.transmitting_display_name);

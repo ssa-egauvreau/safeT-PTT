@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type DragEvent, type PointerEvent } from "react";
 import type { UserChannel } from "../api";
 import { ChannelPanel } from "./ChannelPanel";
 import {
+  WORKSPACE_GRID_GAP_PX,
   WORKSPACE_ROW_PX,
-  dockChannel,
   getWorkspaceTile,
   reorderDockedChannels,
   setWorkspaceTileRowSpan,
@@ -78,13 +78,6 @@ export function ChannelWorkspace({
   const [dragOverChannelId, setDragOverChannelId] = useState<number | null>(null);
 
   const channelIds = useMemo(() => dockedChannels.map((c) => c.id), [dockedChannels]);
-
-  useEffect(() => {
-    if (channelIds.length === 0) {
-      return;
-    }
-    reorderDockedChannels(channelIds);
-  }, [channelIds.join(",")]);
 
   const handleWorkspaceDrop = useCallback(
     (e: DragEvent) => {
@@ -203,6 +196,8 @@ export function ChannelWorkspace({
         dockedChannels.map((channel) => {
           const tile = getWorkspaceTile(channel.id);
           const monitoring = open.includes(channel.id);
+          const tileMinHeight =
+            tile.rowSpan * WORKSPACE_ROW_PX + Math.max(0, tile.rowSpan - 1) * WORKSPACE_GRID_GAP_PX;
           return (
             <div
               key={channel.id}
@@ -213,6 +208,7 @@ export function ChannelWorkspace({
               style={{
                 gridColumn: `${tile.col + 1} / span ${tile.colSpan}`,
                 gridRow: `${tile.row + 1} / span ${tile.rowSpan}`,
+                minHeight: tileMinHeight,
               }}
               draggable
               onDragStart={(e) => onTileDragStart(e, channel.id)}

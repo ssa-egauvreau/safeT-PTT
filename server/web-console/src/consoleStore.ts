@@ -232,6 +232,62 @@ function layoutKey(id: number): string {
   return String(id);
 }
 
+function expandedOrderEqual(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
+}
+
+function workspaceLayoutEqual(
+  a: Record<string, WorkspaceTileLayout>,
+  b: Record<string, WorkspaceTileLayout>,
+): boolean {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) {
+    return false;
+  }
+  for (const key of keysA) {
+    const ta = a[key];
+    const tb = b[key];
+    if (
+      !ta ||
+      !tb ||
+      ta.col !== tb.col ||
+      ta.row !== tb.row ||
+      ta.colSpan !== tb.colSpan ||
+      ta.rowSpan !== tb.rowSpan
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function commitWorkspaceIfChanged(expanded: number[], workspaceLayout: Record<string, WorkspaceTileLayout>): void {
+  if (
+    expandedOrderEqual(expanded, state.expanded) &&
+    workspaceLayoutEqual(workspaceLayout, state.workspaceLayout)
+  ) {
+    return;
+  }
+  commit({ ...state, expanded, workspaceLayout });
+}
+
+/** One-time repair after layout algorithm changes — safe to call on Mission Control mount. */
+export function repairWorkspaceLayout(): void {
+  if (state.expanded.length === 0) {
+    if (Object.keys(state.workspaceLayout).length === 0) {
+      return;
+    }
+    commit({ ...state, workspaceLayout: {} });
+    return;
+  }
+  const packed = packWorkspaceLayout(state.expanded, state.workspaceLayout);
+  if (workspaceLayoutEqual(packed, state.workspaceLayout)) {
+    return;
+  }
+  commit({ ...state, workspaceLayout: packed });
+}
+
 /** Column span for the workspace grid from the current window width (3- or 4-wide panels). */
 export function workspaceColSpanForViewport(width = typeof window !== "undefined" ? window.innerWidth : 0): number {
   if (width >= WORKSPACE_BREAK_4_WIDE) {
@@ -323,9 +379,9 @@ function withPackedWorkspaceLayout(s: ConsoleState): ConsoleState {
 
 export function getWorkspaceTile(id: number): WorkspaceTileLayout {
   const key = layoutKey(id);
-  const packed = packWorkspaceLayout(state.expanded, state.workspaceLayout);
-  if (packed[key]) {
-    return packed[key]!;
+  const tile = state.workspaceLayout[key];
+  if (tile) {
+    return tile;
   }
   if (state.expanded.indexOf(id) < 0) {
     return {
@@ -344,22 +400,32 @@ export function getWorkspaceTile(id: number): WorkspaceTileLayout {
 }
 
 export function setWorkspaceTileRowSpan(id: number, rowSpan: number): void {
+  if (!state.expanded.includes(id)) {
+    return;
+  }
   const key = layoutKey(id);
-  const prev = state.workspaceLayout[key];
+  const prev =
+    state.workspaceLayout[key] ??
+    packWorkspaceLayout(state.expanded, state.workspaceLayout)[key];
   if (!prev) {
+    return;
+  }
+  const nextSpan = snapWorkspaceRowSpan(rowSpan);
+  if (prev.rowSpan === nextSpan) {
     return;
   }
   const merged = {
     ...state.workspaceLayout,
     [key]: {
       ...prev,
-      rowSpan: snapWorkspaceRowSpan(rowSpan),
+      rowSpan: nextSpan,
     },
   };
-  commit({
-    ...state,
-    workspaceLayout: packWorkspaceLayout(state.expanded, merged),
-  });
+  const workspaceLayout = packWorkspaceLayout(state.expanded, merged);
+  if (workspaceLayoutEqual(workspaceLayout, state.workspaceLayout)) {
+    return;
+  }
+  commit({ ...state, workspaceLayout });
 }
 
 /** Dock a channel on the workspace; optional insert index (left-to-right order). */
@@ -373,7 +439,7 @@ export function dockChannel(id: number, insertAt?: number): void {
     expanded.splice(at, 0, id);
   }
   const workspaceLayout = relayoutWorkspace(expanded, state.workspaceLayout);
-  commit({ ...state, expanded, workspaceLayout });
+  commitWorkspaceIfChanged(expanded, workspaceLayout);
 }
 
 /** Reorder docked channels (e.g. drag left/right); widths reflow to fill each row. */
@@ -390,7 +456,7 @@ export function reorderDockedChannels(orderedIds: number[]): void {
     }
   }
   const workspaceLayout = relayoutWorkspace(expanded, state.workspaceLayout);
-  commit({ ...state, expanded, workspaceLayout });
+  commitWorkspaceIfChanged(expanded, workspaceLayout);
 }
 
 /** Remove a channel from the workspace (returns to the left rail only). */
@@ -400,7 +466,7 @@ export function undockChannel(id: number): void {
   }
   const expanded = state.expanded.filter((x) => x !== id);
   const workspaceLayout = relayoutWorkspace(expanded, state.workspaceLayout);
-  commit({ ...state, expanded, workspaceLayout });
+  commitWorkspaceIfChanged(expanded, workspaceLayout);
 }
 
 /** Toggle workspace dock (full panel on the right). */
@@ -420,6 +486,15 @@ export function focusChannel(id: number): void {
     expanded = [...expanded, id];
   }
   const workspaceLayout = relayoutWorkspace(expanded, state.workspaceLayout);
+  if (
+    open.length === state.open.length &&
+    open.every((cid, i) => cid === state.open[i]) &&
+    expandedOrderEqual(expanded, state.expanded) &&
+    workspaceLayoutEqual(workspaceLayout, state.workspaceLayout) &&
+    state.primary === id
+  ) {
+    return;
+  }
   commit({ ...state, open, expanded, workspaceLayout, primary: id });
 }
 
@@ -443,7 +518,7 @@ export function reconcileChannels(availableIds: number[]): void {
   if (
     open.length === state.open.length &&
     expanded.length === state.expanded.length &&
-    JSON.stringify(workspaceLayout) === JSON.stringify(state.workspaceLayout)
+    workspaceLayoutEqual(workspaceLayout, state.workspaceLayout)
   ) {
     return;
   }

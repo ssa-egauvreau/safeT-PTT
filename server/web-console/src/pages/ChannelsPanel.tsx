@@ -11,6 +11,7 @@ import {
   dockChannel,
   focusChannel,
   reconcileChannels,
+  repairWorkspaceLayout,
   setChannelMonitoring,
   setKeyboardOn,
   setPrimaryChannel,
@@ -68,6 +69,10 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
         reconcileChannels(res.channels.map((c) => c.id));
       })
       .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    repairWorkspaceLayout();
   }, []);
 
   useEffect(() => {

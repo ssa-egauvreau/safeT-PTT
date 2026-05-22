@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { ConsoleErrorBoundary } from "../ConsoleErrorBoundary";
 import { bindLostLinkBusyAlerts, sounds } from "../sounds";
 import { Topbar } from "../Topbar";
 import { ChannelsPanel } from "./ChannelsPanel";
@@ -27,19 +28,21 @@ export function ConsolePage() {
         <span className="muted"> — transcripts, 10-33, plate lookups, 10-8 CAD notes</span>
       </p>
 
-      <MissionControlLayout
-        channels={
-          <PopOutSection
-            title="Channels"
-            route="/console/channels"
-            windowName="safetConsoleChannels"
-            width={720}
-            height={900}
-            render={(onPopOut) => <ChannelsPanel onPopOut={onPopOut} />}
-          />
-        }
-        mapAlerts={<MapAlertsColumn />}
-      />
+      <ConsoleErrorBoundary>
+        <MissionControlLayout
+          channels={
+            <PopOutSection
+              title="Channels"
+              route="/console/channels"
+              windowName="safetConsoleChannels"
+              width={720}
+              height={900}
+              render={(onPopOut) => <ChannelsPanel onPopOut={onPopOut} />}
+            />
+          }
+          mapAlerts={<MapAlertsColumn />}
+        />
+      </ConsoleErrorBoundary>
     </div>
   );
 }

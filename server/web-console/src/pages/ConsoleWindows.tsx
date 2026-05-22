@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { ConsoleErrorBoundary } from "../ConsoleErrorBoundary";
 import { bindLostLinkBusyAlerts, sounds } from "../sounds";
 import { ChannelsPanel } from "./ChannelsPanel";
 import { AlertsPanel } from "./AlertsPanel";
@@ -22,7 +23,11 @@ function useConsoleWindow(title: string): void {
 /** Standalone window for the popped-out "Channels" section. */
 export function ChannelsWindowPage() {
   useConsoleWindow("Channels");
-  return <ChannelsPanel variant="window" />;
+  return (
+    <ConsoleErrorBoundary>
+      <ChannelsPanel variant="window" />
+    </ConsoleErrorBoundary>
+  );
 }
 
 /** Standalone window for the popped-out "Alerts & Paging" section. */
