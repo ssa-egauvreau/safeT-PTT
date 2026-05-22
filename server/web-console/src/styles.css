@@ -747,6 +747,10 @@ code.mono {
   margin-top: 8px;
   width: 100%;
 }
+.channel-rail-reset {
+  margin-top: 6px;
+  width: 100%;
+}
 .channel-rail > .zone-header {
   margin-top: 4px;
 }

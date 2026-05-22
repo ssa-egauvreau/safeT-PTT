@@ -14,6 +14,13 @@ import {
 
 const STATE_KEY = "securityradio.console.state";
 
+/** Bump when workspace layout rules change — triggers one-time localStorage migration. */
+const CURRENT_LAYOUT_VERSION = 3;
+const MAX_OPEN_CHANNELS = 16;
+const MAX_DOCKED_CHANNELS = 12;
+const COMMIT_STORM_LIMIT = 24;
+const COMMIT_STORM_WINDOW_MS = 2000;
+
 /** Free-form tile on the channel workspace grid (12 columns). */
 export interface WorkspaceTileLayout {
   col: number;
@@ -81,6 +88,8 @@ export interface ConsoleState {
   keyboardOn: boolean;
   /** Docked channel positions on the workspace grid (channel id → tile). */
   workspaceLayout: Record<string, WorkspaceTileLayout>;
+  /** Bumped when layout rules change; old saved data is reset automatically. */
+  layoutVersion?: number;
 }
 
 function numbers(value: unknown): number[] {
@@ -141,6 +150,10 @@ function parse(raw: string | null): ConsoleState | null {
       pttCode: typeof value.pttCode === "string" && value.pttCode ? value.pttCode : DEFAULT_PTT_CODE,
       keyboardOn: typeof value.keyboardOn === "boolean" ? value.keyboardOn : true,
       workspaceLayout: parseWorkspaceLayout(value.workspaceLayout),
+      layoutVersion:
+        typeof value.layoutVersion === "number" && Number.isFinite(value.layoutVersion)
+          ? value.layoutVersion
+          : 0,
     };
   } catch {
     return null;
@@ -168,16 +181,133 @@ function migrate(): ConsoleState {
     pttCode: localStorage.getItem(PTT_CODE_KEY) || DEFAULT_PTT_CODE,
     keyboardOn: localStorage.getItem(KEYBOARD_ENABLED_KEY) !== "0",
     workspaceLayout: {},
+    layoutVersion: CURRENT_LAYOUT_VERSION,
   };
 }
 
-let state: ConsoleState = withPackedWorkspaceLayout(parse(localStorage.getItem(STATE_KEY)) ?? migrate());
+function dedupeIds(ids: number[], max: number): number[] {
+  const out: number[] = [];
+  const seen = new Set<number>();
+  for (const id of ids) {
+    if (!Number.isFinite(id) || id <= 0 || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    out.push(id);
+    if (out.length >= max) {
+      break;
+    }
+  }
+  return out;
+}
+
+function workspaceLayoutForExpanded(
+  expanded: number[],
+  layout: Record<string, WorkspaceTileLayout>,
+): Record<string, WorkspaceTileLayout> {
+  const out: Record<string, WorkspaceTileLayout> = {};
+  for (const id of expanded) {
+    const tile = layout[layoutKey(id)];
+    if (tile) {
+      out[layoutKey(id)] = tile;
+    }
+  }
+  return out;
+}
+
+function tileFitsGrid(tile: WorkspaceTileLayout): boolean {
+  return tile.col >= 0 && tile.col + tile.colSpan <= WORKSPACE_COLS && tile.rowSpan >= WORKSPACE_MIN_ROW_SPAN;
+}
+
+/**
+ * Fixes saved Mission Control data from older builds (stale grid slots, extra keys, duplicates).
+ * Incognito works because it skips this baggage; normal Chrome loads it from localStorage.
+ */
+function normalizeConsoleState(input: ConsoleState): ConsoleState {
+  const open = dedupeIds(input.open, MAX_OPEN_CHANNELS);
+  const expanded = dedupeIds(input.expanded, MAX_DOCKED_CHANNELS);
+  let workspaceLayout = workspaceLayoutForExpanded(expanded, input.workspaceLayout);
+  const version = input.layoutVersion ?? 0;
+  const needsLayoutReset =
+    version < CURRENT_LAYOUT_VERSION ||
+    Object.values(workspaceLayout).some((t) => !tileFitsGrid(t)) ||
+    Object.keys(input.workspaceLayout).length > expanded.length + 2;
+
+  if (needsLayoutReset) {
+    workspaceLayout = {};
+  }
+
+  return {
+    open,
+    expanded,
+    primary: withValidPrimary(open, input.primary),
+    pttCode: input.pttCode || DEFAULT_PTT_CODE,
+    keyboardOn: input.keyboardOn,
+    workspaceLayout,
+    layoutVersion: CURRENT_LAYOUT_VERSION,
+  };
+}
+
+function stateSnapshotEqual(a: ConsoleState, b: ConsoleState): boolean {
+  return (
+    expandedOrderEqual(a.open, b.open) &&
+    expandedOrderEqual(a.expanded, b.expanded) &&
+    a.primary === b.primary &&
+    a.pttCode === b.pttCode &&
+    a.keyboardOn === b.keyboardOn &&
+    (a.layoutVersion ?? 0) === (b.layoutVersion ?? 0) &&
+    workspaceLayoutEqual(a.workspaceLayout, b.workspaceLayout)
+  );
+}
+
+function loadInitialState(): ConsoleState {
+  const parsed = parse(localStorage.getItem(STATE_KEY)) ?? migrate();
+  return withPackedWorkspaceLayout(normalizeConsoleState(parsed));
+}
+
+let state: ConsoleState = loadInitialState();
 const listeners = new Set<() => void>();
+let commitsInWindow = 0;
+let commitWindowStart = 0;
+
+function clearLegacyConsoleKeys(): void {
+  try {
+    localStorage.removeItem(OPEN_CHANNELS_KEY);
+    localStorage.removeItem(LAST_CHANNEL_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 function commit(next: ConsoleState): void {
-  state = next;
+  let normalized = withPackedWorkspaceLayout(normalizeConsoleState(next));
+  if (stateSnapshotEqual(state, normalized)) {
+    return;
+  }
+
+  const now = Date.now();
+  if (now - commitWindowStart > COMMIT_STORM_WINDOW_MS) {
+    commitsInWindow = 0;
+    commitWindowStart = now;
+  }
+  commitsInWindow += 1;
+  if (commitsInWindow > COMMIT_STORM_LIMIT) {
+    console.warn(
+      "[Mission Control] Too many layout saves — resetting channel workspace to stop a tab sync loop.",
+    );
+    normalized = withPackedWorkspaceLayout(
+      normalizeConsoleState({
+        ...normalized,
+        workspaceLayout: {},
+      }),
+    );
+    commitsInWindow = 0;
+  }
+
+  state = normalized;
   try {
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    clearLegacyConsoleKeys();
   } catch {
     /* storage unavailable — keep the in-memory state */
   }
@@ -185,15 +315,26 @@ function commit(next: ConsoleState): void {
 }
 
 if (typeof window !== "undefined") {
+  const stored = parse(localStorage.getItem(STATE_KEY));
+  if (!stored || !stateSnapshotEqual(state, withPackedWorkspaceLayout(normalizeConsoleState(stored)))) {
+    queueMicrotask(() => commit(state));
+  }
+
   // Another window (a pop-out, or the console) changed the shared state.
   window.addEventListener("storage", (event) => {
-    if (event.key === STATE_KEY) {
-      const next = parse(event.newValue);
-      if (next) {
-        state = withPackedWorkspaceLayout(next);
-        listeners.forEach((listener) => listener());
-      }
+    if (event.key !== STATE_KEY || event.newValue == null) {
+      return;
     }
+    const parsed = parse(event.newValue);
+    if (!parsed) {
+      return;
+    }
+    const next = withPackedWorkspaceLayout(normalizeConsoleState(parsed));
+    if (stateSnapshotEqual(state, next)) {
+      return;
+    }
+    state = next;
+    listeners.forEach((listener) => listener());
   });
 }
 
@@ -272,20 +413,21 @@ function commitWorkspaceIfChanged(expanded: number[], workspaceLayout: Record<st
   commit({ ...state, expanded, workspaceLayout });
 }
 
-/** One-time repair after layout algorithm changes — safe to call on Mission Control mount. */
-export function repairWorkspaceLayout(): void {
-  if (state.expanded.length === 0) {
-    if (Object.keys(state.workspaceLayout).length === 0) {
-      return;
-    }
-    commit({ ...state, workspaceLayout: {} });
-    return;
-  }
-  const packed = packWorkspaceLayout(state.expanded, state.workspaceLayout);
-  if (workspaceLayoutEqual(packed, state.workspaceLayout)) {
-    return;
-  }
-  commit({ ...state, workspaceLayout: packed });
+/**
+ * Clears saved channel workspace / on-air layout (keeps login). Use when the page works in
+ * incognito but glitches in normal Chrome — almost always stale localStorage.
+ */
+export function resetMissionControlSavedData(): void {
+  commitsInWindow = 0;
+  commit({
+    open: [],
+    expanded: [],
+    primary: null,
+    pttCode: state.pttCode,
+    keyboardOn: state.keyboardOn,
+    workspaceLayout: {},
+    layoutVersion: CURRENT_LAYOUT_VERSION,
+  });
 }
 
 /** Column span for the workspace grid from the current window width (3- or 4-wide panels). */

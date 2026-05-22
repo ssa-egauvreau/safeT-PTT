@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { resetMissionControlSavedData } from "./consoleStore";
 
 type Props = { children: ReactNode };
 type State = { error: Error | null };
@@ -22,17 +23,24 @@ export class ConsoleErrorBoundary extends Component<Props, State> {
           <strong>Mission Control could not load.</strong>
           <p style={{ margin: "0.5rem 0 0" }}>{this.state.error.message}</p>
           <p className="muted" style={{ margin: "0.5rem 0 0" }}>
-            Try a hard refresh (Ctrl+Shift+R or Cmd+Shift+R). If this keeps happening, clear site
-            data for this site or open the page in a private window, then sign in again.
+            If the page works in an incognito window but not here, old saved site data is usually the
+            cause. Close other Mission Control tabs, then reset layout below (you stay signed in).
           </p>
-          <button
-            type="button"
-            className="btn sm"
-            style={{ marginTop: "0.75rem" }}
-            onClick={() => this.setState({ error: null })}
-          >
-            Try again
-          </button>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "0.75rem" }}>
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => {
+                resetMissionControlSavedData();
+                window.location.reload();
+              }}
+            >
+              Reset layout and reload
+            </button>
+            <button type="button" className="btn sm" onClick={() => this.setState({ error: null })}>
+              Try again
+            </button>
+          </div>
         </div>
       );
     }

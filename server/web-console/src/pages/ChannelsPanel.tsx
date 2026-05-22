@@ -11,7 +11,7 @@ import {
   dockChannel,
   focusChannel,
   reconcileChannels,
-  repairWorkspaceLayout,
+  resetMissionControlSavedData,
   setChannelMonitoring,
   setKeyboardOn,
   setPrimaryChannel,
@@ -69,10 +69,6 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
         reconcileChannels(res.channels.map((c) => c.id));
       })
       .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    repairWorkspaceLayout();
   }, []);
 
   useEffect(() => {
@@ -203,6 +199,24 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
                   Manage simulcast
                 </button>
               )}
+
+              <button
+                type="button"
+                className="btn sm channel-rail-reset"
+                title="Fix glitches when the page works in incognito but not in normal Chrome"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Reset Mission Control layout?\n\nThis clears which channels were open in the workspace and fixes glitches from old saved data. You stay signed in.\n\nClose any other Mission Control or pop-out tabs, then click OK.",
+                    )
+                  ) {
+                    resetMissionControlSavedData();
+                    window.location.reload();
+                  }
+                }}
+              >
+                Reset layout
+              </button>
             </div>
           )}
         </aside>
