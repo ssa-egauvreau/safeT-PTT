@@ -269,6 +269,7 @@ export function ChannelWorkspace({
                   channel={channel}
                   layout="workspace"
                   workspaceTier={workspaceTierFromRowSpan(tile.rowSpan)}
+                  workspaceWide={colSpan >= 2}
                   monitoring={monitoring}
                   expanded
                   primary={primary === channel.id}

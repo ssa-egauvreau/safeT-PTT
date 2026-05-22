@@ -48,6 +48,8 @@ interface ChannelPanelProps {
   layout?: "workspace" | "accordion";
   /** Workspace height tier (0 = XMIT only). From snapped tile rowSpan. */
   workspaceTier?: number;
+  /** Workspace tile is at least two columns wide (medium/large) — use the 2-column control layout. */
+  workspaceWide?: boolean;
   /** Whether live voice is connected for this channel ("on"). */
   monitoring: boolean;
   /** Whether the full control surface is revealed. */
@@ -70,6 +72,7 @@ export function ChannelPanel({
   channel,
   layout = "accordion",
   workspaceTier = 99,
+  workspaceWide = false,
   monitoring,
   expanded,
   primary,
@@ -486,6 +489,7 @@ export function ChannelPanel({
     <div
       className={`channel-card${expanded ? " expanded" : ""}${primary ? " primary" : ""}${workspace ? " workspace" : ""}`}
       data-tier={workspace ? wsTier : undefined}
+      data-width={workspace ? (workspaceWide ? "wide" : "narrow") : undefined}
       style={channel.color ? { borderLeftColor: channel.color, borderLeftWidth: 3 } : undefined}
     >
       <div className={`ch-card-head${workspace ? " workspace-head" : ""}`}>

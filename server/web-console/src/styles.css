@@ -1068,9 +1068,11 @@ code.mono {
   display: grid;
   box-sizing: border-box;
 }
-.channel-card.workspace[data-tier="0"] .ch-card-body.workspace-dense,
-.channel-card.workspace[data-tier="1"] .ch-card-body.workspace-dense,
-.channel-card.workspace[data-tier="2"] .ch-card-body.workspace-dense {
+/* Single-column dense stack only for narrow (small / phone full-width) tiles. Wide tiles
+   (medium & large on desktop) keep the 2-column control grid so they don't waste the width. */
+.channel-card.workspace[data-tier="0"]:not([data-width="wide"]) .ch-card-body.workspace-dense,
+.channel-card.workspace[data-tier="1"]:not([data-width="wide"]) .ch-card-body.workspace-dense,
+.channel-card.workspace[data-tier="2"]:not([data-width="wide"]) .ch-card-body.workspace-dense {
   display: flex;
   flex-direction: column;
   align-content: stretch;
@@ -1083,17 +1085,19 @@ code.mono {
   flex: 0 0 auto;
   margin: 0;
 }
-.channel-card.workspace[data-tier="0"] .ch-card-body.workspace-dense > .tx-button,
-.channel-card.workspace[data-tier="1"] .ch-card-body.workspace-dense > .tx-button,
-.channel-card.workspace[data-tier="2"] .ch-card-body.workspace-dense > .tx-button {
-  flex: 1 1 0;
-  min-height: 0;
+.channel-card.workspace[data-tier="0"]:not([data-width="wide"]) .ch-card-body.workspace-dense > .tx-button,
+.channel-card.workspace[data-tier="1"]:not([data-width="wide"]) .ch-card-body.workspace-dense > .tx-button,
+.channel-card.workspace[data-tier="2"]:not([data-width="wide"]) .ch-card-body.workspace-dense > .tx-button {
+  /* Tiles size to content now, so don't flex the PTT button to fill a (non-existent) fixed
+     height — it would collapse to nothing. Give it its natural button height. */
+  flex: 0 0 auto;
+  min-height: 56px;
   grid-column: auto;
 }
 .channel-card.workspace[data-tier="0"] .tx-button-integrated,
 .channel-card.workspace[data-tier="1"] .tx-button-integrated,
 .channel-card.workspace[data-tier="2"] .tx-button-integrated {
-  min-height: 0;
+  min-height: 56px;
   padding: 6px;
 }
 .channel-card.workspace[data-tier="0"] .tx-button-integrated .tx-main {
@@ -1256,7 +1260,9 @@ code.mono {
   /* Each column is its own content height; the page scrolls (single scrollbar). */
   align-items: flex-start;
   gap: 0;
-  background: var(--border);
+  /* Match the page background: the (shorter, sticky) map column leaves space beside it below, and a
+     border-coloured fill there looked like a stray grey block. The column divider is the splitter. */
+  background: var(--bg);
 }
 .mission-control-channels {
   min-width: 280px;
@@ -1281,6 +1287,8 @@ code.mono {
   display: flex;
   flex-direction: column;
   min-width: 240px;
+  /* Content-sized (overrides .console-col's overflow:auto) so it doesn't scroll inside itself. */
+  overflow: visible;
   /* Pin the map/alerts column so it stays on screen while the (usually taller) channel side
      scrolls. Stays static on the stacked mobile layout (reset in the phone breakpoint). */
   position: sticky;
@@ -1411,9 +1419,6 @@ code.mono {
 }
 .channel-workspace-tile .channel-card.workspace .tx-button-integrated {
   min-height: 56px;
-}
-.channel-workspace-tile .channel-card.workspace[data-tier="0"] .tx-button-integrated {
-  min-height: 0;
 }
 .channel-workspace-tile .channel-card.workspace .roster {
   flex: 1 1 auto;
