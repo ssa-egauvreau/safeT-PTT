@@ -41,6 +41,9 @@ const SORTS: { value: string; label: string }[] = [
   { value: "speaker", label: "Speaker A–Z" },
 ];
 
+/** Rows visible per page in the scrollable list area. */
+const TX_PAGE_SIZE = 5;
+
 // "All" maps to the server's hard cap on a single response.
 const VIEW_CAPS: { value: number; label: string }[] = [
   { value: 10, label: "10" },
@@ -146,6 +149,7 @@ export function TransmissionLog() {
   const [toDate, setToDate] = useState("");
   const [sort, setSort] = useState("newest");
   const [cap, setCap] = useState(25);
+  const [page, setPage] = useState(0);
   const [channels, setChannels] = useState<UserChannel[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [exportStatus, setExportStatus] = useState<string | null>(null);
@@ -203,6 +207,22 @@ export function TransmissionLog() {
     const timer = window.setTimeout(() => void refresh(), 250);
     return () => window.clearTimeout(timer);
   }, [search, channelFilter, user, fromDate, toDate, sort, cap, refresh]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [search, channelFilter, user, fromDate, toDate, sort, cap]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(items.length / TX_PAGE_SIZE));
+    if (page > totalPages - 1) {
+      setPage(Math.max(0, totalPages - 1));
+    }
+  }, [items.length, page]);
+
+  const totalPages = Math.max(1, Math.ceil(items.length / TX_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageStart = safePage * TX_PAGE_SIZE;
+  const pageItems = items.slice(pageStart, pageStart + TX_PAGE_SIZE);
 
   // Keep the selection limited to rows still visible after a list change.
   useEffect(() => {
@@ -352,7 +372,12 @@ export function TransmissionLog() {
     <div className="tx-log">
       <div className="tx-log-head">
         <h3>Transmission Log</h3>
-        <span className="count">{items.length} shown</span>
+        <span className="count">
+          {items.length} loaded
+          {items.length > TX_PAGE_SIZE
+            ? ` · page ${safePage + 1} of ${totalPages}`
+            : ""}
+        </span>
       </div>
 
       <div className="tx-filters">
@@ -440,13 +465,14 @@ export function TransmissionLog() {
       )}
 
       <div className="tx-list">
-        {loading && <div className="empty">Loading…</div>}
-        {!loading && items.length === 0 && (
-          <div className="empty">
-            {filtered ? "No transmissions match those filters." : "No recorded transmissions yet."}
-          </div>
-        )}
-        {items.map((tx) => {
+        <div className="tx-list-scroll">
+          {loading && <div className="empty">Loading…</div>}
+          {!loading && items.length === 0 && (
+            <div className="empty">
+              {filtered ? "No transmissions match those filters." : "No recorded transmissions yet."}
+            </div>
+          )}
+          {pageItems.map((tx) => {
           const transcript = transcriptOf(tx);
           const speaker = tx.display_name || aliasFor(tx.unit_id) || "Unknown";
           return (
@@ -478,8 +504,35 @@ export function TransmissionLog() {
               </div>
             </div>
           );
-        })}
+          })}
+        </div>
       </div>
+
+      {items.length > TX_PAGE_SIZE && (
+        <div className="tx-pagination" role="navigation" aria-label="Transmission log pages">
+          <button
+            type="button"
+            className="btn sm"
+            disabled={safePage <= 0}
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            aria-label="Newer transmissions"
+          >
+            ‹ Newer
+          </button>
+          <span className="tx-page-indicator">
+            Page {safePage + 1} of {totalPages}
+          </span>
+          <button
+            type="button"
+            className="btn sm"
+            disabled={safePage >= totalPages - 1}
+            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            aria-label="Older transmissions"
+          >
+            Older ›
+          </button>
+        </div>
+      )}
 
       <div className="tx-viewcap">
         <span>View</span>
@@ -487,7 +540,10 @@ export function TransmissionLog() {
           <button
             key={option.value}
             className={cap === option.value ? "viewcap-btn active" : "viewcap-btn"}
-            onClick={() => setCap(option.value)}
+            onClick={() => {
+              setCap(option.value);
+              setPage(0);
+            }}
           >
             {option.label}
           </button>

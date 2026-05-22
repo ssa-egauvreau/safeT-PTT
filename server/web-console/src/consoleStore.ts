@@ -15,7 +15,7 @@ import {
 const STATE_KEY = "securityradio.console.state";
 
 /** Bump when workspace layout rules change — triggers one-time localStorage migration. */
-const CURRENT_LAYOUT_VERSION = 9;
+const CURRENT_LAYOUT_VERSION = 10;
 const MAX_STATE_STORAGE_BYTES = 256 * 1024;
 const MAX_OPEN_CHANNELS = 16;
 const MAX_DOCKED_CHANNELS = 12;
@@ -26,12 +26,12 @@ const COMMIT_STORM_WINDOW_MS = 2000;
  * One channel tile on the workspace grid, sized like an iOS home-screen widget. The grid is a set of
  * equal "widget columns" (one or two across, depending on width); a tile is one of three sizes that
  * pack together like puzzle pieces via dense auto-flow:
- *   - small:  1 column, short   (volume + PTT)
- *   - medium: 2 columns, short  (full width, compact controls)
- *   - large:  2 columns, tall   (full width, full control surface)
+ *   - small:  1 grid column — name, mute, volume, PTT, user count
+ *   - medium: 2 grid columns — small + last TX + compact tone-outs
+ *   - large:  3 grid columns — full control surface + connected roster
  */
 export interface WorkspaceTileLayout {
-  /** Widget columns the tile spans (1 = small, 2 = medium/large); clamped to the live column count. */
+  /** Grid columns the tile spans (1 = small, 2 = medium, 3 = large); clamped to the live column count. */
   colSpan: number;
   /** Height in WORKSPACE_ROW_PX units. */
   rowSpan: number;
@@ -39,10 +39,13 @@ export interface WorkspaceTileLayout {
 
 export type WorkspaceWidgetSize = "small" | "medium" | "large";
 
-/** Minimum width of one widget column; the grid fits one or two across depending on the width. */
-export const WORKSPACE_MIN_COL_PX = 330;
-/** Widest a widget gets — two columns (an iPhone-style full-width widget). */
-export const WORKSPACE_MAX_COLS = 2;
+/** Minimum width of one workspace grid column — several small widgets fit side by side. */
+export const WORKSPACE_MIN_COL_PX = 172;
+/** Maximum grid columns (auto-fill stops growing past this). */
+export const WORKSPACE_MAX_COLS = 12;
+/** Medium widget spans this many grid columns; large spans WORKSPACE_LARGE_COL_SPAN. */
+export const WORKSPACE_MEDIUM_COL_SPAN = 2;
+export const WORKSPACE_LARGE_COL_SPAN = 3;
 /** Pixel height per workspace grid row — must fit channel controls without clipping. */
 export const WORKSPACE_ROW_PX = 40;
 /** Grid gap (px); kept in sync with the CSS so the column-count math matches the browser's layout. */
@@ -51,8 +54,8 @@ export const WORKSPACE_GRID_GAP_PX = 8;
 export const WORKSPACE_SHORT_ROW_SPAN = 7;
 /** Tall widget height (large): full control surface. */
 export const WORKSPACE_TALL_ROW_SPAN = 14;
-/** New tiles dock as a full-width compact (medium) widget. */
-export const WORKSPACE_DEFAULT_COL_SPAN = 2;
+/** New tiles dock as a medium widget. */
+export const WORKSPACE_DEFAULT_COL_SPAN = WORKSPACE_MEDIUM_COL_SPAN;
 export const WORKSPACE_DEFAULT_ROW_SPAN = WORKSPACE_SHORT_ROW_SPAN;
 export const WORKSPACE_MIN_ROW_SPAN = 5;
 export const WORKSPACE_MAX_ROW_SPAN = 36;
@@ -70,9 +73,9 @@ export function workspacePresetForSize(size: WorkspaceWidgetSize): WorkspaceTile
     case "small":
       return { colSpan: 1, rowSpan: WORKSPACE_SHORT_ROW_SPAN };
     case "large":
-      return { colSpan: 2, rowSpan: WORKSPACE_TALL_ROW_SPAN };
+      return { colSpan: WORKSPACE_LARGE_COL_SPAN, rowSpan: WORKSPACE_TALL_ROW_SPAN };
     default:
-      return { colSpan: 2, rowSpan: WORKSPACE_SHORT_ROW_SPAN };
+      return { colSpan: WORKSPACE_MEDIUM_COL_SPAN, rowSpan: WORKSPACE_SHORT_ROW_SPAN };
   }
 }
 
@@ -81,10 +84,13 @@ export function workspaceTileSize(tile: WorkspaceTileLayout): WorkspaceWidgetSiz
   if (tile.colSpan <= 1) {
     return "small";
   }
-  return tile.rowSpan >= (WORKSPACE_SHORT_ROW_SPAN + WORKSPACE_TALL_ROW_SPAN) / 2 ? "large" : "medium";
+  if (tile.colSpan >= WORKSPACE_LARGE_COL_SPAN || tile.rowSpan >= WORKSPACE_TALL_ROW_SPAN) {
+    return "large";
+  }
+  return "medium";
 }
 
-/** How many widget columns fit at a container width (1 on phones, up to 2 otherwise). */
+/** How many equal grid columns fit at a container width (used to clamp tile colSpan). */
 export function workspaceColsForWidth(width: number, gap = WORKSPACE_GRID_GAP_PX): number {
   if (!Number.isFinite(width) || width <= 0) {
     return 1;

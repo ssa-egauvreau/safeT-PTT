@@ -9,8 +9,10 @@ import type { Permission, ToneOut, UserChannel } from "../api";
 import { api } from "../api";
 import { VoiceChannelClient, type VoiceState, type ToneOutKind } from "../voice/voiceClient";
 import { AudioLevelMeter } from "../voice/AudioLevelMeter";
+import { ChannelMemberCount } from "../components/ChannelMemberCount";
 import { ChannelRoster } from "./ChannelRoster";
 import { LatestChannelTransmission } from "../components/LatestChannelTransmission";
+import type { WorkspaceWidgetSize } from "../consoleStore";
 import { sounds } from "../sounds";
 import { useToneOuts, loadTonePcm, ToneOutBadge } from "../toneOuts";
 import {
@@ -46,9 +48,9 @@ interface ChannelPanelProps {
   channel: UserChannel;
   /** `workspace` = full panel in the dock; `accordion` = legacy inline card. */
   layout?: "workspace" | "accordion";
-  /** Workspace height tier (0 = XMIT only). From snapped tile rowSpan. */
-  workspaceTier?: number;
-  /** Workspace tile is at least two columns wide (medium/large) — use the 2-column control layout. */
+  /** Workspace widget size (S / M / L) — controls which controls are visible. */
+  workspaceWidgetSize?: WorkspaceWidgetSize;
+  /** Workspace tile is wide enough for a 2-column control layout inside the card. */
   workspaceWide?: boolean;
   /** Whether live voice is connected for this channel ("on"). */
   monitoring: boolean;
@@ -71,7 +73,7 @@ interface ChannelPanelProps {
 export function ChannelPanel({
   channel,
   layout = "accordion",
-  workspaceTier = 99,
+  workspaceWidgetSize = "large",
   workspaceWide = false,
   monitoring,
   expanded,
@@ -475,20 +477,23 @@ export function ChannelPanel({
   const connected = voiceState === "listening" || voiceState === "transmitting";
   const canTransmit = permission !== "listen_only";
   const transmitting = voiceState === "transmitting";
-  const wsTier = workspace ? workspaceTier : 99;
+  const wsSize = workspace ? workspaceWidgetSize : "large";
   const showToolbar = true;
-  const showVolume = wsTier >= 0;
-  const showMeta = wsTier >= 1;
-  const showAudioOut = wsTier >= 2;
-  const showActions = wsTier >= 3;
-  const showTones = wsTier >= 4;
-  const showLiveTx = wsTier >= 5;
-  const showRoster = wsTier >= 6;
+  const showVolume = true;
+  const showMemberCount = workspace && (wsSize === "small" || wsSize === "medium");
+  const showMeta = !workspace || wsSize === "large";
+  const showAudioOut = !workspace || wsSize === "large";
+  const showActions = !workspace || wsSize === "large";
+  const showTones = !workspace || wsSize === "medium" || wsSize === "large";
+  const showTonesCompact = workspace && wsSize === "medium";
+  const showLiveTx = !workspace || wsSize === "medium" || wsSize === "large";
+  const showRoster = !workspace || wsSize === "large";
+  const showMainTxButton = !workspace || wsSize !== "small";
 
   return (
     <div
       className={`channel-card${expanded ? " expanded" : ""}${primary ? " primary" : ""}${workspace ? " workspace" : ""}`}
-      data-tier={workspace ? wsTier : undefined}
+      data-widget-size={workspace ? wsSize : undefined}
       data-width={workspace ? (workspaceWide ? "wide" : "narrow") : undefined}
       style={channel.color ? { borderLeftColor: channel.color, borderLeftWidth: 3 } : undefined}
     >
@@ -517,6 +522,7 @@ export function ChannelPanel({
                 <span className="ch-card-label">{channel.name}</span>
                 {channel.simulcast && <span className="chan-sim-tag">SIM</span>}
               </div>
+              {showMemberCount && <ChannelMemberCount channelName={channel.name} />}
             </div>
             {showToolbar && (
               <div className="ch-card-toolbar">
@@ -700,6 +706,7 @@ export function ChannelPanel({
         <div className={`banner ${voiceState === "error" ? "error" : "info"}`}>{voiceDetail}</div>
       )}
 
+      {showMainTxButton && (
       <button
         className={`tx-button${workspace ? " tx-button-integrated" : ""}${
           transmitting ? " active" : receiving ? " busy" : ""
@@ -726,7 +733,7 @@ export function ChannelPanel({
           <IconBolt size={26} />
           {transmitting ? "ON AIR" : !canTransmit ? "LISTEN ONLY" : receiving ? "BUSY" : "XMIT"}
         </span>
-        {(wsTier >= 1 || !workspace) && (
+        {(!workspace || wsSize === "large") && (
           <span className="tx-sub">
             {transmitting
               ? "release to stop"
@@ -742,6 +749,7 @@ export function ChannelPanel({
           </span>
         )}
       </button>
+      )}
 
       {!workspace && (
         <div className={`waveform-strip${transmitting ? " tx" : receiving ? " rx" : ""}`}>
@@ -760,6 +768,7 @@ export function ChannelPanel({
           channelName={channel.name}
           active={monitoring && connected}
           homeReceiving={receiving && !transmitting}
+          logHint={wsSize === "medium" ? "" : "Open the transmission log below for full history."}
         />
       )}
 
@@ -815,7 +824,7 @@ export function ChannelPanel({
       )}
 
       {showTones && (
-      <div className="toneout">
+      <div className={`toneout${showTonesCompact ? " workspace-tones-compact" : ""}`}>
         <div className={workspace ? "ch-tone-grid" : "toneout-row"}>
           <button
             type="button"

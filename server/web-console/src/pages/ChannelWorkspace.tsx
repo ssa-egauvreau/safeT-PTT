@@ -11,13 +11,13 @@ import type { UserChannel } from "../api";
 import { ChannelPanel } from "./ChannelPanel";
 import {
   WORKSPACE_GRID_GAP_PX,
+  WORKSPACE_MIN_COL_PX,
   cycleWorkspaceTileSize,
   getWorkspaceTile,
   moveWorkspaceTileToEnd,
   reorderWorkspaceTile,
   useConsoleState,
   workspaceColsForWidth,
-  workspaceTierFromRowSpan,
   workspaceTileSize,
   type WorkspaceTileLayout,
   type WorkspaceWidgetSize,
@@ -31,9 +31,9 @@ const SIZE_LABEL: Record<WorkspaceWidgetSize, string> = {
   large: "L",
 };
 const NEXT_SIZE_TITLE: Record<WorkspaceWidgetSize, string> = {
-  small: "Small widget — tap to make medium",
-  medium: "Medium widget — tap to make large",
-  large: "Large widget — tap to make small",
+  small: "Small — PTT, volume, mute, user count. Tap for medium.",
+  medium: "Medium — adds last message and tone-outs. Tap for large.",
+  large: "Large — full controls and user list. Tap for small.",
 };
 
 /** Live widget-column count from the grid element's width. */
@@ -212,7 +212,7 @@ export function ChannelWorkspace({
       className={`channel-workspace-rows channel-workspace-grid${dockDragOver ? " drag-over" : ""}`}
       aria-label="Channel workspace"
       style={{
-        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+        gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${WORKSPACE_MIN_COL_PX}px), 1fr))`,
         gridAutoRows: "auto",
       }}
       onDragOver={(e) => {
@@ -227,7 +227,7 @@ export function ChannelWorkspace({
         <div className="channel-workspace-empty">
           <p>Tap a channel in the list to open it here — or drag it in.</p>
           <p className="muted">
-            Drag ⋮⋮ to reorder · tap the size badge to switch widget size (small · medium · large).
+            Drag ⋮⋮ to reorder · tap S / M / L to cycle widget size (compact → medium → full).
           </p>
         </div>
       ) : (
@@ -235,6 +235,7 @@ export function ChannelWorkspace({
           const tile = tilesById.get(channel.id) ?? getWorkspaceTile(channel.id);
           const size = workspaceTileSize(tile);
           const colSpan = Math.max(1, Math.min(tile.colSpan, cols));
+          const workspaceWide = size !== "small" && colSpan >= 2;
           const monitoring = open.includes(channel.id);
           const isOver = dragOverChannelId === channel.id && dropEdge;
           return (
@@ -268,8 +269,8 @@ export function ChannelWorkspace({
                 <ChannelPanel
                   channel={channel}
                   layout="workspace"
-                  workspaceTier={workspaceTierFromRowSpan(tile.rowSpan)}
-                  workspaceWide={colSpan >= 2}
+                  workspaceWidgetSize={size}
+                  workspaceWide={workspaceWide}
                   monitoring={monitoring}
                   expanded
                   primary={primary === channel.id}

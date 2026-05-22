@@ -846,10 +846,8 @@ code.mono {
 /* --- Mission Control: 12-col grid, four slots, vertical packing --- */
 .channel-workspace-rows.channel-workspace-grid {
   display: grid;
-  /* Responsive auto-fill: as many equal tracks as fit (min 300px), collapsing to one column on
-     phones. min(100%, 300px) keeps the track from forcing horizontal overflow on very narrow
-     screens. Tiles flow in docked order and span 1+ tracks; dense flow backfills gaps. */
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  /* Many narrow columns so several small (S) widgets sit side by side; inline style may override. */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 172px), 1fr));
   grid-auto-flow: row dense;
   gap: 8px;
   align-content: start;
@@ -1018,6 +1016,15 @@ code.mono {
   color: var(--text);
   border-color: var(--accent-2);
 }
+.channel-workspace-tile.widget-small {
+  min-width: 0;
+}
+.channel-workspace-tile.widget-medium {
+  min-width: 0;
+}
+.channel-workspace-tile.widget-large {
+  min-width: 0;
+}
 .channel-workspace-tile-inner {
   position: relative;
   flex: 1 1 auto;
@@ -1114,6 +1121,72 @@ code.mono {
 .channel-card.workspace[data-tier="0"] .ch-card-toolbar,
 .channel-card.workspace[data-tier="1"] .ch-card-toolbar {
   padding: 2px 4px 3px;
+}
+/* Widget size S / M / L — visibility is driven in ChannelPanel; these rules tighten layout. */
+.channel-card.workspace[data-widget-size="small"] .ch-card-title-row {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.channel-card.workspace[data-widget-size="small"] .ch-member-count {
+  margin-left: auto;
+}
+.ch-member-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-input) 85%, transparent);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.ch-member-count-num {
+  min-width: 1ch;
+  text-align: center;
+}
+.channel-card.workspace[data-widget-size="small"]:not([data-width="wide"]) .ch-card-body.workspace-dense,
+.channel-card.workspace[data-widget-size="medium"]:not([data-width="wide"]) .ch-card-body.workspace-dense {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 6px 6px;
+}
+.channel-card.workspace[data-widget-size="small"] .ch-card-toolbar {
+  padding: 2px 4px 3px;
+}
+.channel-card.workspace[data-widget-size="small"] .ch-quick-ptt,
+.channel-card.workspace[data-widget-size="small"] .ch-power {
+  padding: 4px 6px;
+  font-size: 10px;
+}
+.channel-card.workspace[data-widget-size="medium"] .live-tx-console {
+  margin: 0;
+}
+.channel-card.workspace[data-widget-size="medium"] .live-tx-console .live-tx-card {
+  padding: 6px 8px;
+}
+.channel-card.workspace[data-widget-size="medium"] .live-tx-log-hint {
+  display: none;
+}
+.toneout.workspace-tones-compact .ch-tone-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.toneout.workspace-tones-compact .toneout-btn {
+  padding: 4px 5px;
+  font-size: 10px;
+  gap: 3px;
+}
+.toneout.workspace-tones-compact .toneout-btn .toneout-label {
+  display: none;
+}
+.toneout.workspace-tones-compact .stopall-btn {
+  margin-top: 4px;
+  padding: 4px 8px;
+  font-size: 10px;
 }
 .channel-off-overlay {
   position: absolute;
@@ -2307,6 +2380,27 @@ code.mono {
 }
 .tx-list {
   padding-right: 2px;
+}
+.tx-list-scroll {
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+}
+.tx-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 8px 0 4px;
+}
+.tx-page-indicator {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 8rem;
+  text-align: center;
 }
 .tx-viewcap {
   display: flex;

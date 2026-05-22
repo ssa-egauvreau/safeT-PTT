@@ -166,7 +166,7 @@ export function LatestChannelTransmission({
         <div className="empty">No recorded transmissions on this channel yet.</div>
       ) : null}
 
-      <p className="live-tx-log-hint muted">{logHint}</p>
+      {logHint ? <p className="live-tx-log-hint muted">{logHint}</p> : null}
     </div>
   );
 }
