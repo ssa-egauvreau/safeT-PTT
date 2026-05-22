@@ -236,7 +236,8 @@ a {
 .app-shell {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* Grow with content so the whole console scrolls as one page (no scroll-in-scroll panels). */
+  min-height: 100%;
 }
 .topbar {
   display: flex;
@@ -753,8 +754,6 @@ code.mono {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: min(78vh, 960px);
-  overflow-y: auto;
   padding-right: 4px;
   min-height: 0;
 }
@@ -845,14 +844,13 @@ code.mono {
   grid-auto-flow: row dense;
   gap: 8px;
   align-content: start;
-  min-height: min(72vh, 880px);
-  height: 100%;
+  /* Size to the docked tiles so the page is the only scrollbar (no scroll-in-scroll). */
+  min-height: 200px;
   min-width: 0;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow-x: clip;
   padding: 12px;
   border: 2px dashed color-mix(in srgb, var(--border) 70%, var(--accent-2) 30%);
   border-radius: 16px;
@@ -1232,8 +1230,6 @@ code.mono {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 6px;
-  max-height: 220px;
-  overflow-y: auto;
 }
 .lcc-channel.compact {
   padding: 6px;
@@ -1259,17 +1255,16 @@ code.mono {
   min-height: 0;
   display: flex;
   flex-direction: row;
-  align-items: stretch;
+  /* Each column is its own content height; the page scrolls (single scrollbar). */
+  align-items: flex-start;
   gap: 0;
   background: var(--border);
 }
 .mission-control-channels {
   min-width: 280px;
-  min-height: 0;
-  /* Scroll vertically only — clip the x-axis so a slightly-too-wide child can't add a stray
-     left/right scrollbar (and shove the map column off-screen). */
-  overflow-y: auto;
-  overflow-x: hidden;
+  /* No internal scroll — panels inside size to content and the page scrolls. clip on x still guards
+     against a stray too-wide child without forcing a vertical scrollbar. */
+  overflow-x: clip;
 }
 .mission-control-col-splitter {
   flex: 0 0 8px;
@@ -1288,31 +1283,30 @@ code.mono {
 .mission-control-map-alerts {
   display: flex;
   flex-direction: column;
-  min-height: 0;
   min-width: 240px;
-  overflow: hidden;
 }
 .map-alerts-column {
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 0;
   min-width: 0;
   gap: 0;
 }
-.map-alerts-map,
-.map-alerts-alerts {
-  min-height: 0;
+/* The map keeps a fixed (drag-resizable) pixel height set inline; alerts below size to content. */
+.map-alerts-map {
   min-width: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
-.map-alerts-map > .map-panel,
-.map-alerts-alerts > .section-panel {
+.map-alerts-alerts {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.map-alerts-map > .map-panel {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
 }
 .map-alerts-splitter {
   flex: 0 0 8px;
@@ -2305,8 +2299,6 @@ code.mono {
   min-width: 0;
 }
 .tx-list {
-  max-height: 440px;
-  overflow-y: auto;
   padding-right: 2px;
 }
 .tx-viewcap {

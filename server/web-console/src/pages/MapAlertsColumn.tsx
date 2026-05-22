@@ -1,31 +1,34 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState, type PointerEvent } from "react";
 const MapPanel = lazy(() => import("./MapPanel").then((m) => ({ default: m.MapPanel })));
 import { AlertsPanel } from "./AlertsPanel";
 import { PopOutSection } from "./PopOutSection";
 
-const SPLIT_STORAGE_KEY = "securityradio.mapAlertsSplitPct";
-const DEFAULT_MAP_PCT = 58;
-const MIN_MAP_PCT = 28;
-const MAX_MAP_PCT = 82;
+const HEIGHT_STORAGE_KEY = "securityradio.mapHeightPx";
+const DEFAULT_MAP_HEIGHT = 520;
+const MIN_MAP_HEIGHT = 240;
+const MAX_MAP_HEIGHT = 1000;
 
-function loadSplitPct(): number {
+function loadMapHeight(): number {
   try {
-    const raw = localStorage.getItem(SPLIT_STORAGE_KEY);
+    const raw = localStorage.getItem(HEIGHT_STORAGE_KEY);
     const n = raw == null ? NaN : Number(raw);
-    if (Number.isFinite(n) && n >= MIN_MAP_PCT && n <= MAX_MAP_PCT) {
+    if (Number.isFinite(n) && n >= MIN_MAP_HEIGHT && n <= MAX_MAP_HEIGHT) {
       return n;
     }
   } catch {
     /* ignore */
   }
-  return DEFAULT_MAP_PCT;
+  return DEFAULT_MAP_HEIGHT;
 }
 
-/** Right column: resizable map (top) and alerts (bottom). */
+/**
+ * Right column: a fixed-height (drag-resizable) map on top, alerts sized to their content below.
+ * A map can't size to its content, so it keeps an explicit pixel height the operator can drag; the
+ * rest of the console scrolls as one page, so there are no nested scroll regions around it.
+ */
 export function MapAlertsColumn() {
-  const [mapPct, setMapPct] = useState(loadSplitPct);
+  const [mapHeight, setMapHeight] = useState(loadMapHeight);
   const [mapReady, setMapReady] = useState(false);
-  const columnRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const id = window.requestAnimationFrame(() => setMapReady(true));
@@ -34,38 +37,35 @@ export function MapAlertsColumn() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(SPLIT_STORAGE_KEY, String(mapPct));
+      localStorage.setItem(HEIGHT_STORAGE_KEY, String(mapHeight));
     } catch {
       /* storage unavailable */
     }
-  }, [mapPct]);
+  }, [mapHeight]);
 
-  const beginSplitDrag = useCallback((e: PointerEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    const col = columnRef.current;
-    if (!col) {
-      return;
-    }
-    const rect = col.getBoundingClientRect();
-    const startY = e.clientY;
-    const startPct = mapPct;
+  const beginResize = useCallback(
+    (e: PointerEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startHeight = mapHeight;
 
-    function onMove(ev: globalThis.PointerEvent) {
-      const dy = ev.clientY - startY;
-      const next = startPct + (dy / rect.height) * 100;
-      setMapPct(Math.max(MIN_MAP_PCT, Math.min(MAX_MAP_PCT, next)));
-    }
-    function onUp() {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    }
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, [mapPct]);
+      function onMove(ev: globalThis.PointerEvent) {
+        const next = startHeight + (ev.clientY - startY);
+        setMapHeight(Math.max(MIN_MAP_HEIGHT, Math.min(MAX_MAP_HEIGHT, next)));
+      }
+      function onUp() {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      }
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [mapHeight],
+  );
 
   return (
-    <div ref={columnRef} className="map-alerts-column">
-      <div className="map-alerts-map" style={{ flex: `${mapPct} 1 0` }}>
+    <div className="map-alerts-column">
+      <div className="map-alerts-map" style={{ height: `${mapHeight}px` }}>
         {mapReady ? (
           <Suspense fallback={<div className="empty">Loading map…</div>}>
             <MapPanel />
@@ -77,10 +77,10 @@ export function MapAlertsColumn() {
       <button
         type="button"
         className="map-alerts-splitter"
-        aria-label="Resize map and alerts areas"
-        onPointerDown={beginSplitDrag}
+        aria-label="Resize map height"
+        onPointerDown={beginResize}
       />
-      <div className="map-alerts-alerts" style={{ flex: `${100 - mapPct} 1 0` }}>
+      <div className="map-alerts-alerts">
         <PopOutSection
           title="Alerts & Paging"
           route="/console/alerts"
