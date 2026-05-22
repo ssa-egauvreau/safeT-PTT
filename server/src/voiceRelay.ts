@@ -552,21 +552,21 @@ function releaseAir(ws: WebSocket): void {
 }
 
 /**
- * True when this sender would be refused the air right now — a *different* live connection holds
- * the channel and this sender cannot preempt it. Gates the clear-PCM record sideband: a unit that
- * loses the half-duplex race (its on-air IMBE is rejected as "busy") must not have its sideband
- * recorded. Otherwise a non-talking unit's mic both creates a phantom transmission (transcribed +
- * answered by AI for audio nobody heard) and — because recordings key on agency+channel and
- * finalize whenever the unit changes — repeatedly finalizes and fragments the real talker's
- * in-progress recording.
+ * True when a *different* live connection currently holds the channel's air. Gates the clear-PCM
+ * record sideband: only the connection that actually holds the air (or a free/expired channel) is
+ * recorded. A unit that loses the half-duplex race must not have its sideband recorded — otherwise
+ * its mic both creates a phantom transmission (transcribed + answered by AI for audio nobody heard)
+ * and, because recordings key on agency+channel and finalize whenever the unit changes, repeatedly
+ * finalizes and fragments the real talker's in-progress recording.
  *
- * The takeover rule mirrors claimAir exactly: a free/expired channel, the current holder itself, a
- * holder that yields, or a non-priority holder preempted by a talk_priority sender are all allowed
- * through. That last case matters because a client (notably Android) sends its clear-PCM sideband
- * just before its first IMBE frame, so a legitimate preemption must record the leading sideband too
- * rather than clipping the start of the transmission that does go on-air a frame later.
+ * This deliberately keys off the *current* holder, not who could preempt it. claimAir only runs on
+ * the IMBE/voice path, and clients send the clear-PCM sideband just before their first IMBE frame,
+ * so a would-be preemptor has not actually taken the channel yet at sideband time. Recording it
+ * speculatively would reintroduce the phantom/fragmentation behavior if that IMBE is delayed or
+ * never arrives. A real preemptor simply starts recording once its IMBE claims the air; the cost is
+ * at most one leading sideband frame (audio that was not yet on-air anyway).
  */
-function channelAirBlocksRecord(chanKey: string, ws: WebSocket, priority: boolean): boolean {
+function channelAirBlocksRecord(chanKey: string, ws: WebSocket): boolean {
   const slot = voiceAirByChannel.get(chanKey);
   if (!slot) {
     return false;
@@ -574,13 +574,7 @@ function channelAirBlocksRecord(chanKey: string, ws: WebSocket, priority: boolea
   if (Date.now() - slot.lastPcmMs > VOICE_AIR_TTL_MS) {
     return false;
   }
-  if (slot.ws === ws) {
-    return false;
-  }
-  if (slot.yields || (priority && !slot.priority)) {
-    return false;
-  }
-  return true;
+  return slot.ws !== ws;
 }
 
 /** A NAT or radio dropping a TCP connection without TCP RST/FIN leaves the WS "stuck" on our
@@ -1044,16 +1038,15 @@ export function attachVoiceRelay(
         }
 
         // Clear PCM sideband for recorder / AI — never broadcast or key the channel. Only record it
-        // for the unit that holds the channel: a unit keying a busy channel loses the half-duplex
-        // race on-air, so recording its sideband would log a transmission nobody heard and fragment
-        // the real talker's recording (see channelAirHeldByOther).
+        // for the connection that actually holds the air: a unit keying a busy channel loses the
+        // half-duplex race on-air, so recording its sideband would log a transmission nobody heard
+        // and fragment the real talker's recording (see channelAirBlocksRecord).
         if (isListenPcmFrame(payload)) {
-          const priority = meta.permission === "talk_priority";
           const pcm = listenPcmBody(payload);
           if (pcm.length > 0) {
             if (meta.simulcastTargets) {
               for (const target of meta.simulcastTargets) {
-                if (channelAirBlocksRecord(target.channelKey, ws, priority)) {
+                if (channelAirBlocksRecord(target.channelKey, ws)) {
                   continue;
                 }
                 recordFrame(
@@ -1068,7 +1061,7 @@ export function attachVoiceRelay(
                   pcm,
                 );
               }
-            } else if (meta.channelKey && !channelAirBlocksRecord(meta.channelKey, ws, priority)) {
+            } else if (meta.channelKey && !channelAirBlocksRecord(meta.channelKey, ws)) {
               recordFrame(frameAttribution(meta), pcm);
             }
           }
