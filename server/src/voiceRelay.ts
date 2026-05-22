@@ -551,6 +551,26 @@ function releaseAir(ws: WebSocket): void {
   }
 }
 
+/**
+ * True when a *different* live connection currently holds the channel's air. Gates the clear-PCM
+ * record sideband: a unit that loses the half-duplex race (its on-air IMBE was rejected as "busy")
+ * must not have its sideband recorded. Otherwise a non-talking unit's mic both creates a phantom
+ * transmission (transcribed + answered by AI for audio nobody heard) and — because recordings key
+ * on agency+channel and finalize whenever the unit changes — repeatedly finalizes and fragments the
+ * real talker's in-progress recording. The current holder's own frames and a free or expired
+ * channel are allowed through, so the legitimate talker always records.
+ */
+function channelAirHeldByOther(chanKey: string, ws: WebSocket): boolean {
+  const slot = voiceAirByChannel.get(chanKey);
+  if (!slot) {
+    return false;
+  }
+  if (Date.now() - slot.lastPcmMs > VOICE_AIR_TTL_MS) {
+    return false;
+  }
+  return slot.ws !== ws;
+}
+
 /** A NAT or radio dropping a TCP connection without TCP RST/FIN leaves the WS "stuck" on our
  *  side — heartbeat detects + drops these zombies fast. The interval matches typical NAT idle
  *  timeouts (~60 s) without being chatty enough to drain handset battery noticeably. */
@@ -1011,12 +1031,18 @@ export function attachVoiceRelay(
           return;
         }
 
-        // Clear PCM sideband for recorder / AI — never broadcast or key the channel.
+        // Clear PCM sideband for recorder / AI — never broadcast or key the channel. Only record it
+        // for the unit that holds the channel: a unit keying a busy channel loses the half-duplex
+        // race on-air, so recording its sideband would log a transmission nobody heard and fragment
+        // the real talker's recording (see channelAirHeldByOther).
         if (isListenPcmFrame(payload)) {
           const pcm = listenPcmBody(payload);
           if (pcm.length > 0) {
             if (meta.simulcastTargets) {
               for (const target of meta.simulcastTargets) {
+                if (channelAirHeldByOther(target.channelKey, ws)) {
+                  continue;
+                }
                 recordFrame(
                   {
                     ...frameAttribution(meta),
@@ -1029,7 +1055,7 @@ export function attachVoiceRelay(
                   pcm,
                 );
               }
-            } else if (meta.channelKey) {
+            } else if (meta.channelKey && !channelAirHeldByOther(meta.channelKey, ws)) {
               recordFrame(frameAttribution(meta), pcm);
             }
           }
