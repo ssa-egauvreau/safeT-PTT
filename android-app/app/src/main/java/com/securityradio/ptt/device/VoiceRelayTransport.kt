@@ -226,8 +226,6 @@ class VoiceRelayTransport(
     @Volatile
     private var recordListenPcm: Boolean = false
 
-    private fun listenPcmSidebandRequired(): Boolean = aiDispatchListenPcm || recordListenPcm
-
     private fun p25UplinkEligible(): Boolean = P25ImbeNative.isAvailable
 
     private fun reconcileAccumulatorForModeToggle() {
@@ -303,13 +301,17 @@ class VoiceRelayTransport(
             return
         }
 
-        if (listenPcmSidebandRequired()) {
-            val side = ByteArray(2 + length)
-            side[0] = listenPcmMagic[0]
-            side[1] = listenPcmMagic[1]
-            System.arraycopy(buffer, 0, side, 2, length)
-            sendBinaryWs(active, side)
-        }
+        // On-air is IMBE, which the relay never records (Whisper can't read vocoded speech), so
+        // always pair every keyed talk-spurt with a clear-PCM sideband for the transmission log /
+        // AI dispatch. The relay records it but never broadcasts it. This must NOT be gated on the
+        // `record_listen_pcm` join ack: that arrives asynchronously, so a talk-spurt keyed before
+        // (or right after a reconnect, before) the ack would ship IMBE only and the recorder would
+        // store nothing — leaving the transmission silent in the log and invisible to AI dispatch.
+        val side = ByteArray(2 + length)
+        side[0] = listenPcmMagic[0]
+        side[1] = listenPcmMagic[1]
+        System.arraycopy(buffer, 0, side, 2, length)
+        sendBinaryWs(active, side)
 
         // A gap between mic frames means a fresh key-up — re-learn the noise floor.
         val now = System.nanoTime()
