@@ -3584,6 +3584,26 @@ code.mono {
   body {
     overflow-x: hidden;
   }
+  /* Phone space-savers / fixes (do not affect desktop):
+     - the AI-dispatch intro line and the keyboard-shortcut hint are noise on a phone;
+     - keyboard PTT doesn't work on a phone, so drop that button and keep the permission compact;
+     - clip channel tiles to their rounded corners (content fits, so nothing is cut). */
+  .mission-control-intro {
+    display: none;
+  }
+  .channel-rail-footer .kbd-hint {
+    display: none;
+  }
+  .channel-workspace-tile {
+    overflow: hidden;
+  }
+  .channel-workspace-tile .cp-ptt-assign {
+    display: none;
+  }
+  .channel-workspace-tile .live-meta {
+    margin: 0 0 2px;
+    order: -1;
+  }
   .app-shell {
     height: auto;
     min-height: 100%;
