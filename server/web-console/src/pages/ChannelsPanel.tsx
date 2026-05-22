@@ -16,6 +16,7 @@ import {
   setKeyboardOn,
   setPrimaryChannel,
   setPttCode,
+  setWorkspaceChannelOrder,
   undockChannel,
   useConsoleState,
 } from "../consoleStore";
@@ -44,7 +45,16 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
   const dockedIdSet = new Set(expanded);
 
   function dockFromRail(id: number, insertAt?: number) {
-    dockChannel(id, insertAt);
+    if (!expanded.includes(id)) {
+      dockChannel(id, insertAt);
+    } else {
+      const without = expanded.filter((x) => x !== id);
+      const at =
+        typeof insertAt === "number" && insertAt >= 0
+          ? Math.min(insertAt, without.length)
+          : without.length;
+      setWorkspaceChannelOrder([...without.slice(0, at), id, ...without.slice(at)]);
+    }
     if (!open.includes(id)) {
       setChannelMonitoring(id, true);
     }

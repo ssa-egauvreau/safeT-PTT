@@ -985,6 +985,10 @@ code.mono {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 8%, var(--bg));
 }
+/* Let the dashed workspace box receive HTML5 drops, not the tiles on top of it. */
+.channel-workspace-rows.accepting-rail-drop > * {
+  pointer-events: none;
+}
 .channel-workspace-empty {
   grid-column: 1 / -1;
   display: flex;

@@ -99,6 +99,8 @@ export function ChannelWorkspace({
   onDockFromRail: (id: number, insertAt?: number) => void;
 }) {
   const rootRef = useRef<HTMLElement | null>(null);
+  const moveChannelIdRef = useRef<number | null>(null);
+  moveChannelIdRef.current = moveChannelId;
   const [dockDragOver, setDockDragOver] = useState(false);
   const [moveChannelId, setMoveChannelId] = useState<number | null>(null);
   const [dragOverChannelId, setDragOverChannelId] = useState<number | null>(null);
@@ -164,6 +166,9 @@ export function ChannelWorkspace({
 
   useEffect(() => {
     function clearStuckReorder() {
+      if (moveChannelIdRef.current === null) {
+        return;
+      }
       setMoveChannelId(null);
       setDragLayoutOrder([]);
       clearDragOver();
@@ -201,18 +206,28 @@ export function ChannelWorkspace({
     setInsertAtEnd(false);
   }
 
+  const acceptRailDrop = railDrag !== null || dockDragOver;
+
+  const handleRailDragOver = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    setDockDragOver(true);
+    setRailDragPointer({ x: e.clientX, y: e.clientY });
+  }, []);
+
   const handleRailDrop = useCallback(
     (e: DragEvent) => {
       e.preventDefault();
+      e.stopPropagation();
       setDockDragOver(false);
       setRailDragPointer(null);
       setRailDragPreview(null);
       clearDragOver();
-      const id = Number(e.dataTransfer.getData("text/channel-id"));
+      const raw =
+        e.dataTransfer.getData("text/channel-id") || e.dataTransfer.getData("text/plain");
+      const id = Number(raw);
       if (!Number.isFinite(id) || id <= 0 || !rootRef.current) {
-        return;
-      }
-      if (channelIds.includes(id)) {
         return;
       }
       const insertAt = insertIndexFromPointer(e.clientX, e.clientY, rootRef.current, channelIds);
@@ -453,18 +468,14 @@ export function ChannelWorkspace({
     <section
       ref={rootRef}
       className={`channel-workspace-rows channel-workspace-grid${
-        dockDragOver ? " drag-over" : ""
+        acceptRailDrop ? " drag-over accepting-rail-drop" : ""
       }${moveChannelId !== null ? " reordering" : ""}`}
       aria-label="Channel workspace"
       style={{
         gridTemplateColumns: `repeat(auto-fill, minmax(${WORKSPACE_MIN_COL_PX}px, 1fr))`,
       }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        setDockDragOver(true);
-        setRailDragPointer({ x: e.clientX, y: e.clientY });
-      }}
+      onDragEnter={handleRailDragOver}
+      onDragOver={handleRailDragOver}
       onDragLeave={(e) => {
         const root = rootRef.current;
         if (root && e.relatedTarget instanceof Node && root.contains(e.relatedTarget)) {

@@ -32,7 +32,9 @@ export function ChannelRailTile({
 
   function onGripDragStart(e: DragEvent) {
     e.stopPropagation();
-    e.dataTransfer.setData("text/channel-id", String(channel.id));
+    const idText = String(channel.id);
+    e.dataTransfer.setData("text/channel-id", idText);
+    e.dataTransfer.setData("text/plain", idText);
     e.dataTransfer.effectAllowed = "move";
     const { size, colSpan } = workspacePreviewForChannel(channel, docked);
     setRailDragPreview({
@@ -68,19 +70,17 @@ export function ChannelRailTile({
       }
       title="Tap the name to open it in the workspace, or drag the ⋮⋮ grip to drag it in"
     >
+      <span
+        className="channel-rail-grip"
+        aria-hidden
+        draggable
+        onDragStart={onGripDragStart}
+        onDragEnd={onDragEnd}
+        title="Drag into workspace"
+      >
+        ⋮⋮
+      </span>
       <button type="button" className="channel-rail-tile-main" onClick={onDock}>
-        <span
-          className="channel-rail-grip"
-          aria-hidden
-          draggable
-          onDragStart={onGripDragStart}
-          onDragEnd={onDragEnd}
-          onClick={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-          title="Drag into workspace"
-        >
-          ⋮⋮
-        </span>
         <IconRadio size={12} />
         <span className="channel-rail-label">{channel.name}</span>
         {channel.simulcast && <span className="chan-sim-tag">SIM</span>}
