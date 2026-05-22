@@ -99,10 +99,10 @@ export function ChannelWorkspace({
   onDockFromRail: (id: number, insertAt?: number) => void;
 }) {
   const rootRef = useRef<HTMLElement | null>(null);
-  const moveChannelIdRef = useRef<number | null>(null);
-  moveChannelIdRef.current = moveChannelId;
   const [dockDragOver, setDockDragOver] = useState(false);
   const [moveChannelId, setMoveChannelId] = useState<number | null>(null);
+  const moveChannelIdRef = useRef<number | null>(null);
+  moveChannelIdRef.current = moveChannelId;
   const [dragOverChannelId, setDragOverChannelId] = useState<number | null>(null);
   const [dropEdge, setDropEdge] = useState<WorkspaceDropEdge | null>(null);
   const [insertAtEnd, setInsertAtEnd] = useState(false);
@@ -158,6 +158,12 @@ export function ChannelWorkspace({
   const placeholderIndex =
     moveChannelId !== null ? previewIds.indexOf(moveChannelId) : -1;
 
+  const clearDragOver = useCallback(() => {
+    setDragOverChannelId(null);
+    setDropEdge(null);
+    setInsertAtEnd(false);
+  }, []);
+
   useEffect(() => {
     const clearRailDrag = () => setRailDragPreview(null);
     window.addEventListener("dragend", clearRailDrag);
@@ -179,7 +185,7 @@ export function ChannelWorkspace({
       window.removeEventListener("pointerup", clearStuckReorder);
       window.removeEventListener("pointercancel", clearStuckReorder);
     };
-  }, []);
+  }, [clearDragOver]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -199,12 +205,6 @@ export function ChannelWorkspace({
     ro.observe(root);
     return () => ro.disconnect();
   }, []);
-
-  function clearDragOver() {
-    setDragOverChannelId(null);
-    setDropEdge(null);
-    setInsertAtEnd(false);
-  }
 
   const acceptRailDrop = railDrag !== null || dockDragOver;
 
@@ -233,7 +233,7 @@ export function ChannelWorkspace({
       const insertAt = insertIndexFromPointer(e.clientX, e.clientY, rootRef.current, channelIds);
       onDockFromRail(id, insertAt);
     },
-    [channelIds, onDockFromRail],
+    [channelIds, onDockFromRail, clearDragOver],
   );
 
   function bringTileToFront(channelId: number) {
