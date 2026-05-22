@@ -467,6 +467,7 @@ class RadioViewModel(
             is AppUpdater.UpdateProgress.Downloaded ->
                 onAppUpdateDownloaded(progress.notice)
             AppUpdater.UpdateProgress.UpToDate -> showUpToDate()
+            AppUpdater.UpdateProgress.CheckFailed -> showUpdateCheckFailed()
         }
     }
 
@@ -481,6 +482,15 @@ class RadioViewModel(
 
     private fun showUpToDate() {
         val msg = "UP TO DATE — ON THE LATEST VERSION"
+        _uiState.update { it.copy(statusMessage = msg) }
+        viewModelScope.launch {
+            delay(VERSION_BANNER_MS)
+            _uiState.update { if (it.statusMessage == msg) it.copy(statusMessage = "") else it }
+        }
+    }
+
+    private fun showUpdateCheckFailed() {
+        val msg = "UPDATE CHECK FAILED"
         _uiState.update { it.copy(statusMessage = msg) }
         viewModelScope.launch {
             delay(VERSION_BANNER_MS)

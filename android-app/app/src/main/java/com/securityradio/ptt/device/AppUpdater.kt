@@ -65,6 +65,8 @@ class AppUpdater(
         data class Downloaded(val notice: UpdateNotice) : UpdateProgress()
         /** A manual "check for updates" found that this build is already current. */
         data object UpToDate : UpdateProgress()
+        /** A manual "check for updates" could not confirm the current published version. */
+        data object CheckFailed : UpdateProgress()
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -151,10 +153,18 @@ class AppUpdater(
         try {
             if (!force && !throttleElapsed()) return
             markChecked()
-            val available = fetchAvailable() ?: run {
-                notifyProgress(if (manual) UpdateProgress.UpToDate else UpdateProgress.Idle)
-                return
-            }
+            val available =
+                when (val result = fetchVersionStatus()) {
+                    is VersionStatus.UpdateAvailable -> result.available
+                    VersionStatus.UpToDate -> {
+                        notifyProgress(if (manual) UpdateProgress.UpToDate else UpdateProgress.Idle)
+                        return
+                    }
+                    VersionStatus.Unknown -> {
+                        notifyProgress(if (manual) UpdateProgress.CheckFailed else UpdateProgress.Idle)
+                        return
+                    }
+                }
             if (!canInstall()) {
                 Log.w(TAG, "Update ${available.versionName} ready but install-unknown-apps not granted")
                 notifyProgress(UpdateProgress.Idle)
@@ -183,7 +193,7 @@ class AppUpdater(
             }
         } catch (e: Exception) {
             Log.w(TAG, "update check failed", e)
-            notifyProgress(UpdateProgress.Idle)
+            notifyProgress(if (manual) UpdateProgress.CheckFailed else UpdateProgress.Idle)
         } finally {
             endCheck()
         }
@@ -201,24 +211,32 @@ class AppUpdater(
         synchronized(this) { checkInFlight = false }
     }
 
-    /** Blocking — returns the published build only if it's newer than this one. Call off the main thread. */
-    fun fetchAvailable(): Available? {
+    private sealed class VersionStatus {
+        data class UpdateAvailable(val available: Available) : VersionStatus()
+        data object UpToDate : VersionStatus()
+        data object Unknown : VersionStatus()
+    }
+
+    /** Blocking — checks the published build version. Call off the main thread. */
+    private fun fetchVersionStatus(): VersionStatus {
         val request = Request.Builder().url("$baseUrl/v1/app/android/version").build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
-            val body = response.body?.string() ?: return null
+            if (!response.isSuccessful) return VersionStatus.Unknown
+            val body = response.body?.string() ?: return VersionStatus.Unknown
             val json = JSONObject(body)
             val versionCode = json.optLong("versionCode", -1)
+            if (versionCode < 0) return VersionStatus.Unknown
+            if (versionCode <= currentVersionCode) return VersionStatus.UpToDate
             val url = json.optString("url")
             val sha256 = json.optString("sha256")
-            if (versionCode <= currentVersionCode || url.isBlank() || sha256.isBlank()) {
-                return null
-            }
-            return Available(
-                versionCode = versionCode,
-                versionName = json.optString("versionName", versionCode.toString()),
-                apkUrl = url,
-                sha256 = sha256,
+            if (url.isBlank() || sha256.isBlank()) return VersionStatus.Unknown
+            return VersionStatus.UpdateAvailable(
+                Available(
+                    versionCode = versionCode,
+                    versionName = json.optString("versionName", versionCode.toString()),
+                    apkUrl = url,
+                    sha256 = sha256,
+                ),
             )
         }
     }
