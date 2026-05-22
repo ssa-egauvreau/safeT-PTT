@@ -216,8 +216,12 @@ export function ChannelWorkspace({
       setResizePreview({ rowSpan: liveRowSpan, colSpan: liveColSpan });
     };
     const onUp = () => {
-      setWorkspaceTileRowSpan(channelId, liveRowSpan);
-      setWorkspaceTileColSpan(channelId, liveColSpan);
+      if (liveRowSpan !== origin.rowSpan) {
+        setWorkspaceTileRowSpan(channelId, liveRowSpan);
+      }
+      if (liveColSpan !== origin.colSpan) {
+        setWorkspaceTileColSpan(channelId, liveColSpan);
+      }
       setResizeChannelId(null);
       setResizePreview(null);
       window.removeEventListener("pointermove", onMove);

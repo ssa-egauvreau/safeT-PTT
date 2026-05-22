@@ -833,7 +833,7 @@ function withPackedWorkspaceLayout(s: ConsoleState): ConsoleState {
   }
   return {
     ...s,
-    workspaceLayout: packWorkspaceLayout(s.expanded, s.workspaceLayout),
+    workspaceLayout: packWorkspaceLayout(s.expanded, s.workspaceLayout, { fillPrimary: false }),
   };
 }
 
@@ -956,7 +956,7 @@ export function reorderDockedChannels(orderedIds: number[]): void {
       expanded.push(id);
     }
   }
-  const workspaceLayout = packWorkspaceLayout(expanded, state.workspaceLayout);
+  const workspaceLayout = packWorkspaceLayout(expanded, state.workspaceLayout, { fillPrimary: false });
   commitWorkspaceIfChanged(expanded, workspaceLayout);
 }
 

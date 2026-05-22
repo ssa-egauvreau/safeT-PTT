@@ -906,10 +906,20 @@ code.mono {
   box-shadow:
     0 14px 34px color-mix(in srgb, #000 38%, transparent),
     inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
+  /* Let clicks reach the drag handle on tiles underneath the overlap. */
+  pointer-events: none;
 }
-.channel-workspace-tile.workspace-tile-main {
-  align-self: stretch;
-  min-height: 100%;
+.channel-workspace-tile.workspace-tile-stacked .channel-workspace-drag-handle,
+.channel-workspace-tile.workspace-tile-stacked .channel-workspace-tile-inner,
+.channel-workspace-tile.workspace-tile-stacked .channel-workspace-resize-w,
+.channel-workspace-tile.workspace-tile-stacked .channel-workspace-resize-h,
+.channel-workspace-tile.workspace-tile-stacked .channel-workspace-resize-corner {
+  pointer-events: auto;
+}
+.channel-workspace-tile.workspace-tile-main,
+.channel-workspace-tile.workspace-tile-half {
+  align-self: start;
+  min-height: 0;
 }
 .channel-workspace-tile.drag-over {
   outline: 2px solid var(--accent);
@@ -930,7 +940,7 @@ code.mono {
 .channel-workspace-tile.workspace-tile-main .channel-workspace-tile-inner,
 .channel-workspace-tile.workspace-tile-half .channel-workspace-tile-inner {
   flex: 1 1 auto;
-  min-height: 100%;
+  min-height: 0;
 }
 .channel-workspace-tile.resizing {
   z-index: 24;
@@ -940,17 +950,24 @@ code.mono {
   box-shadow: 0 0 0 1px var(--accent);
 }
 .channel-workspace-drag-handle {
+  position: relative;
+  z-index: 2;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 6px 10px;
+  min-height: 28px;
   border-bottom: 1px solid color-mix(in srgb, #fff 12%, var(--border));
   background: color-mix(in srgb, var(--bg) 42%, transparent);
   cursor: grab;
   user-select: none;
   -webkit-user-drag: element;
+  touch-action: none;
+}
+.channel-workspace-tile.workspace-tile-compact .channel-workspace-drag-handle {
+  min-height: 32px;
 }
 :root[data-theme="day"] .channel-workspace-tile {
   background: color-mix(in srgb, var(--bg-raised) 78%, transparent);
