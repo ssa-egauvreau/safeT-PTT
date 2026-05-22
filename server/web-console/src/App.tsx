@@ -30,6 +30,9 @@ const OwnerPage = lazy(() =>
 const LegalPage = lazy(() =>
   import("./pages/legal/LegalPage").then((m) => ({ default: m.LegalPage })),
 );
+const UpdatesPage = lazy(() =>
+  import("./pages/UpdatesPage").then((m) => ({ default: m.UpdatesPage })),
+);
 const AiActivityPage = lazy(() =>
   import("./pages/AiActivityPage").then((m) => ({ default: m.AiActivityPage })),
 );
@@ -212,6 +215,7 @@ export function App() {
           )
         }
       />
+      <Route path="/updates" element={<UpdatesPage />} />
       <Route path="/legal/terms" element={<LegalPage doc="terms" />} />
       <Route path="/legal/privacy" element={<LegalPage doc="privacy" />} />
       <Route path="/legal/eula" element={<LegalPage doc="eula" />} />

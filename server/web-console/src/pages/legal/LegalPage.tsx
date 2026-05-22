@@ -82,6 +82,7 @@ export function LegalPage({ doc }: { doc: LegalDocId }) {
           <p className="lp-footer-tag">Talk · Transmit · Together</p>
           <nav className="lp-footer-links">
             <Link to="/">Home</Link>
+            <Link to="/updates">Updates</Link>
             {LEGAL_ORDER.map((id) => (
               <Link key={id} to={LEGAL_DOCS[id].path}>
                 {LEGAL_DOCS[id].label}

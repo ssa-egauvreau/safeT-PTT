@@ -1,0 +1,127 @@
+[
+  {
+    "version": "1.12",
+    "date": "2026-05-22",
+    "title": "AI dispatcher listens to clear speech",
+    "changes": [
+      "When AI dispatch is turned on for a channel, the system records normal clear voice (not the digital vocoder).",
+      "Speech-to-text and the AI dispatcher understand radio traffic much better on those channels.",
+      "Android radios and the web console switch automatically when AI dispatch is enabled."
+    ]
+  },
+  {
+    "version": "1.11",
+    "date": "2026-05-22",
+    "title": "Ask where a unit is (10-20)",
+    "changes": [
+      "Command staff can ask for a unit's location on the radio; the AI answers using the live map.",
+      "Replies use simple landmarks or cross streets first (for example near Main Street and 1st Street).",
+      "Officers can ask for the full street address when they need it."
+    ]
+  },
+  {
+    "version": "1.10",
+    "date": "2026-05-22",
+    "title": "10-8 property and plate improvements",
+    "changes": [
+      "Property dispatches send the property number and name in location notes (no dashes in the number).",
+      "Places not in the property list are looked up on the map before creating a call.",
+      "Plate and VIN lookups are sent to the call in 10-8 and also posted as a comment as a backup."
+    ]
+  },
+  {
+    "version": "1.09",
+    "date": "2026-05-21",
+    "title": "10-8 call types and safer comments",
+    "changes": [
+      "Self-dispatch sends the exact call type your CAD expects, with priority 1 through 4 (never 0).",
+      "Addresses are formatted for Google Maps and 10-8 geocoding.",
+      "Radio comments on open calls use the officer's callsign and what they said; the system never comments on calls that do not exist."
+    ]
+  },
+  {
+    "version": "1.08",
+    "date": "2026-05-21",
+    "title": "Command console layout",
+    "changes": [
+      "Channel tiles sit in a strip on the left; drag a channel into the workspace for a large panel.",
+      "Workspace shows a 2 by 2 grid on normal screens and 3 by 3 on wide screens.",
+      "Channel names appear on a clear title bar so controls are not crowded."
+    ]
+  },
+  {
+    "version": "1.07",
+    "date": "2026-05-21",
+    "title": "Dispatcher voice (TTS) improvements",
+    "changes": [
+      "Dispatcher voice defaults to Eleven v3 for more natural speech.",
+      "10-codes like 10-97 are spoken correctly (not as ten to ninety-seven).",
+      "Dashes in codes use short pauses instead of the word to."
+    ]
+  },
+  {
+    "version": "1.06",
+    "date": "2026-05-20",
+    "title": "Android app update reminders",
+    "changes": [
+      "Radios check for updates more often while the app is open.",
+      "A clear on-screen message appears when an update is downloaded and the radio needs a reboot to install."
+    ]
+  },
+  {
+    "version": "1.05",
+    "date": "2026-05-20",
+    "title": "10-8 self-dispatch from the radio",
+    "changes": [
+      "When an officer self-dispatches, the server can create a new call in 10-8 automatically.",
+      "The system matches the right open call for status updates and comments by unit and location."
+    ]
+  },
+  {
+    "version": "1.04",
+    "date": "2026-05-19",
+    "title": "Radio audio quality on Android",
+    "changes": [
+      "Reduced extra processing on received audio so voices sound clearer on handsets."
+    ]
+  },
+  {
+    "version": "1.03",
+    "date": "2026-05-18",
+    "title": "AI dispatch and integrations",
+    "changes": [
+      "AI dispatcher can answer questions about addresses, pending calls, plates, and more.",
+      "Per-agency settings for 10-8, plate lookup, and ElevenLabs voice under Admin.",
+      "AI activity log shows transcripts, intents, and what the dispatcher did."
+    ]
+  },
+  {
+    "version": "1.02",
+    "date": "2026-05-15",
+    "title": "Live map and GPS",
+    "changes": [
+      "Dispatch map shows unit locations and refreshes automatically.",
+      "GPS history lets you replay where a unit drove over a time range."
+    ]
+  },
+  {
+    "version": "1.01",
+    "date": "2026-05-10",
+    "title": "Command console basics",
+    "changes": [
+      "Monitor multiple radio channels from the web console.",
+      "Transmission log with search and playback.",
+      "10-33 emergency marker and tone-out support."
+    ]
+  },
+  {
+    "version": "1.00",
+    "date": "2026-05-01",
+    "title": "Initial release",
+    "changes": [
+      "Push-to-talk on Android radios and in the browser.",
+      "Private channels per agency with half-duplex voice.",
+      "Sign-in and admin tools for users and channels."
+    ]
+  }
+]

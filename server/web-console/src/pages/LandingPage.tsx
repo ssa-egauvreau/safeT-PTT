@@ -219,6 +219,7 @@ export function LandingPage() {
             <a href="#features">Features</a>
             <a href="#how">How it works</a>
             <a href="#pricing">Pricing</a>
+            <Link to="/updates">Updates</Link>
           </nav>
           <div className="lp-nav-cta">
             {user ? (
@@ -450,6 +451,7 @@ export function LandingPage() {
             <a href="#platform">Platform</a>
             <a href="#features">Features</a>
             <a href="#pricing">Pricing</a>
+            <Link to="/updates">Updates</Link>
             <Link to="/legal/terms">Terms</Link>
             <Link to="/legal/privacy">Privacy</Link>
             <Link to="/legal/eula">EULA</Link>
