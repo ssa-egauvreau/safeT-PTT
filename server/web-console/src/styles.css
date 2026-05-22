@@ -843,13 +843,13 @@ code.mono {
   font-size: 9px;
 }
 
-/* --- Mission Control: 12-col grid, four slots, vertical packing --- */
+/* --- Mission Control: column-first grid — tiles stack vertically per column --- */
 .channel-workspace-rows.channel-workspace-grid {
   display: grid;
-  /* Width from column span; height grows with content (no fixed row clipping). */
+  /* Fill each column top-to-bottom before the next column (masonry-style columns). */
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 172px), 1fr));
   grid-auto-rows: minmax(min-content, auto);
-  grid-auto-flow: row dense;
+  grid-auto-flow: column dense;
   align-items: start;
   gap: 8px;
   align-content: start;

@@ -351,7 +351,7 @@ export function ChannelWorkspace({
         <div className="channel-workspace-empty">
           <p>Tap a channel in the list to open it here — or drag it in.</p>
           <p className="muted">
-            Drag the channel name bar to reorder · S / M / L changes size · ✕ removes from workspace.
+            Drag the channel name bar to reorder (tiles stack in columns) · S / M / L · ✕ close.
           </p>
         </div>
       ) : (
