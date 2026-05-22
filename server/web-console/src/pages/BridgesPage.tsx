@@ -49,9 +49,11 @@ function writeStoredSelection(bridgeId: number, sel: StoredDeviceSelection): voi
 }
 
 /**
- * Whether this bridge was running, persisted so a full page reload (e.g. the server pushing a new
- * client build) auto-resumes the feed instead of dropping back to a stopped Start button. Cleared
- * only when the operator explicitly stops or the relay fatally rejects the bridge.
+ * Whether this bridge was running, persisted in **sessionStorage** so a full page reload of a live
+ * tab (e.g. the server pushing a new client build) auto-resumes the feed, while a brand-new tab or
+ * a later visit starts clean — sessionStorage is cleared when the tab closes. Cleared explicitly on
+ * operator stop or a fatal relay rejection. Device selection stays in localStorage (a real
+ * preference); only run-intent is session-scoped.
  */
 function wantRunningKey(bridgeId: number): string {
   return `safetPtt.bridgeRunner.running.${bridgeId}`;
@@ -59,7 +61,7 @@ function wantRunningKey(bridgeId: number): string {
 
 function readWantRunning(bridgeId: number): boolean {
   try {
-    return localStorage.getItem(wantRunningKey(bridgeId)) === "1";
+    return sessionStorage.getItem(wantRunningKey(bridgeId)) === "1";
   } catch {
     return false;
   }
@@ -68,14 +70,21 @@ function readWantRunning(bridgeId: number): boolean {
 function writeWantRunning(bridgeId: number, running: boolean): void {
   try {
     if (running) {
-      localStorage.setItem(wantRunningKey(bridgeId), "1");
+      sessionStorage.setItem(wantRunningKey(bridgeId), "1");
     } else {
-      localStorage.removeItem(wantRunningKey(bridgeId));
+      sessionStorage.removeItem(wantRunningKey(bridgeId));
     }
   } catch {
     /* private mode or quota */
   }
 }
+
+/**
+ * Bridge ids whose runner row has already mounted in THIS page load. Auto-resume only fires on the
+ * first mount per page load, so a real reload recovers a running feed, but in-app navigation back
+ * to the Bridges tab (which unmounts/remounts the row) does not silently re-key the radio.
+ */
+const autoResumedThisLoad = new Set<number>();
 
 /** One runnable audio-device bridge: device selection, start/stop, live status. */
 function BridgeRunnerRow({
@@ -131,14 +140,15 @@ function BridgeRunnerRow({
     writeStoredSelection(bridge.id, { input: inputId, output: outputId });
   }, [bridge.id, inputId, outputId]);
 
-  // Auto-resume after a full page reload (e.g. the server pushed a new client build and the app
-  // refreshed): if this bridge was running, start it again so the feed keeps playing and the button
-  // shows "Stop" instead of resetting to "Start". The device list is loaded before this row mounts,
-  // so inputId is already resolved. Runs once; the ref guards React StrictMode's double-invoke.
-  const autoResumedRef = useRef(false);
+  // Auto-resume after a full page reload of a live tab (e.g. the server pushed a new client build
+  // and the app refreshed): if this bridge was running, start it again so the feed keeps playing
+  // and the button shows "Stop" instead of resetting to "Start". Gated to the FIRST row mount per
+  // page load (autoResumedThisLoad) so in-app navigation away and back — which unmounts/remounts
+  // the row — does not silently re-key the radio without a fresh operator action. The device list
+  // is loaded before this row mounts, so inputId is already resolved.
   useEffect(() => {
-    if (autoResumedRef.current) return;
-    autoResumedRef.current = true;
+    if (autoResumedThisLoad.has(bridge.id)) return;
+    autoResumedThisLoad.add(bridge.id);
     if (inputId && readWantRunning(bridge.id)) {
       start();
     }

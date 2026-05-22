@@ -122,17 +122,26 @@ export class BridgeRunnerClient {
       return;
     }
 
+    // Connecting to the relay is the only retryable startup step: a socket failure already set a
+    // "closed" (ws.onerror) and a relay rejection a terminal "error" (handleControl), so just tear
+    // down — a server redeploy stays retryable and the runner row reconnects on its own.
     try {
       await this.openSocket();
+    } catch {
+      this.stop();
+      return;
+    }
+
+    // Local audio init, by contrast, is a non-transient fault (no input device, worklet/codec
+    // failure). Surface it as a terminal "error" so it shows a fixable problem instead of looping
+    // reconnect attempts forever as if the server were down.
+    try {
       await this.startCapture();
       if (this.config.bidirectional) {
         await this.startPlayback();
       }
     } catch {
-      // Leave the state set by whatever failed: a relay rejection set a terminal "error"
-      // (handleControl); a socket failure set a retryable "closed" (ws.onerror). stop() keeps an
-      // "error" but otherwise falls back to "closed", so a server redeploy stays retryable and the
-      // runner row reconnects on its own instead of stopping until the page is refreshed.
+      this.setState("error", "Could not start audio capture/playback.");
       this.stop();
       return;
     }
