@@ -70,6 +70,8 @@ class AppUpdater(
     private var progressListener: ((UpdateProgress) -> Unit)? = null
     @Volatile
     private var checkInFlight: Boolean = false
+    /** Whether this process has already run its forced launch check (set once per cold start). */
+    private var launchCheckDone: Boolean = false
 
     fun setUpdateListener(listener: ((UpdateNotice) -> Unit)?) {
         updateListener = listener
@@ -103,6 +105,24 @@ class AppUpdater(
     /** Throttled background check → download → install. Safe to call on every launch. */
     fun checkAndInstallAsync(force: Boolean = false) {
         Thread({ runCheck(force) }, "app-updater").start()
+    }
+
+    /**
+     * Update check tied to an app launch. The first call in a process is forced so every cold start
+     * — a device reboot (the boot receiver relaunches the app) or the operator first opening the app
+     * — always checks, regardless of the throttle. Later launches in the same process (e.g. an
+     * Activity recreate) fall back to the throttled check so we don't poll on every config change.
+     */
+    fun checkOnLaunch() {
+        val forceThisLaunch = synchronized(this) {
+            if (launchCheckDone) {
+                false
+            } else {
+                launchCheckDone = true
+                true
+            }
+        }
+        checkAndInstallAsync(force = forceThisLaunch)
     }
 
     private fun runCheck(force: Boolean) {
