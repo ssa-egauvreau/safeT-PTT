@@ -30,7 +30,7 @@ export function ChannelRailTile({
           ? { borderLeftColor: channel.color, borderLeftWidth: 3 }
           : undefined
       }
-      title="Drag to the workspace on the right, or click the name"
+      title="Tap the name to open it in the workspace, or drag it in"
     >
       <button type="button" className="channel-rail-tile-main" onClick={onDock}>
         <span className="channel-rail-grip" aria-hidden>

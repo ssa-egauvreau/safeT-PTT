@@ -3502,6 +3502,16 @@ code.mono {
   .channel-workspace-layout {
     grid-template-columns: 1fr;
   }
+  /* The workspace stacks under the rail on phones — size it to its docked tiles instead of the
+     desktop 72vh, so an empty workspace isn't a giant drop-zone box filling the screen. */
+  .channel-workspace-rows.channel-workspace-grid {
+    min-height: 140px;
+    height: auto;
+  }
+  .channel-workspace-empty {
+    min-height: 0;
+    padding: 18px 8px;
+  }
   .channel-rail {
     max-height: 220px;
     flex-direction: row;

@@ -270,7 +270,7 @@ export function ChannelWorkspace({
     >
       {dockedChannels.length === 0 ? (
         <div className="channel-workspace-empty">
-          <p>Drag channels here from the list on the left.</p>
+          <p>Tap a channel in the list to open it here — or drag it in.</p>
           <p className="muted">
             Drag ⋮⋮ to reorder · drag a tile’s right or bottom edge to resize · tiles fill and wrap to
             fit the space.
