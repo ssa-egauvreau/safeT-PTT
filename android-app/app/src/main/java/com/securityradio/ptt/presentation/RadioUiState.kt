@@ -125,6 +125,11 @@ data class RadioUiState(
      * after the APK is verified. Cleared once [android.os.Build.VERSION_CODE] matches pending.
      */
     val appUpdateBanner: String = "",
+    /**
+     * True while an OTA update is downloading/installing — drives the full-screen
+     * "DOWNLOADING UPDATE — DO NOT TURN OFF DEVICE" banner.
+     */
+    val updateInstalling: Boolean = false,
 
     /** Non-blank while the last RX is replaying; holds the "who was talking" caption. */
     val replayBanner: String,

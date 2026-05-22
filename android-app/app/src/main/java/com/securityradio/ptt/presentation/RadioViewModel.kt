@@ -169,6 +169,9 @@ class RadioViewModel(
     private val _uiState = MutableStateFlow(RadioUiState.initial())
     val uiState: StateFlow<RadioUiState> = _uiState.asStateFlow()
 
+    /** Plays the update-alert jingle only once per download (not on every progress tick). */
+    private var updateJinglePlayed = false
+
     init {
         if (radioPreferences.isLoggedIn() && radioPreferences.getSessionUnitId().isBlank()) {
             val fromUsername = radioPreferences.getSessionUsername().trim().uppercase(Locale.US)
@@ -212,6 +215,16 @@ class RadioViewModel(
                 mp22DualDisplay = DisplayRouter.isMp22StyleDualDisplay(application),
                 mp22UsePhysicalDisplay = radioPreferences.isMp22UsePhysicalDisplay(),
             )
+        }
+        // If a downloaded update finished installing (this build caught up), chime + confirm once.
+        appUpdater.takeInstalledUpdateNotice()?.let { installed ->
+            soundPlayer.playTalkPermitThen({})
+            val msg = "UPDATED TO v${installed.versionName} — INSTALL COMPLETE"
+            _uiState.update { it.copy(statusMessage = msg) }
+            viewModelScope.launch {
+                delay(VERSION_BANNER_MS)
+                _uiState.update { if (it.statusMessage == msg) it.copy(statusMessage = "") else it }
+            }
         }
         refreshAppUpdateBanner()
         appUpdater.setProgressListener { progress -> onAppUpdateProgress(progress) }
@@ -440,26 +453,50 @@ class RadioViewModel(
         when (progress) {
             AppUpdater.UpdateProgress.Idle -> {
                 if (appUpdater.peekPendingUpdateNotice() == null) {
-                    _uiState.update { it.copy(appUpdateBanner = "") }
+                    _uiState.update { it.copy(appUpdateBanner = "", updateInstalling = false) }
                 }
             }
-            is AppUpdater.UpdateProgress.Available ->
+            is AppUpdater.UpdateProgress.Available -> {
+                startUpdateInProgress()
                 applyAppUpdateAvailableBanner(progress.versionName)
-            is AppUpdater.UpdateProgress.Downloading ->
+            }
+            is AppUpdater.UpdateProgress.Downloading -> {
+                startUpdateInProgress()
                 applyAppUpdateDownloadingBanner(progress.versionName)
+            }
             is AppUpdater.UpdateProgress.Downloaded ->
                 onAppUpdateDownloaded(progress.notice)
+            AppUpdater.UpdateProgress.UpToDate -> showUpToDate()
+        }
+    }
+
+    /** First time an update download starts, raise the full-screen banner and play the alert jingle. */
+    private fun startUpdateInProgress() {
+        _uiState.update { it.copy(updateInstalling = true) }
+        if (!updateJinglePlayed) {
+            updateJinglePlayed = true
+            soundPlayer.playChannelSwitch()
+        }
+    }
+
+    private fun showUpToDate() {
+        val msg = "UP TO DATE — ON THE LATEST VERSION"
+        _uiState.update { it.copy(statusMessage = msg) }
+        viewModelScope.launch {
+            delay(VERSION_BANNER_MS)
+            _uiState.update { if (it.statusMessage == msg) it.copy(statusMessage = "") else it }
         }
     }
 
     fun onAppUpdateDownloaded(notice: AppUpdater.UpdateNotice) {
         if (notice.versionCode <= BuildConfig.VERSION_CODE.toLong()) {
             appUpdater.clearPendingUpdate()
-            _uiState.update { it.copy(appUpdateBanner = "") }
+            _uiState.update { it.copy(appUpdateBanner = "", updateInstalling = false) }
             return
         }
+        // Keep the full-screen "do not turn off" banner up through the install/reboot.
+        _uiState.update { it.copy(updateInstalling = true) }
         applyAppUpdateDownloadedBanner(notice.versionName)
-        soundPlayer.playChannelSwitch()
     }
 
     private fun applyAppUpdateAvailableBanner(versionName: String) {
@@ -779,7 +816,7 @@ class RadioViewModel(
             RadioUiEvent.CheckForUpdates -> {
                 soundPlayer.playChannelSwitch()
                 _uiState.update { it.copy(statusMessage = "CHECKING FOR UPDATES…") }
-                appUpdater.checkAndInstallAsync(force = true)
+                appUpdater.checkAndInstallAsync(force = true, manual = true)
                 viewModelScope.launch {
                     delay(VERSION_BANNER_MS)
                     _uiState.update {

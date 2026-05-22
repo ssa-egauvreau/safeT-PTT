@@ -63,6 +63,8 @@ class AppUpdater(
         data class Available(val versionName: String) : UpdateProgress()
         data class Downloading(val versionName: String) : UpdateProgress()
         data class Downloaded(val notice: UpdateNotice) : UpdateProgress()
+        /** A manual "check for updates" found that this build is already current. */
+        data object UpToDate : UpdateProgress()
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -102,9 +104,28 @@ class AppUpdater(
             .apply()
     }
 
-    /** Throttled background check → download → install. Safe to call on every launch. */
-    fun checkAndInstallAsync(force: Boolean = false) {
-        Thread({ runCheck(force) }, "app-updater").start()
+    /**
+     * Throttled background check → download → install. Safe to call on every launch.
+     * [manual] = the operator tapped "check for updates", so report an "up to date" result when
+     * there's no newer build (a launch/background check stays silent on Idle instead).
+     */
+    fun checkAndInstallAsync(force: Boolean = false, manual: Boolean = false) {
+        Thread({ runCheck(force, manual) }, "app-updater").start()
+    }
+
+    /**
+     * If a previously-downloaded update has now been installed (this process is running at or above
+     * the pending version), returns its notice once and clears the pending marker — so the UI can
+     * play a success chime / confirmation at the first launch on the new build.
+     */
+    fun takeInstalledUpdateNotice(): UpdateNotice? {
+        val code = prefs.getLong(KEY_PENDING_VERSION_CODE, 0L)
+        if (code in 1..currentVersionCode) {
+            val name = prefs.getString(KEY_PENDING_VERSION_NAME, null)?.trim().orEmpty()
+            clearPendingUpdate()
+            return UpdateNotice(versionCode = code, versionName = name.ifBlank { code.toString() })
+        }
+        return null
     }
 
     /**
@@ -122,16 +143,16 @@ class AppUpdater(
                 true
             }
         }
-        checkAndInstallAsync(force = forceThisLaunch)
+        checkAndInstallAsync(force = forceThisLaunch, manual = false)
     }
 
-    private fun runCheck(force: Boolean) {
+    private fun runCheck(force: Boolean, manual: Boolean) {
         if (!beginCheck()) return
         try {
             if (!force && !throttleElapsed()) return
             markChecked()
             val available = fetchAvailable() ?: run {
-                notifyProgress(UpdateProgress.Idle)
+                notifyProgress(if (manual) UpdateProgress.UpToDate else UpdateProgress.Idle)
                 return
             }
             if (!canInstall()) {

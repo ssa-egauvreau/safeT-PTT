@@ -63,6 +63,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
@@ -226,6 +227,42 @@ fun RadioScreen(
             rememberHandsetLocalEmergencyFlashColor(handsetLocalEmergencyActive)
 
         Box(modifier = Modifier.fillMaxSize()) {
+            if (state.updateInstalling) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .zIndex(50f)
+                        .background(palette.statusAmber)
+                        .padding(28.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = "DOWNLOADING UPDATE",
+                            style = styles.channel.copy(fontWeight = FontWeight.Bold),
+                            color = Color.Black,
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            text = "DO NOT TURN OFF DEVICE",
+                            style = styles.zone.copy(fontWeight = FontWeight.Bold),
+                            color = Color.Black,
+                            textAlign = TextAlign.Center,
+                        )
+                        if (state.appUpdateBanner.isNotEmpty()) {
+                            Text(
+                                text = state.appUpdateBanner,
+                                style = styles.status,
+                                color = Color.Black.copy(alpha = 0.75f),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                }
+            }
             if (handsetLocalEmergencyActive) {
                 Box(
                     modifier = Modifier
