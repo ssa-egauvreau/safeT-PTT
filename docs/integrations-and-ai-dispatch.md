@@ -129,6 +129,19 @@ Active incidents appear on **Command → AI dispatch activity log**.
 
 Do **not** put plate keys in Railway for normal agency setup. Optional env fallbacks (`PLATE_LOOKUP_DEFAULT_STATE`, `PLATE_LOOKUP_PROVIDER`) exist for operators only; per-agency keys in Integrations take precedence.
 
+## Unit 10-20 (radio map location)
+
+When command staff or a unit asks **where someone is** (10-20, location on unit X), the AI dispatcher uses **GPS from the dispatch radio map** (`GET /v1/locations` data). It answers on the air in **plain language** first:
+
+- Cross streets (e.g. “near Main Street and 1st Street”)
+- Landmark / business (e.g. “in the McDonalds parking lot in Irvine by Jamboree”)
+
+**Reverse geocoding:** OpenStreetMap Nominatim by default. Optional **Google Maps Geocoding API key** in **Admin → Integrations → Lookups** (or env `GOOGLE_MAPS_GEOCODING_API_KEY`) for richer POI names.
+
+If they ask for the **full street address**, the dispatcher reads the complete address instead of the short landmark version.
+
+Units must have a **recent GPS fix** on the map (within about 10 minutes) or the dispatcher will say they are not showing on the map.
+
 ## 10-8 CAD API and New Incident API
 
 **10-8 CAD API (v1.0.8)** — `TEN8_API_KEY` / `TEN8_API_SECRET` from the old dispatcher:

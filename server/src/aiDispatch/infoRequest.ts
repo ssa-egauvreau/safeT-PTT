@@ -4,6 +4,7 @@ import { accountCodeDashForm } from "./speech/numbers.js";
 import { formatPhoneForTts } from "./speech/phoneSpeech.js";
 import type { InfoRequestFields } from "./parse.js";
 import { isWebSearchConfigured, webSearchAnswer } from "./webSearch.js";
+import { buildUnitLocationResponse, parseUnitLocationSubject } from "./unitLocation.js";
 
 function normalizeUnitId(u: string): string {
   return u.trim().toLowerCase().replace(/^27-/, "");
@@ -253,6 +254,18 @@ export async function buildInfoRequestResponse(
       const comments = extractCommentsFromPayload(match.payload);
       parts.push(comments ? `comments: ${comments}` : "no comments on the call yet");
       return `${csPart}${parts.join(", ")}.`;
+    }
+
+    case "unit_location": {
+      let parsed = parseUnitLocationSubject(infoRequest.subject);
+      if (!parsed && requestingUnit) {
+        const wantFullAddress = /\bfull\s+(street\s+)?address\b/i.test(infoRequest.subject ?? "");
+        parsed = { targetUnit: requestingUnit, wantFullAddress };
+      }
+      if (!parsed) {
+        return `${csPart}negative, which unit do you need a 10-20 on.`;
+      }
+      return buildUnitLocationResponse(agencyId, parsed, requestingUnit);
     }
 
     case "phone":

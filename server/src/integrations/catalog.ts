@@ -86,6 +86,16 @@ export const INTEGRATION_DEFINITIONS: IntegrationDefinition[] = [
     placeholder: "CA",
   },
   {
+    key: "google_maps_geocoding_api_key",
+    label: "Google Maps Geocoding API key",
+    description:
+      "Optional. Improves 10-20 unit location readbacks (POI names, intersections). OpenStreetMap is used when this is empty.",
+    kind: "secret",
+    group: "lookups",
+    availability: "active",
+    placeholder: "AIza…",
+  },
+  {
     key: "ten8_webhook_secret",
     label: "10-8 incident export bearer token",
     description:

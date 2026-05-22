@@ -18,7 +18,7 @@ Given a finalized radio transmission, the current Pacific time, and the STT conf
   "dispatcher_response": exact words dispatcher should say on radio, or null,
   "trigger_emergency_tone": true | false,
   "plate_request": { "plate": "RAW_ALPHANUMERIC_PLATE_2_TO_8_CHARS" | null, "state": "TWO_LETTER_STATE_CODE" | null, "spoken_plate": "phonetic transmission verbatim" | null, "vin": "17_CHAR_VIN_NO_IOQ" | null, "spoken_vin": "phonetic VIN transmission verbatim" | null } | null,
-  "info_request": { "type": "address" | "external_address" | "pending_calls" | "active_calls_for_unit" | "phone" | "contact" | "legal_code" | "general_query" | "unknown", "account_code": "NNNN" | null, "subject": "string describing what they want to know" | null } | null,
+  "info_request": { "type": "address" | "external_address" | "pending_calls" | "active_calls_for_unit" | "call_details" | "unit_location" | "phone" | "contact" | "legal_code" | "general_query" | "unknown", "account_code": "NNNN" | null, "subject": "string describing what they want to know" | null } | null,
   "comment_text": "ALL-CAPS cop-shorthand for the CAD comment, or null. See COMMENT_TEXT FORMAT section below.",
   "confidence": 0.0 to 1.0
 }
@@ -1086,6 +1086,28 @@ Officer asks specifically about THEIR OWN (or one named unit's) assigned call �
   Transcript: "352, what calls am I on?"
   → info_request={ "type": "active_calls_for_unit", "account_code": null, "subject": "352" }
 
+### type="unit_location" (10-20 — radio map GPS)
+Officer or command staff asks where a unit is (10-20, location, "where is unit ___"). The server reads the unit's GPS from the dispatch radio map and answers in plain language: cross streets, nearby landmark/POI, or business parking lot — NOT a full numbered street address unless they ask for the full address.
+  Transcript: "27-000, where's unit 2009?"
+  → intent="request_info"
+  → unit="27-000"
+  → info_request={ "type": "unit_location", "account_code": null, "subject": "2009" }
+  → dispatcher_response=null
+
+  Transcript: "27-000, 10-20 on 352"
+  → info_request={ "type": "unit_location", "account_code": null, "subject": "352" }
+
+  Transcript: "352, what's my 10-20?"
+  → unit="352"
+  → info_request={ "type": "unit_location", "account_code": null, "subject": "352" }
+
+  Transcript: "27-000, give me the full street address for unit 2009"
+  → info_request={ "type": "unit_location", "account_code": null, "subject": "2009 full address" }
+
+  Transcript: "Dispatch, 10-20 on Adam 12" (if Adam 12 maps to a unit number in context, use that unit id in subject)
+
+DEFAULT: subject is the TARGET unit number only (e.g. "2009", "352"). Add "full address" to subject ONLY when they explicitly want the complete street address.
+
 ### type="call_details"
 Officer wants the details/comments on ONE specific active call — what it's about, the narrative, or the comments. Put the identifier (call number, call type, or location) in subject. The server matches the active call and reads back its code, status, and comments.
   Transcript: "27-000, what's the issue notice about?"
@@ -1312,6 +1334,9 @@ Output: {"actionable":true,"intent":"status_change","unit":"352","second_unit":n
 Transcript: "Hey dispatch, 334. Anything pending for me?"
 Time: 22:00, STT: 0.96
 Output: {"actionable":true,"intent":"request_info","unit":"334","second_unit":null,"location_code":null,"location_name":null,"code":null,"disposition":null,"summary":"334 asking dispatch if there are any pending calls.","recommended_action":"Check pending queue and respond.","dispatcher_response":null,"info_request":{"type":"pending_calls","account_code":null,"subject":"for 334"},"trigger_emergency_tone":false,"confidence":0.93}
+
+Transcript: "27-000, where's unit 2009?"
+Output: {"actionable":true,"intent":"request_info","unit":"27-000","second_unit":null,"location_code":null,"location_name":null,"code":"10-20","disposition":null,"summary":"27-000 requesting 10-20 location on unit 2009 from radio map.","recommended_action":"Read unit 2009 GPS from dispatch map and respond with cross street or landmark.","dispatcher_response":null,"info_request":{"type":"unit_location","account_code":null,"subject":"2009"},"trigger_emergency_tone":false,"confidence":0.94}
 
 Transcript: "352 OW 1 MHA WRNG BLK HOODIE STD IFO 7-11"
 Time: 23:15, STT: 0.82
