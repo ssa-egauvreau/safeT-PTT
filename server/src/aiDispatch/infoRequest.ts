@@ -1,3 +1,4 @@
+import { listPositions } from "../store.js";
 import { listTen8ActiveIncidents } from "../ten8/store.js";
 import { lookupSsaProperty } from "./ssaProperties.js";
 import { accountCodeDashForm } from "./speech/numbers.js";
@@ -5,7 +6,11 @@ import { prepareLocationForTts } from "./speech/locationSpeech.js";
 import { formatPhoneForTts } from "./speech/phoneSpeech.js";
 import type { InfoRequestFields } from "./parse.js";
 import { isWebSearchConfigured, webSearchAnswer } from "./webSearch.js";
-import { buildUnitLocationResponse, parseUnitLocationSubject } from "./unitLocation.js";
+import {
+  buildUnitLocationResponse,
+  findRadioMapPosition,
+  parseUnitLocationSubject,
+} from "./unitLocation.js";
 
 function normalizeUnitId(u: string): string {
   return u.trim().toLowerCase().replace(/^27-/, "");
@@ -267,6 +272,55 @@ export async function buildInfoRequestResponse(
         return `${csPart}negative, which unit do you need a 10-20 on.`;
       }
       return buildUnitLocationResponse(agencyId, parsed, requestingUnit);
+    }
+
+    case "unit_status": {
+      // "is 27-020 10-8?" / "is X on the air" / "is X available" / "what's X's status".
+      // We don't have an explicit status field from CAD, so we infer:
+      //   1. On an open call (assigned in 10-8) → busy / 10-23 on [code] at [loc]
+      //   2. Otherwise: fresh GPS/presence (<10 min) → shows 10-8
+      //   3. Otherwise: stale GPS/presence (<60 min) → last in service N minutes ago
+      //   4. Otherwise: no recent radio activity, can't confirm status
+      const parsedSubj = parseUnitLocationSubject(infoRequest.subject);
+      const targetUnit =
+        parsedSubj?.targetUnit?.trim() ||
+        infoRequest.subject?.trim() ||
+        requestingUnit?.trim() ||
+        "";
+      if (!targetUnit) {
+        return `${csPart}negative, which unit do you want the status on.`;
+      }
+      const spokenUnit = /^27-0[0-3]0$/.test(targetUnit)
+        ? targetUnit
+        : targetUnit.replace(/^27-/, "");
+
+      const active = await listTen8ActiveIncidents(agencyId);
+      const assignedCall = active.find((i) => incidentPayloadHasUnit(i, targetUnit));
+      if (assignedCall) {
+        const codeOrType = callCodeForRadio(assignedCall.incident_type);
+        const loc = shortenLocationForRadio(assignedCall.location);
+        return loc
+          ? `${csPart}${spokenUnit} is currently on ${codeOrType} at ${loc}.`
+          : `${csPart}${spokenUnit} is currently on ${codeOrType}.`;
+      }
+
+      const positions = await listPositions(agencyId);
+      const pos = findRadioMapPosition(positions, targetUnit);
+      if (!pos) {
+        return `${csPart}negative, no recent activity from ${spokenUnit} — last status unknown.`;
+      }
+      const lastSeenMs = Date.parse(pos.updated_at);
+      if (!Number.isFinite(lastSeenMs)) {
+        return `${csPart}negative, no recent activity from ${spokenUnit} — last status unknown.`;
+      }
+      const ageMin = Math.max(0, Math.round((Date.now() - lastSeenMs) / 60_000));
+      if (ageMin <= 10) {
+        return `${csPart}${spokenUnit} shows 10-8.`;
+      }
+      if (ageMin <= 60) {
+        return `${csPart}${spokenUnit} last checked in ${ageMin} minutes ago in service.`;
+      }
+      return `${csPart}negative, no recent activity from ${spokenUnit} — last check-in was over an hour ago.`;
     }
 
     case "phone":

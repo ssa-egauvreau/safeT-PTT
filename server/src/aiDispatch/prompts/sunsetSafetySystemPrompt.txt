@@ -1099,9 +1099,41 @@ Officer is asking what calls are pending / what's the call queue / to list or de
   → info_request={ "type": "pending_calls", "account_code": null, "subject": null }
 
 ### type="active_calls_for_unit"
-Officer asks specifically about THEIR OWN (or one named unit's) assigned call — not the whole queue. Only use this when a specific unit is the subject ("what am I on", "what's 352 assigned to").
+Officer asks specifically about THEIR OWN (or one named unit's) **assigned call** — the call type/location, not the unit's status flag. Only use this when the question is plainly "what call is X on" / "what am I on" / "what's X working".
   Transcript: "352, what calls am I on?"
   → info_request={ "type": "active_calls_for_unit", "account_code": null, "subject": "352" }
+
+  Transcript: "27-000, what's 352 working?"
+  → info_request={ "type": "active_calls_for_unit", "account_code": null, "subject": "352" }
+
+DO NOT use active_calls_for_unit for status questions like "is X 10-8" / "is X on the air" / "is X available" — those go to type="unit_status" (see below). The active_calls handler will return "no active calls assigned" for a unit that's plainly in service, which is misleading.
+
+### type="unit_status" (10-8 / in service / on the air)
+Officer asks whether another unit is **in service / available / 10-8 / on the air / on duty / available to copy** — i.e., a status check on the unit, not a location lookup. The server checks active call assignments and recent radio presence to answer with the unit's effective status:
+  - Assigned to a call → "27-020 is currently on 415 at 32-08." (busy / 10-23)
+  - Recent GPS/presence (under 10 min) → "27-020 shows 10-8."
+  - Older presence (under an hour) → "27-020 last checked in N minutes ago in service."
+  - No recent activity → "negative, no recent activity from 27-020."
+
+Subject is the TARGET unit id (e.g. "27-020", "352"). Do NOT phrase the subject as a question — just the unit id.
+
+Examples:
+  Transcript: "352, is 27-020 10-8?"
+  → intent="request_info"
+  → unit="352"
+  → info_request={ "type": "unit_status", "account_code": null, "subject": "27-020" }
+  → dispatcher_response=null
+
+  Transcript: "27-000, is 352 on the air?"
+  → info_request={ "type": "unit_status", "account_code": null, "subject": "352" }
+
+  Transcript: "Dispatch, is 334 available?"
+  → info_request={ "type": "unit_status", "account_code": null, "subject": "334" }
+
+  Transcript: "352, can you check if 27-010 is in service?"
+  → info_request={ "type": "unit_status", "account_code": null, "subject": "27-010" }
+
+  Transcript: "27-000, is anyone copying 352?" — this is a radio-check style question, NOT a unit_status lookup. Treat as acknowledgment with dispatcher_response="27-000, 352 is on the air." if you know 352 just spoke, otherwise standby.
 
 ### type="unit_location" (10-20 — radio map GPS)
 Officer or command staff asks where a unit is (10-20, location, "where is unit ___"). The server reads the unit's GPS from the dispatch radio map and answers in plain language: cross streets, nearby landmark/POI, or business parking lot — NOT a full numbered street address unless they ask for the full address.
