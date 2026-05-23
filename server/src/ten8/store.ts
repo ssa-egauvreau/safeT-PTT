@@ -91,10 +91,15 @@ export async function listTen8ActiveIncidents(agencyId: number): Promise<Ten8Act
   const res = await requirePool().query(
     `SELECT call_id, incident_type, priority, status, location, payload, updated_at
        FROM ten8_incidents
-      WHERE agency_id = $1 AND is_closed = FALSE
+      WHERE agency_id = $1
+        AND is_closed = FALSE
+        AND NOT (
+          payload->>'seeded_by' = 'ai_dispatch_create'
+          AND updated_at < now() - ($2::int * interval '1 minute')
+        )
       ORDER BY updated_at DESC
       LIMIT 100;`,
-    [agencyId],
+    [agencyId, AI_DISPATCH_SEED_MAX_AGE_MINUTES],
   );
   const nowMs = Date.now();
   const rows = res.rows as Ten8ActiveIncidentRow[];

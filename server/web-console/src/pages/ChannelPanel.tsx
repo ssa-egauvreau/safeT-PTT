@@ -426,13 +426,14 @@ export function ChannelPanel({
   function stopAllSounds() {
     clientRef.current?.stopAllTones();
     sounds.stopAll();
-    // 10-33 runs server-side on a repeating timer, so clear it there too.
-    if (marker) {
+    // 10-33 runs server-side on a repeating timer. Only users allowed to transmit
+    // should be able to clear it from this bulk action.
+    if (marker && canTransmit) {
+      setMarker(false);
       void api.setChannelTen33(channel.name, false).catch(() => {
         setMarker(true);
       });
     }
-    setMarker(false);
     setLoopingIds(new Set());
   }
 
