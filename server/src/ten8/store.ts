@@ -1,5 +1,10 @@
 import { requirePool } from "../db.js";
 
+// AI-created seed rows exist only to bridge the short gap until the real 10-8 webhook lands.
+// If that webhook never arrives, the seed should age out so we don't keep matching/posting to
+// stale calls indefinitely.
+const AI_DISPATCH_SEED_MAX_AGE_MINUTES = 15;
+
 export async function upsertTen8Incident(row: {
   agencyId: number;
   callId: string;
@@ -64,10 +69,15 @@ export async function listTen8ActiveIncidents(agencyId: number): Promise<
   const res = await requirePool().query(
     `SELECT call_id, incident_type, priority, status, location, payload, updated_at
        FROM ten8_incidents
-      WHERE agency_id = $1 AND is_closed = FALSE
+      WHERE agency_id = $1
+        AND is_closed = FALSE
+        AND NOT (
+          payload->>'seeded_by' = 'ai_dispatch_create'
+          AND updated_at < now() - ($2::int * interval '1 minute')
+        )
       ORDER BY updated_at DESC
       LIMIT 100;`,
-    [agencyId],
+    [agencyId, AI_DISPATCH_SEED_MAX_AGE_MINUTES],
   );
   return res.rows;
 }
