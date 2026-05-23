@@ -1,5 +1,5 @@
-/** Drop edge when reordering a tile before/after another. */
-export type WorkspaceDropEdge = "before" | "after";
+/** Drop edge when reordering a tile before/ after / directly under another. */
+export type WorkspaceDropEdge = "before" | "after" | "under";
 
 /** Preview dock order while dragging (does not commit until drop). */
 export function previewWorkspaceOrder(
@@ -27,7 +27,7 @@ export function previewWorkspaceOrder(
   if (insertAt < 0) {
     return order;
   }
-  if (edge === "after") {
+  if (edge === "after" || edge === "under") {
     insertAt += 1;
   }
   return [...without.slice(0, insertAt), sourceId, ...without.slice(insertAt)];

@@ -33,10 +33,13 @@ import {
 } from "./workspaceRailDrag";
 import {
   WORKSPACE_GRID_GAP_PX,
+  WORKSPACE_GRID_ROW_MIN_PX,
+  WORKSPACE_MAX_ROW_SPAN,
   WORKSPACE_MIN_COL_PX,
   cycleWorkspaceTileSize,
   getWorkspaceTile,
   setWorkspaceChannelOrder,
+  setWorkspaceTileSize,
   syncWorkspaceTilesForViewport,
   useConsoleState,
   workspaceColsForWidth,
@@ -242,10 +245,16 @@ export function ChannelWorkspace({
       if (!Number.isFinite(id) || id <= 0 || !rootRef.current) {
         return;
       }
-      const insertAt = insertIndexFromPointer(e.clientX, e.clientY, rootRef.current, channelIds);
+      const root = rootRef.current;
+      const visual = rowMajorOrderFromDom(root, channelIds, null);
+      const drop = findWorkspaceDropTarget(root, e.clientX, e.clientY, visual, null);
+      const insertAt = insertIndexFromPointer(e.clientX, e.clientY, root, channelIds);
       onDockFromRail(id, insertAt);
+      if (drop?.edge === "under") {
+        setWorkspaceTileSize(id, "small", cols);
+      }
     },
-    [channelIds, onDockFromRail, clearDragOver],
+    [channelIds, cols, onDockFromRail, clearDragOver],
   );
 
   function bringTileToFront(channelId: number) {
@@ -344,6 +353,9 @@ export function ChannelWorkspace({
         setWorkspaceChannelOrder(
           orderAfterDrop(visual, channelId, drop.targetId, drop.edge),
         );
+        if (drop.edge === "under") {
+          setWorkspaceTileSize(channelId, "small", cols);
+        }
       } else {
         const rootRect = root.getBoundingClientRect();
         const inRoot =
@@ -379,6 +391,7 @@ export function ChannelWorkspace({
     const tile = tilesById.get(channel.id) ?? getWorkspaceTile(channel.id);
     const size = workspaceTileSize(tile);
     const colSpan = Math.max(1, Math.min(tile.colSpan, cols));
+    const rowSpan = Math.max(1, Math.min(tile.rowSpan, WORKSPACE_MAX_ROW_SPAN));
     const workspaceWide = colSpan >= 2;
     const monitoring = open.includes(channel.id);
     const footprint = workspaceTileFootprintLabel(tile);
@@ -394,10 +407,12 @@ export function ChannelWorkspace({
           isFront ? " tile-front" : ""
         }${isDragging ? " moving" : ""}${
           isDropTarget
-            ? ` drag-target drop-${dropEdge}${dropEdge === "after" ? " drop-stack-under" : ""}`
+            ? ` drag-target drop-${dropEdge === "under" ? "after" : dropEdge}${
+                dropEdge === "under" ? " drop-stack-under" : ""
+              }`
             : ""
         }`}
-        style={{ gridColumn: `span ${colSpan}` }}
+        style={{ gridColumn: `span ${colSpan}`, gridRow: `span ${rowSpan}` }}
         title={`${channel.name} · ${footprint}`}
       >
         <div
@@ -432,12 +447,12 @@ export function ChannelWorkspace({
     );
   }
 
-  function renderDropPlaceholder(colSpan: number, key: string): ReactNode {
+  function renderDropPlaceholder(colSpan: number, rowSpan: number, key: string): ReactNode {
     return (
       <div
         key={key}
         className="channel-workspace-drop-placeholder"
-        style={{ gridColumn: `span ${colSpan}` }}
+        style={{ gridColumn: `span ${colSpan}`, gridRow: `span ${rowSpan}` }}
         aria-hidden
       />
     );
@@ -449,14 +464,18 @@ export function ChannelWorkspace({
     const phSpan = movingTile
       ? Math.max(1, Math.min(movingTile.colSpan, cols))
       : 1;
+    const phRows = movingTile
+      ? Math.max(1, Math.min(movingTile.rowSpan, WORKSPACE_MAX_ROW_SPAN))
+      : 1;
     displayChannels.forEach((channel, index) => {
       if (index === placeholderIndex) {
-        gridChildren.push(renderDropPlaceholder(phSpan, "drop-placeholder"));
+        gridChildren.push(renderDropPlaceholder(phSpan, phRows, "drop-placeholder"));
       }
       gridChildren.push(renderTile(channel));
     });
   } else if (railDrag && dockDragOver) {
     const phSpan = Math.max(1, Math.min(railDrag.colSpan, cols));
+    const phRows = 1;
     const insertAt =
       rootRef.current && railDragPointer
         ? insertIndexFromPointer(
@@ -468,12 +487,12 @@ export function ChannelWorkspace({
         : channelIds.length;
     displayChannels.forEach((channel, index) => {
       if (index === insertAt) {
-        gridChildren.push(renderDropPlaceholder(phSpan, "rail-drop-placeholder"));
+        gridChildren.push(renderDropPlaceholder(phSpan, phRows, "rail-drop-placeholder"));
       }
       gridChildren.push(renderTile(channel));
     });
     if (insertAt >= displayChannels.length) {
-      gridChildren.push(renderDropPlaceholder(phSpan, "rail-drop-placeholder-end"));
+      gridChildren.push(renderDropPlaceholder(phSpan, phRows, "rail-drop-placeholder-end"));
     }
   } else {
     displayChannels.forEach((channel) => {
@@ -504,6 +523,7 @@ export function ChannelWorkspace({
       aria-label="Channel workspace"
       style={{
         gridTemplateColumns: `repeat(auto-fill, minmax(${WORKSPACE_MIN_COL_PX}px, 1fr))`,
+        ["--workspace-row-unit" as string]: `${WORKSPACE_GRID_ROW_MIN_PX}px`,
       }}
       onDragEnter={handleRailDragOver}
       onDragOver={handleRailDragOver}
@@ -526,7 +546,7 @@ export function ChannelWorkspace({
         <div className="channel-workspace-empty">
           <p>Tap a channel in the list to open it here — or drag it in.</p>
           <p className="muted">
-            Drag the colored name bar to reorder — drop in empty space beside a channel · S / M / L · ✕.
+            Drag the colored name bar to reorder — drop under a channel to stack more (use S for compact) · S / M / L · ✕.
           </p>
         </div>
       ) : (

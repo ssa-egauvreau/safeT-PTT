@@ -17,7 +17,7 @@ type TileRect = {
 };
 
 /** Gap below a tile where dropping means “stack under this channel”. */
-const UNDER_GAP_PX = 56;
+const UNDER_GAP_PX = 88;
 
 function readTileRects(root: HTMLElement, order: number[], excludeId: number | null): TileRect[] {
   const out: TileRect[] = [];
@@ -147,7 +147,7 @@ export function findWorkspaceDropTarget(
       const mid = (curr.bottom + nextTop) / 2;
       if (clientY < mid) {
         const last = rows[i]![rows[i]!.length - 1]!;
-        return { targetId: last.id, edge: "after" };
+        return { targetId: last.id, edge: "under" };
       }
       const first = rows[i + 1]![0]!;
       return { targetId: first.id, edge: "before" };
@@ -200,7 +200,7 @@ export function findWorkspaceDropTarget(
       clientX >= tile.left - ROW_BAND_PAD_X &&
       clientX <= tile.right + ROW_BAND_PAD_X
     ) {
-      return { targetId: tile.id, edge: "after" };
+      return { targetId: tile.id, edge: "under" };
     }
   }
 
@@ -257,7 +257,7 @@ export function computeInsertIndexFromPointer(
   if (drop) {
     const idx = visual.indexOf(drop.targetId);
     if (idx >= 0) {
-      return drop.edge === "after" ? idx + 1 : idx;
+      return drop.edge === "before" ? idx : idx + 1;
     }
   }
 
@@ -324,7 +324,7 @@ export function orderAfterDrop(
   if (insertAt < 0) {
     return [...without, sourceId];
   }
-  if (edge === "after") {
+  if (edge === "after" || edge === "under") {
     insertAt += 1;
   }
   return [...without.slice(0, insertAt), sourceId, ...without.slice(insertAt)];

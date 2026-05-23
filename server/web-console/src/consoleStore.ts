@@ -47,6 +47,8 @@ export const WORKSPACE_MAX_ROW_SPAN = 6;
 export const WORKSPACE_MAX_COLS = 12;
 /** Grid gap (px); kept in sync with layout math. */
 export const WORKSPACE_GRID_GAP_PX = 8;
+/** Minimum height of one workspace grid row unit (tiles use rowSpan × this). */
+export const WORKSPACE_GRID_ROW_MIN_PX = 64;
 export const WORKSPACE_MIN_ROW_SPAN = 1;
 export const WORKSPACE_MIN_COL_SPAN = 1;
 /** New tiles dock as medium (2×2 when wide enough, else 1×2). */
