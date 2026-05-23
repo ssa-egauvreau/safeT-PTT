@@ -496,27 +496,42 @@ export function ChannelPanel({
         : { toolbar: 13, volume: 12, radio: 12, txMain: 18, action: 12, tone: 11, badge: 11, member: 12 }
     : null;
   const showToolbar = true;
-  const showVolume = true;
-  const showStatusChip = workspace && wsSize !== "small";
-  const showMemberCount = workspace && wsSize !== "small";
+  const volumeInToolbar = workspace && (wsSize === "medium" || wsSize === "large");
+  const showVolumeInBody = !workspace || wsSize === "small";
+  const showVolPct = !workspace || wsSize === "large";
+  const showStatusChip =
+    workspace &&
+    wsSize !== "small" &&
+    monitoring &&
+    (transmitting ||
+      receiving ||
+      voiceState === "error" ||
+      voiceState === "connecting" ||
+      voiceState === "closed");
+  const showMemberCount = workspace && wsSize === "large";
   const showMeta = !workspace || wsSize === "large";
   const showAudioOut = !workspace || wsSize === "large";
-  const showActions = !workspace || wsSize === "large";
-  const showTones = workspace && (wsSize === "medium" || wsSize === "large");
-  const showTonesCompact = workspace && wsSize === "medium";
+  const showActionsGrid = !workspace || wsSize === "large";
+  const showTones = workspace && wsSize === "large";
   const showToneCustom = !workspace || wsSize === "large";
   const showLiveTx = workspace;
-  const showRoster = !workspace || wsSize === "large";
+  const showRoster = workspace && (wsSize === "medium" || wsSize === "large");
+  const showAiToggle = workspace && (wsSize === "medium" || wsSize === "large");
+  const showStopAllTop = workspace && wsSize === "large";
   /** Full XMIT pad only on large — S/M use the toolbar PTT. */
   const showMainTxButton = !workspace || wsSize === "large";
-  const volumeInHead = false;
+  const showActionNotes =
+    !workspace
+      ? marker || aiDispatchHint || (aiDispatch && !aiDispatchHint)
+      : wsSize === "large" && (marker || aiDispatchHint);
 
-  const volumeRow = showVolume ? (
-    <div className="volume-row">
+  const volumeControls = (
+    <>
       <button
         className="vol-mute"
         onClick={toggleMute}
         title={muted ? "Unmute channel" : "Mute channel"}
+        type="button"
       >
         {muted ? (
           <IconVolumeMuted size={wsIcon?.volume ?? 16} />
@@ -533,51 +548,66 @@ export function ChannelPanel({
         value={volume}
         onChange={(e) => changeVolume(Number(e.target.value))}
       />
-      <span className="vol-pct">{muted ? "Muted" : `${Math.round(volume * 100)}%`}</span>
+      {showVolPct ? (
+        <span className="vol-pct">{muted ? "Muted" : `${Math.round(volume * 100)}%`}</span>
+      ) : null}
+    </>
+  );
+
+  const volumeRow = showVolumeInBody ? (
+    <div className="volume-row">
+      {volumeControls}
     </div>
   ) : null;
 
   const workspaceToolbar = showToolbar ? (
-    <div className="ch-card-toolbar">
-      {showStatusChip && monitoring &&
-        (connected ? (
-          <span className={`state-chip ${transmitting ? "tx" : receiving ? "rx" : voiceState}`}>
-            {transmitting ? "ON AIR" : receiving ? "RX" : STATE_LABEL[voiceState]}
-          </span>
-        ) : (
-          <span className={`state-chip ${voiceState}`}>{STATE_LABEL[voiceState]}</span>
-        ))}
-      {showStatusChip && monitoring && receiving && !transmitting && (
-        <span className="state-chip busy">BUSY</span>
-      )}
-      <button
-        type="button"
-        className={monitoring ? "ch-power active" : "ch-power"}
-        onClick={onToggleMonitor}
-        aria-pressed={monitoring}
-        title={monitoring ? "Turn channel off (stop monitoring)" : "Turn channel on (monitor)"}
-      >
-        <IconHeadphones size={wsIcon?.toolbar ?? 16} />
-        <span>{monitoring ? "ON" : "OFF"}</span>
-      </button>
-      <button
-        type="button"
-        className={transmitting ? "ch-quick-ptt active" : "ch-quick-ptt"}
-        disabled={!monitoring || !connected || !canTransmit}
-        onPointerDown={beginTransmit}
-        onPointerUp={stopTx}
-        onPointerCancel={stopTx}
-        title={
-          !monitoring
-            ? "Turn the channel on to talk"
-            : !canTransmit
-              ? "Listen-only on this channel"
-              : "Hold to talk"
-        }
-      >
-        <IconBolt size={wsIcon?.toolbar ?? 16} />
-        <span>{transmitting ? "ON AIR" : "PTT"}</span>
-      </button>
+    <div
+      className={`ch-card-toolbar${workspace ? ` workspace-toolbar workspace-toolbar--${wsSize}` : ""}`}
+    >
+      {volumeInToolbar ? (
+        <div className="ch-toolbar-volume volume-row">{volumeControls}</div>
+      ) : null}
+      <div className="ch-toolbar-transport">
+        {showStatusChip &&
+          (connected ? (
+            <span className={`state-chip ${transmitting ? "tx" : receiving ? "rx" : voiceState}`}>
+              {transmitting ? "ON AIR" : receiving ? "RX" : STATE_LABEL[voiceState]}
+            </span>
+          ) : (
+            <span className={`state-chip ${voiceState}`}>{STATE_LABEL[voiceState]}</span>
+          ))}
+        {showStatusChip && receiving && !transmitting && (
+          <span className="state-chip busy">BUSY</span>
+        )}
+        <button
+          type="button"
+          className={monitoring ? "ch-power active" : "ch-power"}
+          onClick={onToggleMonitor}
+          aria-pressed={monitoring}
+          title={monitoring ? "Turn channel off (stop monitoring)" : "Turn channel on (monitor)"}
+        >
+          <IconHeadphones size={wsIcon?.toolbar ?? 16} />
+          <span>{monitoring ? "ON" : "OFF"}</span>
+        </button>
+        <button
+          type="button"
+          className={`ch-quick-ptt${transmitting ? " active" : ""}${workspace && wsSize !== "small" ? " ch-quick-ptt--center" : ""}`}
+          disabled={!monitoring || !connected || !canTransmit}
+          onPointerDown={beginTransmit}
+          onPointerUp={stopTx}
+          onPointerCancel={stopTx}
+          title={
+            !monitoring
+              ? "Turn the channel on to talk"
+              : !canTransmit
+                ? "Listen-only on this channel"
+                : "Hold to talk"
+          }
+        >
+          <IconBolt size={wsIcon?.toolbar ?? 16} />
+          <span>{transmitting ? "ON AIR" : "PTT"}</span>
+        </button>
+      </div>
     </div>
   ) : null;
 
@@ -659,7 +689,6 @@ export function ChannelPanel({
                 </button>
               )}
             </div>
-            {volumeInHead && volumeRow}
             {workspaceToolbar}
           </>
         ) : (
@@ -755,7 +784,7 @@ export function ChannelPanel({
         </div>
       )}
 
-      {showVolume && !volumeInHead && volumeRow}
+      {volumeRow}
 
       {showAudioOut && (
       <label className="audio-out-row">
@@ -842,6 +871,7 @@ export function ChannelPanel({
           channelName={channel.name}
           active={monitoring && connected}
           homeReceiving={receiving && !transmitting}
+          workspaceSize={workspace ? wsSize : undefined}
           logHint={
             wsSize === "large"
               ? "Open the transmission log below for full history."
@@ -850,7 +880,25 @@ export function ChannelPanel({
         />
       )}
 
-      {showActions && (
+      {showAiToggle && (
+        <div className="ws-ai-row">
+          <span className="ws-ai-label">AI dispatch</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={aiDispatch}
+            className={`ws-toggle${aiDispatch ? " on" : ""}`}
+            disabled={!aiDispatchReady}
+            onClick={toggleAiDispatch}
+            title={
+              aiDispatchHint ??
+              "When on, unit transmissions on this channel can trigger an AI dispatcher reply on the air."
+            }
+          />
+        </div>
+      )}
+
+      {showActionsGrid && (
       <div className={workspace ? "ch-actions-grid" : "ch-actions-stack"}>
         <button className="txmode-btn ch-action-cell" onClick={toggleTxMode} type="button">
           {workspace ? (
@@ -877,32 +925,24 @@ export function ChannelPanel({
           <span>{marker ? (workspace ? "10-33 ON" : "10-33 MARKER ON") : workspace ? "10-33" : "10-33 CHANNEL MARKER"}</span>
         </button>
 
-        <button
-          type="button"
-          className={aiDispatch ? "marker-button active ch-action-cell" : "marker-button ch-action-cell"}
-          disabled={!aiDispatchReady}
-          onClick={toggleAiDispatch}
-          title={
-            aiDispatchHint ??
-            "When on, unit transmissions on this channel can trigger an AI dispatcher reply on the air."
-          }
-        >
-          <span>{aiDispatch ? (workspace ? "AI ON" : "AI DISPATCH ON") : workspace ? "AI OFF" : "AI DISPATCH OFF"}</span>
-        </button>
       </div>
       )}
-      {showActions && (marker || aiDispatchHint || (aiDispatch && !aiDispatchHint)) && (
+      {showActionNotes && (
         <div className="ch-action-notes">
           {marker && <span className="marker-note">10-33 marker tone every 12s</span>}
           {aiDispatchHint && <span className="marker-note muted">{aiDispatchHint}</span>}
-          {aiDispatch && !aiDispatchHint && (
-            <span className="marker-note">AI transcribes and replies on this channel</span>
-          )}
         </div>
       )}
 
+      {showStopAllTop && (
+        <button type="button" className="stopall-btn stopall-btn--workspace-top" onClick={stopAllSounds}>
+          <IconStop size={wsIcon?.tone ?? 13} />
+          Stop all sounds
+        </button>
+      )}
+
       {showTones && (
-      <div className={`toneout${showTonesCompact ? " workspace-tones-compact" : ""}`}>
+      <div className="toneout">
         <div className={workspace ? "ch-tone-grid" : "toneout-row"}>
           <button
             type="button"
@@ -913,7 +953,7 @@ export function ChannelPanel({
             title="Routine tone"
           >
             <IconToneRoutine size={wsIcon?.tone ?? (workspace ? 13 : 16)} />
-            {showTonesCompact ? "Rtn" : "Routine"}
+            Routine
           </button>
           <button
             type="button"
@@ -924,7 +964,7 @@ export function ChannelPanel({
             title="Priority tone"
           >
             <IconTonePriority size={wsIcon?.tone ?? (workspace ? 13 : 16)} />
-            {showTonesCompact ? "Pri" : "Priority"}
+            Priority
           </button>
           <button
             type="button"
@@ -935,7 +975,7 @@ export function ChannelPanel({
             title="Status tone"
           >
             <IconToneStatus size={wsIcon?.tone ?? (workspace ? 13 : 16)} />
-            {showTonesCompact ? "Sts" : "Status"}
+            Status
           </button>
         </div>
         {showToneCustom && toneOuts.some((t) => t.has_audio) && (
@@ -968,10 +1008,6 @@ export function ChannelPanel({
               })}
           </div>
         )}
-        <button type="button" className="stopall-btn" onClick={stopAllSounds}>
-          <IconStop size={wsIcon?.tone ?? (workspace ? 13 : 16)} />
-          {workspace ? "Stop all" : "Stop All Sounds"}
-        </button>
       </div>
       )}
 
@@ -983,7 +1019,9 @@ export function ChannelPanel({
         </div>
       )}
 
-      {showRoster && <ChannelRoster channelName={channel.name} />}
+      {showRoster && (
+        <ChannelRoster channelName={channel.name} compact={workspace && wsSize !== "large"} />
+      )}
       </div>
       )}
     </div>

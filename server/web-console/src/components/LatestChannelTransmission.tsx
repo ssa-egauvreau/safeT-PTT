@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchTransmissionAudio } from "../api";
+import type { WorkspaceWidgetSize } from "../consoleStore";
 import { useChannelLiveRx } from "../hooks/useChannelLiveRx";
 import { useUnitAliasResolver } from "../unitAliases";
 import { formatDuration, formatTime, transcriptOf } from "../pages/TransmissionLog";
-import { IconWaveform } from "../icons";
+import { IconPause, IconPlay, IconWaveform } from "../icons";
 
 export type LatestChannelTransmissionProps = {
   channelName: string | null;
@@ -15,6 +16,8 @@ export type LatestChannelTransmissionProps = {
   /** `radio` = portal spacing; `console` = inside channel card */
   variant?: "radio" | "console";
   logHint?: string;
+  /** Mission Control widget density (S / M / L). */
+  workspaceSize?: WorkspaceWidgetSize;
 };
 
 /**
@@ -30,6 +33,7 @@ export function LatestChannelTransmission({
   localUnitId = null,
   variant = "console",
   logHint = "Open the transcript log below for full history.",
+  workspaceSize,
 }: LatestChannelTransmissionProps) {
   const aliasFor = useUnitAliasResolver();
   const { liveTalker, latestTx, showLive } = useChannelLiveRx({
@@ -45,6 +49,9 @@ export function LatestChannelTransmission({
   const [busyId, setBusyId] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const urlCache = useRef<Map<number, string>>(new Map());
+
+  const ws = workspaceSize;
+  const wsCompact = ws === "small" || ws === "medium" || ws === "large";
 
   useEffect(() => {
     const cache = urlCache.current;
@@ -84,7 +91,12 @@ export function LatestChannelTransmission({
     }
   }
 
-  const rootClass = variant === "radio" ? "live-tx live-tx-radio" : "live-tx live-tx-console";
+  const rootClass = [
+    variant === "radio" ? "live-tx live-tx-radio" : "live-tx live-tx-console",
+    ws ? `live-tx-ws live-tx-ws--${ws}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   if (!active || !channelName) {
     const emptyMsg =
@@ -104,10 +116,12 @@ export function LatestChannelTransmission({
   const recordedSpeaker = latestTx
     ? latestTx.display_name || aliasFor(latestTx.unit_id) || "Unknown"
     : null;
+  const isPlaying = latestTx != null && playingId === latestTx.id;
+  const isBusy = latestTx != null && busyId === latestTx.id;
 
   return (
     <div className={rootClass}>
-      {showLive && liveTalker && (
+      {showLive && liveTalker && !wsCompact && (
         <div className="live-tx-now" role="status" aria-live="polite">
           {liveTalker.scanChannel ? (
             <span className="live-tx-badge scan">SCAN RX · {liveTalker.scanChannel}</span>
@@ -129,38 +143,76 @@ export function LatestChannelTransmission({
       )}
 
       {latestTx ? (
-        <div className="live-tx-card">
-          <div className="live-tx-card-head">
-            <IconWaveform size={15} />
-            <span className="live-tx-card-title">
-              {showLive ? "Last recorded" : "Latest on channel"}
-            </span>
-          </div>
-          <div className="live-tx-meta-row">
-            <span className="live-tx-speaker">{recordedSpeaker}</span>
-            <span className="live-tx-time">
-              {formatTime(latestTx.started_at)} · {formatDuration(latestTx.duration_ms)}
-            </span>
-          </div>
-          <div
-            className={
-              transcript?.muted ? "live-tx-transcript muted" : "live-tx-transcript"
-            }
-          >
-            {transcript?.text ?? "—"}
-          </div>
-          <button
-            type="button"
-            className="btn sm live-tx-replay"
-            disabled={busyId === latestTx.id}
-            onClick={() => void play(latestTx.id)}
-          >
-            {playingId === latestTx.id
-              ? "Pause"
-              : busyId === latestTx.id
-                ? "Loading…"
-                : "Replay"}
-          </button>
+        <div className={`live-tx-card${wsCompact ? " live-tx-card--ws" : ""}`}>
+          {wsCompact ? (
+            <>
+              <div className="live-tx-card-top">
+                <div className="live-tx-card-title-row">
+                  <IconWaveform size={ws === "small" ? 10 : 11} />
+                  <span className="live-tx-card-title">
+                    {showLive ? "Last" : "Latest"}
+                  </span>
+                </div>
+                <span className="live-tx-time">
+                  {formatTime(latestTx.started_at)} · {formatDuration(latestTx.duration_ms)}
+                </span>
+              </div>
+              <div className="live-tx-card-body">
+                <span className="live-tx-speaker">{recordedSpeaker}</span>
+                <div
+                  className={
+                    transcript?.muted ? "live-tx-transcript muted" : "live-tx-transcript"
+                  }
+                >
+                  {transcript?.text ?? "—"}
+                </div>
+                <button
+                  type="button"
+                  className="live-tx-play-btn"
+                  disabled={isBusy}
+                  onClick={() => void play(latestTx.id)}
+                  aria-label={isPlaying ? "Pause replay" : "Play replay"}
+                  title={isPlaying ? "Pause" : isBusy ? "Loading…" : "Play"}
+                >
+                  {isPlaying ? (
+                    <IconPause size={ws === "small" ? 12 : 14} />
+                  ) : (
+                    <IconPlay size={ws === "small" ? 12 : 14} />
+                  )}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="live-tx-card-head">
+                <IconWaveform size={15} />
+                <span className="live-tx-card-title">
+                  {showLive ? "Last recorded" : "Latest on channel"}
+                </span>
+              </div>
+              <div className="live-tx-meta-row">
+                <span className="live-tx-speaker">{recordedSpeaker}</span>
+                <span className="live-tx-time">
+                  {formatTime(latestTx.started_at)} · {formatDuration(latestTx.duration_ms)}
+                </span>
+              </div>
+              <div
+                className={
+                  transcript?.muted ? "live-tx-transcript muted" : "live-tx-transcript"
+                }
+              >
+                {transcript?.text ?? "—"}
+              </div>
+              <button
+                type="button"
+                className="btn sm live-tx-replay"
+                disabled={isBusy}
+                onClick={() => void play(latestTx.id)}
+              >
+                {isPlaying ? "Pause" : isBusy ? "Loading…" : "Replay"}
+              </button>
+            </>
+          )}
         </div>
       ) : !showLive ? (
         <div className="empty">No recorded transmissions on this channel yet.</div>

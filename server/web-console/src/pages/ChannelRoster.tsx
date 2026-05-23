@@ -45,7 +45,14 @@ function tier(ms: number): string {
 }
 
 /** Live list of radios/operators connected to a channel's voice stream. */
-export function ChannelRoster({ channelName }: { channelName: string }) {
+export function ChannelRoster({
+  channelName,
+  compact = false,
+}: {
+  channelName: string;
+  /** Tighter rows for Mission Control M/L widgets. */
+  compact?: boolean;
+}) {
   const [members, setMembers] = useState<ChannelMember[]>([]);
   const aliasFor = useUnitAliasResolver();
 
@@ -70,7 +77,7 @@ export function ChannelRoster({ channelName }: { channelName: string }) {
   }, [channelName]);
 
   return (
-    <div className="roster">
+    <div className={`roster${compact ? " roster--compact" : ""}`}>
       <div className="roster-head">
         <IconUser size={13} />
         <span>On this channel</span>

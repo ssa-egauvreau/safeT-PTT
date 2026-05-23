@@ -317,6 +317,25 @@ export function IconRecord(props: IconProps) {
   );
 }
 
+/** Play triangle — replay transmission audio. */
+export function IconPlay(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M9 6.5v11l9-5.5-9-5.5Z" fill="currentColor" stroke="none" />
+    </StrokeIcon>
+  );
+}
+
+/** Pause bars — pause replay. */
+export function IconPause(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <line x1="9" y1="6" x2="9" y2="18" />
+      <line x1="15" y1="6" x2="15" y2="18" />
+    </StrokeIcon>
+  );
+}
+
 /** Waveform — recording & transcription. */
 export function IconWaveform(props: IconProps) {
   return (
