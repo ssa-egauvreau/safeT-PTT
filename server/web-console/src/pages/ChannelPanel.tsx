@@ -69,7 +69,7 @@ interface ChannelPanelProps {
     sizeTitle: string;
     onCycleSize: () => void;
     onClose: () => void;
-    onDragPointerDown: (e: PointerEvent<HTMLDivElement>) => void;
+    onDragPointerDown?: (e: PointerEvent<HTMLDivElement>) => void;
     isDragging?: boolean;
   };
 }

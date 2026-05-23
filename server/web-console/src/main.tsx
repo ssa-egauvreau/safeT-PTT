@@ -5,6 +5,7 @@ import { App } from "./App";
 import { AppErrorBoundary } from "./AppErrorBoundary";
 import { AuthProvider } from "./auth";
 import { applyTheme, getTheme } from "./theme";
+import "react-grid-layout/css/styles.css";
 import "./styles.css";
 
 function showBootFatal(message: string): void {

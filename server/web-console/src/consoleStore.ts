@@ -4,13 +4,7 @@
 // and changes propagate between windows via the "storage" event.
 
 import { useSyncExternalStore } from "react";
-import {
-  buildOccupancy,
-  firstOpenPlacement,
-  packTilesInOrder,
-  placementNearPointer,
-  type PuzzleTile,
-} from "./pages/workspacePuzzleGrid";
+import { packTilesInOrder } from "./pages/workspacePuzzleGrid";
 import {
   DEFAULT_PTT_CODE,
   KEYBOARD_ENABLED_KEY,
@@ -22,7 +16,7 @@ import {
 const STATE_KEY = "securityradio.console.state";
 
 /** Bump when workspace layout rules change — triggers one-time localStorage migration. */
-const CURRENT_LAYOUT_VERSION = 14;
+const CURRENT_LAYOUT_VERSION = 15;
 const MAX_STATE_STORAGE_BYTES = 256 * 1024;
 const MAX_OPEN_CHANNELS = 16;
 const MAX_DOCKED_CHANNELS = 12;
@@ -33,7 +27,7 @@ const COMMIT_STORM_WINDOW_MS = 2000;
  * One channel tile on the workspace puzzle grid (fixed cell units):
  *   - small:  1×1
  *   - medium: 2×2
- *   - large:  2×4
+ *   - large:  4×2 (wide widget; width clamps on narrow screens)
  */
 export interface WorkspaceTileLayout {
   colSpan: number;
@@ -66,8 +60,8 @@ export const WORKSPACE_SMALL_COLS = 1;
 export const WORKSPACE_SMALL_ROWS = 1;
 export const WORKSPACE_MEDIUM_COLS = 2;
 export const WORKSPACE_MEDIUM_ROWS = 2;
-export const WORKSPACE_LARGE_COLS = 2;
-export const WORKSPACE_LARGE_ROWS = 4;
+export const WORKSPACE_LARGE_COLS = 4;
+export const WORKSPACE_LARGE_ROWS = 2;
 
 /** New tiles dock as medium (2×2). */
 export const WORKSPACE_DEFAULT_WIDGET_SIZE: WorkspaceWidgetSize = "medium";
@@ -89,10 +83,25 @@ export function workspaceTileSize(tile: Pick<WorkspaceTileLayout, "colSpan" | "r
   if (tile.colSpan <= WORKSPACE_SMALL_COLS && tile.rowSpan <= WORKSPACE_SMALL_ROWS) {
     return "small";
   }
-  if (tile.colSpan >= WORKSPACE_LARGE_COLS && tile.rowSpan >= WORKSPACE_LARGE_ROWS) {
+  if (tile.rowSpan >= 4 && tile.colSpan >= 2) {
+    return "large";
+  }
+  if (tile.colSpan >= 3 && tile.rowSpan <= 2) {
     return "large";
   }
   return "medium";
+}
+
+/** Footprint for a size on the current column count (large clamps to grid width). */
+export function workspaceFootprintForSize(
+  size: WorkspaceWidgetSize,
+  gridCols: number,
+): Pick<WorkspaceTileLayout, "colSpan" | "rowSpan"> {
+  const preset = workspacePresetForSize(size);
+  return {
+    colSpan: Math.min(preset.colSpan, Math.max(WORKSPACE_GRID_MIN_COLS, gridCols)),
+    rowSpan: preset.rowSpan,
+  };
 }
 
 export function workspaceTileFootprintLabel(tile: Pick<WorkspaceTileLayout, "colSpan" | "rowSpan">): string {
@@ -251,7 +260,7 @@ function workspaceLayoutForExpanded(
 
 function tileIsValid(tile: WorkspaceTileLayout, gridCols: number): boolean {
   const size = workspaceTileSize(tile);
-  const preset = workspacePresetForSize(size);
+  const preset = workspaceFootprintForSize(size, gridCols);
   return (
     tile.colSpan === preset.colSpan &&
     tile.rowSpan === preset.rowSpan &&
@@ -635,7 +644,7 @@ export function cycleWorkspaceTileSize(id: number, gridCols: number): void {
   setWorkspaceTileSize(id, next, gridCols);
 }
 
-/** Re-pack when the puzzle column count changes (2 on phone → 10 on wide screens). */
+/** Re-pack when column count changes or footprints are invalid. */
 export function syncWorkspaceTilesForViewport(gridCols: number): void {
   if (state.expanded.length === 0) {
     return;
@@ -652,7 +661,47 @@ export function syncWorkspaceTilesForViewport(gridCols: number): void {
   commit({ ...state, workspaceLayout });
 }
 
-/** Move a tile to a grid cell (puzzle placement). */
+/** Persist layout from react-grid-layout after drag or compact. */
+export function applyWorkspaceRglLayout(
+  items: Array<{ i: string; x: number; y: number; w: number; h: number }>,
+  gridCols: number,
+): void {
+  const cols = Math.max(WORKSPACE_GRID_MIN_COLS, Math.min(WORKSPACE_GRID_MAX_COLS, gridCols));
+  const next: Record<string, WorkspaceTileLayout> = {};
+  for (const item of items) {
+    const id = Number(item.i);
+    if (!Number.isFinite(id) || !state.expanded.includes(id)) {
+      continue;
+    }
+    const raw = {
+      col: item.x,
+      row: item.y,
+      colSpan: item.w,
+      rowSpan: item.h,
+    };
+    const size = workspaceTileSize(raw);
+    const foot = workspaceFootprintForSize(size, cols);
+    const col = Math.max(0, Math.min(item.x, cols - foot.colSpan));
+    next[layoutKey(id)] = {
+      col,
+      row: Math.max(0, item.y),
+      colSpan: foot.colSpan,
+      rowSpan: foot.rowSpan,
+    };
+  }
+  for (const id of state.expanded) {
+    if (!next[layoutKey(id)]) {
+      const foot = workspaceFootprintForSize(WORKSPACE_DEFAULT_WIDGET_SIZE, cols);
+      next[layoutKey(id)] = { ...foot, col: 0, row: 0 };
+    }
+  }
+  if (workspaceLayoutEqual(next, state.workspaceLayout)) {
+    return;
+  }
+  commit({ ...state, workspaceLayout: next });
+}
+
+/** Place a channel at a grid cell (e.g. rail drop); react-grid-layout compacts on next render. */
 export function placeWorkspaceTile(
   id: number,
   col: number,
@@ -666,18 +715,12 @@ export function placeWorkspaceTile(
   const cols = Math.max(WORKSPACE_GRID_MIN_COLS, Math.min(WORKSPACE_GRID_MAX_COLS, gridCols));
   const key = layoutKey(id);
   const prev = state.workspaceLayout[key] ?? getWorkspaceTile(id);
-  const footprint = workspacePresetForSize(size ?? workspaceTileSize(prev));
-  const placed = tilesFromState(state.expanded, state.workspaceLayout, cols).filter(
-    (t) => t.channelId !== id,
-  );
-  const occupied = buildOccupancy(placed, cols, id);
-  const spot =
-    placementNearPointer(col, row, footprint.colSpan, footprint.rowSpan, cols, occupied) ??
-    firstOpenPlacement(footprint.colSpan, footprint.rowSpan, cols, occupied);
-  if (!spot) {
-    return;
-  }
-  const next: WorkspaceTileLayout = { ...footprint, col: spot.col, row: spot.row };
+  const foot = workspaceFootprintForSize(size ?? workspaceTileSize(prev), cols);
+  const next: WorkspaceTileLayout = {
+    ...foot,
+    col: Math.max(0, Math.min(col, cols - foot.colSpan)),
+    row: Math.max(0, row),
+  };
   if (
     prev.col === next.col &&
     prev.row === next.row &&
@@ -690,21 +733,6 @@ export function placeWorkspaceTile(
     ...state,
     workspaceLayout: { ...state.workspaceLayout, [key]: next },
   });
-}
-
-function tilesFromState(
-  expanded: number[],
-  layout: Record<string, WorkspaceTileLayout>,
-  gridCols: number,
-): Array<PuzzleTile & { channelId: number }> {
-  const out: Array<PuzzleTile & { channelId: number }> = [];
-  for (const id of expanded) {
-    const t = layout[layoutKey(id)];
-    if (t && tileIsValid(t, gridCols)) {
-      out.push({ channelId: id, ...t });
-    }
-  }
-  return out;
 }
 
 /** Reorder the docked sequence so the dragged tile lands before/after the target (drag-to-move). */
