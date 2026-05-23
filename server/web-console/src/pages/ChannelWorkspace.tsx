@@ -14,36 +14,31 @@ import { ChannelRailDragFollower } from "../components/ChannelRailDragFollower";
 import type { UserChannel } from "../api";
 import { ChannelPanel } from "./ChannelPanel";
 import {
-  previewWorkspaceOrder,
-  previewWorkspaceOrderAtIndex,
-  type WorkspaceDropEdge,
-} from "./channelWorkspaceOrder";
-import {
-  computeInsertIndexFromPointer,
-  findWorkspaceDropTarget,
-  insertIndexFromPointer,
-  orderAfterDrop,
-  orderFromInsertIndex,
-  rowMajorOrderFromDom,
-} from "./channelWorkspaceDrag";
+  buildOccupancy,
+  gridStyleForTile,
+  maxGridRow,
+  placementNearPointer,
+  pointerToGridCell,
+  type GridCell,
+  type PlacedPuzzleTile,
+} from "./workspacePuzzleGrid";
 import {
   getRailDragPreview,
   railDragPreviewFromChannel,
   subscribeRailDragPreview,
   setRailDragPreview,
+  workspacePreviewForChannel,
 } from "./workspaceRailDrag";
 import {
   WORKSPACE_GRID_GAP_PX,
-  WORKSPACE_GRID_ROW_MIN_PX,
-  WORKSPACE_MAX_ROW_SPAN,
-  WORKSPACE_MIN_COL_PX,
+  WORKSPACE_GRID_ROW_PX,
   cycleWorkspaceTileSize,
   getWorkspaceTile,
-  setWorkspaceChannelOrder,
-  setWorkspaceTileSize,
+  placeWorkspaceTile,
   syncWorkspaceTilesForViewport,
   useConsoleState,
-  workspaceColsForWidth,
+  workspaceGridColsForWidth,
+  workspacePresetForSize,
   workspaceTileFootprintLabel,
   workspaceTileSize,
   type WorkspaceTileLayout,
@@ -56,25 +51,22 @@ const SIZE_LABEL: Record<WorkspaceWidgetSize, string> = {
   large: "L",
 };
 
-/** Pixels the pointer must move before a title-bar press becomes a drag (avoids “click to hide”). */
 const WORKSPACE_DRAG_THRESHOLD_PX = 4;
 
-function nextSizeTitle(size: WorkspaceWidgetSize, tile: WorkspaceTileLayout): string {
-  const foot = workspaceTileFootprintLabel(tile);
+function nextSizeTitle(size: WorkspaceWidgetSize): string {
   switch (size) {
     case "small":
-      return `${foot} — compact. Tap for medium (1×2 or 2×2).`;
+      return "1×1 cell — compact. Tap for medium (2×2).";
     case "medium":
-      return `${foot} — last message + tones. Tap for large (1×3 or 2×3).`;
+      return "2×2 cells — last message + tones. Tap for large (2×4).";
     default:
-      return `${foot} — full panel + users. Tap for small (1×1).`;
+      return "2×4 cells — full panel + users. Tap for small (1×1).";
   }
 }
 
-/** Live widget-column count from the grid element's width. */
-function gridCols(root: HTMLElement | null): number {
+function readGridCols(root: HTMLElement | null): number {
   if (!root) {
-    return 1;
+    return 2;
   }
   const style = getComputedStyle(root);
   const gap =
@@ -83,7 +75,31 @@ function gridCols(root: HTMLElement | null): number {
   const padL = Number.parseFloat(style.paddingLeft || "0") || 0;
   const padR = Number.parseFloat(style.paddingRight || "0") || 0;
   const inner = Math.max(0, root.clientWidth - padL - padR);
-  return workspaceColsForWidth(inner, gap);
+  return workspaceGridColsForWidth(inner, gap);
+}
+
+function placedTiles(
+  channels: UserChannel[],
+  layout: Map<number, WorkspaceTileLayout>,
+): PlacedPuzzleTile[] {
+  return channels.map((c) => {
+    const tile = layout.get(c.id)!;
+    return { channelId: c.id, ...tile };
+  });
+}
+
+function resolvePlacement(
+  root: HTMLElement,
+  gridCols: number,
+  footprint: { colSpan: number; rowSpan: number },
+  placed: PlacedPuzzleTile[],
+  clientX: number,
+  clientY: number,
+  skipId: number | null,
+): GridCell | null {
+  const cell = pointerToGridCell(root, clientX, clientY, gridCols);
+  const occupied = buildOccupancy(placed, gridCols, skipId);
+  return placementNearPointer(cell.col, cell.row, footprint.colSpan, footprint.rowSpan, gridCols, occupied);
 }
 
 export function ChannelWorkspace({
@@ -105,28 +121,19 @@ export function ChannelWorkspace({
   onToggleMonitor: (id: number) => void;
   onUndock: (id: number) => void;
   onMakePrimary: (id: number) => void;
-  onDockFromRail: (id: number, insertAt?: number) => void;
+  onDockFromRail: (id: number, at?: { col: number; row: number }) => void;
 }) {
   const rootRef = useRef<HTMLElement | null>(null);
+  const [gridCols, setGridCols] = useState(2);
   const [dockDragOver, setDockDragOver] = useState(false);
   const [moveChannelId, setMoveChannelId] = useState<number | null>(null);
   const moveChannelIdRef = useRef<number | null>(null);
   moveChannelIdRef.current = moveChannelId;
-  const [dragOverChannelId, setDragOverChannelId] = useState<number | null>(null);
-  const [dropEdge, setDropEdge] = useState<WorkspaceDropEdge | null>(null);
-  const [dragInsertIndex, setDragInsertIndex] = useState<number | null>(null);
-  const [dragLayoutOrder, setDragLayoutOrder] = useState<number[]>([]);
-  const dragLayoutOrderRef = useRef<number[]>([]);
-  const [railDragPointer, setRailDragPointer] = useState<{ x: number; y: number } | null>(
+  const [previewCell, setPreviewCell] = useState<GridCell | null>(null);
+  const [railDragPointer, setRailDragPointer] = useState<{ x: number; y: number } | null>(null);
+  const [workspaceDragPointer, setWorkspaceDragPointer] = useState<{ x: number; y: number } | null>(
     null,
   );
-  /** Cursor position while reordering a tile already in the workspace. */
-  const [workspaceDragPointer, setWorkspaceDragPointer] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-  const [cols, setCols] = useState(1);
-  /** Tile the user last clicked — kept above neighbors so it does not look hidden. */
   const [frontChannelId, setFrontChannelId] = useState<number | null>(null);
 
   const railDrag = useSyncExternalStore(
@@ -136,8 +143,6 @@ export function ChannelWorkspace({
   );
 
   const { workspaceLayout } = useConsoleState();
-  const channelIds = useMemo(() => dockedChannels.map((c) => c.id), [dockedChannels]);
-  const byId = useMemo(() => new Map(dockedChannels.map((c) => [c.id, c])), [dockedChannels]);
 
   const tilesById = useMemo(() => {
     const map = new Map<number, WorkspaceTileLayout>();
@@ -147,56 +152,35 @@ export function ChannelWorkspace({
     return map;
   }, [dockedChannels, workspaceLayout]);
 
-  const orderForPreview =
-    moveChannelId !== null && dragLayoutOrder.length > 0 ? dragLayoutOrder : channelIds;
+  const sortedChannels = useMemo(() => {
+    return [...dockedChannels].sort((a, b) => {
+      const ta = tilesById.get(a.id)!;
+      const tb = tilesById.get(b.id)!;
+      return ta.row - tb.row || ta.col - tb.col || a.name.localeCompare(b.name);
+    });
+  }, [dockedChannels, tilesById]);
 
-  const previewIds = useMemo(() => {
-    if (moveChannelId === null) {
-      return orderForPreview;
+  const gridRowCount = useMemo(() => {
+    const placed = placedTiles(sortedChannels, tilesById);
+    const moving = moveChannelId ? tilesById.get(moveChannelId) : null;
+    let rows = maxGridRow(placed);
+    if (previewCell && moving) {
+      rows = Math.max(rows, previewCell.row + moving.rowSpan);
     }
-    if (dragOverChannelId !== null && dropEdge !== null) {
-      return previewWorkspaceOrder(
-        orderForPreview,
-        moveChannelId,
-        dragOverChannelId,
-        dropEdge,
-        false,
-      );
-    }
-    if (dragInsertIndex !== null) {
-      return previewWorkspaceOrderAtIndex(orderForPreview, moveChannelId, dragInsertIndex);
-    }
-    return orderForPreview;
-  }, [orderForPreview, moveChannelId, dragOverChannelId, dropEdge, dragInsertIndex]);
-
-  const displayChannels = useMemo(
-    () =>
-      previewIds
-        .map((id) => byId.get(id))
-        .filter((c): c is UserChannel => c !== undefined),
-    [previewIds, byId],
-  );
-
-  const placeholderIndex =
-    moveChannelId !== null ? previewIds.indexOf(moveChannelId) : -1;
+    return Math.max(4, rows + 1);
+  }, [sortedChannels, tilesById, previewCell, moveChannelId]);
 
   const reorderDragPreview = useMemo(() => {
     if (moveChannelId === null) {
       return null;
     }
-    const channel = byId.get(moveChannelId);
+    const channel = dockedChannels.find((c) => c.id === moveChannelId);
     if (!channel) {
       return null;
     }
     const tile = tilesById.get(moveChannelId) ?? getWorkspaceTile(moveChannelId);
-    return railDragPreviewFromChannel(channel, tile, cols);
-  }, [moveChannelId, byId, tilesById, cols]);
-
-  const clearDragOver = useCallback(() => {
-    setDragOverChannelId(null);
-    setDropEdge(null);
-    setDragInsertIndex(null);
-  }, []);
+    return railDragPreviewFromChannel(channel, tile, gridCols);
+  }, [moveChannelId, dockedChannels, tilesById, gridCols]);
 
   useEffect(() => {
     const clearRailDrag = () => setRailDragPreview(null);
@@ -210,10 +194,8 @@ export function ChannelWorkspace({
         return;
       }
       setMoveChannelId(null);
-      setDragLayoutOrder([]);
-      dragLayoutOrderRef.current = [];
+      setPreviewCell(null);
       setWorkspaceDragPointer(null);
-      clearDragOver();
     }
     window.addEventListener("pointerup", clearStuckReorder);
     window.addEventListener("pointercancel", clearStuckReorder);
@@ -221,19 +203,19 @@ export function ChannelWorkspace({
       window.removeEventListener("pointerup", clearStuckReorder);
       window.removeEventListener("pointercancel", clearStuckReorder);
     };
-  }, [clearDragOver]);
+  }, []);
 
   useEffect(() => {
     const root = rootRef.current;
     if (!root || typeof ResizeObserver === "undefined") {
-      const c = gridCols(root);
-      setCols(c);
+      const c = readGridCols(root);
+      setGridCols(c);
       syncWorkspaceTilesForViewport(c);
       return;
     }
     const update = () => {
-      const c = gridCols(root);
-      setCols(c);
+      const c = readGridCols(root);
+      setGridCols(c);
       syncWorkspaceTilesForViewport(c);
     };
     update();
@@ -250,7 +232,15 @@ export function ChannelWorkspace({
     e.dataTransfer.dropEffect = "move";
     setDockDragOver(true);
     setRailDragPointer({ x: e.clientX, y: e.clientY });
-  }, []);
+    const root = rootRef.current;
+    if (!root || !railDrag) {
+      return;
+    }
+    const foot = workspacePresetForSize(railDrag.size);
+    const placed = placedTiles(sortedChannels, tilesById);
+    const at = resolvePlacement(root, gridCols, foot, placed, e.clientX, e.clientY, null);
+    setPreviewCell(at);
+  }, [railDrag, sortedChannels, tilesById, gridCols]);
 
   const handleRailDrop = useCallback(
     (e: DragEvent) => {
@@ -259,7 +249,7 @@ export function ChannelWorkspace({
       setDockDragOver(false);
       setRailDragPointer(null);
       setRailDragPreview(null);
-      clearDragOver();
+      setPreviewCell(null);
       const raw =
         e.dataTransfer.getData("text/channel-id") || e.dataTransfer.getData("text/plain");
       const id = Number(raw);
@@ -267,15 +257,19 @@ export function ChannelWorkspace({
         return;
       }
       const root = rootRef.current;
-      const visual = rowMajorOrderFromDom(root, channelIds, null);
-      const drop = findWorkspaceDropTarget(root, e.clientX, e.clientY, visual, null);
-      const insertAt = insertIndexFromPointer(e.clientX, e.clientY, root, channelIds);
-      onDockFromRail(id, insertAt);
-      if (drop?.edge === "under") {
-        setWorkspaceTileSize(id, "small", cols);
-      }
+      const channel = dockedChannels.find((c) => c.id === id);
+      const { size } = workspacePreviewForChannel(
+        channel ?? { id, name: "", color: null, simulcast: false } as UserChannel,
+        !!channel,
+      );
+      const foot = workspacePresetForSize(size);
+      const placed = placedTiles(sortedChannels, tilesById);
+      const at =
+        resolvePlacement(root, gridCols, foot, placed, e.clientX, e.clientY, null) ??
+        previewCell;
+      onDockFromRail(id, at ?? undefined);
     },
-    [channelIds, cols, onDockFromRail, clearDragOver],
+    [dockedChannels, sortedChannels, tilesById, gridCols, previewCell, onDockFromRail],
   );
 
   function bringTileToFront(channelId: number) {
@@ -313,49 +307,19 @@ export function ChannelWorkspace({
         handle.setPointerCapture(ev.pointerId);
         setMoveChannelId(channelId);
         setWorkspaceDragPointer({ x: ev.clientX, y: ev.clientY });
-        clearDragOver();
-        const rootAtStart = rootRef.current;
-        if (rootAtStart) {
-          const frozen = rowMajorOrderFromDom(rootAtStart, channelIds, channelId);
-          dragLayoutOrderRef.current = frozen;
-          setDragLayoutOrder(frozen);
-        }
       }
       setWorkspaceDragPointer({ x: ev.clientX, y: ev.clientY });
       const root = rootRef.current;
-      if (!root) {
+      const tile = tilesById.get(channelId);
+      if (!root || !tile) {
         return;
       }
-      const layoutBase =
-        dragLayoutOrderRef.current.length > 0 ? dragLayoutOrderRef.current : channelIds;
-      const drop = findWorkspaceDropTarget(root, ev.clientX, ev.clientY, layoutBase, channelId);
-      if (drop) {
-        setDragInsertIndex(null);
-        setDragOverChannelId(drop.targetId);
-        setDropEdge(drop.edge);
-      } else {
-        const rootRect = root.getBoundingClientRect();
-        const inRoot =
-          ev.clientX >= rootRect.left &&
-          ev.clientX <= rootRect.right &&
-          ev.clientY >= rootRect.top &&
-          ev.clientY <= rootRect.bottom;
-        setDragOverChannelId(null);
-        setDropEdge(null);
-        if (inRoot) {
-          setDragInsertIndex(
-            computeInsertIndexFromPointer(
-              root,
-              ev.clientX,
-              ev.clientY,
-              layoutBase,
-              channelId,
-            ),
-          );
-        } else {
-          setDragInsertIndex(null);
-        }
-      }
+      const others = placedTiles(
+        sortedChannels.filter((c) => c.id !== channelId),
+        tilesById,
+      );
+      const at = resolvePlacement(root, gridCols, tile, others, ev.clientX, ev.clientY, channelId);
+      setPreviewCell(at);
     };
 
     const onEnd = (ev: globalThis.PointerEvent) => {
@@ -369,49 +333,22 @@ export function ChannelWorkspace({
         return;
       }
       const root = rootRef.current;
-      if (!root) {
-        setMoveChannelId(null);
-        setDragLayoutOrder([]);
-        dragLayoutOrderRef.current = [];
-        setWorkspaceDragPointer(null);
-        clearDragOver();
-        handle.removeEventListener("pointermove", onMove);
-        handle.removeEventListener("pointerup", onEnd);
-        handle.removeEventListener("pointercancel", onEnd);
-        return;
-      }
-      const visual = rowMajorOrderFromDom(root, channelIds, channelId);
-      const drop = findWorkspaceDropTarget(root, ev.clientX, ev.clientY, visual, channelId);
-      if (drop) {
-        setWorkspaceChannelOrder(
-          orderAfterDrop(visual, channelId, drop.targetId, drop.edge),
+      const tile = tilesById.get(channelId);
+      if (root && tile) {
+        const others = placedTiles(
+          sortedChannels.filter((c) => c.id !== channelId),
+          tilesById,
         );
-        if (drop.edge === "under") {
-          setWorkspaceTileSize(channelId, "small", cols);
-        }
-      } else {
-        const rootRect = root.getBoundingClientRect();
-        const inRoot =
-          ev.clientX >= rootRect.left &&
-          ev.clientX <= rootRect.right &&
-          ev.clientY >= rootRect.top &&
-          ev.clientY <= rootRect.bottom;
-        if (inRoot) {
-          const insertAt = computeInsertIndexFromPointer(
-            root,
-            ev.clientX,
-            ev.clientY,
-            visual,
-            channelId,
-          );
-          setWorkspaceChannelOrder(orderFromInsertIndex(visual, channelId, insertAt));
+        const at =
+          resolvePlacement(root, gridCols, tile, others, ev.clientX, ev.clientY, channelId) ??
+          previewCell;
+        if (at) {
+          placeWorkspaceTile(channelId, at.col, at.row, gridCols);
         }
       }
       setMoveChannelId(null);
-      setDragLayoutOrder([]);
-      dragLayoutOrderRef.current = [];
+      setPreviewCell(null);
       setWorkspaceDragPointer(null);
-      clearDragOver();
       handle.removeEventListener("pointermove", onMove);
       handle.removeEventListener("pointerup", onEnd);
       handle.removeEventListener("pointercancel", onEnd);
@@ -425,30 +362,20 @@ export function ChannelWorkspace({
   function renderTile(channel: UserChannel): ReactNode {
     const tile = tilesById.get(channel.id) ?? getWorkspaceTile(channel.id);
     const size = workspaceTileSize(tile);
-    const colSpan = Math.max(1, Math.min(tile.colSpan, cols));
-    const rowSpan = Math.max(1, Math.min(tile.rowSpan, WORKSPACE_MAX_ROW_SPAN));
-    const workspaceWide = colSpan >= 2;
+    const workspaceWide = tile.colSpan >= 2;
     const monitoring = open.includes(channel.id);
-    const footprint = workspaceTileFootprintLabel(tile);
-    const isDragging = moveChannelId === channel.id;
     const isFront = frontChannelId === channel.id || primary === channel.id;
-    const isDropTarget =
-      dragOverChannelId === channel.id && dropEdge !== null;
+    const gridPos = gridStyleForTile(tile);
+
     return (
       <div
         key={channel.id}
         data-channel-id={channel.id}
         className={`channel-workspace-tile widget-${size}${!monitoring ? " channel-off" : ""}${
           isFront ? " tile-front" : ""
-        }${isDragging ? " moving" : ""}${
-          isDropTarget
-            ? ` drag-target drop-${dropEdge === "under" ? "after" : dropEdge}${
-                dropEdge === "under" ? " drop-stack-under" : ""
-              }`
-            : ""
         }`}
-        style={{ gridColumn: `span ${colSpan}`, gridRow: `span ${rowSpan}` }}
-        title={`${channel.name} · ${footprint}`}
+        style={gridPos}
+        title={`${channel.name} · ${workspaceTileFootprintLabel(tile)}`}
       >
         <div
           className="channel-workspace-tile-inner"
@@ -469,11 +396,11 @@ export function ChannelWorkspace({
             onMakePrimary={() => onMakePrimary(channel.id)}
             workspaceChrome={{
               sizeLabel: SIZE_LABEL[size],
-              sizeTitle: nextSizeTitle(size, tile),
-              onCycleSize: () => cycleWorkspaceTileSize(channel.id, cols),
+              sizeTitle: nextSizeTitle(size),
+              onCycleSize: () => cycleWorkspaceTileSize(channel.id, gridCols),
               onClose: () => onUndock(channel.id),
               onDragPointerDown: (e) => beginMove(e, channel.id),
-              isDragging,
+              isDragging: false,
             }}
           />
           {!monitoring && <div className="channel-off-overlay" aria-hidden />}
@@ -482,59 +409,40 @@ export function ChannelWorkspace({
     );
   }
 
-  function renderDropPlaceholder(colSpan: number, rowSpan: number, key: string): ReactNode {
+  function renderPlaceholder(tile: { colSpan: number; rowSpan: number; col: number; row: number }, key: string) {
     return (
       <div
         key={key}
         className="channel-workspace-drop-placeholder"
-        style={{ gridColumn: `span ${colSpan}`, gridRow: `span ${rowSpan}` }}
+        style={gridStyleForTile(tile)}
         aria-hidden
       />
     );
   }
 
   const gridChildren: ReactNode[] = [];
-  if (moveChannelId !== null && placeholderIndex >= 0) {
-    const movingTile = tilesById.get(moveChannelId);
-    const phSpan = movingTile
-      ? Math.max(1, Math.min(movingTile.colSpan, cols))
-      : 1;
-    const phRows = movingTile
-      ? Math.max(1, Math.min(movingTile.rowSpan, WORKSPACE_MAX_ROW_SPAN))
-      : 1;
-    displayChannels.forEach((channel, index) => {
-      if (index === placeholderIndex) {
-        gridChildren.push(renderDropPlaceholder(phSpan, phRows, "drop-placeholder"));
-      }
-      if (channel.id !== moveChannelId) {
-        gridChildren.push(renderTile(channel));
-      }
-    });
-  } else if (railDrag && dockDragOver) {
-    const phSpan = Math.max(1, Math.min(railDrag.colSpan, cols));
-    const phRows = 1;
-    const insertAt =
-      rootRef.current && railDragPointer
-        ? insertIndexFromPointer(
-            railDragPointer.x,
-            railDragPointer.y,
-            rootRef.current,
-            channelIds,
-          )
-        : channelIds.length;
-    displayChannels.forEach((channel, index) => {
-      if (index === insertAt) {
-        gridChildren.push(renderDropPlaceholder(phSpan, phRows, "rail-drop-placeholder"));
-      }
-      gridChildren.push(renderTile(channel));
-    });
-    if (insertAt >= displayChannels.length) {
-      gridChildren.push(renderDropPlaceholder(phSpan, phRows, "rail-drop-placeholder-end"));
+  for (const channel of sortedChannels) {
+    if (channel.id === moveChannelId) {
+      continue;
     }
-  } else {
-    displayChannels.forEach((channel) => {
-      gridChildren.push(renderTile(channel));
-    });
+    gridChildren.push(renderTile(channel));
+  }
+
+  if (previewCell) {
+    const ph =
+      moveChannelId !== null
+        ? tilesById.get(moveChannelId)
+        : railDrag
+          ? workspacePresetForSize(railDrag.size)
+          : null;
+    if (ph) {
+      gridChildren.push(
+        renderPlaceholder(
+          { ...ph, col: previewCell.col, row: previewCell.row },
+          moveChannelId !== null ? "reorder-placeholder" : "rail-placeholder",
+        ),
+      );
+    }
   }
 
   const railFollower =
@@ -563,46 +471,49 @@ export function ChannelWorkspace({
 
   return (
     <>
-    {railFollower}
-    {reorderFollower}
-    <section
-      ref={rootRef}
-      className={`channel-workspace-rows channel-workspace-grid${
-        acceptRailDrop ? " drag-over accepting-rail-drop" : ""
-      }${moveChannelId !== null ? " reordering" : ""}`}
-      aria-label="Channel workspace"
-      style={{
-        gridTemplateColumns: `repeat(auto-fill, minmax(${WORKSPACE_MIN_COL_PX}px, 1fr))`,
-        ["--workspace-row-unit" as string]: `${WORKSPACE_GRID_ROW_MIN_PX}px`,
-      }}
-      onDragEnter={handleRailDragOver}
-      onDragOver={handleRailDragOver}
-      onDragLeave={(e) => {
-        const root = rootRef.current;
-        if (root && e.relatedTarget instanceof Node && root.contains(e.relatedTarget)) {
-          return;
-        }
-        setDockDragOver(false);
-        setRailDragPointer(null);
-      }}
-      onDrop={handleRailDrop}
-      onPointerDown={() => {
-        if (!dockDragOver) {
-          setRailDragPreview(null);
-        }
-      }}
-    >
-      {dockedChannels.length === 0 ? (
-        <div className="channel-workspace-empty">
-          <p>Tap a channel in the list to open it here — or drag it in.</p>
-          <p className="muted">
-            Drag the colored name bar to reorder — drop under a channel to stack more (use S for compact) · S / M / L · ✕.
-          </p>
-        </div>
-      ) : (
-        gridChildren
-      )}
-    </section>
+      {railFollower}
+      {reorderFollower}
+      <section
+        ref={rootRef}
+        className={`channel-workspace-rows channel-workspace-grid${
+          acceptRailDrop ? " drag-over accepting-rail-drop" : ""
+        }${moveChannelId !== null ? " reordering" : ""}`}
+        aria-label="Channel workspace"
+        style={{
+          gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+          gridTemplateRows: `repeat(${gridRowCount}, var(--ws-row-unit))`,
+          ["--ws-cols" as string]: String(gridCols),
+          ["--ws-row-unit" as string]: `${WORKSPACE_GRID_ROW_PX}px`,
+        }}
+        onDragEnter={handleRailDragOver}
+        onDragOver={handleRailDragOver}
+        onDragLeave={(e) => {
+          const root = rootRef.current;
+          if (root && e.relatedTarget instanceof Node && root.contains(e.relatedTarget)) {
+            return;
+          }
+          setDockDragOver(false);
+          setRailDragPointer(null);
+          setPreviewCell(null);
+        }}
+        onDrop={handleRailDrop}
+        onPointerDown={() => {
+          if (!dockDragOver) {
+            setRailDragPreview(null);
+          }
+        }}
+      >
+        {dockedChannels.length === 0 ? (
+          <div className="channel-workspace-empty">
+            <p>Tap a channel in the list to open it here — or drag it in.</p>
+            <p className="muted">
+              Puzzle grid: S = 1×1 · M = 2×2 · L = 2×4. Drag the colored name bar to move.
+            </p>
+          </div>
+        ) : (
+          gridChildren
+        )}
+      </section>
     </>
   );
 }

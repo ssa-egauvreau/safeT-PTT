@@ -5,6 +5,13 @@
 
 import { useSyncExternalStore } from "react";
 import {
+  buildOccupancy,
+  firstOpenPlacement,
+  packTilesInOrder,
+  placementNearPointer,
+  type PuzzleTile,
+} from "./pages/workspacePuzzleGrid";
+import {
   DEFAULT_PTT_CODE,
   KEYBOARD_ENABLED_KEY,
   LAST_CHANNEL_KEY,
@@ -15,7 +22,7 @@ import {
 const STATE_KEY = "securityradio.console.state";
 
 /** Bump when workspace layout rules change — triggers one-time localStorage migration. */
-const CURRENT_LAYOUT_VERSION = 13;
+const CURRENT_LAYOUT_VERSION = 14;
 const MAX_STATE_STORAGE_BYTES = 256 * 1024;
 const MAX_OPEN_CHANNELS = 16;
 const MAX_DOCKED_CHANNELS = 12;
@@ -23,116 +30,87 @@ const COMMIT_STORM_LIMIT = 24;
 const COMMIT_STORM_WINDOW_MS = 2000;
 
 /**
- * One channel tile on the workspace grid. Spans are in **grid units** (columns × rows), not pixels:
- *   - small:  1×1 — PTT, volume, mute, user count
- *   - medium: 1×2 or 2×2 — adds last message + compact tone-outs (2×2 when width allows)
- *   - large:  1×3 or 2×3 — full panel + roster (extra rows when many users are connected)
+ * One channel tile on the workspace puzzle grid (fixed cell units):
+ *   - small:  1×1
+ *   - medium: 2×2
+ *   - large:  2×4
  */
 export interface WorkspaceTileLayout {
-  /** Column span (1–3 grid units). */
   colSpan: number;
-  /** Row span (1–6 grid units). */
   rowSpan: number;
+  /** Top-left column (0-based) on the grid. */
+  col: number;
+  /** Top-left row (0-based) on the grid. */
+  row: number;
 }
 
 export type WorkspaceWidgetSize = "small" | "medium" | "large";
 
-/** Minimum width of one workspace grid column. */
-export const WORKSPACE_MIN_COL_PX = 172;
-/** Maximum column units per tile. */
-export const WORKSPACE_MAX_COL_SPAN = 3;
-/** Maximum row units per tile (large + busy roster). */
-export const WORKSPACE_MAX_ROW_SPAN = 6;
-/** Maximum grid columns the workspace can fit (auto-fill). */
-export const WORKSPACE_MAX_COLS = 12;
+/** Puzzle grid: minimum columns (phone) and maximum (wide desktop). */
+export const WORKSPACE_GRID_MIN_COLS = 2;
+export const WORKSPACE_GRID_MAX_COLS = 10;
+/** Target cell width used to pick column count from container width. */
+export const WORKSPACE_GRID_CELL_PX = 88;
 /** Grid gap (px); kept in sync with layout math. */
 export const WORKSPACE_GRID_GAP_PX = 8;
-/** Minimum height of one workspace grid row unit (tiles use rowSpan × this). */
-export const WORKSPACE_GRID_ROW_MIN_PX = 64;
-export const WORKSPACE_MIN_ROW_SPAN = 1;
-export const WORKSPACE_MIN_COL_SPAN = 1;
-/** New tiles dock as medium (2×2 when wide enough, else 1×2). */
-export const WORKSPACE_DEFAULT_WIDGET_SIZE: WorkspaceWidgetSize = "medium";
+/** Height of one grid row unit (px). */
+export const WORKSPACE_GRID_ROW_PX = 72;
+/** @deprecated Use WORKSPACE_GRID_CELL_PX — kept for older imports. */
+export const WORKSPACE_MIN_COL_PX = WORKSPACE_GRID_CELL_PX;
+/** @deprecated Use WORKSPACE_GRID_MAX_COLS. */
+export const WORKSPACE_MAX_COLS = WORKSPACE_GRID_MAX_COLS;
+/** @deprecated Use WORKSPACE_GRID_ROW_PX. */
+export const WORKSPACE_GRID_ROW_MIN_PX = WORKSPACE_GRID_ROW_PX;
 
-/** The three widget sizes, in cycle order. */
+export const WORKSPACE_SMALL_COLS = 1;
+export const WORKSPACE_SMALL_ROWS = 1;
+export const WORKSPACE_MEDIUM_COLS = 2;
+export const WORKSPACE_MEDIUM_ROWS = 2;
+export const WORKSPACE_LARGE_COLS = 2;
+export const WORKSPACE_LARGE_ROWS = 4;
+
+/** New tiles dock as medium (2×2). */
+export const WORKSPACE_DEFAULT_WIDGET_SIZE: WorkspaceWidgetSize = "medium";
 export const WORKSPACE_WIDGET_SIZES: readonly WorkspaceWidgetSize[] = ["small", "medium", "large"];
 
-/** Base row span for a large tile before roster-based growth. */
-export const WORKSPACE_LARGE_BASE_ROW_SPAN = 3;
-
-/** Footprint for a widget size given how many columns fit in the workspace. */
-export function workspacePresetForSize(
-  size: WorkspaceWidgetSize,
-  availableCols = WORKSPACE_MAX_COLS,
-): WorkspaceTileLayout {
-  const cols = Math.max(1, Math.min(availableCols, WORKSPACE_MAX_COL_SPAN));
+/** Footprint for S / M / L (grid cell units). */
+export function workspacePresetForSize(size: WorkspaceWidgetSize): Pick<WorkspaceTileLayout, "colSpan" | "rowSpan"> {
   switch (size) {
     case "small":
-      return { colSpan: 1, rowSpan: 1 };
+      return { colSpan: WORKSPACE_SMALL_COLS, rowSpan: WORKSPACE_SMALL_ROWS };
     case "large":
-      return cols >= 2
-        ? { colSpan: 2, rowSpan: WORKSPACE_LARGE_BASE_ROW_SPAN }
-        : { colSpan: 1, rowSpan: WORKSPACE_LARGE_BASE_ROW_SPAN };
+      return { colSpan: WORKSPACE_LARGE_COLS, rowSpan: WORKSPACE_LARGE_ROWS };
     default:
-      return cols >= 2 ? { colSpan: 2, rowSpan: 2 } : { colSpan: 1, rowSpan: 2 };
+      return { colSpan: WORKSPACE_MEDIUM_COLS, rowSpan: WORKSPACE_MEDIUM_ROWS };
   }
 }
 
-/** Classify a stored tile into S / M / L from its grid footprint. */
-export function workspaceTileSize(tile: WorkspaceTileLayout): WorkspaceWidgetSize {
-  if (tile.colSpan <= 1 && tile.rowSpan <= 1) {
+export function workspaceTileSize(tile: Pick<WorkspaceTileLayout, "colSpan" | "rowSpan">): WorkspaceWidgetSize {
+  if (tile.colSpan <= WORKSPACE_SMALL_COLS && tile.rowSpan <= WORKSPACE_SMALL_ROWS) {
     return "small";
   }
-  if (tile.rowSpan >= WORKSPACE_LARGE_BASE_ROW_SPAN) {
+  if (tile.colSpan >= WORKSPACE_LARGE_COLS && tile.rowSpan >= WORKSPACE_LARGE_ROWS) {
     return "large";
   }
   return "medium";
 }
 
-/** Human-readable footprint, e.g. 2×3. */
-export function workspaceTileFootprintLabel(tile: WorkspaceTileLayout): string {
+export function workspaceTileFootprintLabel(tile: Pick<WorkspaceTileLayout, "colSpan" | "rowSpan">): string {
   return `${tile.colSpan}×${tile.rowSpan}`;
 }
 
-/** Extra row units for a large tile based on how many users are on the channel. */
-export function workspaceLargeRowSpanForRoster(memberCount: number, colSpan: number): number {
-  void colSpan;
-  const base = WORKSPACE_LARGE_BASE_ROW_SPAN;
-  if (memberCount <= 4) {
-    return base;
-  }
-  if (memberCount <= 8) {
-    return base + 1;
-  }
-  if (memberCount <= 12) {
-    return base + 2;
-  }
-  return WORKSPACE_MAX_ROW_SPAN;
-}
-
-/** How many equal grid columns fit at a container width (used to clamp tile colSpan). */
-export function workspaceColsForWidth(width: number, gap = WORKSPACE_GRID_GAP_PX): number {
+/** How many puzzle columns fit at this inner width (2 on phone → 10 max). */
+export function workspaceGridColsForWidth(width: number, gap = WORKSPACE_GRID_GAP_PX): number {
   if (!Number.isFinite(width) || width <= 0) {
-    return 1;
+    return WORKSPACE_GRID_MIN_COLS;
   }
-  const cols = Math.floor((width + gap) / (WORKSPACE_MIN_COL_PX + gap));
-  return Math.max(1, Math.min(WORKSPACE_MAX_COLS, cols));
+  const cols = Math.floor((width + gap) / (WORKSPACE_GRID_CELL_PX + gap));
+  return Math.max(WORKSPACE_GRID_MIN_COLS, Math.min(WORKSPACE_GRID_MAX_COLS, cols));
 }
 
-/** Clamp a tile's column span to grid units. */
-export function clampWorkspaceColSpan(colSpan: number): number {
-  if (!Number.isFinite(colSpan)) {
-    return workspacePresetForSize(WORKSPACE_DEFAULT_WIDGET_SIZE).colSpan;
-  }
-  return Math.max(WORKSPACE_MIN_COL_SPAN, Math.min(WORKSPACE_MAX_COL_SPAN, Math.round(colSpan)));
-}
-
-/** Clamp a tile's row span to grid units. */
-export function clampWorkspaceRowSpan(rowSpan: number): number {
-  if (!Number.isFinite(rowSpan)) {
-    return workspacePresetForSize(WORKSPACE_DEFAULT_WIDGET_SIZE).rowSpan;
-  }
-  return Math.max(WORKSPACE_MIN_ROW_SPAN, Math.min(WORKSPACE_MAX_ROW_SPAN, Math.round(rowSpan)));
+/** @deprecated Use workspaceGridColsForWidth. */
+export function workspaceColsForWidth(width: number, gap = WORKSPACE_GRID_GAP_PX): number {
+  return workspaceGridColsForWidth(width, gap);
 }
 
 export interface ConsoleState {
@@ -175,10 +153,15 @@ function parseWorkspaceLayout(raw: unknown): Record<string, WorkspaceTileLayout>
     const t = val as Record<string, unknown>;
     const colSpan = Number(t.colSpan);
     const rowSpan = Number(t.rowSpan);
+    const col = Number(t.col);
+    const row = Number(t.row);
     if (Number.isFinite(colSpan) && Number.isFinite(rowSpan)) {
+      const size = workspaceTileSize({ colSpan, rowSpan });
+      const preset = workspacePresetForSize(size);
       out[key] = {
-        colSpan: clampWorkspaceColSpan(colSpan),
-        rowSpan: clampWorkspaceRowSpan(rowSpan),
+        ...preset,
+        col: Number.isFinite(col) ? Math.max(0, Math.round(col)) : 0,
+        row: Number.isFinite(row) ? Math.max(0, Math.round(row)) : 0,
       };
     }
   }
@@ -266,13 +249,47 @@ function workspaceLayoutForExpanded(
   return out;
 }
 
-function tileIsValid(tile: WorkspaceTileLayout): boolean {
+function tileIsValid(tile: WorkspaceTileLayout, gridCols: number): boolean {
+  const size = workspaceTileSize(tile);
+  const preset = workspacePresetForSize(size);
   return (
-    tile.colSpan >= WORKSPACE_MIN_COL_SPAN &&
-    tile.colSpan <= WORKSPACE_MAX_COL_SPAN &&
-    tile.rowSpan >= WORKSPACE_MIN_ROW_SPAN &&
-    tile.rowSpan <= WORKSPACE_MAX_ROW_SPAN
+    tile.colSpan === preset.colSpan &&
+    tile.rowSpan === preset.rowSpan &&
+    Number.isFinite(tile.col) &&
+    Number.isFinite(tile.row) &&
+    tile.col >= 0 &&
+    tile.row >= 0 &&
+    tile.col + tile.colSpan <= gridCols
   );
+}
+
+function layoutFootprints(
+  expanded: number[],
+  layout: Record<string, WorkspaceTileLayout>,
+): Map<number, { colSpan: number; rowSpan: number }> {
+  const map = new Map<number, { colSpan: number; rowSpan: number }>();
+  for (const id of expanded) {
+    const prev = layout[layoutKey(id)];
+    const size = prev ? workspaceTileSize(prev) : WORKSPACE_DEFAULT_WIDGET_SIZE;
+    map.set(id, workspacePresetForSize(size));
+  }
+  return map;
+}
+
+function packLayout(
+  expanded: number[],
+  layout: Record<string, WorkspaceTileLayout>,
+  gridCols: number,
+): Record<string, WorkspaceTileLayout> {
+  const packed = packTilesInOrder(expanded, layoutFootprints(expanded, layout), gridCols);
+  const out: Record<string, WorkspaceTileLayout> = {};
+  for (const id of expanded) {
+    const tile = packed.get(id);
+    if (tile) {
+      out[layoutKey(id)] = tile;
+    }
+  }
+  return out;
 }
 
 /**
@@ -286,7 +303,7 @@ function normalizeConsoleState(input: ConsoleState): ConsoleState {
   const version = input.layoutVersion ?? 0;
   const needsLayoutReset =
     version < CURRENT_LAYOUT_VERSION ||
-    Object.values(workspaceLayout).some((t) => !tileIsValid(t)) ||
+    Object.values(workspaceLayout).some((t) => !tileIsValid(t, WORKSPACE_GRID_MAX_COLS)) ||
     Object.keys(input.workspaceLayout).length > expanded.length + 2;
 
   if (needsLayoutReset) {
@@ -529,7 +546,14 @@ function workspaceLayoutEqual(
   for (const key of keysA) {
     const ta = a[key];
     const tb = b[key];
-    if (!ta || !tb || ta.colSpan !== tb.colSpan || ta.rowSpan !== tb.rowSpan) {
+    if (
+      !ta ||
+      !tb ||
+      ta.colSpan !== tb.colSpan ||
+      ta.rowSpan !== tb.rowSpan ||
+      ta.col !== tb.col ||
+      ta.row !== tb.row
+    ) {
       return false;
     }
   }
@@ -563,74 +587,103 @@ export function resetMissionControlSavedData(): void {
   listeners.forEach((listener) => listener());
 }
 
-/** A docked tile at its default size. */
-function defaultWorkspaceTile(): WorkspaceTileLayout {
-  return workspacePresetForSize(WORKSPACE_DEFAULT_WIDGET_SIZE);
-}
-
-/**
- * Ensures every expanded channel has a valid tile and drops tiles for channels that are no longer
- * docked. There is no coordinate packing: the grid auto-flows tiles in docked order, so this only
- * carries each tile's span (clamped/snapped) forward.
- */
-function ensureWorkspaceLayout(
-  expanded: number[],
-  previous: Record<string, WorkspaceTileLayout>,
-): Record<string, WorkspaceTileLayout> {
-  const out: Record<string, WorkspaceTileLayout> = {};
-  for (const id of expanded) {
-    const key = layoutKey(id);
-    const prev = previous[key];
-    out[key] =
-      prev && tileIsValid(prev)
-        ? { colSpan: clampWorkspaceColSpan(prev.colSpan), rowSpan: clampWorkspaceRowSpan(prev.rowSpan) }
-        : defaultWorkspaceTile();
-  }
-  return out;
-}
-
-/** Carries docked tile spans forward when the docked set or order changes. */
-function relayoutWorkspace(
-  expanded: number[],
-  previous: Record<string, WorkspaceTileLayout>,
-): Record<string, WorkspaceTileLayout> {
-  return ensureWorkspaceLayout(expanded, previous);
-}
-
 /** Normalizes the workspace layout to exactly the docked channels (called on every commit). */
 function withPackedWorkspaceLayout(s: ConsoleState): ConsoleState {
   if (s.expanded.length === 0) {
     return { ...s, workspaceLayout: {} };
   }
-  return { ...s, workspaceLayout: ensureWorkspaceLayout(s.expanded, s.workspaceLayout) };
+  const cols = WORKSPACE_GRID_MAX_COLS;
+  const carried: Record<string, WorkspaceTileLayout> = {};
+  let needsPack = false;
+  for (const id of s.expanded) {
+    const key = layoutKey(id);
+    const prev = s.workspaceLayout[key];
+    if (prev && tileIsValid(prev, cols)) {
+      carried[key] = prev;
+    } else {
+      needsPack = true;
+    }
+  }
+  const workspaceLayout = needsPack
+    ? packLayout(s.expanded, { ...s.workspaceLayout, ...carried }, cols)
+    : workspaceLayoutForExpanded(s.expanded, carried);
+  return { ...s, workspaceLayout };
 }
 
 export function getWorkspaceTile(id: number): WorkspaceTileLayout {
   const stored = state.workspaceLayout[layoutKey(id)];
-  if (stored && tileIsValid(stored) && state.expanded.includes(id)) {
-    return {
-      colSpan: clampWorkspaceColSpan(stored.colSpan),
-      rowSpan: clampWorkspaceRowSpan(stored.rowSpan),
-    };
+  if (stored && tileIsValid(stored, WORKSPACE_GRID_MAX_COLS) && state.expanded.includes(id)) {
+    return stored;
   }
-  return defaultWorkspaceTile();
+  const preset = workspacePresetForSize(WORKSPACE_DEFAULT_WIDGET_SIZE);
+  return { ...preset, col: 0, row: 0 };
 }
 
-/** Set a docked tile to one of the three widget sizes (footprint depends on viewport width). */
-export function setWorkspaceTileSize(
+/** Set a docked tile to S / M / L and re-pack if it no longer fits at the same cell. */
+export function setWorkspaceTileSize(id: number, size: WorkspaceWidgetSize, gridCols: number): void {
+  if (!state.expanded.includes(id)) {
+    return;
+  }
+  placeWorkspaceTile(id, state.workspaceLayout[layoutKey(id)]?.col ?? 0, state.workspaceLayout[layoutKey(id)]?.row ?? 0, gridCols, size);
+}
+
+/** Advance a docked tile to the next widget size (small → medium → large → small). */
+export function cycleWorkspaceTileSize(id: number, gridCols: number): void {
+  const current = workspaceTileSize(getWorkspaceTile(id));
+  const idx = WORKSPACE_WIDGET_SIZES.indexOf(current);
+  const next = WORKSPACE_WIDGET_SIZES[(idx + 1) % WORKSPACE_WIDGET_SIZES.length]!;
+  setWorkspaceTileSize(id, next, gridCols);
+}
+
+/** Re-pack when the puzzle column count changes (2 on phone → 10 on wide screens). */
+export function syncWorkspaceTilesForViewport(gridCols: number): void {
+  if (state.expanded.length === 0) {
+    return;
+  }
+  const cols = Math.max(WORKSPACE_GRID_MIN_COLS, Math.min(WORKSPACE_GRID_MAX_COLS, gridCols));
+  const invalid = state.expanded.some((id) => {
+    const t = state.workspaceLayout[layoutKey(id)];
+    return !t || !tileIsValid(t, cols);
+  });
+  if (!invalid) {
+    return;
+  }
+  const workspaceLayout = packLayout(state.expanded, state.workspaceLayout, cols);
+  commit({ ...state, workspaceLayout });
+}
+
+/** Move a tile to a grid cell (puzzle placement). */
+export function placeWorkspaceTile(
   id: number,
-  size: WorkspaceWidgetSize,
-  availableCols = WORKSPACE_MAX_COLS,
+  col: number,
+  row: number,
+  gridCols: number,
+  size?: WorkspaceWidgetSize,
 ): void {
   if (!state.expanded.includes(id)) {
     return;
   }
+  const cols = Math.max(WORKSPACE_GRID_MIN_COLS, Math.min(WORKSPACE_GRID_MAX_COLS, gridCols));
   const key = layoutKey(id);
   const prev = state.workspaceLayout[key] ?? getWorkspaceTile(id);
-  const preset = workspacePresetForSize(size, availableCols);
-  const colSpan = Math.min(preset.colSpan, Math.max(1, availableCols));
-  const next: WorkspaceTileLayout = { colSpan, rowSpan: preset.rowSpan };
-  if (prev.colSpan === next.colSpan && prev.rowSpan === next.rowSpan) {
+  const footprint = workspacePresetForSize(size ?? workspaceTileSize(prev));
+  const placed = tilesFromState(state.expanded, state.workspaceLayout, cols).filter(
+    (t) => t.channelId !== id,
+  );
+  const occupied = buildOccupancy(placed, cols, id);
+  const spot =
+    placementNearPointer(col, row, footprint.colSpan, footprint.rowSpan, cols, occupied) ??
+    firstOpenPlacement(footprint.colSpan, footprint.rowSpan, cols, occupied);
+  if (!spot) {
+    return;
+  }
+  const next: WorkspaceTileLayout = { ...footprint, col: spot.col, row: spot.row };
+  if (
+    prev.col === next.col &&
+    prev.row === next.row &&
+    prev.colSpan === next.colSpan &&
+    prev.rowSpan === next.rowSpan
+  ) {
     return;
   }
   commit({
@@ -639,40 +692,19 @@ export function setWorkspaceTileSize(
   });
 }
 
-/** Advance a docked tile to the next widget size (small → medium → large → small). */
-export function cycleWorkspaceTileSize(id: number, availableCols = WORKSPACE_MAX_COLS): void {
-  const current = workspaceTileSize(getWorkspaceTile(id));
-  const idx = WORKSPACE_WIDGET_SIZES.indexOf(current);
-  const next = WORKSPACE_WIDGET_SIZES[(idx + 1) % WORKSPACE_WIDGET_SIZES.length]!;
-  setWorkspaceTileSize(id, next, availableCols);
-}
-
-/** Re-clamp column spans when the workspace gets narrower or wider. */
-export function syncWorkspaceTilesForViewport(availableCols: number): void {
-  if (state.expanded.length === 0) {
-    return;
-  }
-  const cols = Math.max(1, availableCols);
-  let changed = false;
-  const nextLayout = { ...state.workspaceLayout };
-  for (const id of state.expanded) {
-    const key = layoutKey(id);
-    const tile = nextLayout[key] ?? getWorkspaceTile(id);
-    const size = workspaceTileSize(tile);
-    const preset = workspacePresetForSize(size, cols);
-    const colSpan = Math.min(preset.colSpan, cols);
-    const clamped: WorkspaceTileLayout = {
-      colSpan: clampWorkspaceColSpan(colSpan),
-      rowSpan: preset.rowSpan,
-    };
-    if (tile.colSpan !== clamped.colSpan || tile.rowSpan !== clamped.rowSpan) {
-      nextLayout[key] = clamped;
-      changed = true;
+function tilesFromState(
+  expanded: number[],
+  layout: Record<string, WorkspaceTileLayout>,
+  gridCols: number,
+): Array<PuzzleTile & { channelId: number }> {
+  const out: Array<PuzzleTile & { channelId: number }> = [];
+  for (const id of expanded) {
+    const t = layout[layoutKey(id)];
+    if (t && tileIsValid(t, gridCols)) {
+      out.push({ channelId: id, ...t });
     }
   }
-  if (changed) {
-    commit({ ...state, workspaceLayout: nextLayout });
-  }
+  return out;
 }
 
 /** Reorder the docked sequence so the dragged tile lands before/after the target (drag-to-move). */
@@ -698,12 +730,15 @@ export function reorderWorkspaceTile(
   if (expandedOrderEqual(expanded, state.expanded)) {
     return;
   }
-  const workspaceLayout = relayoutWorkspace(expanded, state.workspaceLayout);
+  const workspaceLayout = packLayout(expanded, state.workspaceLayout, WORKSPACE_GRID_MAX_COLS);
   commitWorkspaceIfChanged(expanded, workspaceLayout);
 }
 
-/** Replace docked channel order (column-major sequence for the workspace grid). */
-export function setWorkspaceChannelOrder(expanded: number[]): void {
+/** Re-pack docked channels in list order (used when reordering). */
+export function setWorkspaceChannelOrder(
+  expanded: number[],
+  gridCols = WORKSPACE_GRID_MAX_COLS,
+): void {
   const safe = expanded.filter((id) => state.expanded.includes(id));
   if (safe.length !== state.expanded.length) {
     return;
@@ -711,34 +746,30 @@ export function setWorkspaceChannelOrder(expanded: number[]): void {
   if (expandedOrderEqual(safe, state.expanded)) {
     return;
   }
-  const workspaceLayout = relayoutWorkspace(safe, state.workspaceLayout);
+  const workspaceLayout = packLayout(safe, state.workspaceLayout, gridCols);
   commitWorkspaceIfChanged(safe, workspaceLayout);
 }
 
-/** Move a docked tile to the end of the sequence (drag onto empty workspace area). */
-export function moveWorkspaceTileToEnd(sourceId: number): void {
-  if (!state.expanded.includes(sourceId)) {
-    return;
-  }
-  setWorkspaceChannelOrder([...state.expanded.filter((id) => id !== sourceId), sourceId]);
-}
-
-/** Dock a channel on the workspace; optional insert index (left-to-right order). */
-export function dockChannel(id: number, insertAt?: number): void {
+/** Dock a channel on the workspace at a puzzle grid cell (optional). */
+export function dockChannel(
+  id: number,
+  at?: { col: number; row: number },
+  gridCols = WORKSPACE_GRID_MAX_COLS,
+): void {
+  const cols = Math.max(WORKSPACE_GRID_MIN_COLS, Math.min(WORKSPACE_GRID_MAX_COLS, gridCols));
   let expanded = [...state.expanded];
   if (!expanded.includes(id)) {
-    const at =
-      typeof insertAt === "number" && insertAt >= 0
-        ? Math.min(insertAt, expanded.length)
-        : expanded.length;
-    expanded.splice(at, 0, id);
+    expanded.push(id);
   }
-  const workspaceLayout = relayoutWorkspace(expanded, state.workspaceLayout);
+  const workspaceLayout = packLayout(expanded, state.workspaceLayout, cols);
   commitWorkspaceIfChanged(expanded, workspaceLayout);
+  if (at) {
+    placeWorkspaceTile(id, at.col, at.row, cols);
+  }
 }
 
-/** Reorder docked channel list without resetting tile positions on the grid. */
-export function reorderDockedChannels(orderedIds: number[]): void {
+/** Reorder docked channel list and re-pack the puzzle grid. */
+export function reorderDockedChannels(orderedIds: number[], gridCols = WORKSPACE_GRID_MAX_COLS): void {
   const expanded: number[] = [];
   for (const id of orderedIds) {
     if (state.expanded.includes(id) && !expanded.includes(id)) {
@@ -750,7 +781,7 @@ export function reorderDockedChannels(orderedIds: number[]): void {
       expanded.push(id);
     }
   }
-  const workspaceLayout = relayoutWorkspace(expanded, state.workspaceLayout);
+  const workspaceLayout = packLayout(expanded, state.workspaceLayout, gridCols);
   commitWorkspaceIfChanged(expanded, workspaceLayout);
 }
 
@@ -760,7 +791,7 @@ export function undockChannel(id: number): void {
     return;
   }
   const expanded = state.expanded.filter((x) => x !== id);
-  const workspaceLayout = relayoutWorkspace(expanded, state.workspaceLayout);
+  const workspaceLayout = packLayout(expanded, state.workspaceLayout, WORKSPACE_GRID_MAX_COLS);
   commitWorkspaceIfChanged(expanded, workspaceLayout);
 }
 
@@ -780,7 +811,7 @@ export function focusChannel(id: number): void {
   if (!expanded.includes(id)) {
     expanded = [...expanded, id];
   }
-  const workspaceLayout = relayoutWorkspace(expanded, state.workspaceLayout);
+  const workspaceLayout = packLayout(expanded, state.workspaceLayout, WORKSPACE_GRID_MAX_COLS);
   if (
     open.length === state.open.length &&
     open.every((cid, i) => cid === state.open[i]) &&
@@ -809,7 +840,7 @@ export function reconcileChannels(availableIds: number[]): void {
   const allowed = new Set(availableIds);
   const open = state.open.filter((id) => allowed.has(id));
   const expanded = state.expanded.filter((id) => allowed.has(id));
-  const workspaceLayout = relayoutWorkspace(expanded, state.workspaceLayout);
+  const workspaceLayout = packLayout(expanded, state.workspaceLayout, WORKSPACE_GRID_MAX_COLS);
   if (
     open.length === state.open.length &&
     expanded.length === state.expanded.length &&

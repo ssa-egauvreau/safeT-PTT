@@ -1,4 +1,5 @@
 import type { UserChannel } from "../api";
+import { ghostWidthPx } from "./workspacePuzzleGrid";
 import {
   WORKSPACE_DEFAULT_WIDGET_SIZE,
   WORKSPACE_GRID_GAP_PX,
@@ -39,18 +40,25 @@ export function setRailDragPreview(preview: RailDragPreview | null): void {
 export function workspacePreviewForChannel(
   channel: UserChannel,
   docked: boolean,
-  availableCols = 4,
 ): { size: WorkspaceWidgetSize; colSpan: number } {
   if (docked) {
     const tile = getWorkspaceTile(channel.id);
     return { size: workspaceTileSize(tile), colSpan: tile.colSpan };
   }
-  const preset = workspacePresetForSize(WORKSPACE_DEFAULT_WIDGET_SIZE, availableCols);
+  const preset = workspacePresetForSize(WORKSPACE_DEFAULT_WIDGET_SIZE);
   return { size: WORKSPACE_DEFAULT_WIDGET_SIZE, colSpan: preset.colSpan };
 }
 
-export function workspaceGhostWidthPx(colSpan: number, gap = WORKSPACE_GRID_GAP_PX): number {
+export function workspaceGhostWidthPx(
+  colSpan: number,
+  gridCols = 4,
+  containerInnerWidth?: number,
+  gap = WORKSPACE_GRID_GAP_PX,
+): number {
   const span = Math.max(1, colSpan);
+  if (containerInnerWidth && containerInnerWidth > 0) {
+    return ghostWidthPx(span, gridCols, containerInnerWidth, gap);
+  }
   return span * WORKSPACE_MIN_COL_PX + (span - 1) * gap;
 }
 

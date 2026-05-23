@@ -9,6 +9,8 @@ import { SectionHeader, type SectionProps } from "./PopOutSection";
 import { keyLabel } from "./consoleShared";
 import {
   dockChannel,
+  placeWorkspaceTile,
+  WORKSPACE_GRID_MAX_COLS,
   focusChannel,
   reconcileChannels,
   resetMissionControlSavedData,
@@ -16,7 +18,6 @@ import {
   setKeyboardOn,
   setPrimaryChannel,
   setPttCode,
-  setWorkspaceChannelOrder,
   undockChannel,
   useConsoleState,
 } from "../consoleStore";
@@ -44,16 +45,11 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
     .filter((c): c is UserChannel => !!c);
   const dockedIdSet = new Set(expanded);
 
-  function dockFromRail(id: number, insertAt?: number) {
+  function dockFromRail(id: number, at?: { col: number; row: number }) {
     if (!expanded.includes(id)) {
-      dockChannel(id, insertAt);
-    } else {
-      const without = expanded.filter((x) => x !== id);
-      const at =
-        typeof insertAt === "number" && insertAt >= 0
-          ? Math.min(insertAt, without.length)
-          : without.length;
-      setWorkspaceChannelOrder([...without.slice(0, at), id, ...without.slice(at)]);
+      dockChannel(id, at);
+    } else if (at) {
+      placeWorkspaceTile(id, at.col, at.row, WORKSPACE_GRID_MAX_COLS);
     }
     if (!open.includes(id)) {
       setChannelMonitoring(id, true);
