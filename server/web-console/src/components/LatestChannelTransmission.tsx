@@ -51,7 +51,8 @@ export function LatestChannelTransmission({
   const urlCache = useRef<Map<number, string>>(new Map());
 
   const ws = workspaceSize;
-  const wsCompact = ws === "small" || ws === "medium" || ws === "large";
+  /** Compact card layout for Mission Control tiles (not “hide live talker”). */
+  const wsCardLayout = ws === "small" || ws === "medium" || ws === "large";
 
   useEffect(() => {
     const cache = urlCache.current;
@@ -119,36 +120,44 @@ export function LatestChannelTransmission({
   const isPlaying = latestTx != null && playingId === latestTx.id;
   const isBusy = latestTx != null && busyId === latestTx.id;
 
+  const liveNow = showLive && liveTalker ? (
+    <div
+      className={ws ? "live-tx-now live-tx-now--ws" : "live-tx-now"}
+      role="status"
+      aria-live="polite"
+    >
+      {liveTalker.scanChannel ? (
+        <span className="live-tx-badge scan">SCAN · {liveTalker.scanChannel}</span>
+      ) : (
+        <span className="live-tx-badge rx">Receiving</span>
+      )}
+      <div className="live-tx-talker">
+        <span className="live-tx-unit">{liveTalker.unitId}</span>
+        {liveTalker.displayName ? (
+          <span className="live-tx-name">{liveTalker.displayName}</span>
+        ) : (
+          <span className="live-tx-name muted">On the air</span>
+        )}
+      </div>
+      {!ws && (
+        <p className="live-tx-pending muted">
+          Transcript appears here after they release the key.
+        </p>
+      )}
+    </div>
+  ) : null;
+
   return (
     <div className={rootClass}>
-      {showLive && liveTalker && !wsCompact && (
-        <div className="live-tx-now" role="status" aria-live="polite">
-          {liveTalker.scanChannel ? (
-            <span className="live-tx-badge scan">SCAN RX · {liveTalker.scanChannel}</span>
-          ) : (
-            <span className="live-tx-badge rx">RECEIVING</span>
-          )}
-          <div className="live-tx-talker">
-            <span className="live-tx-unit">{liveTalker.unitId}</span>
-            {liveTalker.displayName ? (
-              <span className="live-tx-name">{liveTalker.displayName}</span>
-            ) : (
-              <span className="live-tx-name muted">On the air</span>
-            )}
-          </div>
-          <p className="live-tx-pending muted">
-            Transcript appears here after they release the key.
-          </p>
-        </div>
-      )}
+      {liveNow}
 
       {latestTx ? (
-        <div className={`live-tx-card${wsCompact ? " live-tx-card--ws" : ""}`}>
-          {wsCompact ? (
+        <div className={`live-tx-card${wsCardLayout ? " live-tx-card--ws" : ""}`}>
+          {wsCardLayout ? (
             <>
               <div className="live-tx-card-top">
                 <div className="live-tx-card-title-row">
-                  <IconWaveform size={ws === "small" ? 10 : 11} />
+                  <IconWaveform size={ws === "small" ? 11 : 12} />
                   <span className="live-tx-card-title">
                     {showLive ? "Last" : "Latest"}
                   </span>
@@ -175,9 +184,9 @@ export function LatestChannelTransmission({
                   title={isPlaying ? "Pause" : isBusy ? "Loading…" : "Play"}
                 >
                   {isPlaying ? (
-                    <IconPause size={ws === "small" ? 12 : 14} />
+                    <IconPause size={ws === "small" ? 13 : 15} />
                   ) : (
-                    <IconPlay size={ws === "small" ? 12 : 14} />
+                    <IconPlay size={ws === "small" ? 13 : 15} />
                   )}
                 </button>
               </div>

@@ -12,6 +12,7 @@ import { AudioLevelMeter } from "../voice/AudioLevelMeter";
 import { ChannelMemberCount } from "../components/ChannelMemberCount";
 import { ChannelRoster } from "./ChannelRoster";
 import { LatestChannelTransmission } from "../components/LatestChannelTransmission";
+import { useChannelRoster } from "../hooks/useChannelRoster";
 import type { WorkspaceWidgetSize } from "../consoleStore";
 import { sounds } from "../sounds";
 import { useToneOuts, loadTonePcm, ToneOutBadge } from "../toneOuts";
@@ -533,6 +534,11 @@ export function ChannelPanel({
   const showLiveTx = workspace;
   const showRoster = workspace && (wsSize === "medium" || wsSize === "large");
   const showAiToggle = workspace && (wsSize === "medium" || wsSize === "large");
+  const rosterPollEnabled = monitoring && (showRoster || showMemberCount);
+  const { members: rosterMembers, count: rosterCount } = useChannelRoster(
+    channel.name,
+    rosterPollEnabled,
+  );
   const showStopAllTop = workspace && wsSize === "large";
   /** Full XMIT pad only on large — S/M use the toolbar PTT. */
   const showMainTxButton = !workspace || wsSize === "large";
@@ -660,6 +666,7 @@ export function ChannelPanel({
                   <ChannelMemberCount
                     channelName={channel.name}
                     iconSize={wsIcon?.member ?? 14}
+                    count={rosterCount}
                   />
                 )}
               </div>
@@ -779,13 +786,9 @@ export function ChannelPanel({
       {expanded && (
       <div className={`ch-card-body${workspace ? " workspace-dense" : ""}`}>
       {showControlRow && (
-        <div className={`ch-control-row${workspace ? " workspace-control-row" : ""}`}>
-          {showPermission && (
-            <div className="live-meta">
-              Permission: <strong>{PERMISSION_LABEL[permission]}</strong>
-            </div>
-          )}
-
+        workspace && showPermission ? (
+        <div className="ch-ws-meta-row">
+          <span className="ch-ws-permission">{PERMISSION_LABEL[permission]}</span>
           {showPttAssign && (
             <div className="cp-ptt-assign">
               {primary ? (
@@ -805,6 +808,33 @@ export function ChannelPanel({
             </div>
           )}
         </div>
+        ) : (
+        <div className={`ch-control-row${workspace ? " workspace-control-row" : ""}`}>
+          {showPermission && (
+            <div className="live-meta">
+              Permission: <strong>{PERMISSION_LABEL[permission]}</strong>
+            </div>
+          )}
+          {showPttAssign && (
+            <div className="cp-ptt-assign">
+              {primary ? (
+                <span className="cp-primary" title="Keyboard PTT controls this channel">
+                  Keyboard PTT
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="ch-setprimary"
+                  onClick={onMakePrimary}
+                  title="Use the keyboard PTT for this channel"
+                >
+                  Set keyboard PTT
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        )
       )}
 
       {volumeRow}
@@ -890,42 +920,46 @@ export function ChannelPanel({
       )}
 
       {showLiveTx && monitoring && (
-        <LatestChannelTransmission
-          variant="console"
-          channelName={channel.name}
-          active={monitoring && connected}
-          homeReceiving={receiving && !transmitting}
-          workspaceSize={workspace ? wsSize : undefined}
-          logHint={
-            wsSize === "large"
-              ? "Open the transmission log below for full history."
-              : ""
-          }
-        />
+        <section className="ch-ws-section ch-ws-section--transmissions" aria-label="Transmissions">
+          <LatestChannelTransmission
+            variant="console"
+            channelName={channel.name}
+            active={monitoring && connected}
+            homeReceiving={receiving && !transmitting}
+            workspaceSize={workspace ? wsSize : undefined}
+            logHint={
+              wsSize === "large"
+                ? "Full history is in the transmission log below."
+                : ""
+            }
+          />
+        </section>
       )}
 
       {showAiToggle && (
-        <div className="ws-ai-row">
-          <span className="ws-ai-label">AI dispatch</span>
-          <div className="ws-ai-controls">
-            <span className={`ws-ai-state${aiDispatch ? " on" : ""}`}>
-              {aiDispatch ? "On" : "Off"}
-            </span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={aiDispatch}
-              aria-label={`AI dispatch ${aiDispatch ? "on" : "off"}`}
-              className={`ws-toggle${aiDispatch ? " on" : ""}`}
-              disabled={!aiDispatchReady}
-              onClick={toggleAiDispatch}
-              title={
-                aiDispatchHint ??
-                "When on, unit transmissions on this channel can trigger an AI dispatcher reply on the air."
-              }
-            />
+        <section className="ch-ws-section ch-ws-section--ai" aria-label="AI dispatch">
+          <div className="ws-ai-row">
+            <span className="ws-ai-label">AI dispatch</span>
+            <div className="ws-ai-controls">
+              <span className={`ws-ai-state${aiDispatch ? " on" : ""}`}>
+                {aiDispatch ? "On" : "Off"}
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={aiDispatch}
+                aria-label={`AI dispatch ${aiDispatch ? "on" : "off"}`}
+                className={`ws-toggle${aiDispatch ? " on" : ""}`}
+                disabled={!aiDispatchReady}
+                onClick={toggleAiDispatch}
+                title={
+                  aiDispatchHint ??
+                  "When on, unit transmissions on this channel can trigger an AI dispatcher reply on the air."
+                }
+              />
+            </div>
           </div>
-        </div>
+        </section>
       )}
 
       {showActionsGrid && (
@@ -1050,7 +1084,13 @@ export function ChannelPanel({
       )}
 
       {showRoster && (
-        <ChannelRoster channelName={channel.name} compact={workspace && wsSize !== "large"} />
+        <section className="ch-ws-section ch-ws-section--roster" aria-label="Users on channel">
+          <ChannelRoster
+            channelName={channel.name}
+            compact={workspace && wsSize !== "large"}
+            members={rosterMembers}
+          />
+        </section>
       )}
       </div>
       )}

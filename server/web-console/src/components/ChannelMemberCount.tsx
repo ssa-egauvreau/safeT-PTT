@@ -1,36 +1,19 @@
-import { useEffect, useState } from "react";
-import { api } from "../api";
+import { useChannelRoster } from "../hooks/useChannelRoster";
 import { IconUser } from "../icons";
 
-/** Compact connected-user count for small/medium workspace channel widgets. */
+/** Compact connected-user count for workspace channel widget headers. */
 export function ChannelMemberCount({
   channelName,
   iconSize = 14,
+  count: countProp,
 }: {
   channelName: string;
   iconSize?: number;
+  /** When provided, skips internal roster polling (parent shares one poll). */
+  count?: number | null;
 }) {
-  const [count, setCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function poll() {
-      try {
-        const res = await api.channelRoster(channelName);
-        if (!cancelled) {
-          setCount(res.members.length);
-        }
-      } catch {
-        /* keep last count */
-      }
-    }
-    void poll();
-    const timer = window.setInterval(poll, 5000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [channelName]);
+  const polled = useChannelRoster(channelName, countProp === undefined);
+  const count = countProp !== undefined ? countProp : polled.loading ? null : polled.count;
 
   const label = count === null ? "…" : String(count);
   return (
