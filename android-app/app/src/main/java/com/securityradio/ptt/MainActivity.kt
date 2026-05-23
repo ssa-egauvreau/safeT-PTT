@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -75,6 +76,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         HandsetOrientation.apply(this)
         super.onCreate(savedInstanceState)
+        // Without this, super.onKeyDown for VOLUME_UP/DOWN uses USE_DEFAULT_STREAM_TYPE, which on
+        // TM7+ firmware resolves to a stream with no active output and silently swallows the keys
+        // (no volume panel, no change) — keys only "work" outside the app or in the notif shade.
+        // Received voice plays on USAGE_MEDIA / STREAM_MUSIC, so target that stream explicitly.
+        volumeControlStream = AudioManager.STREAM_MUSIC
         runCatching { enableEdgeToEdge() }.onFailure {
             Log.w("MainActivity", "enableEdgeToEdge unsupported; continuing without edge-to-edge", it)
         }
