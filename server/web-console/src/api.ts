@@ -121,6 +121,65 @@ export interface AiDispatchActivityEntry {
   created_at: string;
 }
 
+export interface AiDispatchTestResult {
+  request: {
+    transcript: string;
+    channelName: string;
+    unitId: string;
+    sendForReal: boolean;
+    synthesizeTts: boolean;
+  };
+  durationMs: number;
+  trace: { phase: string; ms: number; detail?: string }[];
+  channelAiDispatchEnabled: boolean;
+  ten8Configured: boolean;
+  parsed: {
+    actionable: boolean;
+    intent: string;
+    unit: string | null;
+    summary: string;
+    confidence: number;
+    dispatcher_response: string | null;
+    trigger_emergency_tone: boolean;
+    recommended_action: string | null;
+    code: string | null;
+    location_code: string | null;
+    location_name: string | null;
+    plate_request: {
+      plate: string | null;
+      state: string | null;
+      vin: string | null;
+    } | null;
+    info_request: {
+      type: string;
+      account_code: string | null;
+      subject: string | null;
+    } | null;
+    comment_text: string | null;
+  } | null;
+  knowledgeContextChars: number;
+  knowledgeContextPreview: string;
+  plateLookup: {
+    ok: boolean;
+    plate?: string | null;
+    state?: string | null;
+    year?: string | null;
+    make?: string | null;
+    model?: string | null;
+    color?: string | null;
+    vin?: string | null;
+    provider?: string;
+    reason?: string;
+    message?: string;
+    ms?: number;
+  } | null;
+  ten8Actions: Record<string, unknown>;
+  dispatcherReply: string;
+  ttsKind: string;
+  ttsMp3Base64: string | null;
+  errors: string[];
+}
+
 export interface Ten8ActiveIncident {
   call_id: string;
   incident_type: string | null;
@@ -627,6 +686,14 @@ export const api = {
       ten8_active_incidents: Ten8ActiveIncident[];
       ten8_recent_webhooks: { id: number; action: string; call_id: string | null; received_at: string }[];
     }>("GET", `/v1/ai-dispatch/activity?limit=${limit}`),
+
+  testAiDispatch: (input: {
+    transcript: string;
+    channelName: string;
+    unitId: string;
+    sendForReal?: boolean;
+    synthesizeTts?: boolean;
+  }) => request<AiDispatchTestResult>("POST", "/v1/ai-dispatch/test", input),
 
   channelRoster: (channel: string) =>
     request<{ members: ChannelMember[] }>("GET", `/v1/channels/roster?channel=${encodeURIComponent(channel)}`),

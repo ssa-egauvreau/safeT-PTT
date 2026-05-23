@@ -130,6 +130,7 @@ import {
   handleSetIntegration,
 } from "./integrations/adminApi.js";
 import { getAiDispatchLoopbackPort } from "./aiDispatch/engine.js";
+import { runAiDispatchDryRun } from "./aiDispatch/dryRun.js";
 import {
   agencyPromptSource,
   getAiDispatchPlatformConfig,
@@ -2271,6 +2272,46 @@ export function createApiRouter(): Router {
       }
       const row = await getChannelAiDispatchRow(req.authUser!.agencyId!, channel);
       res.json({ enabled: row?.enabled === true });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Admin: type-to-dispatch test page. Runs the full parse / KB / plate / 10-8
+  // body-building pipeline against the typed transcript. Side-effects (10-8
+  // POSTs) only happen when sendForReal === true; TTS is always preview-only
+  // (the dispatcher never keys the radio channel from this endpoint).
+  router.post("/ai-dispatch/test", requireAgencyOperator, async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const transcript = String(body.transcript ?? "").trim();
+      const channelName = String(body.channelName ?? body.channel ?? "test-channel").trim();
+      const unitId = String(body.unitId ?? body.unit ?? "352").trim();
+      const sendForReal = body.sendForReal === true;
+      const synthesizeTts = body.synthesizeTts !== false;
+      if (!transcript) {
+        res.status(400).json({ error: "missing_transcript" });
+        return;
+      }
+      const result = await runAiDispatchDryRun({
+        agencyId: req.authUser!.agencyId!,
+        transcript,
+        channelName,
+        unitId,
+        sendForReal,
+        synthesizeTts,
+      });
+      if (sendForReal) {
+        await writeAudit({
+          agencyId: req.authUser!.agencyId!,
+          actorUserId: req.authUser!.id,
+          actorName: req.authUser!.username,
+          action: "ai_dispatch_test_send_for_real",
+          target: channelName,
+          ip: clientIp(req),
+        });
+      }
+      res.json(result);
     } catch (error) {
       fail(res, error);
     }

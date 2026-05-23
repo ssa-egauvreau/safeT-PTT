@@ -1,5 +1,42 @@
 import { requirePool } from "../db.js";
 
+export interface Ten8ActiveIncidentRow {
+  call_id: string;
+  incident_type: string | null;
+  priority: string | null;
+  status: string | null;
+  location: string | null;
+  payload: unknown;
+  updated_at: string;
+}
+
+// AI dispatch temporarily seeds new calls before the webhook sync arrives.
+// If that webhook never lands, we must age out the synthetic row so unrelated
+// transmissions cannot be attached to a stale call forever.
+export const AI_DISPATCH_SEEDED_ACTIVE_GRACE_MS = 20 * 60 * 1000;
+
+function isAiDispatchSeedPayload(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  const seededBy = (payload as Record<string, unknown>).seeded_by;
+  return typeof seededBy === "string" && seededBy.trim().toLowerCase() === "ai_dispatch_create";
+}
+
+export function shouldTreatTen8IncidentAsActive(
+  row: Pick<Ten8ActiveIncidentRow, "payload" | "updated_at">,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!isAiDispatchSeedPayload(row.payload)) {
+    return true;
+  }
+  const updatedAtMs = Date.parse(row.updated_at);
+  if (!Number.isFinite(updatedAtMs)) {
+    return false;
+  }
+  return nowMs - updatedAtMs <= AI_DISPATCH_SEEDED_ACTIVE_GRACE_MS;
+}
+
 export async function upsertTen8Incident(row: {
   agencyId: number;
   callId: string;
@@ -50,26 +87,23 @@ export async function insertTen8WebhookLog(row: {
   );
 }
 
-export async function listTen8ActiveIncidents(agencyId: number): Promise<
-  Array<{
-    call_id: string;
-    incident_type: string | null;
-    priority: string | null;
-    status: string | null;
-    location: string | null;
-    payload: unknown;
-    updated_at: string;
-  }>
-> {
+export async function listTen8ActiveIncidents(agencyId: number): Promise<Ten8ActiveIncidentRow[]> {
   const res = await requirePool().query(
     `SELECT call_id, incident_type, priority, status, location, payload, updated_at
        FROM ten8_incidents
-      WHERE agency_id = $1 AND is_closed = FALSE
+      WHERE agency_id = $1
+        AND is_closed = FALSE
+        AND NOT (
+          payload->>'seeded_by' = 'ai_dispatch_create'
+          AND updated_at < now() - ($2::int * interval '1 minute')
+        )
       ORDER BY updated_at DESC
       LIMIT 100;`,
-    [agencyId],
+    [agencyId, AI_DISPATCH_SEED_MAX_AGE_MINUTES],
   );
-  return res.rows;
+  const nowMs = Date.now();
+  const rows = res.rows as Ten8ActiveIncidentRow[];
+  return rows.filter((row) => shouldTreatTen8IncidentAsActive(row, nowMs));
 }
 
 export async function listTen8WebhookLog(agencyId: number, limit: number): Promise<

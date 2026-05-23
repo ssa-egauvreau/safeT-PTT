@@ -95,6 +95,21 @@ function sanitizeTen8Body(value: unknown): unknown {
   return value;
 }
 
+/**
+ * Build a safe New Incident payload for 10-8.
+ *
+ * Most fields are sanitized, but `type` must stay byte-identical to the
+ * agency-approved CAD call-type string (including hyphens / spacing) or later
+ * 10-8 workflows can reject it as not valid for that agency.
+ */
+export function prepareTen8NewIncidentBody(body: Record<string, unknown>): Record<string, unknown> {
+  const sanitized = sanitizeTen8Body(body) as Record<string, unknown>;
+  if (typeof body.type === "string") {
+    sanitized.type = body.type;
+  }
+  return finalizeTen8NewIncidentBody(sanitized);
+}
+
 export async function ten8AddVehicle(
   agencyId: number,
   callId: string,
@@ -184,8 +199,7 @@ export async function ten8CreateIncident(
   if (!cfg) {
     return { ok: false, data: { error: "ten8_new_incident_not_configured" } };
   }
-  // Only letters, numbers, spaces, commas, and periods reach 10-8.
-  const safeBody = finalizeTen8NewIncidentBody(sanitizeTen8Body(body) as Record<string, unknown>);
+  const safeBody = prepareTen8NewIncidentBody(body);
   if (!cfg.live) {
     console.log("[ten8] shadow POST /incidents", safeBody);
     return { ok: true, shadow: true, data: { shadow: true, path: "/incidents", body: safeBody } };

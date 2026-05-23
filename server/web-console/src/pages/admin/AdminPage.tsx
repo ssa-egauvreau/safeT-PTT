@@ -10,6 +10,7 @@ import { AuditPanel } from "./AuditPanel";
 import { IntegrationsPanel } from "./IntegrationsPanel";
 import { KnowledgeBasePanel } from "./KnowledgeBasePanel";
 import { AndroidAppPanel } from "./AndroidAppPanel";
+import { AiTestPanel } from "./AiTestPanel";
 
 type TabId =
   | "users"
@@ -17,6 +18,7 @@ type TabId =
   | "aliases"
   | "integrations"
   | "knowledge"
+  | "ai-test"
   | "android"
   | "sounds"
   | "soundboard"
@@ -29,6 +31,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "aliases", label: "Unit Aliases" },
   { id: "integrations", label: "Integrations" },
   { id: "knowledge", label: "Knowledge Base" },
+  { id: "ai-test", label: "AI Test" },
   { id: "android", label: "Android App" },
   { id: "sounds", label: "Sounds" },
   { id: "soundboard", label: "Soundboard" },
@@ -61,6 +64,7 @@ export function AdminPage() {
           {tab === "aliases" && <UnitAliasesPanel />}
           {tab === "integrations" && <IntegrationsPanel />}
           {tab === "knowledge" && <KnowledgeBasePanel />}
+          {tab === "ai-test" && <AiTestPanel />}
           {tab === "android" && <AndroidAppPanel />}
           {tab === "sounds" && <SoundsPanel />}
           {tab === "soundboard" && <ToneOutsPanel />}
