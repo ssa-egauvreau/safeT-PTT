@@ -2,7 +2,9 @@ import { requirePool } from "../db.js";
 
 // AI-created seed rows exist only to bridge the short gap until the real 10-8 webhook lands.
 // If that webhook never arrives, the seed should age out so we don't keep matching/posting to
-// stale calls indefinitely.
+// stale calls indefinitely. The DB-side filter in [buildListTen8ActiveIncidentsQuery] enforces
+// this at 15 minutes; the JS-side helper [shouldTreatTen8IncidentAsActive] provides a
+// per-row override (20-minute grace) for callers that already hold a list of rows in memory.
 export const AI_DISPATCH_SEED_MAX_AGE_MINUTES = 15;
 
 // Marker the AI dispatcher writes onto its bridge rows (see engine.ts). The active-incidents
@@ -11,6 +13,14 @@ export const AI_DISPATCH_SEED_MAX_AGE_MINUTES = 15;
 // real CAD-sourced rows get expired by mistake.
 export const AI_DISPATCH_SEED_PAYLOAD_KEY = "seeded_by";
 export const AI_DISPATCH_SEED_PAYLOAD_VALUE = "ai_dispatch_create";
+
+// AI dispatch temporarily seeds new calls before the webhook sync arrives.
+// If that webhook never lands, we must age out the synthetic row so unrelated
+// transmissions cannot be attached to a stale call forever. This in-memory cap
+// is intentionally slightly looser than the DB-side filter so callers reading
+// a freshly-fetched row still see it during the SQL→JS hand-off.
+export const AI_DISPATCH_SEEDED_ACTIVE_GRACE_MS = 20 * 60 * 1000;
+
 export interface Ten8ActiveIncidentRow {
   call_id: string;
   incident_type: string | null;
@@ -21,17 +31,15 @@ export interface Ten8ActiveIncidentRow {
   updated_at: string;
 }
 
-// AI dispatch temporarily seeds new calls before the webhook sync arrives.
-// If that webhook never lands, we must age out the synthetic row so unrelated
-// transmissions cannot be attached to a stale call forever.
-export const AI_DISPATCH_SEEDED_ACTIVE_GRACE_MS = 20 * 60 * 1000;
-
 function isAiDispatchSeedPayload(payload: unknown): boolean {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return false;
   }
-  const seededBy = (payload as Record<string, unknown>).seeded_by;
-  return typeof seededBy === "string" && seededBy.trim().toLowerCase() === "ai_dispatch_create";
+  const seededBy = (payload as Record<string, unknown>)[AI_DISPATCH_SEED_PAYLOAD_KEY];
+  return (
+    typeof seededBy === "string" &&
+    seededBy.trim().toLowerCase() === AI_DISPATCH_SEED_PAYLOAD_VALUE
+  );
 }
 
 export function shouldTreatTen8IncidentAsActive(
@@ -98,16 +106,6 @@ export async function insertTen8WebhookLog(row: {
   );
 }
 
-export type Ten8ActiveIncidentRow = {
-  call_id: string;
-  incident_type: string | null;
-  priority: string | null;
-  status: string | null;
-  location: string | null;
-  payload: unknown;
-  updated_at: string;
-};
-
 /**
  * Build the SQL + bind values for the active-incidents read. Exposed (rather than
  * inlining inside {@link listTen8ActiveIncidents}) so the stale-seed expiry filter
@@ -122,14 +120,10 @@ export function buildListTen8ActiveIncidentsQuery(agencyId: number): {
 } {
   return {
     text: `SELECT call_id, incident_type, priority, status, location, payload, updated_at
-export async function listTen8ActiveIncidents(agencyId: number): Promise<Ten8ActiveIncidentRow[]> {
-  const res = await requirePool().query(
-    `SELECT call_id, incident_type, priority, status, location, payload, updated_at
        FROM ten8_incidents
       WHERE agency_id = $1
         AND is_closed = FALSE
         AND NOT (
-          payload->>'${AI_DISPATCH_SEED_PAYLOAD_KEY}' = '${AI_DISPATCH_SEED_PAYLOAD_VALUE}'
           COALESCE(payload->>'seeded_by', '') = 'ai_dispatch_create'
           AND updated_at < now() - ($2::int * interval '1 minute')
         )
@@ -141,12 +135,9 @@ export async function listTen8ActiveIncidents(agencyId: number): Promise<Ten8Act
 
 export async function listTen8ActiveIncidents(
   agencyId: number,
-): Promise<Array<Ten8ActiveIncidentRow>> {
+): Promise<Ten8ActiveIncidentRow[]> {
   const q = buildListTen8ActiveIncidentsQuery(agencyId);
   const res = await requirePool().query(q.text, q.values);
-  return res.rows;
-    [agencyId, AI_DISPATCH_SEED_MAX_AGE_MINUTES],
-  );
   const nowMs = Date.now();
   const rows = res.rows as Ten8ActiveIncidentRow[];
   return rows.filter((row) => shouldTreatTen8IncidentAsActive(row, nowMs));

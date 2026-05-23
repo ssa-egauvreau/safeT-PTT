@@ -922,10 +922,17 @@ export async function uploadKbDocument(
   if (!res.ok) {
     handle401IfNeeded(res.status);
     let code = `http_${res.status}`;
-    try {
-      code = (JSON.parse(await res.text()) as { error?: string }).error ?? code;
-    } catch {
-      /* keep the generic code */
+    // Express's `raw()` middleware answers 413 with an HTML body, not JSON, so the
+    // generic try/parse below would leave a useless "http_413". Map it explicitly
+    // here so the UI can show "PDF too large — limit is N MB."
+    if (res.status === 413) {
+      code = "pdf_too_large";
+    } else {
+      try {
+        code = (JSON.parse(await res.text()) as { error?: string }).error ?? code;
+      } catch {
+        /* keep the generic code */
+      }
     }
     throw new ApiError(code, res.status);
   }
@@ -1025,6 +1032,8 @@ export function describeError(error: unknown): string {
       session_superseded: "Signed in on another device — sign in again here if you want to continue.",
       unit_move_locked:
         "That operator has the dispatch console open on multiple channels and cannot be moved.",
+      pdf_too_large:
+        "PDF is too large to upload (default limit 50 MB). Compress the file or split it before retrying.",
     };
     return map[error.message] ?? `Request failed (${error.message}).`;
   }

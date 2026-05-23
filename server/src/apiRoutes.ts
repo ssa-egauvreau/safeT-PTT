@@ -162,7 +162,7 @@ const LOGO_MAX_BYTES = "512kb";
 const TONE_OUT_AUDIO_MAX = "4mb";
 
 /** Upper bound for an uploaded knowledge-base document (PDF). */
-const KB_MAX_DOC_BYTES = process.env.KB_MAX_DOC_BYTES?.trim() || "10mb";
+const KB_MAX_DOC_BYTES = process.env.KB_MAX_DOC_BYTES?.trim() || "50mb";
 
 /** Reads a device-category value from request input, or null when absent/invalid. */
 function asDeviceType(value: unknown): string | null {

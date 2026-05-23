@@ -31,7 +31,9 @@ import {
   AI_DISPATCH_SEED_MAX_AGE_MINUTES,
   AI_DISPATCH_SEED_PAYLOAD_KEY,
   AI_DISPATCH_SEED_PAYLOAD_VALUE,
+  AI_DISPATCH_SEEDED_ACTIVE_GRACE_MS,
   buildListTen8ActiveIncidentsQuery,
+  shouldTreatTen8IncidentAsActive,
 } from "../../src/ten8/store.js";
 
 test("AI_DISPATCH_SEED_MAX_AGE_MINUTES is the 15-minute cap commit 5a65ae0 introduced", () => {
@@ -70,10 +72,12 @@ test("buildListTen8ActiveIncidentsQuery includes the AI-seed stale-row filter", 
   const q = buildListTen8ActiveIncidentsQuery(1);
 
   // 1. The filter references the exact payload key/value pair the writer puts
-  //    on AI-created rows, so it only narrows to those rows.
+  //    on AI-created rows, so it only narrows to those rows. The `payload->>K`
+  //    extraction may be wrapped in COALESCE(..., '') for NULL safety (eaf6a80),
+  //    so the test accepts either bare or COALESCE-wrapped form.
   assert.match(
     q.text,
-    /payload->>'seeded_by'\s*=\s*'ai_dispatch_create'/,
+    /payload->>'seeded_by'[\s\S]{0,30}=\s*'ai_dispatch_create'/,
     "stale-row filter must key off the same payload marker engine.ts writes",
   );
 
@@ -90,7 +94,7 @@ test("buildListTen8ActiveIncidentsQuery includes the AI-seed stale-row filter", 
   //    would return ONLY stale AI seeds, which is the opposite of what we want.
   assert.match(
     q.text,
-    /AND\s+NOT\s*\(\s*[\s\S]*payload->>'seeded_by'\s*=\s*'ai_dispatch_create'[\s\S]*updated_at\s*<\s*now\(\)/i,
+    /AND\s+NOT\s*\(\s*[\s\S]*payload->>'seeded_by'[\s\S]{0,30}=\s*'ai_dispatch_create'[\s\S]*updated_at\s*<\s*now\(\)/i,
     "stale-row filter must be wrapped in NOT(...) so it EXCLUDES stale seeds, not selects them",
   );
 });
@@ -122,9 +126,7 @@ test("buildListTen8ActiveIncidentsQuery passes the agency id through without coe
   assert.equal(q.values[0], 0);
   const q2 = buildListTen8ActiveIncidentsQuery(999_999);
   assert.equal(q2.values[0], 999_999);
-  AI_DISPATCH_SEEDED_ACTIVE_GRACE_MS,
-  shouldTreatTen8IncidentAsActive,
-} from "../../src/ten8/store.js";
+});
 
 function iso(ms: number): string {
   return new Date(ms).toISOString();
