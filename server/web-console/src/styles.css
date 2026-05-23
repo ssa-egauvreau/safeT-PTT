@@ -1639,10 +1639,10 @@ code.mono {
   flex: 1 1 0;
   min-width: 0;
   justify-content: center;
-  min-height: 32px;
+  min-height: 20px;
 }
 .channel-card.workspace[data-widget-size="medium"] .ch-card-toolbar .ch-quick-ptt {
-  min-height: 30px;
+  min-height: 22px;
 }
 .channel-card.workspace[data-widget-size="medium"] .ch-card-body.workspace-dense {
   padding: 4px 6px 6px;
@@ -1670,7 +1670,7 @@ code.mono {
   min-height: 0;
 }
 .channel-workspace-tile.widget-small .channel-card.workspace {
-  font-size: 10px;
+  font-size: 9px;
 }
 .channel-workspace-tile.widget-small .ch-card-label {
   overflow: hidden;
@@ -1705,7 +1705,7 @@ code.mono {
   padding: 4px 6px;
 }
 .channel-workspace-tile.widget-medium .channel-card.workspace {
-  font-size: 11px;
+  font-size: 10px;
 }
 .channel-workspace-tile.widget-medium .ch-card-body.workspace-dense {
   gap: 3px;
@@ -1720,16 +1720,16 @@ code.mono {
   font-size: 10px;
 }
 .channel-workspace-tile.widget-medium .toneout.workspace-tones-compact .toneout-btn {
-  padding: 3px 4px;
-  font-size: 9px;
+  padding: 2px 3px;
+  font-size: 8px;
 }
 .channel-workspace-tile.widget-medium .toneout.workspace-tones-compact .stopall-btn {
-  padding: 3px 6px;
-  font-size: 9px;
+  padding: 2px 5px;
+  font-size: 8px;
   margin-top: 2px;
 }
 .channel-workspace-tile.widget-large .channel-card.workspace {
-  font-size: 11px;
+  font-size: 10px;
 }
 .channel-workspace-tile.widget-large .channel-card.workspace .ch-card-body.workspace-dense {
   gap: 4px;
@@ -1748,9 +1748,6 @@ code.mono {
 }
 .channel-workspace-tile.widget-large .tx-button-integrated {
   flex-shrink: 0;
-  min-height: 44px;
-  max-height: 52px;
-  padding: 5px;
 }
 .channel-workspace-tile.widget-large .tx-button-integrated .tx-sub {
   font-size: 9px;
@@ -1768,33 +1765,208 @@ code.mono {
 }
 .channel-workspace-tile .channel-card.workspace .ch-quick-ptt,
 .channel-workspace-tile .channel-card.workspace .ch-power {
-  min-height: 26px;
-  padding: 3px 6px;
-  font-size: 10px;
+  min-height: 22px;
+  padding: 2px 5px;
+  font-size: 8px;
+  gap: 3px;
+}
+.channel-workspace-tile .channel-card.workspace .ch-quick-ptt svg,
+.channel-workspace-tile .channel-card.workspace .ch-power svg {
+  flex-shrink: 0;
 }
 .channel-workspace-tile .channel-card.workspace .volume-row {
   margin: 0;
-  gap: 4px;
+  gap: 3px;
+}
+.channel-workspace-tile .channel-card.workspace .vol-mute {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  flex-shrink: 0;
+}
+.channel-workspace-tile .channel-card.workspace .vol-slider {
+  height: 4px;
 }
 .channel-workspace-tile .channel-card.workspace .vol-pct {
+  font-size: 8px;
+}
+/* Workspace tiles: compact type and controls (overrides full-size channel card defaults). */
+.channel-workspace-tile .channel-card.workspace .ch-card-head.workspace-head {
+  gap: 2px;
+}
+.channel-workspace-tile .channel-card.workspace .ch-card-title-row {
+  min-height: 26px;
+  border-radius: 6px 6px 0 0;
+}
+.channel-workspace-tile .channel-card.workspace .ch-card-title-main {
+  min-height: 26px;
+  padding: 3px 46px 3px 6px;
+  gap: 3px 5px;
+}
+.channel-workspace-tile .channel-card.workspace .ch-card-title-row .ch-card-name {
+  font-size: 10px;
+  gap: 3px;
+}
+.channel-workspace-tile .channel-card.workspace .ch-card-title-row .chan-sim-tag {
+  font-size: 8px;
+  padding: 0 4px;
+}
+.channel-workspace-tile .ch-member-count {
+  font-size: 8px;
+  padding: 1px 4px;
+  gap: 2px;
+  border-radius: 4px;
+}
+.channel-workspace-tile .channel-card.workspace .ch-card-chrome .channel-workspace-size-btn,
+.channel-workspace-tile .channel-card.workspace .ch-workspace-close {
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  border-radius: 4px;
+}
+.channel-workspace-tile .channel-card.workspace .ch-card-toolbar {
+  padding: 2px 4px 3px;
+  gap: 3px;
+}
+.channel-workspace-tile .channel-card.workspace .ch-card-toolbar .state-chip {
+  font-size: 8px;
+  padding: 1px 4px;
+}
+.channel-workspace-tile .tx-button.tx-button-integrated {
+  min-height: 0;
+  padding: 3px 5px;
+  border-radius: 5px;
+  gap: 1px;
+}
+.channel-workspace-tile .tx-button-integrated .tx-main {
+  font-size: 11px;
+  gap: 4px;
+  letter-spacing: 0.06em;
+}
+.channel-workspace-tile .tx-button-integrated .tx-sub {
+  font-size: 8px;
+}
+.channel-workspace-tile .ch-action-cell,
+.channel-workspace-tile .txmode-btn.ch-action-cell,
+.channel-workspace-tile .marker-button.ch-action-cell,
+.channel-workspace-tile .toneout-btn.ch-action-cell {
+  min-height: 0;
+  padding: 3px 4px;
+  font-size: 8px;
+  gap: 2px;
+  border-radius: 4px;
+}
+.channel-workspace-tile .ch-action-cell strong,
+.channel-workspace-tile .txmode-btn.ch-action-cell strong {
   font-size: 9px;
+}
+.channel-workspace-tile .ch-action-kicker {
+  font-size: 7px;
+}
+.channel-workspace-tile .ch-action-notes .marker-note {
+  font-size: 8px;
+}
+.channel-workspace-tile .live-tx-console .live-tx-card {
+  padding: 4px 6px;
+  border-radius: 5px;
+}
+.channel-workspace-tile .live-tx-console .live-tx-card-head {
+  margin-bottom: 2px;
+  font-size: 8px;
+  gap: 3px;
+}
+.channel-workspace-tile .live-tx-console .live-tx-speaker {
+  font-size: 9px;
+}
+.channel-workspace-tile .live-tx-console .live-tx-time {
+  font-size: 8px;
+}
+.channel-workspace-tile .live-tx-console .live-tx-transcript {
+  font-size: 9px;
+  line-height: 1.25;
+  margin-bottom: 2px;
+}
+.channel-workspace-tile .live-tx-console .btn.sm.live-tx-replay {
+  padding: 2px 5px;
+  font-size: 8px;
+}
+.channel-workspace-tile .live-tx-console .live-tx-log-hint {
+  font-size: 8px;
+  margin: 2px 0 0;
+}
+.channel-workspace-tile .channel-card.workspace[data-tier] .tx-button-integrated {
+  min-height: 0;
+  padding: 3px 5px;
+}
+.channel-workspace-tile .channel-card.workspace[data-tier] .tx-button-integrated .tx-main {
+  font-size: 11px;
+}
+.channel-workspace-tile.widget-small .channel-card.workspace {
+  font-size: 9px;
+}
+.channel-workspace-tile.widget-small .channel-card.workspace .ch-card-title-row,
+.channel-workspace-tile.widget-small .channel-card.workspace .ch-card-title-main {
+  min-height: 22px;
+}
+.channel-workspace-tile.widget-small .channel-card.workspace .ch-card-title-row .ch-card-name {
+  font-size: 9px;
+}
+.channel-workspace-tile.widget-small .channel-card.workspace .ch-card-toolbar .ch-power,
+.channel-workspace-tile.widget-small .channel-card.workspace .ch-card-toolbar .ch-quick-ptt {
+  min-height: 20px;
+  font-size: 7px;
+  padding: 2px 4px;
+}
+.channel-workspace-tile.widget-small .live-tx-console .btn.sm.live-tx-replay {
+  display: none;
+}
+.channel-workspace-tile.widget-medium .channel-card.workspace {
+  font-size: 10px;
+}
+.channel-workspace-tile.widget-medium .channel-card.workspace .ch-card-toolbar .ch-quick-ptt {
+  min-height: 22px;
+}
+.channel-workspace-tile.widget-medium .live-tx-console .btn.sm.live-tx-replay {
+  padding: 2px 4px;
+  font-size: 8px;
+}
+.channel-workspace-tile.widget-large .channel-card.workspace {
+  font-size: 10px;
+}
+.channel-workspace-tile.widget-large .tx-button-integrated {
+  min-height: 32px;
+  max-height: 36px;
+}
+.channel-workspace-tile.widget-large .tx-button-integrated .tx-main {
+  font-size: 12px;
+}
+.channel-workspace-tile.widget-large .ch-actions-grid .ch-action-cell {
+  font-size: 8px;
+  padding: 3px 4px;
+}
+.channel-workspace-tile.widget-large .roster-head {
+  font-size: 8px;
+}
+.channel-workspace-tile.widget-large .roster-row {
+  font-size: 9px;
+  padding: 2px 0;
 }
 .toneout.workspace-tones-compact .ch-tone-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
 }
 .toneout.workspace-tones-compact .toneout-btn {
-  padding: 4px 5px;
-  font-size: 10px;
-  gap: 3px;
+  padding: 2px 4px;
+  font-size: 8px;
+  gap: 2px;
 }
 .toneout.workspace-tones-compact .toneout-btn .toneout-label {
   display: none;
 }
 .toneout.workspace-tones-compact .stopall-btn {
-  margin-top: 4px;
-  padding: 4px 8px;
-  font-size: 10px;
+  margin-top: 2px;
+  padding: 2px 6px;
+  font-size: 8px;
 }
 .channel-off-overlay {
   position: absolute;
@@ -2065,9 +2237,8 @@ code.mono {
 .channel-workspace-tile .channel-card.workspace .ch-card-body,
 .channel-workspace-tile .channel-card.workspace .ch-card-body.workspace-dense {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 5px 6px;
-  padding: 6px 8px 10px;
   align-content: start;
+  /* gap/padding: set per widget-small / medium / large above */
 }
 .channel-workspace-tile .channel-card.workspace .ch-card-body > * {
   min-width: 0;
@@ -2081,8 +2252,6 @@ code.mono {
 .channel-workspace-tile .channel-card.workspace .ch-action-cell {
   min-width: 0;
   max-width: 100%;
-  font-size: 10px;
-  padding: 6px 4px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -2099,7 +2268,6 @@ code.mono {
   grid-column: 1 / -1;
 }
 .channel-workspace-tile.widget-large .channel-card.workspace .tx-button-integrated {
-  min-height: 48px;
   flex: 0 0 auto;
 }
 .channel-workspace-tile .channel-card.workspace .roster {
@@ -2232,7 +2400,7 @@ code.mono {
   gap: 0;
   padding: 0;
   min-width: 0;
-  min-height: 32px;
+  min-height: 26px;
   border: 1px solid var(--text);
   border-radius: 8px 8px 0 0;
   background: var(--text);
@@ -2251,10 +2419,10 @@ code.mono {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px 6px;
+  gap: 3px 5px;
   min-width: 0;
-  min-height: 32px;
-  padding: 5px 52px 5px 8px;
+  min-height: 26px;
+  padding: 3px 46px 3px 6px;
 }
 .channel-card.workspace .ch-card-chrome {
   position: absolute;
@@ -2322,7 +2490,7 @@ code.mono {
 .channel-card.workspace .ch-card-title-row .ch-card-name {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
 }
 .channel-card.workspace .ch-card-title-row .ch-card-label {
@@ -2343,8 +2511,8 @@ code.mono {
 }
 .channel-card.workspace .ch-card-toolbar .ch-power,
 .channel-card.workspace .ch-card-toolbar .ch-quick-ptt {
-  padding: 3px 7px;
-  font-size: 9px;
+  padding: 2px 5px;
+  font-size: 8px;
 }
 .channel-card.workspace .ch-card-toolbar .ch-mini-wave {
   width: 48px;

@@ -3,7 +3,13 @@ import { api } from "../api";
 import { IconUser } from "../icons";
 
 /** Compact connected-user count for small/medium workspace channel widgets. */
-export function ChannelMemberCount({ channelName }: { channelName: string }) {
+export function ChannelMemberCount({
+  channelName,
+  iconSize = 14,
+}: {
+  channelName: string;
+  iconSize?: number;
+}) {
   const [count, setCount] = useState<number | null>(null);
 
   useEffect(() => {
@@ -33,7 +39,7 @@ export function ChannelMemberCount({ channelName }: { channelName: string }) {
       title={count === null ? "Users on channel" : `${count} user${count === 1 ? "" : "s"} on channel`}
       aria-label={count === null ? "Users on channel" : `${count} on channel`}
     >
-      <IconUser size={14} />
+      <IconUser size={iconSize} />
       <span className="ch-member-count-num">{label}</span>
     </span>
   );

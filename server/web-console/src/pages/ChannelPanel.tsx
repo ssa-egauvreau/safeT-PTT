@@ -488,6 +488,13 @@ export function ChannelPanel({
   const canTransmit = permission !== "listen_only";
   const transmitting = voiceState === "transmitting";
   const wsSize = workspace ? workspaceWidgetSize : "large";
+  const wsIcon = workspace
+    ? wsSize === "small"
+      ? { toolbar: 11, volume: 11, radio: 10, txMain: 14, action: 11, tone: 10, badge: 10, member: 10 }
+      : wsSize === "medium"
+        ? { toolbar: 12, volume: 12, radio: 11, txMain: 16, action: 12, tone: 11, badge: 11, member: 11 }
+        : { toolbar: 13, volume: 12, radio: 12, txMain: 18, action: 12, tone: 11, badge: 11, member: 12 }
+    : null;
   const showToolbar = true;
   const showVolume = true;
   const showStatusChip = workspace && wsSize !== "small";
@@ -511,7 +518,11 @@ export function ChannelPanel({
         onClick={toggleMute}
         title={muted ? "Unmute channel" : "Mute channel"}
       >
-        {muted ? <IconVolumeMuted size={16} /> : <IconVolume size={16} />}
+        {muted ? (
+          <IconVolumeMuted size={wsIcon?.volume ?? 16} />
+        ) : (
+          <IconVolume size={wsIcon?.volume ?? 16} />
+        )}
       </button>
       <input
         className="vol-slider"
@@ -546,7 +557,7 @@ export function ChannelPanel({
         aria-pressed={monitoring}
         title={monitoring ? "Turn channel off (stop monitoring)" : "Turn channel on (monitor)"}
       >
-        <IconHeadphones size={16} />
+        <IconHeadphones size={wsIcon?.toolbar ?? 16} />
         <span>{monitoring ? "ON" : "OFF"}</span>
       </button>
       <button
@@ -564,7 +575,7 @@ export function ChannelPanel({
               : "Hold to talk"
         }
       >
-        <IconBolt size={16} />
+        <IconBolt size={wsIcon?.toolbar ?? 16} />
         <span>{transmitting ? "ON AIR" : "PTT"}</span>
       </button>
     </div>
@@ -594,11 +605,16 @@ export function ChannelPanel({
             >
               <div className="ch-card-title-main">
                 <div className="ch-card-name ch-card-name-static">
-                  <IconRadio size={14} />
+                  <IconRadio size={wsIcon?.radio ?? 14} />
                   <span className="ch-card-label">{channel.name}</span>
                   {channel.simulcast && <span className="chan-sim-tag">SIM</span>}
                 </div>
-                {showMemberCount && <ChannelMemberCount channelName={channel.name} />}
+                {showMemberCount && (
+                  <ChannelMemberCount
+                    channelName={channel.name}
+                    iconSize={wsIcon?.member ?? 14}
+                  />
+                )}
               </div>
               {workspaceChrome ? (
                 <div
@@ -788,7 +804,7 @@ export function ChannelPanel({
           </div>
         )}
         <span className="tx-main">
-          <IconBolt size={26} />
+          <IconBolt size={wsIcon?.txMain ?? 26} />
           {transmitting ? "ON AIR" : !canTransmit ? "LISTEN ONLY" : receiving ? "BUSY" : "XMIT"}
         </span>
         {(!workspace || wsSize === "large") && (
@@ -857,7 +873,7 @@ export function ChannelPanel({
           onClick={toggleMarker}
           title="10-33 emergency marker tone"
         >
-          <IconBeacon size={workspace ? 14 : 18} />
+          <IconBeacon size={wsIcon?.action ?? (workspace ? 14 : 18)} />
           <span>{marker ? (workspace ? "10-33 ON" : "10-33 MARKER ON") : workspace ? "10-33" : "10-33 CHANNEL MARKER"}</span>
         </button>
 
@@ -894,7 +910,7 @@ export function ChannelPanel({
             disabled={!connected || !canTransmit}
             onClick={() => sendTone("routine")}
           >
-            <IconToneRoutine size={workspace ? 13 : 16} />
+            <IconToneRoutine size={wsIcon?.tone ?? (workspace ? 13 : 16)} />
             Routine
           </button>
           <button
@@ -903,7 +919,7 @@ export function ChannelPanel({
             disabled={!connected || !canTransmit}
             onClick={() => sendTone("priority")}
           >
-            <IconTonePriority size={workspace ? 13 : 16} />
+            <IconTonePriority size={wsIcon?.tone ?? (workspace ? 13 : 16)} />
             Priority
           </button>
           <button
@@ -912,7 +928,7 @@ export function ChannelPanel({
             disabled={!connected || !canTransmit}
             onClick={() => sendTone("status")}
           >
-            <IconToneStatus size={workspace ? 13 : 16} />
+            <IconToneStatus size={wsIcon?.tone ?? (workspace ? 13 : 16)} />
             Status
           </button>
         </div>
@@ -938,7 +954,7 @@ export function ChannelPanel({
                         : `Play "${toneOut.name}"`
                     }
                   >
-                    <ToneOutBadge toneOut={toneOut} size={workspace ? 14 : 16} />
+                    <ToneOutBadge toneOut={toneOut} size={wsIcon?.badge ?? (workspace ? 14 : 16)} />
                     <span className="toneout-label">{toneOut.name}</span>
                     {isLoop && <span className="toneout-mode">{looping ? "■" : "↻"}</span>}
                   </button>
@@ -947,7 +963,7 @@ export function ChannelPanel({
           </div>
         )}
         <button type="button" className="stopall-btn" onClick={stopAllSounds}>
-          <IconStop size={workspace ? 13 : 16} />
+          <IconStop size={wsIcon?.tone ?? (workspace ? 13 : 16)} />
           {workspace ? "Stop all" : "Stop All Sounds"}
         </button>
       </div>
