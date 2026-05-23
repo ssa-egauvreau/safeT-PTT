@@ -213,6 +213,10 @@ export class VoiceChannelClient {
   private lastInboundMs = 0;
   private receiving = false;
   private rxWatchdog: number | null = null;
+  /** One-shot warning when a peer's audio arrives as raw PCM instead of IMBE — diagnoses fallback. */
+  private warnedClearRx = false;
+  /** One-shot warning when our own uplink falls back from IMBE to raw PCM. */
+  private warnedClearTx = false;
 
   constructor(channelName: string, callbacks: VoiceCallbacks) {
     this.channelName = channelName;
@@ -487,6 +491,15 @@ export class VoiceChannelClient {
       }
       return;
     }
+    // Raw PCM from a peer means that unit's IMBE encoder did not engage — log once per
+    // session so a dispatcher reporting "everything sounds clear, not vocoded" can see
+    // it is a sender-side fallback (handset native lib missing, web vocoder not loaded).
+    if (!this.warnedClearRx) {
+      this.warnedClearRx = true;
+      console.warn(
+        `[voice] receiving raw PCM on "${this.channelName}" — peer's IMBE encoder is not active (handset native vocoder missing or web WASM failed to load on the sender).`,
+      );
+    }
     this.schedulePcm(new Int16Array(buffer, 0, Math.floor(buffer.byteLength / 2)));
   }
 
@@ -583,6 +596,13 @@ export class VoiceChannelClient {
           ws.send(wrapListenPcm(pcmBuf));
         }
       } else {
+        if (!this.warnedClearTx) {
+          this.warnedClearTx = true;
+          const reason = !this.digitalTx ? "HQ/analog mode selected" : "IMBE WASM not ready";
+          console.warn(
+            `[voice] transmitting raw PCM on "${this.channelName}" (${reason}) — peers will hear clear audio, not vocoded.`,
+          );
+        }
         ws.send(pcmBuf);
       }
     };

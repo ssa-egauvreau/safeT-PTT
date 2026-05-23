@@ -18,8 +18,13 @@ async function load(): Promise<ImbeModule | null> {
   try {
     const factory = (await import("../vendor/imbeModule.js")).default;
     const mod = await factory();
-    return mod._imbe_init() === 1 ? mod : null;
-  } catch {
+    if (mod._imbe_init() === 1) {
+      return mod;
+    }
+    console.warn("[imbe] _imbe_init() did not return 1 — vocoder will be unavailable");
+    return null;
+  } catch (err) {
+    console.warn("[imbe] failed to load WASM vocoder — uplink/downlink will fall back to clear PCM:", err);
     return null;
   }
 }

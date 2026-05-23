@@ -95,6 +95,8 @@ class VoiceRelayTransport(
     private var pcmAcc = ByteArray(2048)
     private var pcmAccLen = 0
     private var lastP25TxEnabled: Boolean? = null
+    /** One-shot Logcat warning when our uplink falls back from IMBE to clear PCM. */
+    private var warnedClearTx = false
     private val pcmFrameScratch = ByteArray(P25ImbeNative.Frames.PCM_16K_FRAME_BYTES)
 
     /** Speech conditioning for the IMBE uplink; reset at the start of each talk-spurt. */
@@ -290,6 +292,17 @@ class VoiceRelayTransport(
 
         val p25 = p25UplinkEligible()
         if (!p25) {
+            // Native vocoder didn't load → uplink is clear PCM, peers will hear non-vocoded
+            // audio. Log once per process so this is visible in Logcat when troubleshooting
+            // "everything sounds raw on the dispatch portal".
+            if (!warnedClearTx) {
+                warnedClearTx = true
+                Log.w(
+                    TAG,
+                    "P25 IMBE encoder unavailable — transmitting clear PCM (peers will hear non-vocoded audio). " +
+                        "Check libsecurityradiovocoder.so was packaged for this ABI.",
+                )
+            }
             pcmAccLen = 0
             sendBinaryWs(active, buffer.copyOfRange(0, length))
             return
