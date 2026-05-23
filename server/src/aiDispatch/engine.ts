@@ -34,7 +34,7 @@ import {
 import { shouldSkipDuplicateAiDispatch } from "./dedupe.js";
 import { retrieveKnowledge } from "./knowledgeBase/retrieve.js";
 import { lookupSsaProperty } from "./ssaProperties.js";
-import { listTen8ActiveIncidents } from "../ten8/store.js";
+import { listTen8ActiveIncidents, upsertTen8Incident } from "../ten8/store.js";
 import {
   ten8AddComment,
   ten8AddVehicle,
@@ -447,7 +447,7 @@ async function processTransmission(transmissionId: number): Promise<void> {
 
       if (await ten8Configured(tx.agency_id)) {
         const callsign = (parsed.unit ?? unitId ?? "").trim();
-        const active = activeIncidents;
+        let active = activeIncidents;
         const knownIncidentTypes = active
           .map((i) => i.incident_type)
           .filter((t): t is string => !!t?.trim());
@@ -471,6 +471,54 @@ async function processTransmission(transmissionId: number): Promise<void> {
               const newCallId = extractCallIdFromCreateResponse(res.data);
               if (newCallId) {
                 newCallIdFromCreate = newCallId;
+
+                // Seed the local open-incident store with the call we just created so that
+                // follow-up transmissions (plate runs, on-scene comments, "subject exiting
+                // vehicle", etc.) can be linked even before 10-8's outbound webhook fires.
+                // The webhook upsert is keyed on (agency_id, call_id) and will overwrite
+                // this row when it arrives.
+                try {
+                  const seedIncidentType =
+                    typeof body.type === "string" ? body.type : null;
+                  const seedPriority =
+                    typeof body.priority === "number"
+                      ? String(body.priority)
+                      : typeof body.priority === "string"
+                        ? body.priority
+                        : null;
+                  const seedLocation =
+                    typeof body.location === "string" ? body.location : null;
+                  await upsertTen8Incident({
+                    agencyId: tx.agency_id,
+                    callId: newCallId,
+                    action: "created",
+                    isClosed: false,
+                    incidentType: seedIncidentType,
+                    priority: seedPriority,
+                    status: "active",
+                    location: seedLocation,
+                    payload: {
+                      action: "created",
+                      seeded_by: "ai_dispatch_create",
+                      incident: {
+                        callID: newCallId,
+                        type: seedIncidentType,
+                        isClosed: 0,
+                        status: "active",
+                        units: callsign ? [{ unit: callsign }] : [],
+                        location: seedLocation,
+                        ...(seedPriority ? { priority: seedPriority } : {}),
+                      },
+                    },
+                  });
+                  // Refresh the in-memory active list so the rest of this transmission
+                  // (plate vehicle linkage below) and any queued follow-ups can see it.
+                  activeIncidents = await listTen8ActiveIncidents(tx.agency_id);
+                  active = activeIncidents;
+                } catch (e) {
+                  console.warn("[ai-dispatch] failed to seed ten8_incidents after create", e);
+                }
+
                 const note = formatTen8RadioComment(callsign, transcript);
                 if (note) {
                   const commentRes = await ten8AddComment(tx.agency_id, newCallId, note);
@@ -559,7 +607,10 @@ async function processTransmission(transmissionId: number): Promise<void> {
             ttsKind = "info_lookup";
           }
         }
-      } else {
+      } else if (!plate.speakText) {
+        // Don't override an explicit plate readback ("...comes back to a 2018 Honda Civic")
+        // with the generic deterministic dispatch ack ("Copy 352, 961 at 18-06") — the
+        // readback is the useful response for the officer.
         const detAck = buildDeterministicDispatchAck(parsed, parsed.unit ?? unitId);
         if (detAck) {
           speakText = detAck;
