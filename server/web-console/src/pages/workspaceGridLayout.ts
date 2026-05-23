@@ -30,7 +30,7 @@ export function rglItemFromTile(
     minW: 1,
     minH: 1,
     maxW: gridCols,
-    maxH: 4,
+    maxH: 8,
     static: false,
   };
 }

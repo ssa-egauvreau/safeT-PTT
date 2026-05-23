@@ -5,9 +5,9 @@ export const PUZZLE_GRID_MAX_COLS = 10;
 export const PUZZLE_GRID_GAP_PX = 8;
 export const PUZZLE_GRID_ROW_PX = 72;
 
-export const PUZZLE_SMALL = { colSpan: 1, rowSpan: 1 } as const;
-export const PUZZLE_MEDIUM = { colSpan: 2, rowSpan: 2 } as const;
-export const PUZZLE_LARGE = { colSpan: 2, rowSpan: 4 } as const;
+export const PUZZLE_SMALL = { colSpan: 2, rowSpan: 2 } as const;
+export const PUZZLE_MEDIUM = { colSpan: 4, rowSpan: 4 } as const;
+export const PUZZLE_LARGE = { colSpan: 4, rowSpan: 8 } as const;
 
 export type PuzzleTile = {
   colSpan: number;

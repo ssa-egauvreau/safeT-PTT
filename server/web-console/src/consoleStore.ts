@@ -16,7 +16,7 @@ import {
 const STATE_KEY = "securityradio.console.state";
 
 /** Bump when workspace layout rules change — triggers one-time localStorage migration. */
-const CURRENT_LAYOUT_VERSION = 16;
+const CURRENT_LAYOUT_VERSION = 17;
 const MAX_STATE_STORAGE_BYTES = 256 * 1024;
 const MAX_OPEN_CHANNELS = 16;
 const MAX_DOCKED_CHANNELS = 12;
@@ -25,9 +25,9 @@ const COMMIT_STORM_WINDOW_MS = 2000;
 
 /**
  * One channel tile on the workspace puzzle grid (fixed cell units):
- *   - small:  1×1
- *   - medium: 2×2
- *   - large:  up to 4×4 wide×tall (width clamps on narrow screens)
+ *   - small:  2×2
+ *   - medium: 4×4 (width clamps on narrow screens)
+ *   - large:  4×8 (width clamps on narrow screens)
  */
 export interface WorkspaceTileLayout {
   colSpan: number;
@@ -56,15 +56,14 @@ export const WORKSPACE_MAX_COLS = WORKSPACE_GRID_MAX_COLS;
 /** @deprecated Use WORKSPACE_GRID_ROW_PX. */
 export const WORKSPACE_GRID_ROW_MIN_PX = WORKSPACE_GRID_ROW_PX;
 
-export const WORKSPACE_SMALL_COLS = 1;
-export const WORKSPACE_SMALL_ROWS = 1;
-export const WORKSPACE_MEDIUM_COLS = 2;
-export const WORKSPACE_MEDIUM_ROWS = 2;
-/** Large tiles span up to 4 columns when space allows; always 4 rows tall for controls. */
+export const WORKSPACE_SMALL_COLS = 2;
+export const WORKSPACE_SMALL_ROWS = 2;
+export const WORKSPACE_MEDIUM_COLS = 4;
+export const WORKSPACE_MEDIUM_ROWS = 4;
 export const WORKSPACE_LARGE_COLS = 4;
-export const WORKSPACE_LARGE_ROWS = 4;
+export const WORKSPACE_LARGE_ROWS = 8;
 
-/** New tiles dock as medium (2×2). */
+/** New tiles dock as medium (4×4). */
 export const WORKSPACE_DEFAULT_WIDGET_SIZE: WorkspaceWidgetSize = "medium";
 export const WORKSPACE_WIDGET_SIZES: readonly WorkspaceWidgetSize[] = ["small", "medium", "large"];
 
@@ -81,16 +80,13 @@ export function workspacePresetForSize(size: WorkspaceWidgetSize): Pick<Workspac
 }
 
 export function workspaceTileSize(tile: Pick<WorkspaceTileLayout, "colSpan" | "rowSpan">): WorkspaceWidgetSize {
-  if (tile.colSpan <= WORKSPACE_SMALL_COLS && tile.rowSpan <= WORKSPACE_SMALL_ROWS) {
-    return "small";
-  }
-  if (tile.rowSpan >= 4 && tile.colSpan >= 2) {
+  if (tile.rowSpan >= WORKSPACE_LARGE_ROWS - 1) {
     return "large";
   }
-  if (tile.colSpan >= 3 && tile.rowSpan <= 2) {
-    return "large";
+  if (tile.rowSpan >= WORKSPACE_MEDIUM_ROWS) {
+    return "medium";
   }
-  return "medium";
+  return "small";
 }
 
 /** Footprint for a size on the current column count (large clamps to grid width). */

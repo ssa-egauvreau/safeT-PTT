@@ -951,7 +951,7 @@ code.mono {
   font-size: 9px;
 }
 
-/* --- Mission Control: react-grid-layout widget board (2–10 cols; S 1×1 · M 2×2 · L 4×2) --- */
+/* --- Mission Control: react-grid-layout widget board (2–10 cols; S 2×2 · M 4×4 · L 4×8) --- */
 .channel-workspace-rgl-wrap {
   min-height: 200px;
   min-width: 0;
@@ -1246,13 +1246,13 @@ code.mono {
   overflow: hidden;
 }
 .channel-workspace-rail-drag-follower.widget-small {
-  min-height: 92px;
+  min-height: calc(2 * var(--ws-row-unit, 68px) + 16px);
 }
 .channel-workspace-rail-drag-follower.widget-medium {
-  min-height: calc(2 * var(--ws-row-unit, 72px) + 16px);
+  min-height: calc(4 * var(--ws-row-unit, 68px) + 24px);
 }
 .channel-workspace-rail-drag-follower.widget-large {
-  min-height: calc(4 * var(--ws-row-unit, 68px) + 24px);
+  min-height: calc(8 * var(--ws-row-unit, 68px) + 32px);
 }
 .channel-workspace-rail-drag-follower-head {
   display: flex;
@@ -1511,12 +1511,10 @@ code.mono {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   box-sizing: border-box;
 }
 .channel-workspace-tile .channel-card.workspace[data-width="wide"] .ch-card-body.workspace-dense {
@@ -1666,53 +1664,103 @@ code.mono {
 .channel-card.workspace[data-widget-size="medium"] .live-tx-log-hint {
   display: none;
 }
-/* --- Workspace widget sizes: content fits inside react-grid-layout cells --- */
+/* --- Workspace widget sizes: fit inside grid cells (no inner scroll) --- */
+.channel-workspace-tile .channel-card.workspace .ch-card-body.workspace-dense > * {
+  flex-shrink: 0;
+  min-height: 0;
+}
 .channel-workspace-tile.widget-small .channel-card.workspace {
-  font-size: 11px;
+  font-size: 10px;
 }
 .channel-workspace-tile.widget-small .ch-card-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
 }
-.channel-workspace-tile.widget-small .ch-card-body.workspace-dense:empty {
-  display: none;
-  flex: 0 0 0;
-  padding: 0;
+.channel-workspace-tile.widget-small .ch-card-body.workspace-dense {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 5px;
+  padding: 3px 5px 4px;
+  align-content: start;
+}
+.channel-workspace-tile.widget-small .ch-card-body.workspace-dense > .volume-row {
+  grid-column: 1 / -1;
   margin: 0;
+  padding: 0;
 }
-.channel-workspace-tile.widget-medium .channel-card.workspace .ch-card-body.workspace-dense {
+.channel-workspace-tile.widget-small .ch-card-body.workspace-dense > .live-tx-console {
+  grid-column: 1 / -1;
+  min-height: 0;
+}
+.channel-workspace-tile.widget-small .live-tx-transcript {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-height: 2.6em;
+  font-size: 10px;
+}
+.channel-workspace-tile.widget-small .live-tx-console .live-tx-card {
+  padding: 4px 6px;
+}
+.channel-workspace-tile.widget-medium .channel-card.workspace {
+  font-size: 11px;
+}
+.channel-workspace-tile.widget-medium .ch-card-body.workspace-dense {
   gap: 3px;
+  padding: 4px 6px 5px;
 }
-.channel-workspace-tile.widget-medium .ch-card-toolbar {
-  flex-shrink: 0;
+.channel-workspace-tile.widget-medium .live-tx-transcript {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-height: 3.6em;
+  font-size: 10px;
 }
-.channel-workspace-tile.widget-medium .toneout.workspace-tones-compact {
-  flex-shrink: 0;
+.channel-workspace-tile.widget-medium .toneout.workspace-tones-compact .toneout-btn {
+  padding: 3px 4px;
+  font-size: 9px;
+}
+.channel-workspace-tile.widget-medium .toneout.workspace-tones-compact .stopall-btn {
+  padding: 3px 6px;
+  font-size: 9px;
+  margin-top: 2px;
+}
+.channel-workspace-tile.widget-large .channel-card.workspace {
+  font-size: 11px;
 }
 .channel-workspace-tile.widget-large .channel-card.workspace .ch-card-body.workspace-dense {
-  gap: 5px;
-  padding: 4px 8px 6px;
-}
-.channel-workspace-tile.widget-large .channel-card.workspace .ch-card-toolbar,
-.channel-workspace-tile.widget-large .channel-card.workspace .volume-row,
-.channel-workspace-tile.widget-large .channel-card.workspace .tx-button-integrated,
-.channel-workspace-tile.widget-large .channel-card.workspace .ch-actions-grid,
-.channel-workspace-tile.widget-large .channel-card.workspace .toneout {
-  flex-shrink: 0;
+  gap: 4px;
+  padding: 4px 8px 5px;
 }
 .channel-workspace-tile.widget-large .channel-card.workspace .live-tx-console {
   flex-shrink: 0;
-  max-height: 5rem;
+  max-height: 4.5rem;
+  overflow: hidden;
+}
+.channel-workspace-tile.widget-large .live-tx-transcript {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
   overflow: hidden;
 }
 .channel-workspace-tile.widget-large .tx-button-integrated {
-  max-height: 4.5rem;
+  flex-shrink: 0;
+  min-height: 44px;
+  max-height: 52px;
+  padding: 5px;
+}
+.channel-workspace-tile.widget-large .tx-button-integrated .tx-sub {
+  font-size: 9px;
+}
+.channel-workspace-tile.widget-large .ch-actions-grid {
+  gap: 3px;
 }
 .channel-workspace-tile.widget-large .ch-actions-grid .ch-action-cell {
-  font-size: 10px;
-  padding: 5px 6px;
+  font-size: 9px;
+  padding: 4px 5px;
 }
 .channel-workspace-tile .channel-card.workspace .state-chip {
   font-size: 9px;
@@ -1720,9 +1768,16 @@ code.mono {
 }
 .channel-workspace-tile .channel-card.workspace .ch-quick-ptt,
 .channel-workspace-tile .channel-card.workspace .ch-power {
-  min-height: 28px;
-  padding: 4px 8px;
+  min-height: 26px;
+  padding: 3px 6px;
   font-size: 10px;
+}
+.channel-workspace-tile .channel-card.workspace .volume-row {
+  margin: 0;
+  gap: 4px;
+}
+.channel-workspace-tile .channel-card.workspace .vol-pct {
+  font-size: 9px;
 }
 .toneout.workspace-tones-compact .ch-tone-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2050,18 +2105,20 @@ code.mono {
 .channel-workspace-tile .channel-card.workspace .roster {
   flex: 1 1 auto;
   min-height: 0;
-  max-height: none;
-  margin-top: 4px;
-  padding: 6px 8px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  margin-top: 2px;
+  padding: 4px 6px;
+  overflow: hidden;
 }
 .channel-workspace-tile.widget-large .channel-card.workspace .roster {
   flex: 1 1 0;
-  min-height: 3.5rem;
 }
-.channel-workspace-tile.widget-medium .channel-card.workspace .roster {
-  display: none;
+.channel-workspace-tile.widget-large .roster-row {
+  padding: 3px 0;
+  font-size: 11px;
+}
+.channel-workspace-tile.widget-large .roster-head {
+  margin-bottom: 4px;
+  font-size: 10px;
 }
 
 .channel-dock {

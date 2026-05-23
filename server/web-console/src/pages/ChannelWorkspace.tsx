@@ -42,13 +42,14 @@ const SIZE_LABEL: Record<WorkspaceWidgetSize, string> = {
 
 function nextSizeTitle(size: WorkspaceWidgetSize, gridCols: number): string {
   const foot = workspaceFootprintForSize(size, gridCols);
+  const dim = `${foot.colSpan}×${foot.rowSpan}`;
   switch (size) {
     case "small":
-      return `${foot.colSpan}×${foot.rowSpan} — compact. Tap for medium.`;
+      return `${dim} — compact. Tap for medium.`;
     case "medium":
-      return `${foot.colSpan}×${foot.rowSpan} — Tap for large.`;
+      return `${dim} — Tap for large.`;
     default:
-      return `${foot.colSpan}×${foot.rowSpan} — full panel. Tap for small.`;
+      return `${dim} — full panel. Tap for small.`;
   }
 }
 
@@ -222,7 +223,7 @@ export function ChannelWorkspace({
             <>
               <p>Tap a channel in the list to open it here — or drag it in.</p>
               <p className="muted">
-                iOS-style grid: S = 1×1 · M = 2×2 · L = up to 4×4. Drag the colored name bar.
+                S = 2×2 · M = 4×4 · L = 4×8. Drag the colored name bar to move.
               </p>
             </>
           }

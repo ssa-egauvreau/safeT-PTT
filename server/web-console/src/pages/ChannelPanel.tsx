@@ -490,19 +490,19 @@ export function ChannelPanel({
   const wsSize = workspace ? workspaceWidgetSize : "large";
   const showToolbar = true;
   const showVolume = true;
-  const showStatusChip = !workspace || wsSize !== "small";
+  const showStatusChip = workspace && wsSize !== "small";
   const showMemberCount = workspace;
   const showMeta = !workspace || wsSize === "large";
   const showAudioOut = !workspace || wsSize === "large";
   const showActions = !workspace || wsSize === "large";
-  const showTones = !workspace || wsSize === "medium" || wsSize === "large";
+  const showTones = workspace && (wsSize === "medium" || wsSize === "large");
   const showTonesCompact = workspace && wsSize === "medium";
-  const showLiveTx = !workspace || wsSize === "medium" || wsSize === "large";
+  const showToneCustom = !workspace || wsSize === "large";
+  const showLiveTx = workspace;
   const showRoster = !workspace || wsSize === "large";
-  /** Full XMIT pad only on large — S/M use the toolbar PTT so nothing is clipped. */
+  /** Full XMIT pad only on large — S/M use the toolbar PTT. */
   const showMainTxButton = !workspace || wsSize === "large";
-  /** Small tiles: volume sits above ON/PTT in the header so every control stays visible. */
-  const volumeInHead = workspace && wsSize === "small";
+  const volumeInHead = false;
 
   const volumeRow = showVolume ? (
     <div className="volume-row">
@@ -826,7 +826,11 @@ export function ChannelPanel({
           channelName={channel.name}
           active={monitoring && connected}
           homeReceiving={receiving && !transmitting}
-          logHint={wsSize === "medium" ? "" : "Open the transmission log below for full history."}
+          logHint={
+            wsSize === "large"
+              ? "Open the transmission log below for full history."
+              : ""
+          }
         />
       )}
 
@@ -912,7 +916,7 @@ export function ChannelPanel({
             Status
           </button>
         </div>
-        {toneOuts.some((t) => t.has_audio) && (
+        {showToneCustom && toneOuts.some((t) => t.has_audio) && (
           <div className={workspace ? "ch-tone-grid" : "toneout-custom"}>
             {toneOuts
               .filter((t) => t.has_audio)
