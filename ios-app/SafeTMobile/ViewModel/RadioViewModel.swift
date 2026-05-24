@@ -226,6 +226,13 @@ final class RadioViewModel: ObservableObject {
     private func onPttReleased() {
         uiState.isPttPressed = false
         uiState.pttBusyTone = false
+        // Cut the busy cue immediately when PTT is released. Without this,
+        // releasing PTT before the ~2s busy clip finishes leaves audio still
+        // playing while the status strip already says "RX IDLE", which masks
+        // any subsequent cues (channel switch, next PTT) and confuses the
+        // operator. Safe to call unconditionally — stop() is a no-op when the
+        // cue isn't playing.
+        sounds.stop(.busy)
         if uiState.isTransmitting {
             voiceAudio.stopCapture()
             uiState.isTransmitting = false
