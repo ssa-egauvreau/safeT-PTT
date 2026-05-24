@@ -37,6 +37,18 @@ struct TranscriptionsScreen: View {
         .navigationTitle("TRANSCRIPTS")
         .navigationBarTitleDisplayMode(.inline)
         .task { await reload() }
+        .onDisappear {
+            // Cancel any in-flight network work and stop playback so dismissing
+            // the sheet mid-fetch doesn't trigger player.play() off-screen or
+            // leak audio after the screen is gone.
+            audioFetchTask?.cancel()
+            audioFetchTask = nil
+            reloadTask?.cancel()
+            reloadTask = nil
+            searchTask?.cancel()
+            searchTask = nil
+            player.stop()
+        }
     }
 
     private var searchBar: some View {
@@ -270,7 +282,16 @@ struct TranscriptionsScreen: View {
     private func performReload(query: String?) async {
         loading = true
         error = nil
-        defer { loading = false }
+        // Only clear the spinner if THIS reload is still the active one and
+        // wasn't cancelled. Without the guard, an older cancelled reload's
+        // defer would flip loading=false while a newer reload is still
+        // in-flight — the UI would briefly show "no matches" or stale rows
+        // before the real result arrived.
+        defer {
+            if !Task.isCancelled, (query ?? "") == search {
+                loading = false
+            }
+        }
         do {
             let result = try await api.transmissions(search: query)
             // Drop the result if the user has changed the search box while we
