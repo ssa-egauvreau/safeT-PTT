@@ -185,6 +185,15 @@ final class RadioViewModel: ObservableObject {
             uiState.statusMessage = "LISTEN ONLY ON THIS CHANNEL"
             return
         }
+        // startVoiceIfNeeded() can leave the audio engine inert (mic denied, audio init
+        // throw, etc.). Without this guard the UI would say "ON AIR" while no PCM is
+        // actually being captured or sent — confusing the operator and silently dropping
+        // their transmission.
+        guard voiceStarted else {
+            uiState.pttBusyTone = true
+            uiState.statusMessage = "VOICE UNAVAILABLE"
+            return
+        }
         uiState.statusMessage = "AIR: CHECKING"
         do {
             let air = try await api.airState(channel: currentChannel)

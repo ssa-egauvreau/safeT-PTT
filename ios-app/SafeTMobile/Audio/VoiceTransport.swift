@@ -27,6 +27,10 @@ final class VoiceTransport {
     private var currentChannel: String?
     private var lastReceivedAt: Date = .distantPast
     private var receivingTimer: Timer?
+    /// Tracks transient reconnect attempts so the backoff delay grows on repeated
+    /// failures and resets after the server confirms a successful `joined`.
+    private var reconnectAttempts: Int = 0
+    private var reconnectTask: Task<Void, Never>?
 
     init(baseURL: URL, token: String, unitId: String, audio: VoiceAudio, session: URLSession = .shared) {
         self.baseURL = baseURL
@@ -45,11 +49,14 @@ final class VoiceTransport {
     }
 
     func disconnect() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
         receivingTimer?.invalidate()
         receivingTimer = nil
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         currentChannel = nil
+        reconnectAttempts = 0
     }
 
     /// Send one captured 320-byte PCM16 frame upstream. No-op if not connected.
@@ -63,7 +70,11 @@ final class VoiceTransport {
 
     private func openSocket() {
         var components = URLComponents(url: baseURL.appendingPathComponent("v1/voice/stream"), resolvingAgainstBaseURL: false)
-        components?.scheme = (components?.scheme == "http") ? "ws" : "wss"
+        // Read the current scheme into a local first — Swift's exclusivity
+        // checker rejects reading and writing `components` in the same
+        // expression (overlapping access to a mutable optional).
+        let currentScheme = components?.scheme
+        components?.scheme = (currentScheme == "http") ? "ws" : "wss"
         components?.queryItems = [URLQueryItem(name: "token", value: token)]
         guard let url = components?.url else { return }
 
@@ -101,11 +112,39 @@ final class VoiceTransport {
                 Task { @MainActor in
                     self.onError?(error.localizedDescription)
                     self.task = nil
+                    // Auto-reconnect after a transient network blip. Without this the
+                    // socket stays dead for the rest of the session and the operator
+                    // has to change channel (or restart the app) to get voice back.
+                    self.scheduleReconnect()
                 }
             case .success(let message):
                 Task { @MainActor in self.handle(message) }
                 self.listen()
             }
+        }
+    }
+
+    /// Re-opens the socket and re-sends the `join` frame for the active channel,
+    /// with exponential backoff (1, 2, 4, 8, capped at 16 s). No-op if `disconnect()`
+    /// has been called or we never joined a channel. Idempotent: repeated calls
+    /// while a reconnect is already queued just leave the existing schedule alone.
+    private func scheduleReconnect() {
+        guard let channel = currentChannel else { return }
+        if reconnectTask != nil { return }
+        reconnectAttempts += 1
+        let delaySeconds = min(pow(2.0, Double(reconnectAttempts - 1)), 16.0)
+        onError?("link lost — reconnecting in \(Int(delaySeconds))s")
+        let nanoseconds = UInt64(delaySeconds * 1_000_000_000)
+        reconnectTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard let self, !Task.isCancelled else { return }
+            self.reconnectTask = nil
+            // Bail if the user disconnected or moved channels while we were waiting —
+            // currentChannel may have been cleared or replaced. join(channel:) will
+            // be re-invoked by the channel-change flow in that case.
+            guard self.currentChannel == channel else { return }
+            self.openSocket()
+            self.sendJoinFrame()
         }
     }
 
@@ -133,6 +172,9 @@ final class VoiceTransport {
             let permRaw = (object["permission"] as? String) ?? "listen_only"
             let unit = (object["unit_id"] as? String) ?? unitId
             let permission = Permission(rawValue: permRaw) ?? .listenOnly
+            // Server accepted us — the link is healthy, so any subsequent failure
+            // should restart the backoff at the bottom of the ladder, not at 16 s.
+            reconnectAttempts = 0
             onJoined?(Joined(channel: channel, permission: permission, unitId: unit))
         case "error":
             let code = (object["code"] as? String) ?? "unknown"
