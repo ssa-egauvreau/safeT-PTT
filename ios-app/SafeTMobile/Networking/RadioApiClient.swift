@@ -206,6 +206,8 @@ final class RadioApiClient {
         var request = URLRequest(url: baseURL.appendingPathComponent("v1/tone-outs/\(id)/audio"))
         applyAuth(&request)
         return try await sendDiscardingBody(request)
+    }
+
     /// `GET /v1/locations` — every reporting unit in this user's agency with
     /// its latest fix. Server enforces agency scoping; nothing to filter here.
     func positions() async throws -> [UnitPosition] {
