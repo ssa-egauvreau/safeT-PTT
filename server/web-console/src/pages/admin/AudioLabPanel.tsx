@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, describeError, type UserChannel } from "../../api";
 import { imbeDecode, imbeEncode, imbeReady, initImbe } from "../../voice/imbeVocoder";
 import {
-  BUILTIN_PRESETS,
   DEFAULT_PRESET,
   processClip,
   processClipProduction,
@@ -110,7 +109,6 @@ export function AudioLabPanel() {
   const [presets, setPresets] = useState<PresetRecord[]>(() => listPresets());
   const [activePresetName, setActivePresetName] = useState<string>("Default IMBE");
   const [state, setState] = useState<LabState>("idle");
-  const [recording, setRecording] = useState<LabRecorder | null>(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordedClip, setRecordedClip] = useState<Int16Array | null>(null);
   const [processedClip, setProcessedClip] = useState<Int16Array | null>(null);
@@ -129,6 +127,9 @@ export function AudioLabPanel() {
   const playCtxRef = useRef<AudioContext | null>(null);
   const playSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const recordTimerRef = useRef<number | null>(null);
+  // Mirror of `recording` state so stable callbacks (onAutoStop, unmount cleanup) can
+  // reach the live recorder without going through a stale closure on the React state.
+  const recordingRef = useRef<LabRecorder | null>(null);
 
   // Load channels for the push dropdown (talk-capable only).
   useEffect(() => {
@@ -156,7 +157,9 @@ export function AudioLabPanel() {
     return preset ? !configsEqual(preset.config, config) : true;
   }, [config, activePresetName, presets]);
 
-  // Stop any in-flight playback when the user leaves the panel.
+  // Stop any in-flight playback and release the mic when the user leaves the panel.
+  // Reads the live recorder through `recordingRef` so this works even if the user
+  // navigates away mid-recording (the React state captured at mount would be null).
   useEffect(() => {
     return () => {
       try {
@@ -167,10 +170,18 @@ export function AudioLabPanel() {
       void playCtxRef.current?.close().catch(() => undefined);
       if (recordTimerRef.current !== null) {
         window.clearInterval(recordTimerRef.current);
+        recordTimerRef.current = null;
       }
-      recording?.stop();
+      const rec = recordingRef.current;
+      if (rec) {
+        try {
+          rec.stop();
+        } catch {
+          /* already torn down */
+        }
+        recordingRef.current = null;
+      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function setError_(msg: string | null): void {
@@ -189,12 +200,11 @@ export function AudioLabPanel() {
     setProcessedClip(null);
     try {
       const rec = await startLabRecorder({
-        onAutoStop: () => {
-          // Auto-stop fired from inside the recorder when the cap is hit.
-          handleStopRecord();
-        },
+        // Reads the recorder via ref so auto-stop works even though this callback
+        // was created on a render where `recording` was still null.
+        onAutoStop: () => finishRecording(),
       });
-      setRecording(rec);
+      recordingRef.current = rec;
       setRecordingSeconds(0);
       setState("recording");
       const started = Date.now();
@@ -207,18 +217,19 @@ export function AudioLabPanel() {
     }
   }
 
-  function handleStopRecord(): void {
-    const rec = recording;
-    if (!rec) {
-      setState("idle");
-      return;
-    }
+  /** Idempotent — invoked both by the UI Stop button and the recorder's onAutoStop. */
+  function finishRecording(): void {
+    const rec = recordingRef.current;
     if (recordTimerRef.current !== null) {
       window.clearInterval(recordTimerRef.current);
       recordTimerRef.current = null;
     }
+    if (!rec) {
+      setState("idle");
+      return;
+    }
     const pcm = rec.stop();
-    setRecording(null);
+    recordingRef.current = null;
     setRecordedClip(pcm);
     setState("idle");
     if (pcm.length === 0) {
@@ -230,6 +241,10 @@ export function AudioLabPanel() {
         }`,
       );
     }
+  }
+
+  function handleStopRecord(): void {
+    finishRecording();
   }
 
   async function handleProcessAndPlay(): Promise<void> {
@@ -489,7 +504,16 @@ export function AudioLabPanel() {
         >
           Delete
         </button>
-        <button className="btn sm" onClick={() => setConfig(cloneConfig(BUILTIN_PRESETS[activePresetName] ?? DEFAULT_PRESET))} disabled={!isDirty}>
+        <button
+          className="btn sm"
+          onClick={() => {
+            // Look up the selected preset across both built-ins and the user-saved list
+            // so resetting a custom preset goes back to its own baseline, not Default IMBE.
+            const preset = presets.find((p) => p.name === activePresetName);
+            setConfig(cloneConfig(preset?.config ?? DEFAULT_PRESET));
+          }}
+          disabled={!isDirty}
+        >
           Reset to preset
         </button>
       </section>
