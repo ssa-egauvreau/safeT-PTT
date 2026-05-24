@@ -4,7 +4,13 @@
 // the production TX/RX paths (imbeTxConditioner.ts, imbeVocoder.ts) so the lab's "Default"
 // preset reproduces what a real talker would sound like today.
 
+import { ImbeTxConditioner } from "../../../voice/imbeTxConditioner";
 import { imbeDecode, imbeEncode, imbeReady, initImbe } from "../../../voice/imbeVocoder";
+
+/** Worklet frame length the production capture path emits — 40 ms @ 16 kHz. The TX
+ *  conditioner's adaptive AGC / gate update once per frame, so running the lab's
+ *  "live settings" pipeline in the same chunk size keeps the behaviour faithful. */
+const PRODUCTION_FRAME_16K = 640;
 
 const FS = 16_000;
 
@@ -299,6 +305,44 @@ export async function processClip(input: Int16Array, cfg: AudioLabConfig): Promi
     );
   }
   return shaped;
+}
+
+/** Runs a recorded clip through the EXACT production audio path — the real
+ *  ImbeTxConditioner (adaptive AGC / gate / soft-limit), real IMBE encode/decode, and
+ *  the live sample-duplicate upsample with no post-decode shaping. Use this for an
+ *  honest A/B against any custom AudioLabConfig the user is trying. */
+export async function processClipProduction(input: Int16Array): Promise<Int16Array> {
+  if (!imbeReady()) {
+    const ok = await initImbe();
+    if (!ok) {
+      throw new Error("IMBE vocoder unavailable — WASM failed to load");
+    }
+  }
+  // Stage 1: production TX conditioner, frame-by-frame so the adaptive state evolves
+  // the same way as a live keyup.
+  const conditioned = input.slice();
+  const cond = new ImbeTxConditioner();
+  for (let off = 0; off < conditioned.length; off += PRODUCTION_FRAME_16K) {
+    const end = Math.min(off + PRODUCTION_FRAME_16K, conditioned.length);
+    cond.process(conditioned.subarray(off, end));
+  }
+
+  // Stage 2: 16 → 8 kHz, IMBE encode + decode.
+  const pcm8k = downsample16To8(conditioned);
+  const decoded8k = new Int16Array(pcm8k.length);
+  let outOff = 0;
+  for (let off = 0; off + 160 <= pcm8k.length; off += 160) {
+    const cw = imbeEncode(pcm8k.subarray(off, off + 160));
+    if (!cw) continue;
+    const dec = imbeDecode(cw);
+    if (!dec) continue;
+    decoded8k.set(dec, outOff);
+    outOff += 160;
+  }
+  const decoded = decoded8k.subarray(0, outOff);
+
+  // Stage 3: production RX — sample-duplicate upsample, no shaping, no EQ.
+  return upsampleDup8To16(decoded);
 }
 
 /** Default preset — reproduces production behaviour today (IMBE round-trip,

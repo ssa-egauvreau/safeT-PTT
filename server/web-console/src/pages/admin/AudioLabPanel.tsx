@@ -5,6 +5,7 @@ import {
   BUILTIN_PRESETS,
   DEFAULT_PRESET,
   processClip,
+  processClipProduction,
   type AudioLabConfig,
   type UpsampleMode,
 } from "./audioLab/pipeline";
@@ -251,6 +252,27 @@ export function AudioLabPanel() {
     await playPcm(processed);
   }
 
+  async function handlePlayProduction(): Promise<void> {
+    if (!recordedClip || recordedClip.length === 0) {
+      setError_("Record a clip first.");
+      return;
+    }
+    setError_(null);
+    setInfo_(null);
+    setState("processing");
+    let processed: Int16Array;
+    try {
+      processed = await processClipProduction(recordedClip);
+    } catch (err) {
+      setError_(describeError(err));
+      setState("idle");
+      return;
+    }
+    // Don't overwrite `processedClip` — that one is what the Channel Push uses, and
+    // it should reflect the user's custom settings, not the production reference.
+    await playPcm(processed);
+  }
+
   async function handlePlayOriginal(): Promise<void> {
     if (!recordedClip || recordedClip.length === 0) {
       setError_("Record a clip first.");
@@ -421,16 +443,25 @@ export function AudioLabPanel() {
             Play original
           </button>
           <button
+            className="btn"
+            onClick={handlePlayProduction}
+            disabled={busy || !recordedClip || recordedClip.length === 0}
+            title="Run the recorded clip through the exact production audio path (live ImbeTxConditioner + IMBE round-trip + sample-duplicate upsample, no post-decode shaping)."
+          >
+            ▶ Play with live server settings
+          </button>
+          <button
             className="btn primary"
             onClick={handleProcessAndPlay}
             disabled={busy || !recordedClip || recordedClip.length === 0}
+            title="Run the recorded clip through the pipeline configured below."
           >
-            Process & play
+            ▶ Play with my settings
           </button>
         </div>
         <div className="muted small">
           {recordedClip
-            ? `Clip: ${(recordedClip.length / LAB_SAMPLE_RATE).toFixed(1)}s recorded.`
+            ? `Clip: ${(recordedClip.length / LAB_SAMPLE_RATE).toFixed(1)}s recorded. Use the two ▶ buttons to A/B the production path against your custom settings on the same clip.`
             : "No clip recorded yet."}
         </div>
       </section>
