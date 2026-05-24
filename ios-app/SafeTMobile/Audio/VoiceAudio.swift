@@ -45,6 +45,13 @@ final class VoiceAudio {
     /// `AudioSessionManager.requestRecordPermission()` returns true.
     func start() throws {
         try AudioSessionManager.configureForVoice()
+        // Touch the input node BEFORE starting the engine so the engine wires
+        // the mic route up front. Without this, the first access happens lazily
+        // inside startCapture() — and on a running playback-only engine, the
+        // input node's `outputFormat(forBus: 0)` can return a 0-channel /
+        // 0-sample-rate format. Installing a tap with that format crashes
+        // AVAudioEngine with `IsFormatSampleRateAndChannelCountValid(format)`.
+        _ = engine.inputNode
         if !engine.isRunning {
             engine.prepare()
             try engine.start()
@@ -65,22 +72,40 @@ final class VoiceAudio {
 
     func startCapture() {
         guard !capturing else { return }
-        capturing = true
-        captureBuffer.removeAll(keepingCapacity: true)
 
         let inputNode = engine.inputNode
         let nativeFormat = inputNode.outputFormat(forBus: 0)
+        // Defensive guard: if the audio session lost record permission, the input
+        // route changed mid-flight, or the engine started before the input was
+        // wired, `outputFormat` can return a 0-channel / 0 Hz format. Installing
+        // a tap with that crashes AVAudioEngine. Bail cleanly so PTT just no-ops
+        // instead of taking the app down.
+        guard nativeFormat.channelCount > 0, nativeFormat.sampleRate > 0 else {
+            return
+        }
+
         let pcm16Mono16k = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
             sampleRate: Self.sampleRate,
             channels: 1,
             interleaved: true
         )!
-        captureConverter = AVAudioConverter(from: nativeFormat, to: pcm16Mono16k)
+        guard let converter = AVAudioConverter(from: nativeFormat, to: pcm16Mono16k) else {
+            return
+        }
+        captureConverter = converter
+        captureBuffer.removeAll(keepingCapacity: true)
 
+        // Install the tap inside a do/catch via @objc exception bridging would be
+        // nicer, but Swift can't catch ObjC exceptions. The format guards above
+        // cover the known-bad cases; if AVAudioEngine still throws here, the bug
+        // is in the engine state and we want the crash report.
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: nativeFormat) { [weak self] buffer, _ in
             self?.handle(captureBuffer: buffer, target: pcm16Mono16k)
         }
+        // Mark capturing AFTER a successful tap install so a failure path doesn't
+        // leave stopCapture() trying to remove a tap that was never added.
+        capturing = true
     }
 
     func stopCapture() {
