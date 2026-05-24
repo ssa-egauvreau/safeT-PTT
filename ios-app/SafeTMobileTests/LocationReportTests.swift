@@ -18,7 +18,8 @@ final class LocationReportTests: XCTestCase {
             channel: nil,
             accuracyM: nil,
             heading: nil,
-            speedMps: nil
+            speedMps: nil,
+            clientType: "ios"
         )
 
         let json = try JSONSerialization.jsonObject(with: encoder.encode(report)) as? [String: Any]
@@ -29,6 +30,9 @@ final class LocationReportTests: XCTestCase {
         XCTAssertNil(json?["accuracy_m"])
         XCTAssertNil(json?["heading"])
         XCTAssertNil(json?["speed_mps"])
+        // clientType is required (non-optional) and always serialized so the
+        // server can render a platform badge per row in the UNITS roster.
+        XCTAssertEqual(json?["client_type"] as? String, "ios")
     }
 
     func test_encode_includesOptionalFields_whenPresent() throws {
@@ -39,7 +43,8 @@ final class LocationReportTests: XCTestCase {
             channel: "OPS-1",
             accuracyM: 12.5,
             heading: 270,
-            speedMps: 4.4
+            speedMps: 4.4,
+            clientType: "ios"
         )
 
         let json = try JSONSerialization.jsonObject(with: encoder.encode(report)) as? [String: Any]
@@ -47,5 +52,6 @@ final class LocationReportTests: XCTestCase {
         XCTAssertEqual(json?["accuracy_m"] as? Double, 12.5)
         XCTAssertEqual(json?["heading"] as? Double, 270)
         XCTAssertEqual(json?["speed_mps"] as? Double, 4.4)
+        XCTAssertEqual(json?["client_type"] as? String, "ios")
     }
 }
