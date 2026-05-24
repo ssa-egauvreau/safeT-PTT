@@ -7,6 +7,7 @@ struct RadioScreen: View {
     @EnvironmentObject private var session: AuthSession
     @State private var pttDown = false
     @State private var showingDispatch = false
+    @State private var showingTranscripts = false
 
     var body: some View {
         let state = viewModel.uiState
@@ -30,6 +31,21 @@ struct RadioScreen: View {
                         .toolbar {
                             ToolbarItem(placement: .navigationBarLeading) {
                                 Button("CLOSE") { showingDispatch = false }
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.safetText)
+                            }
+                        }
+                }
+                .preferredColorScheme(.dark)
+            }
+        }
+        .sheet(isPresented: $showingTranscripts) {
+            if let token = session.token {
+                NavigationStack {
+                    TranscriptionsScreen(api: RadioApiClient(token: token))
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarLeading) {
+                                Button("CLOSE") { showingTranscripts = false }
                                     .font(.system(size: 12, weight: .bold))
                                     .foregroundColor(.safetText)
                             }
@@ -85,6 +101,20 @@ struct RadioScreen: View {
                     .padding(.vertical, 3)
                     .overlay(Capsule().stroke(Color.safetAmber.opacity(0.7), lineWidth: 1))
                 }
+            }
+            Button {
+                showingTranscripts = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "text.bubble")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("TX LOG")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .foregroundColor(.safetTextDim)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .overlay(Capsule().stroke(Color.safetBorder, lineWidth: 1))
             }
             Button("SIGN OUT") { session.logout() }
                 .font(.system(size: 10, weight: .bold))
@@ -238,8 +268,7 @@ struct RadioScreen: View {
 
     private func pttBar(_ state: RadioUiState) -> some View {
         VStack(spacing: 4) {
-            Text(pttTitle(state))
-                .font(.system(size: 22, weight: .heavy))
+            pttTitleView(state)
             Text(pttSubtitle(state))
                 .font(.system(size: 10, weight: .semibold))
                 .opacity(0.85)
@@ -264,9 +293,27 @@ struct RadioScreen: View {
         )
     }
 
+    /// While transmitting, render "XMIT" with the lightning-bolt SF Symbol so
+    /// the operator gets the visual radio-style "I'm on air" signal. Other
+    /// states fall back to plain text via `pttTitle`.
+    @ViewBuilder
+    private func pttTitleView(_ state: RadioUiState) -> some View {
+        if state.isTransmitting {
+            HStack(spacing: 6) {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 22, weight: .heavy))
+                Text("XMIT")
+                    .font(.system(size: 22, weight: .heavy))
+            }
+        } else {
+            Text(pttTitle(state))
+                .font(.system(size: 22, weight: .heavy))
+        }
+    }
+
     private func pttTitle(_ state: RadioUiState) -> String {
         if state.pttBusyTone { return "CHANNEL BUSY" }
-        if state.isTransmitting { return "ON AIR" }
+        // isTransmitting is rendered by pttTitleView's icon+text branch — never reached here.
         if state.isPttPressed { return "KEYING…" }
         return "HOLD TO TALK"
     }
