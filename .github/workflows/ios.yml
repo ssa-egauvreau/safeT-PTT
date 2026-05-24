@@ -15,15 +15,15 @@ on:
 jobs:
   test:
     name: Build and test (iOS Simulator)
-    runs-on: macos-14
+    # macos-15 ships Xcode 16.x by default, which is required to read the
+    # objectVersion=77 project file that XcodeGen 2.41+ emits. macos-14's
+    # Xcode 15.4 errors out with "future Xcode project file format (77)".
+    runs-on: macos-15
     defaults:
       run:
         working-directory: ios-app
     steps:
       - uses: actions/checkout@v4
-
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app
 
       - name: Install XcodeGen
         run: brew install xcodegen
