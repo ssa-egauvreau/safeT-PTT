@@ -167,13 +167,7 @@ struct UnitsScreen: View {
                     Text(formatAgo(unit.updatedAt))
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundColor(online ? .safetTextDim : .safetAmber)
-                    // Placeholder for the platform column. The follow-up PR
-                    // will wire this up once the server exposes client-type
-                    // per session.
-                    Text("—")
-                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                        .foregroundColor(.safetTextDim.opacity(0.4))
-                        .frame(width: 24, alignment: .trailing)
+                    platformBadge(unit.clientType)
                 }
             }
         }
@@ -261,6 +255,50 @@ struct UnitsScreen: View {
         case "phone": return "PHONE"
         case "radio_bridge": return "BRIDGE"
         default: return "—"
+        }
+    }
+
+    // MARK: - platform badge
+
+    /// Compact text badge for the platform the unit is reporting from.
+    /// Text badges (not SF Symbols) so the look is consistent across iOS / web
+    /// / Android — Apple-provided symbols for non-Apple platforms are
+    /// inconsistent. Nil clientType (pre-tracking clients) renders as "—".
+    @ViewBuilder
+    private func platformBadge(_ clientType: String?) -> some View {
+        if let clientType {
+            Text(platformLabel(clientType))
+                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                .foregroundColor(platformColor(clientType))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(platformColor(clientType).opacity(0.6), lineWidth: 1))
+        } else {
+            Text("—")
+                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .foregroundColor(.safetTextDim.opacity(0.4))
+        }
+    }
+
+    private func platformLabel(_ clientType: String) -> String {
+        switch clientType {
+        case "ios": return "iOS"
+        case "android": return "AND"
+        case "web": return "WEB"
+        case "desktop": return "DESK"
+        case "radio": return "RAD"
+        default: return clientType.uppercased()
+        }
+    }
+
+    private func platformColor(_ clientType: String) -> Color {
+        switch clientType {
+        case "ios": return .safetText
+        case "android": return .safetGreen
+        case "web": return .safetSignal
+        case "desktop": return .safetAmber
+        case "radio": return .safetRed
+        default: return .safetTextDim
         }
     }
 

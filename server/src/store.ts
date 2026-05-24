@@ -1131,6 +1131,9 @@ export interface RadioPosition {
   speed_mps: number | null;
   /** Device category of the reporting account (handheld, unit_radio, …), or null. */
   device_type: string | null;
+  /** Platform the unit is reporting from: "ios" | "android" | "web" | "radio" | …
+   *  Null until the client has been updated to send `client_type`. */
+  client_type: string | null;
   updated_at: string;
 }
 
@@ -1145,12 +1148,14 @@ export async function upsertPosition(input: {
   accuracyM: number | null;
   heading: number | null;
   speedMps: number | null;
+  /** ios | android | web | radio | etc. — null when the client hasn't reported one. */
+  clientType: string | null;
 }): Promise<void> {
   const pool = requirePool();
   await pool.query(
     `INSERT INTO radio_positions
-       (agency_id, unit_id, user_id, display_name, channel_name, lat, lon, accuracy_m, heading, speed_mps, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+       (agency_id, unit_id, user_id, display_name, channel_name, lat, lon, accuracy_m, heading, speed_mps, client_type, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
      ON CONFLICT (agency_id, unit_id) DO UPDATE SET
        user_id = EXCLUDED.user_id,
        display_name = COALESCE(EXCLUDED.display_name, radio_positions.display_name),
@@ -1160,6 +1165,9 @@ export async function upsertPosition(input: {
        accuracy_m = EXCLUDED.accuracy_m,
        heading = EXCLUDED.heading,
        speed_mps = EXCLUDED.speed_mps,
+       -- Preserve previously-known client_type if the new report doesn't
+       -- include one (e.g. legacy clients still talking to the same row).
+       client_type = COALESCE(EXCLUDED.client_type, radio_positions.client_type),
        updated_at = now();`,
     [
       input.agencyId,
@@ -1172,6 +1180,7 @@ export async function upsertPosition(input: {
       input.accuracyM,
       input.heading,
       input.speedMps,
+      input.clientType,
     ],
   );
   // Append to the GPS log so the console can replay a unit's track.
@@ -1192,7 +1201,8 @@ export async function upsertPosition(input: {
 export async function listPositions(agencyId: number): Promise<RadioPosition[]> {
   const res = await requirePool().query<RadioPosition>(
     `SELECT p.unit_id, p.user_id, p.display_name, p.channel_name, p.lat, p.lon,
-            p.accuracy_m, p.heading, p.speed_mps, p.updated_at, u.device_type
+            p.accuracy_m, p.heading, p.speed_mps, p.client_type, p.updated_at,
+            u.device_type
      FROM radio_positions p
      LEFT JOIN users u ON u.id = p.user_id
      WHERE p.agency_id = $1 ORDER BY p.updated_at DESC;`,
