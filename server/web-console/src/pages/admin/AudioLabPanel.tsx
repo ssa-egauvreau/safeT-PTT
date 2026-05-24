@@ -521,10 +521,16 @@ export function AudioLabPanel() {
       <section className="audio-lab-pipeline">
         <fieldset>
           <legend>Pre-IMBE conditioning</legend>
+          <p className="muted small audio-lab-section-desc">
+            Cleans up the mic input before it's handed to the IMBE encoder. Mirrors what
+            the production TX path does so the vocoder sees a level-matched signal in
+            the right frequency band.
+          </p>
           <Toggle
             label="High-pass filter"
             value={config.preImbe.hpfEnabled}
             onChange={(v) => updatePre("hpfEnabled", v)}
+            tooltip="Cuts low-frequency rumble (HVAC, engine noise, mic handling thumps) below the cutoff. Production default is 180 Hz."
           />
           <RangeRow
             label="HPF cutoff"
@@ -535,11 +541,13 @@ export function AudioLabPanel() {
             value={config.preImbe.hpfHz}
             disabled={!config.preImbe.hpfEnabled}
             onChange={(v) => updatePre("hpfHz", v)}
+            tooltip="Frequency below which sound is rolled off. Higher = more bass removed."
           />
           <Toggle
             label="Low-pass filter"
             value={config.preImbe.lpfEnabled}
             onChange={(v) => updatePre("lpfEnabled", v)}
+            tooltip="Removes content above the speech band. Also acts as the anti-alias filter for the downstream 8 kHz IMBE encoder (Nyquist = 4 kHz). Production default is 3400 Hz."
           />
           <RangeRow
             label="LPF cutoff"
@@ -550,11 +558,13 @@ export function AudioLabPanel() {
             value={config.preImbe.lpfHz}
             disabled={!config.preImbe.lpfEnabled}
             onChange={(v) => updatePre("lpfHz", v)}
+            tooltip="Frequency above which sound is rolled off. Lower = narrower telephony band."
           />
           <Toggle
             label="Makeup AGC"
             value={config.preImbe.agcEnabled}
             onChange={(v) => updatePre("agcEnabled", v)}
+            tooltip="Automatic gain control — lifts quiet speakers toward a consistent level so loud / quiet talkers all come out at the same volume."
           />
           <RangeRow
             label="AGC target RMS"
@@ -565,6 +575,7 @@ export function AudioLabPanel() {
             value={config.preImbe.agcTargetRms}
             disabled={!config.preImbe.agcEnabled}
             onChange={(v) => updatePre("agcTargetRms", v)}
+            tooltip="The loudness AGC tries to reach (signal RMS in int16 sample units). Higher = louder output. Production default is 6000."
           />
           <RangeRow
             label="AGC max gain"
@@ -575,22 +586,36 @@ export function AudioLabPanel() {
             value={config.preImbe.agcMaxGain}
             disabled={!config.preImbe.agcEnabled}
             onChange={(v) => updatePre("agcMaxGain", v)}
+            tooltip="Caps how much AGC is allowed to amplify so background noise on a very quiet recording doesn't get boosted into oblivion."
           />
         </fieldset>
 
         <fieldset>
           <legend>Vocoder</legend>
+          <p className="muted small audio-lab-section-desc">
+            The P25 IMBE codec — encodes 8 kHz voice as 88-bit codewords every 20 ms,
+            then decodes back to audio. This is the lossy step that gives the
+            characteristic "vocoded" sound.
+          </p>
           <Toggle
             label="Bypass IMBE (clean PCM only)"
             value={config.vocoder.bypass}
             onChange={(v) => setConfig({ ...config, vocoder: { bypass: v } })}
+            tooltip="Skip the IMBE round-trip entirely. Useful as a clean-PCM reference to A/B against the vocoded sound."
           />
           <div className="muted small">When bypass is OFF, the clip round-trips through the IMBE vocoder (encode → decode) the same way a real on-air talk-spurt does.</div>
         </fieldset>
 
         <fieldset disabled={config.vocoder.bypass}>
           <legend>Post-decode shaping</legend>
-          <label>
+          <p className="muted small audio-lab-section-desc">
+            Applied AFTER IMBE decode, on the way to playback. Lets you soften vocoder
+            artifacts and shape tone without changing the on-air bitstream. None of this
+            is enabled in production today.
+          </p>
+          <label
+            title="How IMBE's 8 kHz output is brought up to the 16 kHz playback rate. Duplicate is the production default (cheap, adds aliasing crunch). Linear interpolation is smoother. Polyphase uses a windowed-sinc kernel for proper anti-aliasing — cleanest, slightly more CPU."
+          >
             <span>Upsample 8 → 16 kHz</span>
             <select
               value={config.postDecode.upsampleMode}
@@ -605,6 +630,7 @@ export function AudioLabPanel() {
             label="Post-decode HPF"
             value={config.postDecode.hpfEnabled}
             onChange={(v) => updatePost("hpfEnabled", v)}
+            tooltip="Trims any low-frequency artifacts the vocoder may have introduced below the cutoff."
           />
           <RangeRow
             label="HPF cutoff"
@@ -615,11 +641,13 @@ export function AudioLabPanel() {
             value={config.postDecode.hpfHz}
             disabled={!config.postDecode.hpfEnabled}
             onChange={(v) => updatePost("hpfHz", v)}
+            tooltip="Frequency below which decoded sound is rolled off."
           />
           <Toggle
             label="Post-decode LPF"
             value={config.postDecode.lpfEnabled}
             onChange={(v) => updatePost("lpfEnabled", v)}
+            tooltip="Sharper high-frequency roll-off than what the upsample alone gives. Removes residual high-frequency vocoder noise."
           />
           <RangeRow
             label="LPF cutoff"
@@ -630,11 +658,13 @@ export function AudioLabPanel() {
             value={config.postDecode.lpfHz}
             disabled={!config.postDecode.lpfEnabled}
             onChange={(v) => updatePost("lpfHz", v)}
+            tooltip="Frequency above which decoded sound is rolled off."
           />
           <Toggle
             label="High-shelf EQ"
             value={config.postDecode.highShelfEnabled}
             onChange={(v) => updatePost("highShelfEnabled", v)}
+            tooltip="EQ band above the shelf cutoff. Negative gain softens IMBE's edginess in the upper mids; positive gain adds crispness."
           />
           <RangeRow
             label="Shelf cutoff"
@@ -645,6 +675,7 @@ export function AudioLabPanel() {
             value={config.postDecode.highShelfHz}
             disabled={!config.postDecode.highShelfEnabled}
             onChange={(v) => updatePost("highShelfHz", v)}
+            tooltip="Frequency at which the shelf starts. Everything above this gets boosted or cut by the shelf gain."
           />
           <RangeRow
             label="Shelf gain"
@@ -655,6 +686,7 @@ export function AudioLabPanel() {
             value={config.postDecode.highShelfDb}
             disabled={!config.postDecode.highShelfEnabled}
             onChange={(v) => updatePost("highShelfDb", v)}
+            tooltip="How much to cut (-) or boost (+) frequencies above the shelf cutoff. Negative values smooth the vocoder; positive values add presence."
           />
         </fieldset>
       </section>
@@ -768,13 +800,15 @@ function Toggle({
   label,
   value,
   onChange,
+  tooltip,
 }: {
   label: string;
   value: boolean;
   onChange: (v: boolean) => void;
+  tooltip?: string;
 }) {
   return (
-    <label className="audio-lab-toggle">
+    <label className="audio-lab-toggle" title={tooltip}>
       <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
       <span>{label}</span>
     </label>
@@ -854,6 +888,7 @@ function RangeRow({
   value,
   disabled,
   onChange,
+  tooltip,
 }: {
   label: string;
   unit: string;
@@ -863,9 +898,10 @@ function RangeRow({
   value: number;
   disabled?: boolean;
   onChange: (v: number) => void;
+  tooltip?: string;
 }) {
   return (
-    <label className={"audio-lab-range" + (disabled ? " disabled" : "")}>
+    <label className={"audio-lab-range" + (disabled ? " disabled" : "")} title={tooltip}>
       <span className="audio-lab-range-label">{label}</span>
       <input
         type="range"

@@ -7568,6 +7568,10 @@ code.mono {
   letter-spacing: 0.04em;
   padding: 0 6px;
 }
+.audio-lab-section-desc {
+  margin: 0 0 10px;
+  line-height: 1.4;
+}
 .audio-lab-pipeline fieldset[disabled] {
   opacity: 0.5;
 }
