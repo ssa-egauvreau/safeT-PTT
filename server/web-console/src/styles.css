@@ -829,7 +829,7 @@ code.mono {
 /* --- console: channel rail + workspace dock --- */
 .channel-workspace-layout {
   display: grid;
-  grid-template-columns: minmax(132px, 168px) minmax(0, 1fr);
+  grid-template-columns: minmax(148px, 188px) minmax(0, 1fr);
   gap: 8px;
   align-items: start;
   min-height: 280px;
@@ -874,8 +874,8 @@ code.mono {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 3px 5px 3px 3px;
+  gap: 4px;
+  padding: 4px 5px 4px 3px;
   border: 1px solid var(--border);
   border-left-width: 3px;
   border-radius: 4px;
@@ -914,16 +914,40 @@ code.mono {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   border: none;
   background: transparent;
   color: var(--text);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   text-align: left;
-  padding: 2px 0;
+  padding: 3px 0;
+}
+.channel-rail-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bg-input) 80%, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.channel-rail-close:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+  background: var(--bg-input);
+}
+.channel-rail-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .channel-rail-grip {
   flex: 0 0 auto;
@@ -947,8 +971,10 @@ code.mono {
   white-space: nowrap;
 }
 .channel-rail-tile .ch-power {
-  padding: 3px 6px;
-  font-size: 9px;
+  padding: 4px 7px;
+  font-size: 10px;
+  min-width: 28px;
+  min-height: 28px;
 }
 
 /* --- Mission Control: react-grid-layout widget board (2–10 cols; S 2×2 · M 4×4 · L 4×8) --- */
@@ -2068,9 +2094,14 @@ code.mono {
 .roster--compact .roster-name {
   font-size: 10px;
 }
-.roster--compact .roster-status {
-  font-size: 8px;
-  padding: 1px 5px;
+.roster--compact .roster-status-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+}
+.roster--compact .roster-client-icon {
+  width: 18px;
+  height: 18px;
 }
 .roster--compact .roster-tag,
 .roster--compact .roster-time {
@@ -2224,8 +2255,8 @@ code.mono {
   gap: 3px;
 }
 .channel-workspace-tile .channel-card.workspace .ch-card-toolbar .state-chip {
-  font-size: 8px;
-  padding: 1px 4px;
+  font-size: 9px;
+  padding: 2px 5px;
 }
 .channel-workspace-tile .tx-button.tx-button-integrated {
   border-radius: 7px;
@@ -2250,10 +2281,10 @@ code.mono {
   width: auto;
   margin-top: 0 !important;
   min-height: 0;
-  padding: 3px 4px;
-  font-size: 8px;
-  gap: 2px;
-  border-radius: 4px;
+  padding: 4px 5px;
+  font-size: 9px;
+  gap: 3px;
+  border-radius: 5px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -2711,6 +2742,9 @@ code.mono {
   margin-top: 2px;
   padding: 4px 6px;
   overflow: hidden;
+}
+.channel-workspace-tile .channel-card.workspace .roster-list {
+  max-height: none;
 }
 .channel-workspace-tile.widget-large .channel-card.workspace .roster {
   flex: 1 1 0;
@@ -4627,6 +4661,9 @@ code.mono {
   border-radius: 6px;
   background: var(--bg-raised);
   padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .roster-head {
   display: flex;
@@ -4637,10 +4674,25 @@ code.mono {
   letter-spacing: 0.08em;
   color: var(--text-muted);
   margin-bottom: 8px;
+  flex-shrink: 0;
 }
 .roster-head .count {
   margin-left: auto;
   color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.roster-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  scrollbar-gutter: stable;
+}
+.ch-ws-section--roster .roster-list {
+  max-height: min(220px, 42vh);
 }
 .roster-empty {
   font-size: 12px;
@@ -4655,6 +4707,44 @@ code.mono {
 }
 .roster-row + .roster-row {
   border-top: 1px solid var(--border);
+}
+.roster-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-input) 55%, transparent);
+}
+.roster-status-icon.idle {
+  color: var(--text-muted);
+}
+.roster-status-icon.driving {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.roster-status-icon.transmitting {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 55%, var(--border));
+}
+.roster-status-icon.emergency {
+  color: #fff;
+  background: var(--red);
+  border-color: var(--red);
+}
+.roster-client-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-input) 40%, transparent);
 }
 .roster-dot {
   width: 9px;
@@ -6169,8 +6259,15 @@ code.mono {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  max-height: min(320px, 48vh);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 .rp-roster li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
   padding: 8px 10px;
   background: var(--bg-input);
   border: 1px solid var(--border);
@@ -6178,6 +6275,13 @@ code.mono {
 }
 .rp-roster .rp-name {
   color: var(--text);
+}
+.rp-roster-badges {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
 }
 .rp-toggle {
   display: inline-flex;

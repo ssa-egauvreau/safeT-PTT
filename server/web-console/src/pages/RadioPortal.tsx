@@ -4,7 +4,6 @@ import {
   describeError,
   type ChannelMember,
   type Permission,
-  type PresenceStatus,
   type UserChannel,
 } from "../api";
 import { LatestChannelTransmission } from "../components/LatestChannelTransmission";
@@ -14,14 +13,7 @@ import { VoiceChannelClient, type VoiceState } from "../voice/voiceClient";
 import { AudioLevelMeter } from "../voice/AudioLevelMeter";
 import { ScanListenClient } from "../voice/scanListenClient";
 import { bindLostLinkBusyAlerts, sounds } from "../sounds";
-
-/** Label + colour class for each derived presence status. */
-const ROSTER_STATUS: Record<PresenceStatus, { label: string; cls: string }> = {
-  emergency: { label: "Emergency", cls: "emergency" },
-  transmitting: { label: "On air", cls: "transmitting" },
-  driving: { label: "Driving", cls: "driving" },
-  idle: { label: "Idle", cls: "idle" },
-};
+import { ClientPlatformBadge, PresenceStatusBadge } from "../components/RosterBadges";
 
 const ROSTER_POLL_MS = 5_000;
 const EMERGENCY_HOLD_MS = 1500;
@@ -633,8 +625,9 @@ export function RadioPortal() {
                 <li key={`${m.unit_id}-${m.kind}`}>
                   <strong>{m.unit_id}</strong>
                   {m.display_name && <span className="rp-name"> · {m.display_name}</span>}
-                  <span className={`roster-status ${ROSTER_STATUS[m.status ?? "idle"].cls}`}>
-                    {ROSTER_STATUS[m.status ?? "idle"].label}
+                  <span className="rp-roster-badges">
+                    <PresenceStatusBadge status={m.status ?? "idle"} size={14} />
+                    <ClientPlatformBadge client={m.client} size={13} />
                   </span>
                 </li>
               ))}

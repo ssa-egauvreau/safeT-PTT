@@ -1,6 +1,6 @@
 import { useRef, useSyncExternalStore, type DragEvent } from "react";
 import type { UserChannel } from "../api";
-import { IconHeadphones, IconRadio } from "../icons";
+import { IconClose, IconHeadphones, IconRadio } from "../icons";
 import {
   createRailDragGhostElement,
   getRailDragPreview,
@@ -15,12 +15,15 @@ export function ChannelRailTile({
   docked,
   onDock,
   onToggleMonitor,
+  onUndock,
 }: {
   channel: UserChannel;
   monitoring: boolean;
   docked: boolean;
   onDock: () => void;
   onToggleMonitor: () => void;
+  /** Remove channel from the workspace (when docked). */
+  onUndock?: () => void;
 }) {
   const ghostRef = useRef<HTMLElement | null>(null);
   const railDrag = useSyncExternalStore(
@@ -81,10 +84,24 @@ export function ChannelRailTile({
         ⋮⋮
       </span>
       <button type="button" className="channel-rail-tile-main" onClick={onDock}>
-        <IconRadio size={12} />
+        <IconRadio size={13} />
         <span className="channel-rail-label">{channel.name}</span>
         {channel.simulcast && <span className="chan-sim-tag">SIM</span>}
       </button>
+      {docked && onUndock ? (
+        <button
+          type="button"
+          className="channel-rail-close"
+          onClick={(e) => {
+            e.stopPropagation();
+            onUndock();
+          }}
+          aria-label={`Close ${channel.name} window`}
+          title="Remove from workspace"
+        >
+          <IconClose size={12} />
+        </button>
+      ) : null}
       <button
         type="button"
         className={monitoring ? "ch-power active" : "ch-power"}
@@ -95,7 +112,7 @@ export function ChannelRailTile({
         aria-pressed={monitoring}
         title={monitoring ? "Turn channel off" : "Turn channel on"}
       >
-        <IconHeadphones size={14} />
+        <IconHeadphones size={15} />
       </button>
     </div>
   );

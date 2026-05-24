@@ -171,6 +171,11 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
                     setPrimaryChannel(channel.id);
                   }}
                   onToggleMonitor={() => toggleMonitorFromRail(channel.id)}
+                  onUndock={
+                    dockedIdSet.has(channel.id)
+                      ? () => undockChannel(channel.id)
+                      : undefined
+                  }
                 />
               </Fragment>
             );
