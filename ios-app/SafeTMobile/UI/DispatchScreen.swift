@@ -105,7 +105,13 @@ struct DispatchScreen: View {
                     "",
                     isOn: Binding(
                         get: { active },
-                        set: { Task { await setTen33(channel: channel, active: $0) } }
+                        // Explicit `newValue in` — the prior `$0` shorthand
+                        // wrapped in a nested Task made Swift infer a
+                        // 0-argument closure for the binding setter, producing
+                        // a contextual-signature mismatch under Xcode 16.
+                        set: { newValue in
+                            Task { await setTen33(channel: channel, active: newValue) }
+                        }
                     )
                 )
                 .labelsHidden()
