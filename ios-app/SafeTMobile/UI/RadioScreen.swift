@@ -6,6 +6,7 @@ struct RadioScreen: View {
     @StateObject var viewModel: RadioViewModel
     @EnvironmentObject private var session: AuthSession
     @State private var pttDown = false
+    @State private var showingTranscripts = false
 
     var body: some View {
         let state = viewModel.uiState
@@ -21,6 +22,21 @@ struct RadioScreen: View {
                 pttBar(state)
             }
             .padding(16)
+        }
+        .sheet(isPresented: $showingTranscripts) {
+            if let token = session.token {
+                NavigationStack {
+                    TranscriptionsScreen(api: RadioApiClient(token: token))
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarLeading) {
+                                Button("CLOSE") { showingTranscripts = false }
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.safetText)
+                            }
+                        }
+                }
+                .preferredColorScheme(.dark)
+            }
         }
     }
 
@@ -54,6 +70,20 @@ struct RadioScreen: View {
                     .lineLimit(1)
             }
             Spacer()
+            Button {
+                showingTranscripts = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "text.bubble")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("TX LOG")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .foregroundColor(.safetTextDim)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .overlay(Capsule().stroke(Color.safetBorder, lineWidth: 1))
+            }
             Button("SIGN OUT") { session.logout() }
                 .font(.system(size: 10, weight: .bold))
                 .foregroundColor(.safetTextDim)

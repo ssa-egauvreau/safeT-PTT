@@ -27,6 +27,22 @@ struct InboxResponse: Decodable {
     let lastId: Int
 }
 
+/// One row from `GET /v1/transmissions`. Maps the server `TransmissionRow`.
+/// `transcriptStatus` is one of `"pending"` | `"done"` | `"failed"` |
+/// `"disabled"` (see server/src/store.ts and aiDispatch/engine.ts). UI
+/// renders a spinner, the text, an error tag, or a "transcription off"
+/// note accordingly.
+struct Transmission: Decodable, Identifiable, Hashable {
+    let id: Int
+    let channelName: String
+    let unitId: String?
+    let displayName: String?
+    let startedAt: String
+    let durationMs: Int
+    let transcript: String?
+    let transcriptStatus: String
+}
+
 /// Body of `POST /v1/radio/location`. Unknown fields are omitted (not sent as
 /// null) so the server treats missing accuracy/heading/speed as absent.
 struct LocationReport: Encodable {
@@ -137,6 +153,27 @@ final class RadioApiClient {
             "v1/radio/emergency",
             body: Body(unitId: unitId, channel: channel, active: active, message: message)
         )
+    }
+
+    /// `GET /v1/transmissions` — recent recorded transmissions for this user's
+    /// agency, optionally filtered by free-text search. Server enforces the
+    /// per-channel visibility filter by user role (admin/dispatcher see all,
+    /// members only see their authorised channels).
+    func transmissions(limit: Int = 80, search: String? = nil) async throws -> [Transmission] {
+        struct Response: Decodable { let transmissions: [Transmission] }
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
+        if let search, !search.isEmpty {
+            query.append(URLQueryItem(name: "search", value: search))
+        }
+        return try await get("v1/transmissions", query: query, as: Response.self).transmissions
+    }
+
+    /// Downloads the WAV body of one transmission. Returned `Data` is a complete
+    /// audio file (WAV header + PCM payload) — handed straight to AVAudioPlayer.
+    func transmissionAudio(id: Int) async throws -> Data {
+        var request = URLRequest(url: baseURL.appendingPathComponent("v1/transmissions/\(id)/audio"))
+        applyAuth(&request)
+        return try await sendDiscardingBody(request)
     }
 
     // MARK: - transport
