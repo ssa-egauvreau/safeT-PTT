@@ -180,15 +180,38 @@ final class RadioApiClient {
     }
 
     /// `GET /v1/transmissions` — recent recorded transmissions for this user's
-    /// agency, optionally filtered by free-text search. Server enforces the
+    /// agency, with optional server-side filtering. Server enforces the
     /// per-channel visibility filter by user role (admin/dispatcher see all,
-    /// members only see their authorised channels).
-    func transmissions(limit: Int = 80, search: String? = nil) async throws -> [Transmission] {
+    /// members only see their authorised channels). Server caps `limit` at 500
+    /// — passing anything higher is silently truncated.
+    ///
+    /// - Parameters:
+    ///   - limit: max rows to return (default 200, server cap 500).
+    ///   - search: free-text match against transcript content.
+    ///   - channel: exact channel name to restrict to.
+    ///   - user: exact unit id (uppercase) to restrict to.
+    ///   - from: ISO-8601 lower bound on `started_at` (inclusive).
+    ///   - to: ISO-8601 upper bound on `started_at` (inclusive).
+    func transmissions(
+        limit: Int = 200,
+        search: String? = nil,
+        channel: String? = nil,
+        user: String? = nil,
+        from: String? = nil,
+        to: String? = nil
+    ) async throws -> [Transmission] {
         struct Response: Decodable { let transmissions: [Transmission] }
         var query = [URLQueryItem(name: "limit", value: String(limit))]
-        if let search, !search.isEmpty {
-            query.append(URLQueryItem(name: "search", value: search))
+        let trimmed: (String?) -> String? = { v in
+            guard let v else { return nil }
+            let t = v.trimmingCharacters(in: .whitespaces)
+            return t.isEmpty ? nil : t
         }
+        if let s = trimmed(search) { query.append(URLQueryItem(name: "search", value: s)) }
+        if let c = trimmed(channel) { query.append(URLQueryItem(name: "channel", value: c)) }
+        if let u = trimmed(user) { query.append(URLQueryItem(name: "user", value: u)) }
+        if let f = trimmed(from) { query.append(URLQueryItem(name: "from", value: f)) }
+        if let t = trimmed(to) { query.append(URLQueryItem(name: "to", value: t)) }
         return try await get("v1/transmissions", query: query, as: Response.self).transmissions
     }
 

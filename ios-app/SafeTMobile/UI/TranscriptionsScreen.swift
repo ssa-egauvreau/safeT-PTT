@@ -1,12 +1,15 @@
 import SwiftUI
 
 /// Browse + search recent recorded transmissions and play back the WAV.
-/// Backed by `GET /v1/transmissions` (filtered server-side by `search` query
-/// param) and `GET /v1/transmissions/:id/audio` for playback.
+/// Backed by `GET /v1/transmissions` with full server-side filtering
+/// (channel / user / from / to / search) and `GET /v1/transmissions/:id/audio`
+/// for playback.
 ///
-/// Reloads on appear and on pull-to-refresh. No live polling — operators
-/// review past traffic episodically, so a manual refresh model is enough
-/// and keeps battery / data usage down.
+/// Reloads on appear, pull-to-refresh, and any filter change. No live polling
+/// — operators review past traffic episodically, so a manual refresh model is
+/// enough and keeps battery / data usage down. Pagination is "fetch a bigger
+/// page": server caps `limit` at 500, so the "Load more" button bumps the
+/// current limit by 100 each press up to the cap.
 struct TranscriptionsScreen: View {
     let api: RadioApiClient
 
@@ -16,6 +19,28 @@ struct TranscriptionsScreen: View {
     @State private var loading = false
     @State private var error: String?
     @State private var loadingAudioId: Int?
+
+    // MARK: - filters
+    @State private var filterChannel: String?
+    @State private var filterUnit: String = ""
+    @State private var filterFrom: Date?
+    @State private var filterTo: Date?
+    /// Channels available to filter on — fetched once on appear from /me/channels.
+    @State private var availableChannels: [String] = []
+    /// Which filter editor sheet is currently open (nil = none).
+    @State private var openEditor: FilterEditor?
+
+    enum FilterEditor: String, Identifiable {
+        case channel, unit, from, to
+        var id: String { rawValue }
+    }
+
+    // MARK: - pagination
+    /// Server cap is 500; we start at 200 (vs the old hard-coded 80 that left
+    /// operators stuck when transmissions exceeded that count).
+    @State private var limit: Int = 200
+    private static let pageStep: Int = 100
+    private static let maxLimit: Int = 500
 
     /// Debounce the search input so we don't fire a request on every keystroke.
     @State private var searchTask: Task<Void, Never>?
@@ -31,12 +56,16 @@ struct TranscriptionsScreen: View {
     var body: some View {
         VStack(spacing: 0) {
             searchBar
+            filterBar
             content
         }
         .background(Color.safetBackground.ignoresSafeArea())
         .navigationTitle("TRANSCRIPTS")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await reload() }
+        .task {
+            await refreshAvailableChannels()
+            await reload()
+        }
         .onDisappear {
             // Cancel any in-flight network work and stop playback so dismissing
             // the sheet mid-fetch doesn't trigger player.play() off-screen or
@@ -48,6 +77,11 @@ struct TranscriptionsScreen: View {
             searchTask?.cancel()
             searchTask = nil
             player.stop()
+        }
+        .sheet(item: $openEditor) { editor in
+            NavigationStack { filterEditorSheet(editor) }
+                .presentationDetents([.medium])
+                .preferredColorScheme(.dark)
         }
     }
 
@@ -73,6 +107,230 @@ struct TranscriptionsScreen: View {
         .padding(10)
         .background(Color.safetSurface)
         .overlay(Rectangle().frame(height: 1).foregroundColor(.safetBorder), alignment: .bottom)
+    }
+
+    /// Horizontal scrolling row of filter chips. Each chip is tappable and
+    /// opens a sheet with the relevant editor. Active filters show their value
+    /// inline with a red border; unset filters show "CHANNEL", "UNIT", etc.
+    /// in dim color. A "Clear" button appears whenever any filter is set.
+    private var filterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                filterChip(
+                    label: filterChannel ?? "CHANNEL",
+                    isActive: filterChannel != nil,
+                    icon: "antenna.radiowaves.left.and.right"
+                ) { openEditor = .channel }
+                filterChip(
+                    label: filterUnit.isEmpty ? "UNIT" : filterUnit,
+                    isActive: !filterUnit.isEmpty,
+                    icon: "person.fill"
+                ) { openEditor = .unit }
+                filterChip(
+                    label: filterFrom.map { "FROM \(shortDate($0))" } ?? "FROM",
+                    isActive: filterFrom != nil,
+                    icon: "calendar"
+                ) { openEditor = .from }
+                filterChip(
+                    label: filterTo.map { "TO \(shortDate($0))" } ?? "TO",
+                    isActive: filterTo != nil,
+                    icon: "calendar"
+                ) { openEditor = .to }
+                if anyFilterSet {
+                    Button {
+                        clearFilters()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("CLEAR")
+                                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                        }
+                        .foregroundColor(.safetRed)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+        }
+        .background(Color.safetBackground)
+        .overlay(Rectangle().frame(height: 1).foregroundColor(.safetBorder), alignment: .bottom)
+    }
+
+    private func filterChip(
+        label: String,
+        isActive: Bool,
+        icon: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .bold))
+                Text(label)
+                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .foregroundColor(isActive ? .safetRed : .safetTextDim)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .overlay(Capsule().stroke(isActive ? Color.safetRed : Color.safetBorder, lineWidth: 1))
+        }
+    }
+
+    private var anyFilterSet: Bool {
+        filterChannel != nil || !filterUnit.isEmpty || filterFrom != nil || filterTo != nil
+    }
+
+    private func clearFilters() {
+        filterChannel = nil
+        filterUnit = ""
+        filterFrom = nil
+        filterTo = nil
+        Task { await reload() }
+    }
+
+    // MARK: - filter editor sheet
+
+    @ViewBuilder
+    private func filterEditorSheet(_ editor: FilterEditor) -> some View {
+        switch editor {
+        case .channel: channelPicker
+        case .unit: unitPicker
+        case .from: datePicker(title: "FROM", binding: $filterFrom)
+        case .to: datePicker(title: "TO", binding: $filterTo)
+        }
+    }
+
+    private var channelPicker: some View {
+        List {
+            Button {
+                filterChannel = nil
+                openEditor = nil
+                Task { await reload() }
+            } label: {
+                HStack {
+                    Text("ANY CHANNEL")
+                        .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                        .foregroundColor(filterChannel == nil ? .safetRed : .safetText)
+                    Spacer()
+                    if filterChannel == nil {
+                        Image(systemName: "checkmark").foregroundColor(.safetRed)
+                    }
+                }
+            }
+            ForEach(availableChannels, id: \.self) { ch in
+                Button {
+                    filterChannel = ch
+                    openEditor = nil
+                    Task { await reload() }
+                } label: {
+                    HStack {
+                        Text(ch)
+                            .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                            .foregroundColor(filterChannel == ch ? .safetRed : .safetText)
+                        Spacer()
+                        if filterChannel == ch {
+                            Image(systemName: "checkmark").foregroundColor(.safetRed)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("CHANNEL")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("DONE") { openEditor = nil }
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.safetText)
+            }
+        }
+    }
+
+    private var unitPicker: some View {
+        VStack(spacing: 16) {
+            Text("Filter by exact unit ID (e.g. K12, UNIT4). Case-insensitive.")
+                .font(.system(size: 11))
+                .foregroundColor(.safetTextDim)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+            TextField("UNIT ID", text: $filterUnit)
+                .font(.system(size: 16, weight: .heavy, design: .monospaced))
+                .multilineTextAlignment(.center)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+                .padding(12)
+                .background(Color.safetSurface)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.safetBorder, lineWidth: 1))
+                .cornerRadius(8)
+                .padding(.horizontal, 16)
+            HStack(spacing: 12) {
+                Button("CLEAR") {
+                    filterUnit = ""
+                    openEditor = nil
+                    Task { await reload() }
+                }
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.safetTextDim)
+                Spacer()
+                Button("APPLY") {
+                    openEditor = nil
+                    Task { await reload() }
+                }
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.safetRed)
+            }
+            .padding(.horizontal, 24)
+            Spacer()
+        }
+        .padding(.top, 20)
+        .navigationTitle("UNIT")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func datePicker(title: String, binding: Binding<Date?>) -> some View {
+        // Wrap an optional Date in a non-optional binding for DatePicker;
+        // default to "now" when picking starts, then commit on APPLY.
+        let dateBinding = Binding<Date>(
+            get: { binding.wrappedValue ?? Date() },
+            set: { binding.wrappedValue = $0 }
+        )
+        return VStack(spacing: 12) {
+            DatePicker(
+                "",
+                selection: dateBinding,
+                displayedComponents: [.date, .hourAndMinute]
+            )
+            .datePickerStyle(.wheel)
+            .labelsHidden()
+            HStack(spacing: 12) {
+                Button("CLEAR") {
+                    binding.wrappedValue = nil
+                    openEditor = nil
+                    Task { await reload() }
+                }
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.safetTextDim)
+                Spacer()
+                Button("APPLY") {
+                    if binding.wrappedValue == nil { binding.wrappedValue = Date() }
+                    openEditor = nil
+                    Task { await reload() }
+                }
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.safetRed)
+            }
+            .padding(.horizontal, 24)
+            Spacer()
+        }
+        .padding(.top, 8)
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     @ViewBuilder
@@ -112,11 +370,49 @@ struct TranscriptionsScreen: View {
                 ForEach(transmissions) { tx in
                     row(tx)
                 }
+                listFooter
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
         }
         .refreshable { await reload() }
+    }
+
+    /// Footer of the list — either a "Load more" button (we're below the cap
+    /// AND the last fetch filled the page, suggesting more rows exist) or a
+    /// terminal "End of log" stamp. Without this, operators with >200 rows had
+    /// no signal that more existed or any way to reach them.
+    @ViewBuilder
+    private var listFooter: some View {
+        if loading && !transmissions.isEmpty {
+            ProgressView().tint(.safetText).padding(.vertical, 12)
+        } else if transmissions.count >= limit && limit < Self.maxLimit {
+            Button {
+                Task { await loadMore() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down.circle.fill")
+                    Text("LOAD \(Self.pageStep) MORE")
+                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                }
+                .foregroundColor(.safetSignal)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.safetSignal.opacity(0.5), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 6)
+        } else if transmissions.count >= Self.maxLimit {
+            Text("SHOWING FIRST \(Self.maxLimit) — NARROW WITH FILTERS")
+                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .foregroundColor(.safetAmber)
+                .padding(.vertical, 12)
+        } else if !transmissions.isEmpty {
+            Text("END OF LOG")
+                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .foregroundColor(.safetTextDim)
+                .padding(.vertical, 12)
+        }
     }
 
     private func row(_ tx: Transmission) -> some View {
@@ -293,7 +589,14 @@ struct TranscriptionsScreen: View {
             }
         }
         do {
-            let result = try await api.transmissions(search: query)
+            let result = try await api.transmissions(
+                limit: limit,
+                search: query,
+                channel: filterChannel,
+                user: filterUnit.isEmpty ? nil : filterUnit.uppercased(),
+                from: filterFrom.map(Self.iso8601String),
+                to: filterTo.map(Self.iso8601String)
+            )
             // Drop the result if the user has changed the search box while we
             // were in-flight, or if a newer reload took over.
             guard !Task.isCancelled, (query ?? "") == search else { return }
@@ -304,6 +607,52 @@ struct TranscriptionsScreen: View {
             if (error as? URLError)?.code == .cancelled { return }
             self.error = "\(error)"
         }
+    }
+
+    /// Bumps `limit` by `pageStep` (capped at server max) and re-fetches.
+    /// Server doesn't support offset/cursor pagination so we always re-fetch
+    /// the whole page — slightly wasteful but matches how the web console does
+    /// it and keeps the result set in sort order without merging.
+    private func loadMore() async {
+        guard limit < Self.maxLimit else { return }
+        limit = min(limit + Self.pageStep, Self.maxLimit)
+        await reload()
+    }
+
+    /// Populate the channel-filter picker with whatever channels the operator
+    /// has permission to see. Fails silently — picker just stays empty if the
+    /// channels list can't be fetched.
+    private func refreshAvailableChannels() async {
+        do {
+            availableChannels = try await api.channels().map(\.name)
+        } catch {
+            // Non-fatal; an empty picker is recoverable by retrying the sheet.
+        }
+    }
+
+    // MARK: - formatting
+
+    /// ISO-8601 with second precision — matches what the server expects for
+    /// `from` / `to` query params.
+    private static let iso8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static func iso8601String(_ date: Date) -> String {
+        iso8601.string(from: date)
+    }
+
+    private static let chipDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d HH:mm"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter
+    }()
+
+    private func shortDate(_ date: Date) -> String {
+        Self.chipDateFormatter.string(from: date)
     }
 
     // MARK: - formatting
