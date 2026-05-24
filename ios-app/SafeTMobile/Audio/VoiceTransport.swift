@@ -44,6 +44,13 @@ final class VoiceTransport {
     /// call repeatedly — Android re-sends `join` whenever channel changes.
     func join(channel: String) {
         currentChannel = channel
+        // Any pending auto-reconnect is now superseded by this explicit join.
+        // Without this cancellation a queued reconnect that captured an old
+        // channel could fire AFTER a fresh join has already opened the socket,
+        // racing in a second openSocket() and creating parallel WebSockets.
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnectAttempts = 0
         if task == nil { openSocket() }
         sendJoinFrame()
     }
@@ -143,6 +150,11 @@ final class VoiceTransport {
             // currentChannel may have been cleared or replaced. join(channel:) will
             // be re-invoked by the channel-change flow in that case.
             guard self.currentChannel == channel else { return }
+            // Defensive: another flow (join(channel:) on a channel switch) may have
+            // already reopened the socket between the cancellation check and here.
+            // join(channel:) cancels the queued task, but if we're past the
+            // cancellation point we still need to avoid double-opening.
+            guard self.task == nil else { return }
             self.openSocket()
             self.sendJoinFrame()
         }
