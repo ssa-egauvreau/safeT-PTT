@@ -161,14 +161,25 @@ struct MapScreen: View {
     }
 
     private func loadOnce() async {
+        // First load happens here; subsequent polls go through refresh()
+        // directly. Auto-fit lives inside refresh() so that even if the very
+        // first response is empty (or fails), the first non-empty response
+        // from a later poll still recentres the map without the operator
+        // having to tap the scope button.
         await refresh()
-        if !didAutoFit { fitToPositions(animated: false); didAutoFit = !positions.isEmpty }
     }
 
     private func refresh() async {
         do {
             positions = try await api.positions()
             loadError = nil
+            // Auto-fit on the first non-empty payload — guards against the
+            // initial fetch returning [] (or failing) and leaving the viewport
+            // stuck on the continental-US fallback forever.
+            if !didAutoFit, !positions.isEmpty {
+                fitToPositions(animated: false)
+                didAutoFit = true
+            }
         } catch {
             loadError = "MAP REFRESH FAILED — \(error)"
         }
