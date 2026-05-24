@@ -15,9 +15,19 @@ struct DispatchScreen: View {
 
     @State private var channels: [String] = []
     @State private var channelsError: String?
-    @State private var ten33: [String: Bool] = [:]
+    /// Tri-state per channel — `nil` here means "fetch hasn't completed",
+    /// `.failed` means the GET errored and we don't know the real state,
+    /// `.known(Bool)` is the server's last successful answer. Without this
+    /// distinction, a failed status read silently rendered as NORMAL TRAFFIC
+    /// even when the channel actually had 10-33 ACTIVE — operationally unsafe.
+    @State private var ten33: [String: Ten33Cell] = [:]
     @State private var ten33Loading: Set<String> = []
     @State private var ten33Error: String?
+
+    enum Ten33Cell: Equatable {
+        case known(Bool)
+        case failed
+    }
 
     @State private var toneOuts: [ToneOut] = []
     @State private var toneOutsLoading = false
@@ -71,7 +81,15 @@ struct DispatchScreen: View {
                     .font(.system(size: 10, weight: .heavy, design: .monospaced))
                     .foregroundColor(.safetRed)
             }
-            if channels.isEmpty {
+            // Surface channel-list load failures BEFORE the empty-state text.
+            // Previously a /me/channels failure rendered "NO CHANNELS" — telling
+            // operators there were no channels rather than that the load failed
+            // could drive incorrect dispatch decisions.
+            if let channelsError {
+                Text(channelsError)
+                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                    .foregroundColor(.safetRed)
+            } else if channels.isEmpty {
                 Text("NO CHANNELS")
                     .font(.system(size: 11, weight: .heavy, design: .monospaced))
                     .foregroundColor(.safetTextDim)
@@ -86,25 +104,41 @@ struct DispatchScreen: View {
     }
 
     private func ten33Row(channel: String) -> some View {
-        let active = ten33[channel] ?? false
+        let cell = ten33[channel]
         let busy = ten33Loading.contains(channel)
+        let isActive: Bool = {
+            if case .known(let on) = cell { return on } else { return false }
+        }()
+        let isUnknown = cell == .failed
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(channel)
                     .font(.system(size: 13, weight: .heavy, design: .monospaced))
                     .foregroundColor(.safetText)
-                Text(active ? "10-33 ACTIVE" : "NORMAL TRAFFIC")
+                Text(statusLabel(for: cell))
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundColor(active ? .safetRed : .safetTextDim)
+                    .foregroundColor(statusColor(for: cell))
             }
             Spacer()
             if busy {
                 ProgressView().tint(.safetText)
+            } else if isUnknown {
+                // Don't expose a toggle when we don't trust our local state —
+                // flipping it would POST a value that could silently overwrite
+                // a real on-channel 10-33 we haven't read yet. Offer a refresh
+                // instead so the operator can re-query and unblock the toggle.
+                Button {
+                    Task { await refreshTen33All() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.safetAmber)
+                }
             } else {
                 Toggle(
                     "",
                     isOn: Binding(
-                        get: { active },
+                        get: { isActive },
                         // Explicit `newValue in` — the prior `$0` shorthand
                         // wrapped in a nested Task made Swift infer a
                         // 0-argument closure for the binding setter, producing
@@ -119,9 +153,43 @@ struct DispatchScreen: View {
             }
         }
         .padding(12)
-        .background(active ? Color.safetRed.opacity(0.12) : Color.safetSurface)
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(active ? Color.safetRed : Color.safetBorder, lineWidth: 1))
+        .background(rowBackground(for: cell))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(rowBorder(for: cell), lineWidth: 1))
         .cornerRadius(8)
+    }
+
+    private func statusLabel(for cell: Ten33Cell?) -> String {
+        switch cell {
+        case .known(true): return "10-33 ACTIVE"
+        case .known(false): return "NORMAL TRAFFIC"
+        case .failed: return "STATUS UNKNOWN — TAP ⟳"
+        case .none: return "LOADING…"
+        }
+    }
+
+    private func statusColor(for cell: Ten33Cell?) -> Color {
+        switch cell {
+        case .known(true): return .safetRed
+        case .known(false): return .safetTextDim
+        case .failed: return .safetAmber
+        case .none: return .safetTextDim
+        }
+    }
+
+    private func rowBackground(for cell: Ten33Cell?) -> Color {
+        switch cell {
+        case .known(true): return Color.safetRed.opacity(0.12)
+        case .failed: return Color.safetAmber.opacity(0.10)
+        default: return Color.safetSurface
+        }
+    }
+
+    private func rowBorder(for cell: Ten33Cell?) -> Color {
+        switch cell {
+        case .known(true): return .safetRed
+        case .failed: return .safetAmber
+        default: return .safetBorder
+        }
     }
 
     // MARK: - tone-outs section
@@ -197,30 +265,34 @@ struct DispatchScreen: View {
     private func setTen33(channel: String, active: Bool) async {
         ten33Loading.insert(channel)
         defer { ten33Loading.remove(channel) }
-        let previous = ten33[channel] ?? false
-        ten33[channel] = active // optimistic
+        let previous = ten33[channel]
+        ten33[channel] = .known(active) // optimistic
         do {
             try await api.setTen33(channel: channel, active: active)
             ten33Error = nil
         } catch {
-            ten33[channel] = previous // rollback
+            ten33[channel] = previous // rollback (including back to .failed if it was unknown)
             ten33Error = "10-33 \(active ? "set" : "clear") failed: \(error)"
         }
     }
 
     private func refreshTen33All() async {
-        await withTaskGroup(of: (String, Bool?).self) { group in
+        await withTaskGroup(of: (String, Ten33Cell).self) { group in
             for channel in channels {
                 group.addTask {
                     do {
-                        return (channel, try await api.ten33Status(channel: channel))
+                        let active = try await api.ten33Status(channel: channel)
+                        return (channel, .known(active))
                     } catch {
-                        return (channel, nil)
+                        // Mark explicitly as failed — without this the row
+                        // would silently render NORMAL TRAFFIC even if the
+                        // channel actually had 10-33 active server-side.
+                        return (channel, .failed)
                     }
                 }
             }
-            for await (channel, active) in group {
-                if let active { ten33[channel] = active }
+            for await (channel, cell) in group {
+                ten33[channel] = cell
             }
         }
     }
