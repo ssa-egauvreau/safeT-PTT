@@ -7,6 +7,7 @@ struct RadioScreen: View {
     @EnvironmentObject private var session: AuthSession
     @State private var pttDown = false
     @State private var showingMap = false
+    @State private var showingUnits = false
     @State private var showingTranscripts = false
 
     var body: some View {
@@ -54,6 +55,21 @@ struct RadioScreen: View {
                 .preferredColorScheme(.dark)
             }
         }
+        .sheet(isPresented: $showingUnits) {
+            if let token = session.token {
+                NavigationStack {
+                    UnitsScreen(api: RadioApiClient(token: token))
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarLeading) {
+                                Button("CLOSE") { showingUnits = false }
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.safetText)
+                            }
+                        }
+                }
+                .preferredColorScheme(.dark)
+            }
+        }
     }
 
     // MARK: - status strip
@@ -93,6 +109,20 @@ struct RadioScreen: View {
                     Image(systemName: "map")
                         .font(.system(size: 10, weight: .bold))
                     Text("MAP")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .foregroundColor(.safetTextDim)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .overlay(Capsule().stroke(Color.safetBorder, lineWidth: 1))
+            }
+            Button {
+                showingUnits = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "person.2.fill")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("UNITS")
                         .font(.system(size: 10, weight: .bold))
                 }
                 .foregroundColor(.safetTextDim)
