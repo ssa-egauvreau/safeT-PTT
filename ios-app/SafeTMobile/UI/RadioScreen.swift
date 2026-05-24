@@ -206,8 +206,7 @@ struct RadioScreen: View {
 
     private func pttBar(_ state: RadioUiState) -> some View {
         VStack(spacing: 4) {
-            Text(pttTitle(state))
-                .font(.system(size: 22, weight: .heavy))
+            pttTitleView(state)
             Text(pttSubtitle(state))
                 .font(.system(size: 10, weight: .semibold))
                 .opacity(0.85)
@@ -232,9 +231,27 @@ struct RadioScreen: View {
         )
     }
 
+    /// While transmitting, render "XMIT" with the lightning-bolt SF Symbol so
+    /// the operator gets the visual radio-style "I'm on air" signal. Other
+    /// states fall back to plain text via `pttTitle`.
+    @ViewBuilder
+    private func pttTitleView(_ state: RadioUiState) -> some View {
+        if state.isTransmitting {
+            HStack(spacing: 6) {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 22, weight: .heavy))
+                Text("XMIT")
+                    .font(.system(size: 22, weight: .heavy))
+            }
+        } else {
+            Text(pttTitle(state))
+                .font(.system(size: 22, weight: .heavy))
+        }
+    }
+
     private func pttTitle(_ state: RadioUiState) -> String {
         if state.pttBusyTone { return "CHANNEL BUSY" }
-        if state.isTransmitting { return "ON AIR" }
+        // isTransmitting is rendered by pttTitleView's icon+text branch — never reached here.
         if state.isPttPressed { return "KEYING…" }
         return "HOLD TO TALK"
     }
