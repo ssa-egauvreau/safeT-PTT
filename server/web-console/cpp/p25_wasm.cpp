@@ -29,6 +29,10 @@ int imbe_init() {
   if (gEncoder != nullptr) {
     gEncoder->setGainAdjust(1.0f);
   }
+  // Intentionally leave gDecoder->autoGain at the constructor default (false).
+  // Web + server run ImbeAgc on the decoded PCM, which is a 1:1 port of the
+  // native autoGain ramp. Opting in here would stack two identical compressors
+  // and over-drive loud talk-spurts.
   return (gEncoder != nullptr && gDecoder != nullptr) ? 1 : 0;
 }
 
@@ -58,6 +62,9 @@ int imbe_decode(uint8_t* codeword11, int16_t* samples160) {
 
 EMSCRIPTEN_KEEPALIVE
 MBEDecoder* imbe_decoder_create() {
+  // autoGain stays at the constructor default (false). See imbe_init() — the
+  // server's recording pipeline (imbeServerCodec.ts) also runs ImbeAgc on the
+  // decoded PCM, so the native ramp would duplicate it.
   return new (std::nothrow) MBEDecoder(DECODE_88BIT_IMBE);
 }
 

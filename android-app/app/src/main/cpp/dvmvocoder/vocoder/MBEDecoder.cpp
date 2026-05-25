@@ -72,7 +72,16 @@ namespace vocoder {
     MBEDecoder::MBEDecoder(MBE_DECODER_MODE mode) :
         m_mbelibParms(NULL),
         m_mbeMode(mode),
-        m_gainAdjust(1.0f)
+        m_gainAdjust(1.0f),
+        // __PROPERTY adds no in-class default for m_autoGain, so this field used
+        // to read whatever garbage lived in its heap slot. Default to false to
+        // match the runtime contract every caller already follows:
+        //   - p25_jni.cpp explicitly opts in via setAutoGain(true).
+        //   - p25_wasm.cpp leaves it off; web + server run a TypeScript port
+        //     (ImbeAgc, a 1:1 reimplementation of this same algorithm) on the
+        //     decoded PCM. Enabling native autoGain there would stack two
+        //     identical compressors and drive loud talk-spurts into clipping.
+        m_autoGain(false)
     {
         m_mbelibParms = new mbelibParms();
         mbe_initMbeParms(m_mbelibParms->m_cur_mp, m_mbelibParms->m_prev_mp, m_mbelibParms->m_prev_mp_enhanced);
