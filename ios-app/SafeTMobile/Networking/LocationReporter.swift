@@ -62,7 +62,10 @@ final class LocationReporter: NSObject, CLLocationManagerDelegate {
             channel: channel,
             accuracyM: location.horizontalAccuracy >= 0 ? location.horizontalAccuracy : nil,
             heading: location.course >= 0 ? location.course : nil,
-            speedMps: location.speed >= 0 ? location.speed : nil
+            speedMps: location.speed >= 0 ? location.speed : nil,
+            // Always "ios" from this app — server's whitelist accepts it and
+            // surfaces a platform badge in the UNITS roster.
+            clientType: "ios"
         )
         Task { try? await api.reportLocation(report) }
     }

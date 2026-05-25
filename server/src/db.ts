@@ -216,6 +216,12 @@ export async function ensureSchema(): Promise<void> {
   await p.query(
     `ALTER TABLE radio_positions ADD COLUMN IF NOT EXISTS agency_id INT REFERENCES agencies(id) ON DELETE CASCADE;`,
   );
+  // Track the platform the unit is reporting from (ios | android | web | …) so
+  // the iOS UNITS roster and other consoles can show a platform badge per row.
+  // Null when the client hasn't been updated to send `client_type` yet.
+  await p.query(
+    `ALTER TABLE radio_positions ADD COLUMN IF NOT EXISTS client_type TEXT;`,
+  );
 
   await p.query(`
     CREATE TABLE IF NOT EXISTS alerts (

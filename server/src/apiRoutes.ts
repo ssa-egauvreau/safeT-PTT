@@ -2102,6 +2102,11 @@ export function createApiRouter(): Router {
         const n = Number(value);
         return Number.isFinite(n) ? n : null;
       };
+      // Whitelist + length-cap the platform tag so a malformed client can't
+      // pollute the radio_positions table with garbage.
+      const allowedClientTypes = new Set(["ios", "android", "web", "radio", "desktop"]);
+      const clientTypeRaw = typeof body.client_type === "string" ? body.client_type.trim().toLowerCase() : "";
+      const clientType = clientTypeRaw && allowedClientTypes.has(clientTypeRaw) ? clientTypeRaw : null;
       await upsertPosition({
         agencyId: radioAgencyId(req),
         unitId,
@@ -2113,6 +2118,7 @@ export function createApiRouter(): Router {
         accuracyM: optionalNumber(body.accuracy_m),
         heading: optionalNumber(body.heading),
         speedMps: optionalNumber(body.speed_mps),
+        clientType,
       });
       res.json({ ok: true });
     } catch (error) {

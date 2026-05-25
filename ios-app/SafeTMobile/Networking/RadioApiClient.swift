@@ -60,7 +60,9 @@ struct ToneOut: Decodable, Identifiable, Hashable {
 
 /// One row from `GET /v1/locations`. Mirrors server `RadioPosition`. All
 /// position fields are required; channel / display / accuracy / heading /
-/// speed / device type are optional metadata.
+/// speed / device type / client type are optional metadata.
+/// `clientType` is "ios" | "android" | "web" | "radio" | "desktop" or nil if
+/// the reporting client hasn't been updated to send the field yet.
 struct UnitPosition: Decodable, Identifiable, Hashable {
     var id: String { unitId }
     let unitId: String
@@ -72,11 +74,14 @@ struct UnitPosition: Decodable, Identifiable, Hashable {
     let heading: Double?
     let speedMps: Double?
     let deviceType: String?
+    let clientType: String?
     let updatedAt: String
 }
 
 /// Body of `POST /v1/radio/location`. Unknown fields are omitted (not sent as
 /// null) so the server treats missing accuracy/heading/speed as absent.
+/// `clientType` is always sent as "ios" — server uses it to render the
+/// platform badge in the UNITS roster and on the live map.
 struct LocationReport: Encodable {
     let unitId: String
     let lat: Double
@@ -85,9 +90,10 @@ struct LocationReport: Encodable {
     let accuracyM: Double?
     let heading: Double?
     let speedMps: Double?
+    let clientType: String
 
     enum CodingKeys: String, CodingKey {
-        case unitId, lat, lon, channel, accuracyM, heading, speedMps
+        case unitId, lat, lon, channel, accuracyM, heading, speedMps, clientType
     }
 
     func encode(to encoder: Encoder) throws {
@@ -99,6 +105,7 @@ struct LocationReport: Encodable {
         try container.encodeIfPresent(accuracyM, forKey: .accuracyM)
         try container.encodeIfPresent(heading, forKey: .heading)
         try container.encodeIfPresent(speedMps, forKey: .speedMps)
+        try container.encode(clientType, forKey: .clientType)
     }
 }
 
