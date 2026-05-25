@@ -14,7 +14,16 @@ const PRODUCTION_FRAME_16K = 640;
 
 const FS = 16_000;
 
-export type UpsampleMode = "duplicate" | "linear" | "polyphase";
+export type UpsampleMode = "duplicate" | "linear" | "polyphase" | "polyphase24";
+
+/** Sample rate of `processClip`'s output PCM under each upsample mode. The
+ *  three 8 → 16 kHz modes return 16 kHz; "polyphase24" returns 16 kHz too,
+ *  and the lab's playback path runs `upsamplePlayback16To24` as a final step
+ *  so channel-push (which still wants 16 kHz for the 8 kHz IMBE wire) keeps
+ *  working unchanged. */
+export function outputSampleRate(mode: UpsampleMode): 16_000 | 24_000 {
+  return mode === "polyphase24" ? 24_000 : 16_000;
+}
 
 export interface AudioLabConfig {
   preImbe: {
@@ -356,8 +365,82 @@ function polyphaseKernel(): Float32Array {
   return cachedKernel;
 }
 
+/** Playback-only 16 → 24 kHz polyphase upsample. 2:3 resample: for every two
+ *  input samples we emit three output samples at phases 0/3, 1/3 (2/3 input
+ *  position), and 2/3 (4/3 input position). The 8 kHz IMBE source is already
+ *  band-limited well below the 12 kHz Nyquist of the 24 kHz output, so this
+ *  stage doesn't need its own anti-alias filter — a windowed-sinc fractional
+ *  interpolator is sufficient. Output buffer length is ceil(input * 3 / 2).
+ *
+ *  Used by the Audio Lab only — channel push and live voice keep the existing
+ *  16 kHz path because the IMBE wire is fixed at 8 kHz regardless. */
+export function upsamplePlayback16To24(pcm16k: Int16Array): Int16Array {
+  const KERNEL = polyphase24Kernel();
+  const HALF = (KERNEL[0].length - 1) >> 1;
+  const outLen = Math.ceil((pcm16k.length * 3) / 2);
+  const out = new Int16Array(outLen);
+  for (let n = 0; n < outLen; n++) {
+    // Output sample n sits at input position n * 2 / 3.
+    const srcPos = (n * 2) / 3;
+    const centreIn = Math.floor(srcPos);
+    // Phase 0 → on-grid input; phases 1, 2 → fractional offsets 2/3 and 4/3.
+    const phase = n % 3;
+    if (phase === 0) {
+      out[n] = pcm16k[centreIn] ?? 0;
+      continue;
+    }
+    const taps = KERNEL[phase];
+    let acc = 0;
+    for (let k = -HALF; k <= HALF; k++) {
+      const inIdx = centreIn + k;
+      const sample = inIdx >= 0 && inIdx < pcm16k.length ? pcm16k[inIdx] : 0;
+      acc += sample * taps[k + HALF];
+    }
+    out[n] = clamp16(acc);
+  }
+  return out;
+}
+
+let cached24Kernel: [Float32Array, Float32Array, Float32Array] | null = null;
+function polyphase24Kernel(): [Float32Array, Float32Array, Float32Array] {
+  if (cached24Kernel) return cached24Kernel;
+  // 17-tap windowed-sinc per phase. Phase 0 is the identity (input sample passes
+  // through), phases 1 and 2 sample the sinc at fractional offsets 2/3 and 4/3.
+  // Cutoff is the 24 kHz output's effective Nyquist (8 kHz from the IMBE source
+  // is the only spectrum that matters; nothing above it to alias).
+  const N = 17;
+  const HALF = (N - 1) >> 1;
+  const fc = 0.5; // half-band cutoff at the 16 kHz input rate
+  const phases: [Float32Array, Float32Array, Float32Array] = [
+    new Float32Array(N), // phase 0 — unused but present so indices line up
+    new Float32Array(N),
+    new Float32Array(N),
+  ];
+  for (let phase = 1; phase < 3; phase++) {
+    const offset = phase * (2 / 3); // 2/3 or 4/3
+    let norm = 0;
+    for (let i = 0; i < N; i++) {
+      const x = i - HALF - offset;
+      let h: number;
+      if (Math.abs(x) < 1e-9) {
+        h = 2 * fc;
+      } else {
+        h = Math.sin(2 * Math.PI * fc * x) / (Math.PI * x);
+      }
+      const w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1))); // Hann
+      phases[phase][i] = h * w;
+      norm += phases[phase][i];
+    }
+    for (let i = 0; i < N; i++) phases[phase][i] /= norm;
+  }
+  cached24Kernel = phases;
+  return cached24Kernel;
+}
+
 /** Runs a recorded mic clip through the configured pipeline and returns the processed
- *  Int16 PCM at 16 kHz, ready to play through Web Audio or push onto a channel. */
+ *  Int16 PCM at 16 kHz, ready to play through Web Audio or push onto a channel.
+ *  (The "polyphase24" upsample mode also returns 16 kHz here — the lab's playback
+ *  path runs `upsamplePlayback16To24` as a final step on its way to the DAC.) */
 export async function processClip(input: Int16Array, cfg: AudioLabConfig): Promise<Int16Array> {
   // --- Stage 1: pre-IMBE conditioning ---
   const conditioned = input.slice();
@@ -409,10 +492,14 @@ export async function processClip(input: Int16Array, cfg: AudioLabConfig): Promi
       outOff += 160;
     }
     const decoded = decoded8k.subarray(0, outOff);
+    // "polyphase24" uses the same 8→16 polyphase here; the 16→24 step happens at
+    // playback time in the AudioLabPanel so channel-push stays at the 16 kHz
+    // rate the rest of the system expects.
     postVocoder =
       cfg.postDecode.upsampleMode === "linear"
         ? upsampleLinear8To16(decoded)
-        : cfg.postDecode.upsampleMode === "polyphase"
+        : cfg.postDecode.upsampleMode === "polyphase" ||
+            cfg.postDecode.upsampleMode === "polyphase24"
           ? upsamplePolyphase8To16(decoded)
           : upsampleDup8To16(decoded);
   }

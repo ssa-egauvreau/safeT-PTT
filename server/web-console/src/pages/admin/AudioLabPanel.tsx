@@ -3,8 +3,10 @@ import { api, describeError, type UserChannel } from "../../api";
 import { imbeDecode, imbeEncode, imbeReady, initImbe } from "../../voice/imbeVocoder";
 import {
   DEFAULT_PRESET,
+  outputSampleRate,
   processClip,
   processClipProduction,
+  upsamplePlayback16To24,
   type AudioLabConfig,
   type UpsampleMode,
 } from "./audioLab/pipeline";
@@ -264,7 +266,14 @@ export function AudioLabPanel() {
       return;
     }
     setProcessedClip(processed);
-    await playPcm(processed);
+    // `processed` is always 16 kHz (channel push depends on that). When the
+    // user picked the "polyphase24" upsample mode, render the extra 16 → 24
+    // step here so playback hits the DAC at 24 kHz, reducing the browser's
+    // own resample distance to its native 48 kHz output from 3× to 2×.
+    const playbackRate = outputSampleRate(config.postDecode.upsampleMode);
+    const playbackPcm =
+      playbackRate === 24_000 ? upsamplePlayback16To24(processed) : processed;
+    await playPcm(playbackPcm, playbackRate);
   }
 
   async function handlePlayProduction(): Promise<void> {
@@ -285,7 +294,8 @@ export function AudioLabPanel() {
     }
     // Don't overwrite `processedClip` — that one is what the Channel Push uses, and
     // it should reflect the user's custom settings, not the production reference.
-    await playPcm(processed);
+    // Production path is always 16 kHz — it's the live reference, not a quality test.
+    await playPcm(processed, LAB_SAMPLE_RATE);
   }
 
   async function handlePlayOriginal(): Promise<void> {
@@ -295,24 +305,31 @@ export function AudioLabPanel() {
     }
     setError_(null);
     setInfo_(null);
-    await playPcm(recordedClip);
+    await playPcm(recordedClip, LAB_SAMPLE_RATE);
   }
 
-  async function playPcm(pcm: Int16Array): Promise<void> {
+  async function playPcm(pcm: Int16Array, sampleRate: number): Promise<void> {
     // Tear down any previous playback.
     try {
       playSourceRef.current?.stop();
     } catch {
       /* already stopped */
     }
+    // The cached AudioContext is locked to whatever sampleRate it was created
+    // at — recreate it if the caller now wants a different rate (e.g. switching
+    // between the 16 kHz production preset and the polyphase24 listening mode).
+    if (playCtxRef.current && playCtxRef.current.sampleRate !== sampleRate) {
+      void playCtxRef.current.close();
+      playCtxRef.current = null;
+    }
     if (!playCtxRef.current) {
-      playCtxRef.current = new AudioContext({ sampleRate: LAB_SAMPLE_RATE });
+      playCtxRef.current = new AudioContext({ sampleRate });
     }
     const ctx = playCtxRef.current;
     if (ctx.state === "suspended") {
       await ctx.resume();
     }
-    const buffer = ctx.createBuffer(1, pcm.length, LAB_SAMPLE_RATE);
+    const buffer = ctx.createBuffer(1, pcm.length, sampleRate);
     const ch = buffer.getChannelData(0);
     for (let i = 0; i < pcm.length; i++) {
       ch[i] = pcm[i] / 0x8000;
@@ -643,16 +660,25 @@ export function AudioLabPanel() {
         <fieldset disabled={config.vocoder.bypass}>
           <legend>Post-decode shaping</legend>
           <label>
-            <span>Upsample 8 → 16 kHz</span>
+            <span>Upsample mode</span>
             <select
               value={config.postDecode.upsampleMode}
               onChange={(e) => updatePost("upsampleMode", e.target.value as UpsampleMode)}
             >
-              <option value="duplicate">Duplicate (current default)</option>
-              <option value="linear">Linear interpolation</option>
-              <option value="polyphase">Polyphase (windowed-sinc)</option>
+              <option value="duplicate">8 → 16 kHz · Duplicate (current default)</option>
+              <option value="linear">8 → 16 kHz · Linear interpolation</option>
+              <option value="polyphase">8 → 16 kHz · Polyphase (windowed-sinc)</option>
+              <option value="polyphase24">8 → 24 kHz · Polyphase + playback resample (listen-only)</option>
             </select>
           </label>
+          {config.postDecode.upsampleMode === "polyphase24" && (
+            <div className="muted small">
+              24 kHz output is rendered into the lab&apos;s playback buffer only.
+              Channel push (and the on-air wire) stay at 16 kHz, since the IMBE
+              codec is band-limited to ~4 kHz regardless. Worth A/B-ing against
+              the standard polyphase mode — the audible delta is usually subtle.
+            </div>
+          )}
           <Toggle
             label="Post-decode HPF"
             value={config.postDecode.hpfEnabled}
