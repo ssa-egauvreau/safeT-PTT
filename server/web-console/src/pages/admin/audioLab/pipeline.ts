@@ -44,6 +44,12 @@ export interface AudioLabConfig {
     agcEnabled: boolean;
     agcTargetRms: number;
     agcMaxGain: number;
+    /** When true: browser-side getUserMedia processing (EC/NS/AGC) is disabled,
+     *  and the TX conditioner runs HPF + LPF only (no expander, no makeup AGC).
+     *  Closest match to how the radio-bridge captures audio with raw constraints —
+     *  use this preset if hand-held audio sounds "processed" or "pumpy" vs the
+     *  bridge feed on the same channel. */
+    bypassMicProcessing?: boolean;
   };
   vocoder: {
     bypass: boolean;
@@ -834,8 +840,49 @@ export const WINDY_MOBILE_PRESET: AudioLabConfig = {
   },
 };
 
+/** Bridge-style minimal — matches the radio-bridge audio path (raw browser
+ *  capture, just the rumble HPF and IMBE anti-alias LPF). Closest sound to
+ *  audio coming off a real P25 RX over the bridge. Use this preset if
+ *  handheld audio sounds "processed" or "pumpy" vs the bridge feed on the
+ *  same channel. */
+export const BRIDGE_MINIMAL_PRESET: AudioLabConfig = {
+  preImbe: {
+    windGateEnabled: false,
+    windGateThresholdDb: 6,
+    windGateAttenuationDb: -18,
+    windHpfEnabled: false,
+    windHpfHz: 200,
+    windHpfOrder: 4,
+    hpfEnabled: true,
+    hpfHz: 180,
+    lpfEnabled: true,
+    lpfHz: 3400,
+    agcEnabled: false,
+    agcTargetRms: 6000,
+    agcMaxGain: 6,
+    bypassMicProcessing: true,
+  },
+  vocoder: {
+    bypass: false,
+  },
+  postDecode: {
+    upsampleMode: "polyphase",
+    hpfEnabled: false,
+    hpfHz: 250,
+    lpfEnabled: false,
+    lpfHz: 3300,
+    lowShelfEnabled: false,
+    lowShelfHz: 200,
+    lowShelfDb: 0,
+    highShelfEnabled: false,
+    highShelfHz: 2500,
+    highShelfDb: 0,
+  },
+};
+
 export const BUILTIN_PRESETS: Record<string, AudioLabConfig> = {
   "Default IMBE": DEFAULT_PRESET,
+  "Bridge-style minimal": BRIDGE_MINIMAL_PRESET,
   "Phase 2 voice": PHASE2_PRESET,
   Bypass: BYPASS_PRESET,
   "Deep P25 mobile": DEEP_MOBILE_PRESET,

@@ -91,6 +91,19 @@ export function applyWindLevel(cfg: AudioLabConfig, level: WindLevel): AudioLabC
   };
 }
 
+export type MicProcessing = "standard" | "minimal";
+
+export function readMicProcessing(cfg: AudioLabConfig): MicProcessing {
+  return cfg.preImbe.bypassMicProcessing ? "minimal" : "standard";
+}
+
+export function applyMicProcessing(cfg: AudioLabConfig, level: MicProcessing): AudioLabConfig {
+  return {
+    ...cfg,
+    preImbe: { ...cfg.preImbe, bypassMicProcessing: level === "minimal" },
+  };
+}
+
 export type QualityLevel = "standard" | "improved" | "best";
 
 export function readQualityLevel(cfg: AudioLabConfig): QualityLevel {
@@ -162,6 +175,20 @@ interface SimpleControlsProps {
 export function SimpleControls({ config, setConfig }: SimpleControlsProps) {
   return (
     <section className="audio-lab-simple">
+      <SimpleSection
+        title="Mic processing"
+        description='"Standard" runs noise suppression, AGC and the TX expander — best in noisy vehicles. "Bridge-style minimal" turns it all off, matching the radio-bridge mic chain — use if hand-held audio sounds "processed" or "pumpy" compared to the bridge feed.'
+      >
+        <ButtonGroup<MicProcessing>
+          value={readMicProcessing(config)}
+          onChange={(v) => setConfig(applyMicProcessing(config, v))}
+          options={[
+            { value: "standard", label: "Standard" },
+            { value: "minimal", label: "Bridge-style minimal" },
+          ]}
+        />
+      </SimpleSection>
+
       <SimpleSection
         title="Boost quiet voices"
         description="Automatically lifts soft talkers so everyone sounds about the same loudness. Higher settings rescue more, but can also amplify background hiss in silent moments."

@@ -66,6 +66,10 @@ class VoiceRelayTransport(
     private val authTokenProvider: () -> String,
     private val apiKeyProvider: () -> String,
     private val inbound: InboundVoicePlayer,
+    /** Read on every key-up: when true, txConditioner skips expander + makeup
+     *  AGC so handset audio matches the radio-bridge mic chain. Defaults to
+     *  false for current behaviour when an admin hasn't pushed otherwise. */
+    private val bypassMicProcessingProvider: () -> Boolean = { false },
 ) : StreamingPcmSink {
 
     private val _controlEvents = MutableSharedFlow<VoiceControlEvent>(extraBufferCapacity = 16)
@@ -333,7 +337,11 @@ class VoiceRelayTransport(
             System.arraycopy(pcmAcc, pcmFrameScratch.size, pcmAcc, 0, pcmAccLen - pcmFrameScratch.size)
             pcmAccLen -= pcmFrameScratch.size
 
-            txConditioner.conditionLe16(pcmFrameScratch, pcmFrameScratch.size)
+            txConditioner.conditionLe16(
+                pcmFrameScratch,
+                pcmFrameScratch.size,
+                bypassExpanderAgc = bypassMicProcessingProvider(),
+            )
             val imbeIn = P25ImbeNative.Frames.downsampleAvg16kToImbe(pcmFrameScratch)
             val codeword11 = P25ImbeNative.encodeFrame(imbeIn) ?: continue
             val packet = ByteArray(2 + codeword11.size)

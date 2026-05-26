@@ -161,14 +161,25 @@ class RadioPreferences(context: Context) {
      * Saves the agency-wide audio config fetched from /v1/audio/config.
      * Calling this overrides any local mic-audio settings until [clearServerAudioConfig] is called.
      */
-    fun setServerAudioConfig(agcEnabled: Boolean, noiseSuppression: Boolean, gainMultiplier: Float) {
+    fun setServerAudioConfig(
+        agcEnabled: Boolean,
+        noiseSuppression: Boolean,
+        gainMultiplier: Float,
+        bypassMicProcessing: Boolean = false,
+    ) {
         prefs.edit()
             .putBoolean(KEY_SERVER_AGC_ENABLED, agcEnabled)
             .putBoolean(KEY_SERVER_NOISE_SUPPRESSION, noiseSuppression)
             .putFloat(KEY_SERVER_GAIN_MULTIPLIER, gainMultiplier.coerceIn(MIN_MIC_GAIN, MAX_MIC_GAIN))
+            .putBoolean(KEY_SERVER_BYPASS_MIC_PROCESSING, bypassMicProcessing)
             .putBoolean(KEY_SERVER_CONFIG_SET, true)
             .apply()
     }
+
+    /** When true the TX conditioner skips expander + makeup AGC and Android's
+     *  hardware DSP effects are off — matches the bridge mic chain. */
+    fun getServerBypassMicProcessing(): Boolean =
+        prefs.getBoolean(KEY_SERVER_BYPASS_MIC_PROCESSING, false)
 
     /** True when a server-pushed config is stored and should take precedence over local prefs. */
     fun hasServerAudioConfig(): Boolean = prefs.getBoolean(KEY_SERVER_CONFIG_SET, false)
@@ -192,6 +203,7 @@ class RadioPreferences(context: Context) {
             .remove(KEY_SERVER_AGC_ENABLED)
             .remove(KEY_SERVER_NOISE_SUPPRESSION)
             .remove(KEY_SERVER_GAIN_MULTIPLIER)
+            .remove(KEY_SERVER_BYPASS_MIC_PROCESSING)
             .putBoolean(KEY_SERVER_CONFIG_SET, false)
             .apply()
     }
@@ -226,5 +238,6 @@ class RadioPreferences(context: Context) {
         private const val KEY_SERVER_AGC_ENABLED = "server_agc_enabled"
         private const val KEY_SERVER_NOISE_SUPPRESSION = "server_noise_suppression"
         private const val KEY_SERVER_GAIN_MULTIPLIER = "server_gain_multiplier"
+        private const val KEY_SERVER_BYPASS_MIC_PROCESSING = "server_bypass_mic_processing"
     }
 }

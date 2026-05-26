@@ -477,6 +477,19 @@ export interface GlobalAudioConfigResponse {
   updatedBy: string | null;
 }
 
+/** Device-friendly summary of the agency-wide audio config (any logged-in member). */
+export interface AudioConfigSummary {
+  agcEnabled: boolean;
+  noiseSuppression: boolean;
+  gainMultiplier: number;
+  bypassMicProcessing: boolean;
+}
+
+export interface AudioConfigSummaryResponse {
+  config: AudioConfigSummary | null;
+  updatedAt: string | null;
+}
+
 export interface GlobalAudioConfigPushResponse {
   ok: boolean;
   config: unknown;
@@ -867,6 +880,10 @@ export const api = {
     request<{ ok: boolean }>("PUT", `/v1/simulcast/${id}`, patch),
   deleteSimulcast: (id: number) => request<{ ok: boolean }>("DELETE", `/v1/simulcast/${id}`),
 
+  /** Any logged-in member: read the device-oriented audio config summary
+   *  (what handsets / the voice client need to mirror agency settings). */
+  getAudioConfigSummary: () =>
+    request<AudioConfigSummaryResponse>("GET", "/v1/audio/config"),
   /** Admin: read the current agency-wide audio config (null if never set). */
   getGlobalAudioConfig: () => request<GlobalAudioConfigResponse>("GET", "/v1/admin/audio-config"),
   /** Admin: push a new agency-wide audio config to all users and devices. */
