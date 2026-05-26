@@ -40,30 +40,6 @@
  */
 
 import { test, type TestContext } from "node:test";
- * Tests for `server/src/presence.ts`.
- *
- * Channel presence drives the "X units on this channel" badges that
- * dispatchers rely on to know who's listening — a multi-tenant isolation
- * bug here would leak unit counts (and unit IDs, indirectly via tooling)
- * across agencies. Both correctness rules are non-obvious and worth pinning:
- *
- *   1. The bucket key namespaces the channel under its agency_id, so two
- *      tenants with a channel literally called "main" do NOT share a count.
- *
- *   2. `normalizedChannel` collapses whitespace + casing the same way both
- *      heartbeat and count paths do — otherwise a unit could heartbeat
- *      " Main " and the count for "main" would still be zero.
- *
- *   3. Heartbeats older than the TTL window are pruned before each read, so
- *      a unit that stopped sending updates eventually disappears from the
- *      roster (this is also the only path that frees memory for old
- *      channels — a leak there would grow unbounded under churn).
- *
- *   4. Empty / sentinel inputs ("", "----", null, undefined) are rejected
- *      so the upstream HTTP handler can rely on the validation here.
- */
-
-import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
@@ -289,6 +265,13 @@ test("countPresence returns zero (not throws) for an empty / sentinel channel", 
   assert.equal(countPresence(1, "----"), 0);
   assert.equal(countPresence(1, undefined), 0);
   assert.equal(countPresence(1, null), 0);
+});
+
+// --- The block below comes from a second test author who wrote a parallel
+// suite for the same module. The unique coverage it added is now kept here
+// inline (deduped against the first half above) so we keep the additional
+// invariants without re-importing or re-declaring helpers.
+
 // Each test uses a unique agency id so they stay independent — the presence
 // store is process-global by design.
 let nextAgency = 9_000_000;

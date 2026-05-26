@@ -41,32 +41,6 @@
  */
 
 import { test, type TestContext } from "node:test";
- * Tests for `server/src/sessionCache.ts`.
- *
- * The session cache short-circuits the per-request "is this user / agency
- * still active?" Postgres lookup on every authenticated API call (Android
- * handsets poll AIR every 250 ms — without the cache this is the hottest
- * path in the database).
- *
- * Two correctness properties matter:
- *
- *  1. **Forced revocation must not be deferred by the TTL.**
- *     `invalidateCachedAuth` is called after a fresh login bumps
- *     token_generation so the OLD device's next request hits Postgres and
- *     gets superseded immediately, rather than continuing to authenticate
- *     under a stale (still-true) cache entry for up to TTL_MS.
- *
- *  2. **Expired entries don't stay readable.**
- *     The cache must not return an entry once its `expiresAt` is past,
- *     otherwise an admin disabling an agency would have no upper bound on
- *     when handsets actually lose access.
- *
- * `clearAuthCache` is the test-isolation handle the rest of the project
- * uses; we exercise it too so any future regression that drops the export
- * (or that mutates other state) is caught here.
- */
-
-import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
@@ -87,6 +61,10 @@ function payload(tokenGeneration: number): {
     userDisabled: false,
     agencyDisabled: false,
   };
+}
+
+/** Wrap a test in a mock `Date.now()` window and provide an `advance(ms)`
+ * stepper. Restores the real clock on return / throw. */
 function withFakeNow<T>(start: number, fn: (advance: (ms: number) => void) => T): T {
   const realNow = Date.now;
   let now = start;
