@@ -6,7 +6,7 @@ final class ImbeTxConditioner {
     private let hpf: Biquad
     private let lpf: Biquad
     private var env = 0.0
-    private var floor = Self.floorMin
+    private var floor = ImbeTxConditioner.floorMin
     private var gateGain = 0.0
     private var agcGain = 1.0
     private var agcTarget = 1.0
@@ -34,7 +34,11 @@ final class ImbeTxConditioner {
 
         frame.withUnsafeMutableBytes { raw in
             guard let bytes = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
-            let sampleCount = frame.count / 2
+            // Use raw.count (the buffer-pointer's own length) rather than
+            // frame.count — re-reading the inout `frame` inside this closure
+            // is a second access while withUnsafeMutableBytes already holds
+            // an exclusive one, which Swift rejects under -enforce-exclusivity=checked.
+            let sampleCount = raw.count / 2
             for i in 0..<sampleCount {
                 let off = i * 2
                 let lo = UInt16(bytes[off])

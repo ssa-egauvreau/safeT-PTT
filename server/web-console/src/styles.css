@@ -3642,7 +3642,23 @@ code.mono {
   margin-top: 12px;
 }
 
-/* --- admin: Android app download --- */
+/* --- admin: Downloads (Android handset + desktop console) ---
+ * Existing `.android-app-*` classes are reused for the inner card layout so
+ * the two download sections share the same look. New `.downloads-section*`
+ * rules wrap each section and add the per-section title spacing. */
+.downloads-section {
+  margin-bottom: 1.75rem;
+}
+.downloads-section:last-of-type {
+  margin-bottom: 0;
+}
+.downloads-section-title {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem;
+}
 .android-app-panel {
   max-width: 42rem;
 }
@@ -6742,6 +6758,26 @@ code.mono {
   font-size: 11px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+.lcc-channel-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.lcc-channel-delete:hover,
+.lcc-channel-delete:focus-visible {
+  color: var(--red);
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
 }
 .lcc-empty {
   border: 1px dashed var(--border);

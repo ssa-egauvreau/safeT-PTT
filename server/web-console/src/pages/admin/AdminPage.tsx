@@ -9,7 +9,7 @@ import { BrandingPanel } from "./BrandingPanel";
 import { AuditPanel } from "./AuditPanel";
 import { IntegrationsPanel } from "./IntegrationsPanel";
 import { KnowledgeBasePanel } from "./KnowledgeBasePanel";
-import { AndroidAppPanel } from "./AndroidAppPanel";
+import { DownloadsPanel } from "./DownloadsPanel";
 import { AiTestPanel } from "./AiTestPanel";
 import { AudioLabPanel } from "./AudioLabPanel";
 
@@ -21,7 +21,7 @@ type TabId =
   | "knowledge"
   | "ai-test"
   | "audio-lab"
-  | "android"
+  | "downloads"
   | "sounds"
   | "soundboard"
   | "branding"
@@ -35,7 +35,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "knowledge", label: "Knowledge Base" },
   { id: "ai-test", label: "AI Test" },
   { id: "audio-lab", label: "Audio Lab" },
-  { id: "android", label: "Android App" },
+  { id: "downloads", label: "Downloads" },
   { id: "sounds", label: "Sounds" },
   { id: "soundboard", label: "Soundboard" },
   { id: "branding", label: "Branding" },
@@ -69,7 +69,7 @@ export function AdminPage() {
           {tab === "knowledge" && <KnowledgeBasePanel />}
           {tab === "ai-test" && <AiTestPanel />}
           {tab === "audio-lab" && <AudioLabPanel />}
-          {tab === "android" && <AndroidAppPanel />}
+          {tab === "downloads" && <DownloadsPanel />}
           {tab === "sounds" && <SoundsPanel />}
           {tab === "soundboard" && <ToneOutsPanel />}
           {tab === "branding" && <BrandingPanel />}

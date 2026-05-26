@@ -130,9 +130,13 @@ import {
   getChannelUtilization,
   getTopUnits,
   getAiDispatchOutcomes,
-  isAnalyticsRange,
-  type AnalyticsRange,
+  parseAnalyticsRange,
 } from "./analytics.js";
+import { normalizeClientType } from "./clientType.js";
+import {
+  deriveDeviceAudioConfig,
+  type GlobalAudioLabConfigPreImbe,
+} from "./audioConfigDerive.js";
 import { getPool } from "./db.js";
 import { getCachedAuth, invalidateCachedAuth, setCachedAuth } from "./sessionCache.js";
 import {
@@ -2114,10 +2118,10 @@ export function createApiRouter(): Router {
         return Number.isFinite(n) ? n : null;
       };
       // Whitelist + length-cap the platform tag so a malformed client can't
-      // pollute the radio_positions table with garbage.
-      const allowedClientTypes = new Set(["ios", "android", "web", "radio", "desktop"]);
-      const clientTypeRaw = typeof body.client_type === "string" ? body.client_type.trim().toLowerCase() : "";
-      const clientType = clientTypeRaw && allowedClientTypes.has(clientTypeRaw) ? clientTypeRaw : null;
+      // pollute the radio_positions table with garbage. See `clientType.ts`
+      // for the allow-list (and the matching unit tests in
+      // `tests/clientType.test.ts`).
+      const clientType = normalizeClientType(body.client_type);
       await upsertPosition({
         agencyId: radioAgencyId(req),
         unitId,
@@ -2797,42 +2801,13 @@ export function createApiRouter(): Router {
         res.json({ config: null, updatedAt: null });
         return;
       }
-      // Derive a simplified Android-compatible config from the full AudioLabConfig.
-      const full = row.config as {
-        preImbe?: {
-          agcEnabled?: boolean;
-          agcMaxGain?: number;
-          windGateEnabled?: boolean;
-          windHpfEnabled?: boolean;
-          bypassMicProcessing?: boolean;
-        };
-      };
-      const agcEnabled = Boolean(full.preImbe?.agcEnabled ?? false);
-      const agcMaxGain = Number(full.preImbe?.agcMaxGain ?? 6);
-      const bypassMicProcessing = Boolean(full.preImbe?.bypassMicProcessing ?? false);
-      // Wind reduction is "on" on Android if EITHER the adaptive gate OR the
-      // steep HPF is enabled — both contribute to noise rejection upstream of
-      // IMBE, and Android only exposes a single NoiseSuppressor toggle.
-      const windReduce =
-        Boolean(full.preImbe?.windGateEnabled ?? false) ||
-        Boolean(full.preImbe?.windHpfEnabled ?? false);
-      // Map agcMaxGain (1–12) → gainMultiplier (1.0–3.0). The range starts at
-      // 1.0 so the lowest simple-UI preset ("A little", agcMaxGain=4) still
-      // delivers an audible boost — a linear (gain/12)*3 map collapses to 1.0×
-      // at gain=4, making the preset indistinguishable from "off" on device.
-      // When bypass is on, also force gainMultiplier=1.0: the whole point of
-      // "Bridge-style minimal" is no post-capture gain, so even a stale
-      // agcEnabled=true from a previous preset shouldn't sneak gain in.
-      const gainMultiplier = agcEnabled && !bypassMicProcessing
-        ? Math.max(1.0, Math.min(3.0, 1.0 + (agcMaxGain / 12.0) * 2.0))
-        : 1.0;
+      // Pure transform — see audioConfigDerive.ts for the mapping rules and
+      // the regression notes about bypass / gainMultiplier coupling.
+      const summary = deriveDeviceAudioConfig(
+        row.config as GlobalAudioLabConfigPreImbe,
+      );
       res.json({
-        config: {
-          agcEnabled,
-          noiseSuppression: windReduce,
-          gainMultiplier: Math.round(gainMultiplier * 100) / 100,
-          bypassMicProcessing,
-        },
+        config: summary,
         updatedAt: row.updated_at,
       });
     } catch (error) {
@@ -2846,16 +2821,10 @@ export function createApiRouter(): Router {
   // logged-in agency member; aggregations never leak data across tenants.
   // ---------------------------------------------------------------------------
 
-  /** Coerce a free-form query string into a valid AnalyticsRange. Defaults to 7d. */
-  function parseRange(raw: unknown): AnalyticsRange {
-    const v = typeof raw === "string" ? raw.trim().toLowerCase() : "";
-    return isAnalyticsRange(v) ? v : "7d";
-  }
-
   /** GET /v1/analytics/summary?range=24h|7d|30d — KPI tiles with prior-window deltas. */
   router.get("/analytics/summary", requireAgencyMember, async (req, res) => {
     try {
-      const range = parseRange(req.query.range);
+      const range = parseAnalyticsRange(req.query.range);
       const data = await getKpiSummary(req.authUser!.agencyId!, range);
       res.json({ range, ...data });
     } catch (error) {
@@ -2866,7 +2835,7 @@ export function createApiRouter(): Router {
   /** GET /v1/analytics/timeseries?range=… — time-bucketed transmissions + AI counts. */
   router.get("/analytics/timeseries", requireAgencyMember, async (req, res) => {
     try {
-      const range = parseRange(req.query.range);
+      const range = parseAnalyticsRange(req.query.range);
       const points = await getTimeSeries(req.authUser!.agencyId!, range);
       res.json({ range, points });
     } catch (error) {
@@ -2877,7 +2846,7 @@ export function createApiRouter(): Router {
   /** GET /v1/analytics/channels?range=… — per-channel utilization (top 25). */
   router.get("/analytics/channels", requireAgencyMember, async (req, res) => {
     try {
-      const range = parseRange(req.query.range);
+      const range = parseAnalyticsRange(req.query.range);
       const rows = await getChannelUtilization(req.authUser!.agencyId!, range);
       res.json({ range, channels: rows });
     } catch (error) {
@@ -2888,7 +2857,7 @@ export function createApiRouter(): Router {
   /** GET /v1/analytics/units?range=… — top units by on-air time. */
   router.get("/analytics/units", requireAgencyMember, async (req, res) => {
     try {
-      const range = parseRange(req.query.range);
+      const range = parseAnalyticsRange(req.query.range);
       const rows = await getTopUnits(req.authUser!.agencyId!, range);
       res.json({ range, units: rows });
     } catch (error) {
@@ -2899,7 +2868,7 @@ export function createApiRouter(): Router {
   /** GET /v1/analytics/ai-dispatch?range=… — outcome breakdown for AI dispatcher calls. */
   router.get("/analytics/ai-dispatch", requireAgencyMember, async (req, res) => {
     try {
-      const range = parseRange(req.query.range);
+      const range = parseAnalyticsRange(req.query.range);
       const rows = await getAiDispatchOutcomes(req.authUser!.agencyId!, range);
       res.json({ range, outcomes: rows });
     } catch (error) {
