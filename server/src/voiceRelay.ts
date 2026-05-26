@@ -397,7 +397,9 @@ function countsAsDispatchConsoleSession(record: MoveLockRosterRecord): boolean {
   // Older rows (or temporary DB misses during join) can leave `deviceType`
   // null. Treat web/desktop account sessions as console-style for the
   // multi-channel move lock so scanning dispatchers still cannot be force-moved.
-  return record.client === "web" || record.client === "desktop";
+  return (
+    record.deviceType == null && (record.client === "web" || record.client === "desktop")
+  );
 }
 
 /**

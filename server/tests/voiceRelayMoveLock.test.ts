@@ -67,6 +67,37 @@ test("unitChannelCountsFromRecords: does not lock phone + single dashboard pairi
   assert.equal(counts.get("U-12"), 1);
 });
 
+test("unitChannelCountsFromRecords: explicit non-console deviceType keeps web/desktop sessions movable", () => {
+  // The null-deviceType fallback is only for temporary lookup misses. Once a
+  // concrete non-console device_type is known (phone/unit_radio/etc), that row
+  // must NOT count as a dispatch console even if the websocket client says
+  // web/desktop.
+  const counts = unitChannelCountsFromRecords(8, [
+    {
+      channelKey: "8 alpha",
+      channelName: "Alpha",
+      unitId: "U-99",
+      kind: "account",
+      client: "web",
+      deviceType: "phone",
+    },
+    {
+      channelKey: "8 bravo",
+      channelName: "Bravo",
+      unitId: "u-99",
+      kind: "account",
+      client: "desktop",
+      deviceType: "phone",
+    },
+  ]);
+
+  assert.equal(
+    counts.size,
+    0,
+    "known non-console device_type should override the web/desktop null-device fallback",
+  );
+});
+
 test("unitChannelCountsFromRecords: ignores non-console traffic and other agencies", () => {
   const counts = unitChannelCountsFromRecords(9, [
     {
