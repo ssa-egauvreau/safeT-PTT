@@ -6759,6 +6759,26 @@ code.mono {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+.lcc-channel-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.lcc-channel-delete:hover,
+.lcc-channel-delete:focus-visible {
+  color: var(--red);
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
 .lcc-empty {
   border: 1px dashed var(--border);
   border-radius: 6px;

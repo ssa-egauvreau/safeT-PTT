@@ -70,8 +70,9 @@ final class VoiceAudio {
 
     // MARK: - capture (mic → callback)
 
-    func startCapture() {
-        guard !capturing else { return }
+    @discardableResult
+    func startCapture() -> Bool {
+        guard !capturing else { return true }
 
         let inputNode = engine.inputNode
         let nativeFormat = inputNode.outputFormat(forBus: 0)
@@ -81,7 +82,7 @@ final class VoiceAudio {
         // a tap with that crashes AVAudioEngine. Bail cleanly so PTT just no-ops
         // instead of taking the app down.
         guard nativeFormat.channelCount > 0, nativeFormat.sampleRate > 0 else {
-            return
+            return false
         }
 
         let pcm16Mono16k = AVAudioFormat(
@@ -91,7 +92,7 @@ final class VoiceAudio {
             interleaved: true
         )!
         guard let converter = AVAudioConverter(from: nativeFormat, to: pcm16Mono16k) else {
-            return
+            return false
         }
         captureConverter = converter
         captureBuffer.removeAll(keepingCapacity: true)
@@ -106,6 +107,7 @@ final class VoiceAudio {
         // Mark capturing AFTER a successful tap install so a failure path doesn't
         // leave stopCapture() trying to remove a tap that was never added.
         capturing = true
+        return true
     }
 
     func stopCapture() {

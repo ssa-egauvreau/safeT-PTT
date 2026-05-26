@@ -34,6 +34,22 @@ export function isAnalyticsRange(value: string): value is AnalyticsRange {
   return value === "24h" || value === "7d" || value === "30d";
 }
 
+/**
+ * Coerce a free-form query-string value (or anything else) into a valid
+ * {@link AnalyticsRange}. Anything that isn't a recognised token falls back
+ * to `7d`, matching the documented server default.
+ *
+ * Whitespace is trimmed and casing is folded so common URL variants
+ * (`24H`, ` 7d `, etc.) still resolve to the canonical value rather than
+ * silently degrading to the default — that masking-of-typos was the source
+ * of confusing "why doesn't 30d work" support calls when the helper lived
+ * inline in the route handler.
+ */
+export function parseAnalyticsRange(raw: unknown): AnalyticsRange {
+  const v = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  return isAnalyticsRange(v) ? v : "7d";
+}
+
 export interface KpiResult {
   /** Total transmissions in the current window. */
   transmissions: number;
