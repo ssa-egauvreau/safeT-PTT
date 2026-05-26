@@ -43,8 +43,12 @@ export type WindLevel = "off" | "mild" | "strong";
 
 export function readWindLevel(cfg: AudioLabConfig): WindLevel {
   if (!cfg.preImbe.windGateEnabled && !cfg.preImbe.windHpfEnabled) return "off";
-  if (!cfg.preImbe.windHpfEnabled) return "mild";
-  return "strong";
+  // "Strong" only matches when both the adaptive gate AND the steep HPF are on
+  // (that's what applyWindLevel("strong") sets). An advanced-view config with
+  // only the HPF enabled is closer to "mild" than to "strong" — it's still a
+  // single-stage filter, just a different one.
+  if (cfg.preImbe.windGateEnabled && cfg.preImbe.windHpfEnabled) return "strong";
+  return "mild";
 }
 
 export function applyWindLevel(cfg: AudioLabConfig, level: WindLevel): AudioLabConfig {
@@ -63,6 +67,12 @@ export function applyWindLevel(cfg: AudioLabConfig, level: WindLevel): AudioLabC
         windGateThresholdDb: 12,
         windGateAttenuationDb: -12,
         windHpfEnabled: false,
+        // Reset the HPF cutoff/order to defaults too — otherwise downgrading
+        // from "strong" leaves stale 200 Hz / 4th-order values in the stored
+        // config, which any future consumer reading them without checking
+        // windHpfEnabled would apply unintentionally.
+        windHpfHz: 200,
+        windHpfOrder: 4,
       },
     };
   }

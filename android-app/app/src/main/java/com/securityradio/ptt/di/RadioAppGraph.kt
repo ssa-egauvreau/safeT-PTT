@@ -181,9 +181,16 @@ class RadioAppGraph(val application: Application) {
     /**
      * Fetches the agency-wide audio config from the server and persists it so
      * [pttMicCapture]'s configProvider picks it up on the next PTT key-down.
-     * Failures are silently swallowed — the device falls back to local prefs.
+     * Skips the call when there's no auth session yet — the endpoint requires an
+     * agency member, so calling it pre-login would just produce a 401 we'd
+     * silently swallow. Real failures (deserialization, server 5xx, persistent
+     * network outages) are logged at warn level so they're visible in production
+     * logcat.
      */
     fun refreshAudioConfigAsync() {
+        if (!radioPreferences.isLoggedIn()) {
+            return
+        }
         bgScope.launch {
             try {
                 val response = radioApi.audioConfig()
@@ -198,7 +205,7 @@ class RadioAppGraph(val application: Application) {
                 // If the server has no config (cfg == null), leave whatever was cached — don't
                 // clear it so the device keeps working if the server is momentarily unreachable.
             } catch (e: Exception) {
-                Log.d("RadioAppGraph", "Audio config refresh skipped: ${e.message}")
+                Log.w("RadioAppGraph", "Audio config refresh failed: ${e.message}")
             }
         }
     }
@@ -211,6 +218,10 @@ class RadioAppGraph(val application: Application) {
 
     fun signOut() {
         radioPreferences.clearAuthSession()
+        // Drop any agency-pushed audio config so a re-login under a different
+        // agency doesn't transmit the previous agency's gain/noise settings on
+        // the first PTT before refreshAudioConfigAsync() completes.
+        radioPreferences.clearServerAudioConfig()
         voiceRelay.disconnect()
         scanVoiceListen.disconnect()
     }

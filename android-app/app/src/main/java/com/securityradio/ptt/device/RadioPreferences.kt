@@ -178,7 +178,12 @@ class RadioPreferences(context: Context) {
     fun getServerNoiseSuppression(): Boolean = prefs.getBoolean(KEY_SERVER_NOISE_SUPPRESSION, DEFAULT_MIC_NOISE_SUPPRESSION)
 
     fun getServerGainMultiplier(): Float =
-        prefs.getFloat(KEY_SERVER_GAIN_MULTIPLIER, DEFAULT_MIC_GAIN_MULTIPLIER)
+        // Default to 1.0 (no change) when the key is missing — distinct from the
+        // local-prefs default of MAX_MIC_GAIN. A partial SharedPreferences flush
+        // could leave KEY_SERVER_CONFIG_SET=true with KEY_SERVER_GAIN_MULTIPLIER
+        // never written; defaulting to MAX there would blast every transmission
+        // at 3× until the next successful server refresh.
+        prefs.getFloat(KEY_SERVER_GAIN_MULTIPLIER, 1.0f)
             .coerceIn(MIN_MIC_GAIN, MAX_MIC_GAIN)
 
     /** Removes the server-pushed config; device falls back to local per-user settings. */

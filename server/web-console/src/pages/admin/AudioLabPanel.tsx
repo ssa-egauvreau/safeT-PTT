@@ -505,7 +505,11 @@ export function AudioLabPanel() {
     try {
       const res = await api.setGlobalAudioConfig(config);
       setGlobalConfig({ updatedAt: res.updatedAt, updatedBy: res.updatedBy });
-      setInfo_("Settings applied globally — all users and Android handsets will use these settings on their next connection.");
+      setInfo_(
+        "Settings applied globally. Web users pick up the full pipeline; Android handsets " +
+          "apply the boost (AGC + gain) and wind/noise toggles only — EQ, post-decode filters, " +
+          "and upsample mode are listen-only on the web console.",
+      );
     } catch (err) {
       setError_(`Could not apply globally: ${describeError(err)}`);
     } finally {

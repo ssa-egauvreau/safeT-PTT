@@ -2738,8 +2738,19 @@ export function createApiRouter(): Router {
     try {
       const me = req.authUser!;
       const agencyId = me.agencyId!;
-      const config: unknown = req.body?.config ?? req.body;
-      if (!config || typeof config !== "object" || Array.isArray(config)) {
+      // The web client sends the AudioLabConfig directly as the JSON body
+      // (no { config: ... } wrapper). Validate the expected top-level shape so
+      // a malformed payload fails loudly rather than silently storing a partial
+      // tree that downstream readers fill with defaults.
+      const config = req.body;
+      if (
+        !config ||
+        typeof config !== "object" ||
+        Array.isArray(config) ||
+        typeof (config as { preImbe?: unknown }).preImbe !== "object" ||
+        typeof (config as { postDecode?: unknown }).postDecode !== "object" ||
+        typeof (config as { vocoder?: unknown }).vocoder !== "object"
+      ) {
         res.status(400).json({ error: "missing_fields" });
         return;
       }
