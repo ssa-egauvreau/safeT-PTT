@@ -169,6 +169,7 @@ final class RadioViewModel: ObservableObject {
                 let msg = peer.map { "CHANNEL BUSY — \($0)" } ?? "CHANNEL BUSY"
                 self.enterBusy(msg)
                 self.voiceAudio.stopCapture()
+                self.voiceTransport.resetUplinkState()
                 self.uiState.isTransmitting = false
             }
         }
@@ -251,9 +252,11 @@ final class RadioViewModel: ObservableObject {
         sounds.stop(.busy)
         if uiState.isTransmitting {
             voiceAudio.stopCapture()
-            voiceTransport.resetUplinkState()
             uiState.isTransmitting = false
         }
+        // Always drop any fractional IMBE accumulator tail so a denied/aborted
+        // key-up cannot leak stale audio into the next transmission.
+        voiceTransport.resetUplinkState()
         uiState.statusMessage = "RX IDLE"
     }
 
