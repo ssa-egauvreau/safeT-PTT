@@ -401,16 +401,13 @@ function countsAsDispatchConsoleSession(record: MoveLockRosterRecord): boolean {
 }
 
 /**
- * How many distinct voice channels each unit is currently dispatching on
- * (live control). A user's handset/phone channel should not count against this;
- * only console-style sessions do.
- */
-export function unitChannelCountsFromRecords(
-  agencyId: number,
-  records: Iterable<MoveLockRosterRecord>,
- * Subset of a {@link RosterRecord} that {@link computeUnitChannelCounts} cares
- * about. Broken out so the counting rule can be exercised in unit tests
+ * Subset of a {@link RosterRecord} that the live-control move-lock counters
+ * care about. Broken out so the counting rules can be exercised in unit tests
  * without spinning up a WebSocket server to seed the live roster.
+ *
+ * `client` is optional so legacy fixtures (which only set deviceType) keep
+ * working — when it's missing, only `deviceType === "dispatch_console"` can
+ * trigger a console count, which is the historical behavior.
  */
 export interface UnitChannelCountRecord {
   channelKey: string;
@@ -418,17 +415,19 @@ export interface UnitChannelCountRecord {
   unitId: string;
   kind: "account" | "legacy" | "bridge";
   deviceType: string | null;
+  client?: string;
 }
 
 /**
- * Pure helper backing {@link unitChannelCounts}. Counts distinct voice
- * channels each unit is currently dispatching on for the given agency.
+ * Pure helper that backs both {@link unitChannelCounts} (production path) and
+ * {@link unitChannelCountsFromRecords} (test-friendly alias with the
+ * agencyId-first signature). Counts distinct voice channels each unit is
+ * currently dispatching on, scoped to the given agency.
  *
- * Only `account`-kind sessions with `device_type === "dispatch_console"`
- * count — a user who just has a handset/phone on one channel and the
- * dashboard open on another must still be drag-droppable. Multi-channel
- * scanning is a dispatch-console signal, not a "this person is everywhere"
- * signal.
+ * Only `account`-kind sessions counted as a dispatch console contribute — a
+ * user who just has a handset/phone on one channel and the dashboard open on
+ * another must still be drag-droppable. Multi-channel scanning is a
+ * dispatch-console signal, not a "this person is everywhere" signal.
  */
 export function computeUnitChannelCounts(
   records: Iterable<UnitChannelCountRecord>,
@@ -440,7 +439,14 @@ export function computeUnitChannelCounts(
     if (!record.channelKey.startsWith(prefix)) {
       continue;
     }
-    if (!countsAsDispatchConsoleSession(record)) {
+    if (!countsAsDispatchConsoleSession({
+      channelKey: record.channelKey,
+      channelName: record.channelName,
+      unitId: record.unitId,
+      kind: record.kind,
+      client: record.client ?? "unknown",
+      deviceType: record.deviceType,
+    })) {
       continue;
     }
     const unit = record.unitId.toUpperCase();
@@ -455,13 +461,24 @@ export function computeUnitChannelCounts(
   return counts;
 }
 
-export function unitChannelCounts(agencyId: number): Map<string, number> {
-  return unitChannelCountsFromRecords(agencyId, voiceRoster.values());
+/**
+ * agencyId-first alias for {@link computeUnitChannelCounts} used by the
+ * live-control move-lock regression tests (PR #151 "fix live-control move
+ * lock for null deviceType consoles"). Kept as its own export so tests can
+ * exercise the rule directly without depending on the function's argument
+ * order changing.
+ */
+export function unitChannelCountsFromRecords(
+  agencyId: number,
+  records: Iterable<UnitChannelCountRecord>,
+): Map<string, number> {
+  return computeUnitChannelCounts(records, agencyId);
+}
+
 /**
  * How many distinct voice channels each unit is currently dispatching on
- * (live control). Only dispatch_console sessions count here — a user who just
- * has their handset/phone on one channel and the dashboard open on another
- * should still be movable. Multi-channel scanning is a dispatch-console signal.
+ * (live control). Reads from the in-memory voice roster — see
+ * {@link computeUnitChannelCounts} for the per-record counting rules.
  */
 export function unitChannelCounts(agencyId: number): Map<string, number> {
   return computeUnitChannelCounts(voiceRoster.values(), agencyId);
