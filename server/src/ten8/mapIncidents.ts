@@ -13,7 +13,7 @@ export type Ten8MapIncident = {
   lon: number;
 };
 
-function callLabel(incidentType: string | null, callId: string): string {
+export function callLabel(incidentType: string | null, callId: string): string {
   const t = (incidentType ?? "").trim();
   const sep = t.match(/^(.+?)\s+[-–—]\s+/);
   if (sep?.[1]) {
@@ -25,7 +25,7 @@ function callLabel(incidentType: string | null, callId: string): string {
   return callId;
 }
 
-function coordsFromPayload(payload: unknown): { lat: number; lon: number } | null {
+export function coordsFromPayload(payload: unknown): { lat: number; lon: number } | null {
   if (!payload || typeof payload !== "object") {
     return null;
   }
