@@ -134,10 +134,6 @@ import {
 } from "./analytics.js";
 import { normalizeClientType } from "./clientType.js";
 import { deriveDeviceAudioConfig } from "./audioConfig.js";
-import {
-  deriveDeviceAudioConfig,
-  type GlobalAudioLabConfigPreImbe,
-} from "./audioConfigDerive.js";
 import { getPool } from "./db.js";
 import { getCachedAuth, invalidateCachedAuth, setCachedAuth } from "./sessionCache.js";
 import {
@@ -2806,13 +2802,7 @@ export function createApiRouter(): Router {
       // `audioConfig.ts` (and is unit-tested in `tests/audioConfig.test.ts`)
       // so a regression in the bypass/AGC/wind-noise derivation can't sneak
       // through without a test failure.
-      res.json({
-        config: deriveDeviceAudioConfig(row.config),
-      // Pure transform — see audioConfigDerive.ts for the mapping rules and
-      // the regression notes about bypass / gainMultiplier coupling.
-      const summary = deriveDeviceAudioConfig(
-        row.config as GlobalAudioLabConfigPreImbe,
-      );
+      const summary = deriveDeviceAudioConfig(row.config);
       res.json({
         config: summary,
         updatedAt: row.updated_at,
