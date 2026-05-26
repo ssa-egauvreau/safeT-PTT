@@ -46,8 +46,13 @@ type ActiveIncident = Awaited<ReturnType<typeof listTen8ActiveIncidents>>[number
 /**
  * Speak just the radio code, not the full call type: "415 - Disturbing the Peace" → "415",
  * "961 - Car Stop" → "961". Types with no leading code (e.g. "Issue Notice") are read as-is.
+ *
+ * Exported (rather than file-local) so the radio-readback contract can be pinned in unit
+ * tests — every spoken `unit_status` / `pending_calls` / `call_details` / `active_calls_for_unit`
+ * answer renders through this helper, so a regression here changes what the AI dispatcher
+ * actually says on the air for every active incident in the fleet.
  */
-function callCodeForRadio(incidentType: string | null): string {
+export function callCodeForRadio(incidentType: string | null): string {
   const t = (incidentType ?? "").trim();
   if (!t) {
     return "call";
@@ -63,8 +68,16 @@ function callCodeForRadio(incidentType: string | null): string {
   return t;
 }
 
-/** Find one active incident matching the spoken subject (call number, type, or location words). */
-function findIncidentBySubject(incidents: ActiveIncident[], subject: string | null): ActiveIncident | null {
+/**
+ * Find one active incident matching the spoken subject (call number, type, or location words).
+ *
+ * Exported so the matching priority (call_id exact > digits-only id > full-substring on
+ * call_id+type+location > all-words-substring) can be pinned in unit tests — this is the
+ * function that decides which incident the dispatcher reads back details for when the
+ * officer asks "what's on the 415 at the park", so a regression silently routes the
+ * spoken answer to the wrong call.
+ */
+export function findIncidentBySubject(incidents: ActiveIncident[], subject: string | null): ActiveIncident | null {
   if (!subject?.trim()) {
     return incidents.length === 1 ? incidents[0]! : null;
   }
@@ -117,8 +130,17 @@ function commentValueToText(v: unknown): string | null {
   return null;
 }
 
-/** Pull comment/narrative text out of the stored 10-8 webhook payload, trying common field names. */
-function extractCommentsFromPayload(payload: unknown): string | null {
+/**
+ * Pull comment/narrative text out of the stored 10-8 webhook payload, trying common field names.
+ *
+ * Exported so the field-name fallback order (comments / comment / narrative / notes / remarks /
+ * details / description / callNotes / call_notes), the array-shape "last 3 items joined" rule,
+ * and the 600-char cap can be pinned in unit tests. This is what the dispatcher actually reads
+ * back when the officer asks for "details on call X" — a regression silently strips comments
+ * (so the officer hears "no comments on the call yet" when CAD has them) or leaks the wrong
+ * field, which is hard to catch without seeing it on the air.
+ */
+export function extractCommentsFromPayload(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") {
     return null;
   }
@@ -147,8 +169,17 @@ function extractCommentsFromPayload(payload: unknown): string | null {
   return null;
 }
 
-/** Trim a full street address to street + city for brevity on the air (drop state/zip/country). */
-function shortenLocationForRadio(loc: string | null): string {
+/**
+ * Trim a full street address to street + city for brevity on the air (drop state/zip/country).
+ *
+ * Exported so the airtime-shortening rule (strip "STATE 12345" or "STATE 12345-6789", strip
+ * a bare 5-digit ZIP, strip "USA", strip a bare 2-letter state token, then keep only the
+ * first two comma parts) can be pinned in unit tests. Every spoken `unit_status` /
+ * `active_calls_for_unit` / `call_details` / `pending_calls` answer pipes the call's
+ * location through this helper, so a regression that lets the state/zip/country leak
+ * through wastes ~3 seconds of airtime per readback and makes the dispatcher sound robotic.
+ */
+export function shortenLocationForRadio(loc: string | null): string {
   if (!loc?.trim()) {
     return "";
   }
