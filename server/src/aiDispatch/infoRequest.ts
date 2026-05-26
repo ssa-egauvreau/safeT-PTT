@@ -1,5 +1,5 @@
-import { listPositions } from "../store.js";
-import { listTen8ActiveIncidents } from "../ten8/store.js";
+import { listPositions, type RadioPosition } from "../store.js";
+import { listTen8ActiveIncidents, type Ten8ActiveIncidentRow } from "../ten8/store.js";
 import { lookupSsaProperty } from "./ssaProperties.js";
 import { accountCodeDashForm } from "./speech/numbers.js";
 import { prepareLocationForTts } from "./speech/locationSpeech.js";
@@ -42,6 +42,38 @@ export function incidentPayloadHasUnit(inc: { payload: unknown }, targetUnit: st
 }
 
 type ActiveIncident = Awaited<ReturnType<typeof listTen8ActiveIncidents>>[number];
+
+/**
+ * Minimal shape of an active CAD incident the unit_status helper needs.
+ *
+ * Exposed so test fixtures don't have to construct a full
+ * {@link Ten8ActiveIncidentRow} (with `priority`, `updated_at`, etc.) just to
+ * exercise the "is unit X assigned to a call" branch.
+ */
+export type UnitStatusActiveIncident = Pick<
+  Ten8ActiveIncidentRow,
+  "incident_type" | "location" | "payload"
+>;
+
+/**
+ * Minimal shape of a radio-map position the unit_status helper needs.
+ * Anything more would force tests to fabricate fields that the unit_status
+ * branch doesn't actually read (lat/lon/heading/etc.).
+ */
+export type UnitStatusPosition = Pick<RadioPosition, "unit_id" | "updated_at"> & {
+  lat?: number;
+  lon?: number;
+};
+
+/** Spoken-callsign formatter used by every info_request response. */
+function unitToSpoken(unit: string): string {
+  return /^27-0[0-3]0$/.test(unit) ? unit : unit.replace(/^27-/, "");
+}
+
+/** Prepend the requesting unit's callsign + comma to a response, if present. */
+function csPrefix(requestingUnit: string | null | undefined): string {
+  return requestingUnit ? `${unitToSpoken(requestingUnit)}, ` : "";
+}
 
 /**
  * Speak just the radio code, not the full call type: "415 - Disturbing the Peace" → "415",
@@ -157,6 +189,73 @@ function shortenLocationForRadio(loc: string | null): string {
     .map((p) => p.replace(/\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/g, "").trim())
     .filter((p) => p && !/^USA$/i.test(p) && !/^\d{5}(?:-\d{4})?$/.test(p) && !/^[A-Z]{2}$/.test(p));
   return parts.slice(0, 2).join(", ");
+}
+
+/**
+ * Pure helper for the `unit_status` info_request branch — answers
+ * "is 27-020 10-8?" / "is X on the air" / "is X available" given the
+ * already-fetched active CAD incidents and live radio-map positions.
+ *
+ * Extracted out of {@link buildInfoRequestResponse} so the four-way decision
+ * tree (assigned-to-open-call → fresh GPS → stale-but-recent GPS → no
+ * recent activity) can be exercised without standing up Postgres.
+ *
+ * Cascade (in order):
+ *
+ *   1. If the unit is assigned to an open 10-8 call → "X is currently on
+ *      [code] at [loc]" (or without the "at" tail when location is blank).
+ *   2. Else if the unit shows on the radio map with a parseable
+ *      `updated_at` ≤ 10 min old → "X shows 10-8".
+ *   3. Else if `updated_at` ≤ 60 min old → "X last checked in N minutes
+ *      ago in service" (N is rounded, clamped non-negative).
+ *   4. Else if `updated_at` exists but > 60 min → "negative, no recent
+ *      activity from X — last check-in was over an hour ago".
+ *   5. Else (no position OR unparseable timestamp) → "negative, no recent
+ *      activity from X — last status unknown".
+ *
+ * The spoken callsign uses the standard rule: 27-010 / 27-020 / 27-030
+ * keep the 27- prefix on the air, every other 27-XYZ drops it. The
+ * requesting unit's callsign is prepended as the conventional "352, …" if
+ * present, omitted otherwise.
+ *
+ * `nowMs` is overrideable so age-bucket tests are deterministic without
+ * mocking `Date.now()`.
+ */
+export function buildUnitStatusResponse(
+  active: UnitStatusActiveIncident[],
+  positions: UnitStatusPosition[],
+  targetUnit: string,
+  requestingUnit: string | null | undefined,
+  nowMs: number = Date.now(),
+): string {
+  const csPart = csPrefix(requestingUnit);
+  const spokenUnit = unitToSpoken(targetUnit);
+
+  const assignedCall = active.find((i) => incidentPayloadHasUnit(i, targetUnit));
+  if (assignedCall) {
+    const codeOrType = callCodeForRadio(assignedCall.incident_type);
+    const loc = shortenLocationForRadio(assignedCall.location);
+    return loc
+      ? `${csPart}${spokenUnit} is currently on ${codeOrType} at ${loc}.`
+      : `${csPart}${spokenUnit} is currently on ${codeOrType}.`;
+  }
+
+  const pos = findRadioMapPosition(positions as RadioPosition[], targetUnit);
+  if (!pos) {
+    return `${csPart}negative, no recent activity from ${spokenUnit} — last status unknown.`;
+  }
+  const lastSeenMs = Date.parse(pos.updated_at);
+  if (!Number.isFinite(lastSeenMs)) {
+    return `${csPart}negative, no recent activity from ${spokenUnit} — last status unknown.`;
+  }
+  const ageMin = Math.max(0, Math.round((nowMs - lastSeenMs) / 60_000));
+  if (ageMin <= 10) {
+    return `${csPart}${spokenUnit} shows 10-8.`;
+  }
+  if (ageMin <= 60) {
+    return `${csPart}${spokenUnit} last checked in ${ageMin} minutes ago in service.`;
+  }
+  return `${csPart}negative, no recent activity from ${spokenUnit} — last check-in was over an hour ago.`;
 }
 
 export function buildInfoRequestAck(requestingUnit: string | null | undefined): string {
@@ -276,11 +375,6 @@ export async function buildInfoRequestResponse(
 
     case "unit_status": {
       // "is 27-020 10-8?" / "is X on the air" / "is X available" / "what's X's status".
-      // We don't have an explicit status field from CAD, so we infer:
-      //   1. On an open call (assigned in 10-8) → busy / 10-23 on [code] at [loc]
-      //   2. Otherwise: fresh GPS/presence (<10 min) → shows 10-8
-      //   3. Otherwise: stale GPS/presence (<60 min) → last in service N minutes ago
-      //   4. Otherwise: no recent radio activity, can't confirm status
       const parsedSubj = parseUnitLocationSubject(infoRequest.subject);
       const targetUnit =
         parsedSubj?.targetUnit?.trim() ||
@@ -290,37 +384,9 @@ export async function buildInfoRequestResponse(
       if (!targetUnit) {
         return `${csPart}negative, which unit do you want the status on.`;
       }
-      const spokenUnit = /^27-0[0-3]0$/.test(targetUnit)
-        ? targetUnit
-        : targetUnit.replace(/^27-/, "");
-
       const active = await listTen8ActiveIncidents(agencyId);
-      const assignedCall = active.find((i) => incidentPayloadHasUnit(i, targetUnit));
-      if (assignedCall) {
-        const codeOrType = callCodeForRadio(assignedCall.incident_type);
-        const loc = shortenLocationForRadio(assignedCall.location);
-        return loc
-          ? `${csPart}${spokenUnit} is currently on ${codeOrType} at ${loc}.`
-          : `${csPart}${spokenUnit} is currently on ${codeOrType}.`;
-      }
-
       const positions = await listPositions(agencyId);
-      const pos = findRadioMapPosition(positions, targetUnit);
-      if (!pos) {
-        return `${csPart}negative, no recent activity from ${spokenUnit} — last status unknown.`;
-      }
-      const lastSeenMs = Date.parse(pos.updated_at);
-      if (!Number.isFinite(lastSeenMs)) {
-        return `${csPart}negative, no recent activity from ${spokenUnit} — last status unknown.`;
-      }
-      const ageMin = Math.max(0, Math.round((Date.now() - lastSeenMs) / 60_000));
-      if (ageMin <= 10) {
-        return `${csPart}${spokenUnit} shows 10-8.`;
-      }
-      if (ageMin <= 60) {
-        return `${csPart}${spokenUnit} last checked in ${ageMin} minutes ago in service.`;
-      }
-      return `${csPart}negative, no recent activity from ${spokenUnit} — last check-in was over an hour ago.`;
+      return buildUnitStatusResponse(active, positions, targetUnit, requestingUnit);
     }
 
     case "phone":
