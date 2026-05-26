@@ -222,6 +222,14 @@ final class RadioViewModel: ObservableObject {
             // Air is clear — play the permit beep, then start capturing. The beep
             // overlaps the first ~250 ms of mic capture; that's how Android does
             // it too, and the listener side hasn't started decoding yet anyway.
+            guard voiceAudio.startCapture() else {
+                // Route/format failures can leave capture inert (no tap installed).
+                // Do not show "ON AIR" when no mic frames are actually flowing.
+                voiceTransport.resetUplinkState()
+                uiState.isTransmitting = false
+                enterBusy("VOICE UNAVAILABLE")
+                return
+            }
             sounds.play(.pttPermit)
             uiState.statusMessage = P25ImbeNative.isAvailable ? "ON AIR · IMBE" : "ON AIR · CLEAR PCM"
             uiState.isTransmitting = true

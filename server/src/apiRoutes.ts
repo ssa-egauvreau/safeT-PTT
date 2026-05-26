@@ -133,6 +133,8 @@ import {
   parseAnalyticsRange,
 } from "./analytics.js";
 import { normalizeClientType } from "./clientType.js";
+import { deriveDeviceAudioConfig } from "./audioConfigDevice.js";
+import { deriveDeviceAudioConfig } from "./audioConfig.js";
 import {
   deriveDeviceAudioConfig,
   type GlobalAudioLabConfigPreImbe,
@@ -473,6 +475,13 @@ export function createApiRouter(): Router {
       // device sees the new token_generation and gets a 401 immediately, instead of waiting
       // up to TTL for the cache to expire.
       invalidateCachedAuth(user!.id);
+      // Seed the cache with the bumped generation right away so a stale in-flight request that
+      // read the old generation from Postgres cannot repopulate an older cache entry afterward.
+      setCachedAuth(user!.id, {
+        tokenGeneration: newGen,
+        userDisabled: false,
+        agencyDisabled: false,
+      });
       const evictedSockets = dropUserVoiceConnections(user!.id);
       const authUser: AuthUser = {
         id: user!.id,
@@ -2801,6 +2810,20 @@ export function createApiRouter(): Router {
         res.json({ config: null, updatedAt: null });
         return;
       }
+      // Derive a simplified Android-compatible config from the full AudioLabConfig.
+      // The mapping itself lives in `audioConfigDevice.ts` so it can be unit-tested
+      // independently of the route.
+      const full = row.config as {
+        preImbe?: import("./audioConfigDevice.js").PreImbeConfigInput;
+      };
+      res.json({
+        config: deriveDeviceAudioConfig(full?.preImbe),
+      // The full AudioLabConfig → device-facing summary mapping lives in
+      // `audioConfig.ts` (and is unit-tested in `tests/audioConfig.test.ts`)
+      // so a regression in the bypass/AGC/wind-noise derivation can't sneak
+      // through without a test failure.
+      res.json({
+        config: deriveDeviceAudioConfig(row.config),
       // Pure transform — see audioConfigDerive.ts for the mapping rules and
       // the regression notes about bypass / gainMultiplier coupling.
       const summary = deriveDeviceAudioConfig(
