@@ -154,6 +154,12 @@ test("infoRequestNeedsAsync: local / DB-backed types return false (answered sync
     "active_calls_for_unit",
     "call_details",
     "unit_location", // local position store + reverse geocode but treated sync at this layer
+    // `unit_status` (commit 2ad66ee) infers 10-8/busy status from the
+    // existing active-incident store and presence map. Both are local
+    // reads so it MUST stay on the sync fast path — otherwise the engine
+    // pre-speaks a "Standby" ack that contradicts the immediate status
+    // line that follows it.
+    "unit_status",
     "unknown",
   ];
   for (const t of no) {

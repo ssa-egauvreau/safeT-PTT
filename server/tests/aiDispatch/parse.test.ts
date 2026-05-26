@@ -194,6 +194,12 @@ test("normalizeAiDispatchParse: only documented info_request types are accepted"
     "active_calls_for_unit",
     "call_details",
     "unit_location",
+    // `unit_status` was added in commit 2ad66ee to answer "is 27-020 10-8 /
+    // on the air / available". Before the fix the LLM was funneling these
+    // into `active_calls_for_unit` and the dispatcher would speak the wrong
+    // (always-"no active calls") line. The validator must accept the new
+    // token so the engine can route to the dedicated handler.
+    "unit_status",
     "phone",
     "contact",
     "legal_code",
