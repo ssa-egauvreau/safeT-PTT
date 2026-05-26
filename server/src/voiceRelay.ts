@@ -382,7 +382,32 @@ export function listAgencyRosters(agencyId: number): AgencyChannelRoster[] {
     .sort((a, b) => a.channel.localeCompare(b.channel));
 }
 
+type MoveLockRosterRecord = Pick<
+  RosterRecord,
+  "channelKey" | "channelName" | "unitId" | "kind" | "client" | "deviceType"
+>;
+
+function countsAsDispatchConsoleSession(record: MoveLockRosterRecord): boolean {
+  if (record.kind !== "account") {
+    return false;
+  }
+  if (record.deviceType === "dispatch_console") {
+    return true;
+  }
+  // Older rows (or temporary DB misses during join) can leave `deviceType`
+  // null. Treat web/desktop account sessions as console-style for the
+  // multi-channel move lock so scanning dispatchers still cannot be force-moved.
+  return record.client === "web" || record.client === "desktop";
+}
+
 /**
+ * How many distinct voice channels each unit is currently dispatching on
+ * (live control). A user's handset/phone channel should not count against this;
+ * only console-style sessions do.
+ */
+export function unitChannelCountsFromRecords(
+  agencyId: number,
+  records: Iterable<MoveLockRosterRecord>,
  * Subset of a {@link RosterRecord} that {@link computeUnitChannelCounts} cares
  * about. Broken out so the counting rule can be exercised in unit tests
  * without spinning up a WebSocket server to seed the live roster.
@@ -415,7 +440,7 @@ export function computeUnitChannelCounts(
     if (!record.channelKey.startsWith(prefix)) {
       continue;
     }
-    if (record.kind !== "account" || record.deviceType !== "dispatch_console") {
+    if (!countsAsDispatchConsoleSession(record)) {
       continue;
     }
     const unit = record.unitId.toUpperCase();
@@ -430,6 +455,8 @@ export function computeUnitChannelCounts(
   return counts;
 }
 
+export function unitChannelCounts(agencyId: number): Map<string, number> {
+  return unitChannelCountsFromRecords(agencyId, voiceRoster.values());
 /**
  * How many distinct voice channels each unit is currently dispatching on
  * (live control). Only dispatch_console sessions count here — a user who just
