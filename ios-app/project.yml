@@ -26,8 +26,18 @@ targets:
         excludes:
           - Native/**
       - path: SafeTMobile/Native
+      # The dvmvocoder folder is a mix of C++ (.cpp) and C (.c). Splitting
+      # the source spec by extension is required because XcodeGen's
+      # `compilerFlags` applies to every matched file — and `-std=c++17`
+      # on a `.c` source makes clang fail with "failed to scan dependencies"
+      # since the `-x c` language can't accept a C++ standard.
       - path: ../android-app/app/src/main/cpp/dvmvocoder/vocoder
+        includes:
+          - "**/*.cpp"
         compilerFlags: "-std=c++17"
+      - path: ../android-app/app/src/main/cpp/dvmvocoder/vocoder
+        includes:
+          - "**/*.c"
     configFiles:
       Debug: Local.xcconfig
       Release: Local.xcconfig
