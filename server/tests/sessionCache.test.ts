@@ -76,6 +76,19 @@ test("setCachedAuth: overwrites a prior entry for the same userId (last write wi
   assert.equal(got.userDisabled, true);
 });
 
+test("setCachedAuth: a lower token_generation cannot overwrite a fresher entry", () => {
+  // Reproduces the login race: request A read generation=1, login bumps to 2,
+  // then request A tries to write its stale auth snapshot into the cache.
+  clearAuthCache();
+  setCachedAuth(7, { tokenGeneration: 2, userDisabled: false, agencyDisabled: false });
+  setCachedAuth(7, { tokenGeneration: 1, userDisabled: true, agencyDisabled: true });
+  const got = getCachedAuth(7);
+  assert.ok(got);
+  assert.equal(got.tokenGeneration, 2, "stale generation must not replace a newer login generation");
+  assert.equal(got.userDisabled, false);
+  assert.equal(got.agencyDisabled, false);
+});
+
 test("getCachedAuth: an expired entry is evicted (TTL=15s)", () => {
   clearAuthCache();
   withFakeNow(1_000_000, (advance) => {

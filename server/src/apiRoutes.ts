@@ -473,6 +473,13 @@ export function createApiRouter(): Router {
       // device sees the new token_generation and gets a 401 immediately, instead of waiting
       // up to TTL for the cache to expire.
       invalidateCachedAuth(user!.id);
+      // Seed the cache with the bumped generation right away so a stale in-flight request that
+      // read the old generation from Postgres cannot repopulate an older cache entry afterward.
+      setCachedAuth(user!.id, {
+        tokenGeneration: newGen,
+        userDisabled: false,
+        agencyDisabled: false,
+      });
       const evictedSockets = dropUserVoiceConnections(user!.id);
       const authUser: AuthUser = {
         id: user!.id,
