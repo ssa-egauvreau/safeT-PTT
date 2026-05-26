@@ -133,6 +133,7 @@ import {
   isAnalyticsRange,
   type AnalyticsRange,
 } from "./analytics.js";
+import { normalizeClientType } from "./clientType.js";
 import { getPool } from "./db.js";
 import { getCachedAuth, invalidateCachedAuth, setCachedAuth } from "./sessionCache.js";
 import {
@@ -2114,10 +2115,10 @@ export function createApiRouter(): Router {
         return Number.isFinite(n) ? n : null;
       };
       // Whitelist + length-cap the platform tag so a malformed client can't
-      // pollute the radio_positions table with garbage.
-      const allowedClientTypes = new Set(["ios", "android", "web", "radio", "desktop"]);
-      const clientTypeRaw = typeof body.client_type === "string" ? body.client_type.trim().toLowerCase() : "";
-      const clientType = clientTypeRaw && allowedClientTypes.has(clientTypeRaw) ? clientTypeRaw : null;
+      // pollute the radio_positions table with garbage. See `clientType.ts`
+      // for the allow-list (and the matching unit tests in
+      // `tests/clientType.test.ts`).
+      const clientType = normalizeClientType(body.client_type);
       await upsertPosition({
         agencyId: radioAgencyId(req),
         unitId,
