@@ -134,7 +134,6 @@ import {
 } from "./analytics.js";
 import { normalizeClientType } from "./clientType.js";
 import { deriveDeviceAudioConfig } from "./audioConfigDevice.js";
-import { deriveDeviceAudioConfig } from "./audioConfig.js";
 import { getPool } from "./db.js";
 import { getCachedAuth, invalidateCachedAuth, setCachedAuth } from "./sessionCache.js";
 import {
@@ -2812,13 +2811,7 @@ export function createApiRouter(): Router {
       const full = row.config as {
         preImbe?: import("./audioConfigDevice.js").PreImbeConfigInput;
       };
-      res.json({
-        config: deriveDeviceAudioConfig(full?.preImbe),
-      // The full AudioLabConfig → device-facing summary mapping lives in
-      // `audioConfig.ts` (and is unit-tested in `tests/audioConfig.test.ts`)
-      // so a regression in the bypass/AGC/wind-noise derivation can't sneak
-      // through without a test failure.
-      const summary = deriveDeviceAudioConfig(row.config);
+      const summary = deriveDeviceAudioConfig(full?.preImbe);
       res.json({
         config: summary,
         updatedAt: row.updated_at,
