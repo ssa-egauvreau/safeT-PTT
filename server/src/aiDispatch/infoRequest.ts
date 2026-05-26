@@ -46,8 +46,11 @@ type ActiveIncident = Awaited<ReturnType<typeof listTen8ActiveIncidents>>[number
 /**
  * Speak just the radio code, not the full call type: "415 - Disturbing the Peace" → "415",
  * "961 - Car Stop" → "961". Types with no leading code (e.g. "Issue Notice") are read as-is.
+ *
+ * Exported for unit tests; consumers should keep calling it through the
+ * public response builders.
  */
-function callCodeForRadio(incidentType: string | null): string {
+export function callCodeForRadio(incidentType: string | null): string {
   const t = (incidentType ?? "").trim();
   if (!t) {
     return "call";
@@ -63,8 +66,12 @@ function callCodeForRadio(incidentType: string | null): string {
   return t;
 }
 
-/** Find one active incident matching the spoken subject (call number, type, or location words). */
-function findIncidentBySubject(incidents: ActiveIncident[], subject: string | null): ActiveIncident | null {
+/**
+ * Find one active incident matching the spoken subject (call number, type, or location words).
+ *
+ * Exported for unit tests.
+ */
+export function findIncidentBySubject(incidents: ActiveIncident[], subject: string | null): ActiveIncident | null {
   if (!subject?.trim()) {
     return incidents.length === 1 ? incidents[0]! : null;
   }
@@ -117,8 +124,13 @@ function commentValueToText(v: unknown): string | null {
   return null;
 }
 
-/** Pull comment/narrative text out of the stored 10-8 webhook payload, trying common field names. */
-function extractCommentsFromPayload(payload: unknown): string | null {
+/**
+ * Pull comment/narrative text out of the stored 10-8 webhook payload,
+ * trying common field names.
+ *
+ * Exported for unit tests.
+ */
+export function extractCommentsFromPayload(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") {
     return null;
   }
@@ -147,8 +159,13 @@ function extractCommentsFromPayload(payload: unknown): string | null {
   return null;
 }
 
-/** Trim a full street address to street + city for brevity on the air (drop state/zip/country). */
-function shortenLocationForRadio(loc: string | null): string {
+/**
+ * Trim a full street address to street + city for brevity on the air
+ * (drop state/zip/country).
+ *
+ * Exported for unit tests.
+ */
+export function shortenLocationForRadio(loc: string | null): string {
   if (!loc?.trim()) {
     return "";
   }
