@@ -34,7 +34,10 @@ final class VoiceTransport {
     private var pcmFrameScratch = Data(count: P25ImbeNative.Frames.pcm16kFrameBytes)
     private var lastConsumeNs: UInt64 = 0
     private var warnedClearTx = false
-    private var uplinkActive = false
+    // `internal private(set)` exists only as a read-only test seam: production
+    // code never writes through it. Flipping this flag is the entire mechanism
+    // that drops mic frames queued after a PTT release (see `resetUplinkState`).
+    private(set) var uplinkActive = false
 
     private let imbeMagic: [UInt8] = [0xF5, 0xAB]
     private let listenPcmMagic: [UInt8] = [0xF6, 0xAC]
