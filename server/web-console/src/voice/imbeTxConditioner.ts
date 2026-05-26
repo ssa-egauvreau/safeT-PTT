@@ -144,8 +144,22 @@ export class ImbeTxConditioner {
     this.agcTarget = 1;
   }
 
-  /** Conditions one 16 kHz mono PCM-16 frame in place, ready for IMBE encoding. */
-  process(frame: Int16Array): void {
+  /**
+   * Conditions one 16 kHz mono PCM-16 frame in place, ready for IMBE encoding.
+   *
+   * When `bypassExpanderAgc` is true, only the HPF (rumble cut) and LPF (IMBE
+   * anti-alias) run, plus the soft limit. The expander/noise-gate and makeup
+   * AGC are skipped — closest match to how a hardware P25 radio's mic chain
+   * sounds (and to how our radio-bridge captures audio with browser AGC/NS off).
+   */
+  process(frame: Int16Array, bypassExpanderAgc = false): void {
+    if (bypassExpanderAgc) {
+      for (let i = 0; i < frame.length; i++) {
+        frame[i] = softLimit(this.lpf.process(this.hpf.process(frame[i])));
+      }
+      return;
+    }
+
     let speechSq = 0;
     let speechN = 0;
     let peakAbs = 0;

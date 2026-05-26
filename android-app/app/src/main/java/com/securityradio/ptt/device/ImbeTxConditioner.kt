@@ -95,8 +95,30 @@ class ImbeTxConditioner {
         agcTarget = 1.0
     }
 
-    /** Conditions [len] bytes of 16 kHz mono PCM-16 little-endian in place. */
-    fun conditionLe16(frame: ByteArray, len: Int) {
+    /**
+     * Conditions [len] bytes of 16 kHz mono PCM-16 little-endian in place.
+     *
+     * When [bypassExpanderAgc] is true, only the HPF (rumble cut) and LPF
+     * (IMBE anti-alias) run, plus the soft limit. The expander/noise-gate and
+     * makeup AGC are skipped — closest match to how a hardware P25 radio's mic
+     * chain sounds (and to how our radio-bridge captures audio with browser
+     * AGC/NS off).
+     */
+    fun conditionLe16(frame: ByteArray, len: Int, bypassExpanderAgc: Boolean = false) {
+        if (bypassExpanderAgc) {
+            var i = 0
+            while (i + 1 < len) {
+                val lo = frame[i].toInt() and 0xFF
+                val hi = frame[i + 1].toInt()
+                val sample = ((hi shl 8) or lo).toDouble()
+                val out = softLimit(lpf.process(hpf.process(sample)))
+                frame[i] = (out and 0xFF).toByte()
+                frame[i + 1] = ((out shr 8) and 0xFF).toByte()
+                i += 2
+            }
+            return
+        }
+
         var speechSq = 0.0
         var speechN = 0
         var peakAbs = 0.0

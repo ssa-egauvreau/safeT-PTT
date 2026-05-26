@@ -129,6 +129,10 @@ class RadioAppGraph(val application: Application) {
         authTokenProvider = authTokenProvider,
         apiKeyProvider = radioApiKeyProvider,
         inbound = inboundVoicePlayer,
+        bypassMicProcessingProvider = {
+            radioPreferences.hasServerAudioConfig() &&
+                radioPreferences.getServerBypassMicProcessing()
+        },
     )
 
     val scanVoiceListen: ScanVoiceListenTransport = ScanVoiceListenTransport(
@@ -147,9 +151,13 @@ class RadioAppGraph(val application: Application) {
         // if no server config has been fetched yet.
         configProvider = {
             if (radioPreferences.hasServerAudioConfig()) {
+                // bypassMicProcessing overrides the hardware DSP flags to off
+                // regardless of agcEnabled / noiseSuppression — the bridge
+                // sounds clean because nothing processes its mic input.
+                val bypass = radioPreferences.getServerBypassMicProcessing()
                 MicCaptureConfig(
-                    noiseSuppression = radioPreferences.getServerNoiseSuppression(),
-                    autoGain = radioPreferences.getServerAgcEnabled(),
+                    noiseSuppression = !bypass && radioPreferences.getServerNoiseSuppression(),
+                    autoGain = !bypass && radioPreferences.getServerAgcEnabled(),
                     gainMultiplier = radioPreferences.getServerGainMultiplier(),
                 )
             } else {
@@ -200,6 +208,7 @@ class RadioAppGraph(val application: Application) {
                         agcEnabled = cfg.agcEnabled,
                         noiseSuppression = cfg.noiseSuppression,
                         gainMultiplier = cfg.gainMultiplier,
+                        bypassMicProcessing = cfg.bypassMicProcessing,
                     )
                 }
                 // If the server has no config (cfg == null), leave whatever was cached — don't

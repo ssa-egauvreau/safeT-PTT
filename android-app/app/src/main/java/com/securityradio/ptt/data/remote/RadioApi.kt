@@ -57,6 +57,10 @@ data class AudioConfigDto(
     @SerializedName("agcEnabled") val agcEnabled: Boolean = false,
     @SerializedName("noiseSuppression") val noiseSuppression: Boolean = false,
     @SerializedName("gainMultiplier") val gainMultiplier: Float = 1.0f,
+    /** When true: disable Android's hardware NoiseSuppressor / AGC and skip the
+     *  TX conditioner's expander + makeup AGC. Matches the radio-bridge mic
+     *  chain so handset audio sounds like bridge audio on the same channel. */
+    @SerializedName("bypassMicProcessing") val bypassMicProcessing: Boolean = false,
 )
 
 data class LocationReportDto(

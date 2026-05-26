@@ -1,7 +1,7 @@
 // Browser voice client for one channel: joins the relay WebSocket, plays inbound
 // PCM, and (when permitted) captures the microphone and transmits.
 
-import { getToken, type Permission } from "../api";
+import { api, getToken, type Permission } from "../api";
 import { ImbeTxConditioner } from "./imbeTxConditioner";
 import { imbeDecode, imbeEncode, imbeReady, initImbe } from "./imbeVocoder";
 import { loadMarker1033Pcm } from "./marker1033";
@@ -213,6 +213,10 @@ export class VoiceChannelClient {
   /** Server wants clear PCM for the transmission log (all channels). */
   private recordListenPcm = false;
   private readonly txConditioner = new ImbeTxConditioner();
+  /** Server-pushed flag: when true, getUserMedia disables EC/NS/AGC and the
+   *  TX conditioner runs HPF + LPF only (no expander, no makeup AGC). Matches
+   *  the radio-bridge mic chain so handset audio sounds like bridge audio. */
+  private bypassMicProcessing = false;
   private gestureUnbind: (() => void) | null = null;
 
   private lastInboundMs = 0;
@@ -262,6 +266,18 @@ export class VoiceChannelClient {
 
   private listenPcmSidebandRequired(): boolean {
     return this.aiDispatchListenPcm || this.recordListenPcm;
+  }
+
+  /** Pulls the agency-wide audio config so getUserMedia and the TX conditioner
+   *  honor the admin's "bypass mic processing" choice on the next key-up.
+   *  Silent on error — keeps whatever state we have. */
+  private async refreshAudioConfig(): Promise<void> {
+    try {
+      const res = await api.getAudioConfigSummary();
+      this.bypassMicProcessing = Boolean(res.config?.bypassMicProcessing ?? false);
+    } catch {
+      /* leave the current value; defaults are safe */
+    }
   }
 
   /** Sets channel listen volume (0–1). Takes effect immediately and on next connect. */
@@ -371,6 +387,11 @@ export class VoiceChannelClient {
   connect(): void {
     this.setState("connecting");
     void initImbe(); // load the IMBE vocoder in the background for digital RX
+    // Pull the agency-wide mic-processing flag so getUserMedia uses the
+    // correct constraints on the next key-up. Best-effort: if this fails the
+    // client defaults to the standard processed-mic chain. Re-fires on every
+    // reconnect so admin changes are picked up without a page reload.
+    void this.refreshAudioConfig();
     // Created inside the triggering click so the browser lets audio play.
     this.playCtx = new AudioContext({ sampleRate: TARGET_RATE });
     this.playGain = this.playCtx.createGain();
@@ -579,8 +600,17 @@ export class VoiceChannelClient {
     }
 
     if (!this.micStream) {
+      // When the admin pushed "bypass mic processing", match the bridge:
+      // browser DSP off, raw PCM into our chain. Otherwise keep the legacy
+      // VoIP-tuned defaults (EC/NS/AGC on) for noisy environments.
+      const browserDsp = !this.bypassMicProcessing;
       this.micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: {
+          channelCount: 1,
+          echoCancellation: browserDsp,
+          noiseSuppression: browserDsp,
+          autoGainControl: browserDsp,
+        },
       });
     }
     if (!this.capCtx) {
@@ -607,7 +637,7 @@ export class VoiceChannelClient {
       if (this.digitalTx && imbeReady()) {
         // On-air: P25 IMBE. Recording / AI may still need clear PCM on a sideband.
         const pcm = new Int16Array(pcmBuf);
-        this.txConditioner.process(pcm);
+        this.txConditioner.process(pcm, this.bypassMicProcessing);
         for (const frame of encodeImbeFrames(pcm)) {
           ws.send(frame);
         }

@@ -664,6 +664,17 @@ export function AudioLabPanel() {
         <fieldset>
           <legend>Before encoding — clean up the mic signal</legend>
           <Toggle
+            label="Bridge-style minimal mic (browser DSP off, no expander/AGC)"
+            value={config.preImbe.bypassMicProcessing ?? false}
+            onChange={(v) => updatePre("bypassMicProcessing", v)}
+          />
+          <div className="muted small">
+            When on: handsets and web clients disable browser-side echo/noise/AGC
+            and the TX conditioner runs HPF + LPF only. Matches the radio-bridge
+            mic chain — use if hand-held audio sounds "processed" vs the bridge
+            feed on the same channel.
+          </div>
+          <Toggle
             label="Wind gate (adaptive)"
             value={config.preImbe.windGateEnabled}
             onChange={(v) => updatePre("windGateEnabled", v)}

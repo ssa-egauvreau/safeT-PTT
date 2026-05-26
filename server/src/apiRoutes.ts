@@ -2795,10 +2795,12 @@ export function createApiRouter(): Router {
           agcMaxGain?: number;
           windGateEnabled?: boolean;
           windHpfEnabled?: boolean;
+          bypassMicProcessing?: boolean;
         };
       };
       const agcEnabled = Boolean(full.preImbe?.agcEnabled ?? false);
       const agcMaxGain = Number(full.preImbe?.agcMaxGain ?? 6);
+      const bypassMicProcessing = Boolean(full.preImbe?.bypassMicProcessing ?? false);
       // Wind reduction is "on" on Android if EITHER the adaptive gate OR the
       // steep HPF is enabled — both contribute to noise rejection upstream of
       // IMBE, and Android only exposes a single NoiseSuppressor toggle.
@@ -2817,6 +2819,7 @@ export function createApiRouter(): Router {
           agcEnabled,
           noiseSuppression: windReduce,
           gainMultiplier: Math.round(gainMultiplier * 100) / 100,
+          bypassMicProcessing,
         },
         updatedAt: row.updated_at,
       });
