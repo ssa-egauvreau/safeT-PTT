@@ -34,6 +34,7 @@ final class VoiceTransport {
     private var pcmFrameScratch = Data(count: P25ImbeNative.Frames.pcm16kFrameBytes)
     private var lastConsumeNs: UInt64 = 0
     private var warnedClearTx = false
+    private var uplinkActive = false
 
     private let imbeMagic: [UInt8] = [0xF5, 0xAB]
     private let listenPcmMagic: [UInt8] = [0xF6, 0xAC]
@@ -68,7 +69,15 @@ final class VoiceTransport {
         resetUplinkState()
     }
 
+    /// Arms uplink processing for a fresh PTT key-up.
+    func beginUplink() {
+        uplinkActive = true
+    }
+
     func resetUplinkState() {
+        // Captured frames are bounced through `Task { @MainActor ... }`.
+        // Disable uplink first so any queued post-release frames are dropped.
+        uplinkActive = false
         pcmAcc.removeAll(keepingCapacity: true)
         txConditioner.reset()
         lastConsumeNs = 0
@@ -82,7 +91,7 @@ final class VoiceTransport {
     }
 
     private func sendCapturedOnMain(_ frame: Data) {
-        guard let task, !frame.isEmpty else { return }
+        guard let task, !frame.isEmpty, uplinkActive else { return }
 
         let p25 = P25ImbeNative.isAvailable
         if !p25 {

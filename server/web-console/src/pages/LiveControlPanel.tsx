@@ -50,14 +50,14 @@ export function LiveControlPanel() {
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
 
-  async function refreshChannels() {
+  async function refreshChannels(): Promise<{ id: number; name: string }[] | null> {
     try {
       const res = await api.myChannels();
-      setChannelsList(
-        res.channels.filter((c) => !c.simulcast).map((c) => ({ id: c.id, name: c.name })),
-      );
+      const next = res.channels.filter((c) => !c.simulcast).map((c) => ({ id: c.id, name: c.name }));
+      setChannelsList(next);
+      return next;
     } catch {
-      /* ignore — keep the previous list */
+      return null;
     }
   }
 
@@ -66,13 +66,6 @@ export function LiveControlPanel() {
   }, []);
 
   const allChannels = useMemo(() => channelsList.map((c) => c.name), [channelsList]);
-  const channelIdByName = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const c of channelsList) {
-      map.set(c.name, c.id);
-    }
-    return map;
-  }, [channelsList]);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,19 +204,28 @@ export function LiveControlPanel() {
   }
 
   async function deleteEmergencyChannel(channelName: string) {
-    const id = channelIdByName.get(channelName);
-    if (id == null) {
-      setError(`Could not find channel "${channelName}" to delete.`);
+    const latest = await refreshChannels();
+    if (!latest) {
+      setError("Could not verify channel list. Please try again.");
       return;
     }
-    if (!window.confirm(`Delete emergency channel "${channelName}"? This cannot be undone.`)) {
+    const channel = latest.find((c) => c.name === channelName);
+    if (!channel) {
+      setError(`Channel "${channelName}" was renamed or already removed.`);
+      return;
+    }
+    if (!isEmergencyChannelName(channel.name)) {
+      setError(`"${channel.name}" is not currently an emergency channel.`);
+      return;
+    }
+    if (!window.confirm(`Delete emergency channel "${channel.name}"? This cannot be undone.`)) {
       return;
     }
     setStatus(null);
     setError(null);
     try {
-      await api.deleteChannel(id);
-      setStatus(`Deleted emergency channel "${channelName}".`);
+      await api.deleteChannel(channel.id);
+      setStatus(`Deleted emergency channel "${channel.name}".`);
       await refreshChannels();
       const fresh = await api.channelRosters();
       setRosters(fresh.channels);

@@ -33,7 +33,17 @@ export function setCachedAuth(
   userId: number,
   value: Omit<CachedAuth, "expiresAt">,
 ): void {
-  cache.set(userId, { ...value, expiresAt: Date.now() + TTL_MS });
+  const now = Date.now();
+  const existing = cache.get(userId);
+  if (existing) {
+    if (existing.expiresAt < now) {
+      cache.delete(userId);
+    } else if (existing.tokenGeneration > value.tokenGeneration) {
+      // A stale in-flight request must never overwrite a fresher post-login generation.
+      return;
+    }
+  }
+  cache.set(userId, { ...value, expiresAt: now + TTL_MS });
 }
 
 /**
