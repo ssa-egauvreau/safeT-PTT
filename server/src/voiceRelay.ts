@@ -446,6 +446,45 @@ export function isUnitMoveLocked(agencyId: number, unitIdRaw: string): boolean {
   return false;
 }
 
+/** Seed the in-memory voice roster with a synthetic record for tests. */
+export interface VoiceRosterTestRecord {
+  agencyId: number;
+  channelName: string;
+  unitId: string;
+  displayName?: string | null;
+  kind: "account" | "legacy" | "bridge";
+  client?: string;
+  deviceType?: string | null;
+  joinedAt?: number;
+}
+
+/**
+ * Test-only: insert a synthetic roster entry without going through the
+ * WebSocket upgrade/join path. Each call creates a fresh, unique key so the
+ * record is independently addressable in the underlying map.
+ *
+ * @internal Intended for unit tests; do not call from production code.
+ */
+export function __setVoiceRosterRecordForTest(record: VoiceRosterTestRecord): void {
+  const chNorm = normalizedChannel(record.channelName);
+  voiceRoster.set({} as WebSocket, {
+    channelKey: channelKey(record.agencyId, chNorm),
+    channelName: record.channelName,
+    unitId: record.unitId,
+    displayName: record.displayName ?? null,
+    kind: record.kind,
+    client: record.client ?? "unknown",
+    deviceType: record.deviceType ?? null,
+    joinedAt: record.joinedAt ?? Date.now(),
+  });
+}
+
+/** Test-only: drop every entry from the in-memory voice roster. @internal */
+export function __resetVoiceRosterForTest(): void {
+  voiceRoster.clear();
+  voiceAirByChannel.clear();
+}
+
 /**
  * Live Channel Control: pushes a "move to channel" command to every open socket
  * belonging to agency+unit. The client re-joins the target channel on receipt.
