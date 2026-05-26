@@ -382,12 +382,20 @@ export function listAgencyRosters(agencyId: number): AgencyChannelRoster[] {
     .sort((a, b) => a.channel.localeCompare(b.channel));
 }
 
-/** How many distinct voice channels each unit is connected to (live control). */
+/**
+ * How many distinct voice channels each unit is currently dispatching on
+ * (live control). Only dispatch_console sessions count here — a user who just
+ * has their handset/phone on one channel and the dashboard open on another
+ * should still be movable. Multi-channel scanning is a dispatch-console signal.
+ */
 export function unitChannelCounts(agencyId: number): Map<string, number> {
   const prefix = `${agencyId} `;
   const byUnit = new Map<string, Set<string>>();
   for (const record of voiceRoster.values()) {
     if (!record.channelKey.startsWith(prefix)) {
+      continue;
+    }
+    if (record.kind !== "account" || record.deviceType !== "dispatch_console") {
       continue;
     }
     const unit = record.unitId.toUpperCase();

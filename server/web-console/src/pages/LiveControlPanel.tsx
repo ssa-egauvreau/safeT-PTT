@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError, type ChannelMember } from "../api";
+import { useAuth } from "../auth";
 import { useUnitAliasResolver } from "../unitAliases";
-import { IconCar, IconMobile, IconRadio, IconRecord } from "../icons";
+import { IconCar, IconClose, IconMobile, IconRadio, IconRecord } from "../icons";
+
+/** Names produced by the emergency-channel endpoint always start with EMERGENCY. */
+function isEmergencyChannelName(name: string): boolean {
+  return /^emergency(\b|$)/i.test(name.trim());
+}
 
 function unitDeviceIcon(deviceType: string | null | undefined) {
   if (deviceType === "unit_radio") {
@@ -33,8 +39,10 @@ interface ChannelGroup {
 /** Compact live unit move board — embedded in Mission Control. */
 export function LiveControlPanel() {
   const aliasFor = useUnitAliasResolver();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [rosters, setRosters] = useState<ChannelGroup[]>([]);
-  const [allChannels, setAllChannels] = useState<string[]>([]);
+  const [channelsList, setChannelsList] = useState<{ id: number; name: string }[]>([]);
   const [reason, setReason] = useState<(typeof MOVE_REASONS)[number]>("Reassigned");
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -42,12 +50,29 @@ export function LiveControlPanel() {
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
 
+  async function refreshChannels() {
+    try {
+      const res = await api.myChannels();
+      setChannelsList(
+        res.channels.filter((c) => !c.simulcast).map((c) => ({ id: c.id, name: c.name })),
+      );
+    } catch {
+      /* ignore — keep the previous list */
+    }
+  }
+
   useEffect(() => {
-    api
-      .myChannels()
-      .then((res) => setAllChannels(res.channels.filter((c) => !c.simulcast).map((c) => c.name)))
-      .catch(() => undefined);
+    void refreshChannels();
   }, []);
+
+  const allChannels = useMemo(() => channelsList.map((c) => c.name), [channelsList]);
+  const channelIdByName = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const c of channelsList) {
+      map.set(c.name, c.id);
+    }
+    return map;
+  }, [channelsList]);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,11 +202,37 @@ export function LiveControlPanel() {
       const res = await api.createEmergencyChannel({ name: name.trim() || undefined, unitIds: units });
       setStatus(`Emergency channel "${res.channel}" — ${res.reached}/${units.length} units moved in.`);
       setSelected(new Set());
-      setAllChannels((prev) => (prev.includes(res.channel) ? prev : [...prev, res.channel]));
+      await refreshChannels();
       const fresh = await api.channelRosters();
       setRosters(fresh.channels);
     } catch {
       setError("Could not create the emergency channel.");
+    }
+  }
+
+  async function deleteEmergencyChannel(channelName: string) {
+    const id = channelIdByName.get(channelName);
+    if (id == null) {
+      setError(`Could not find channel "${channelName}" to delete.`);
+      return;
+    }
+    if (!window.confirm(`Delete emergency channel "${channelName}"? This cannot be undone.`)) {
+      return;
+    }
+    setStatus(null);
+    setError(null);
+    try {
+      await api.deleteChannel(id);
+      setStatus(`Deleted emergency channel "${channelName}".`);
+      await refreshChannels();
+      const fresh = await api.channelRosters();
+      setRosters(fresh.channels);
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.status === 403) {
+        setError("Only admins can delete channels.");
+      } else {
+        setError(`Could not delete "${channelName}".`);
+      }
     }
   }
 
@@ -256,6 +307,20 @@ export function LiveControlPanel() {
                   <IconRadio size={12} />
                   <span className="lcc-channel-name">{group.channel}</span>
                   <span className="count">{group.members.length}</span>
+                  {isAdmin && isEmergencyChannelName(group.channel) && (
+                    <button
+                      type="button"
+                      className="lcc-channel-delete"
+                      title="Delete this emergency channel"
+                      aria-label={`Delete emergency channel ${group.channel}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void deleteEmergencyChannel(group.channel);
+                      }}
+                    >
+                      <IconClose size={11} />
+                    </button>
+                  )}
                 </div>
                 {group.members.length === 0 ? (
                   <div className="lcc-empty">Drop unit</div>
