@@ -2783,19 +2783,28 @@ export function createApiRouter(): Router {
           agcEnabled?: boolean;
           agcMaxGain?: number;
           windGateEnabled?: boolean;
+          windHpfEnabled?: boolean;
         };
       };
       const agcEnabled = Boolean(full.preImbe?.agcEnabled ?? false);
       const agcMaxGain = Number(full.preImbe?.agcMaxGain ?? 6);
-      const windGate = Boolean(full.preImbe?.windGateEnabled ?? false);
-      // Map agcMaxGain (1–12) → gainMultiplier (0.5–3.0)
+      // Wind reduction is "on" on Android if EITHER the adaptive gate OR the
+      // steep HPF is enabled — both contribute to noise rejection upstream of
+      // IMBE, and Android only exposes a single NoiseSuppressor toggle.
+      const windReduce =
+        Boolean(full.preImbe?.windGateEnabled ?? false) ||
+        Boolean(full.preImbe?.windHpfEnabled ?? false);
+      // Map agcMaxGain (1–12) → gainMultiplier (1.0–3.0). The range starts at
+      // 1.0 so the lowest simple-UI preset ("A little", agcMaxGain=4) still
+      // delivers an audible boost — a linear (gain/12)*3 map collapses to 1.0×
+      // at gain=4, making the preset indistinguishable from "off" on device.
       const gainMultiplier = agcEnabled
-        ? Math.max(0.5, Math.min(3.0, (agcMaxGain / 12.0) * 3.0))
+        ? Math.max(1.0, Math.min(3.0, 1.0 + (agcMaxGain / 12.0) * 2.0))
         : 1.0;
       res.json({
         config: {
           agcEnabled,
-          noiseSuppression: windGate,
+          noiseSuppression: windReduce,
           gainMultiplier: Math.round(gainMultiplier * 100) / 100,
         },
         updatedAt: row.updated_at,
