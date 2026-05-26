@@ -16,10 +16,11 @@
  *      middleware then re-fetches from Postgres and re-populates) —
  *      this must hold across both "we cleared everything" and "this
  *      specific user has never been cached" code paths.
- *   2. `setCachedAuth` round-trips its payload verbatim, but does NOT
- *      leak the internal `expiresAt` field into the returned shape (the
- *      middleware destructures by key, so an extra field would
- *      eventually slip into a response body via a typo).
+ *   2. `setCachedAuth` round-trips its payload verbatim on every
+ *      documented field. Each combination of (userDisabled,
+ *      agencyDisabled) matters because the middleware uses them to
+ *      pick between "let the request through", "403 user_disabled",
+ *      and "403 agency_disabled".
  *   3. Cached entries automatically expire after the documented 15 s
  *      TTL, and a freshly-expired entry is removed from the underlying
  *      map (not just hidden from the getter) so the cache cannot grow
@@ -29,11 +30,12 @@
  *      request to re-fetch and observe the bumped `tokenGeneration`,
  *      but it must not also evict every other agency's cached users.
  *   5. `clearAuthCache()` evicts every user (used on test teardown and
- *      on graceful shutdown).
+ *      on graceful shutdown). It is idempotent on an empty cache.
  *   6. Re-setting the same user extends the TTL rather than retaining
  *      the original (older) expiry. A fresh login must therefore start
  *      a new TTL window, not inherit a few hundred ms left over from
- *      the previous session.
+ *      the previous session, and the new field values must take effect
+ *      immediately.
  *
  * Time is driven by `node:test`'s mock timers so the 15 s TTL boundary
  * is asserted deterministically — no `await new Promise(setTimeout, ...)`
@@ -41,32 +43,6 @@
  */
 
 import { test, type TestContext } from "node:test";
- * Tests for `server/src/sessionCache.ts`.
- *
- * The session cache short-circuits the per-request "is this user / agency
- * still active?" Postgres lookup on every authenticated API call (Android
- * handsets poll AIR every 250 ms — without the cache this is the hottest
- * path in the database).
- *
- * Two correctness properties matter:
- *
- *  1. **Forced revocation must not be deferred by the TTL.**
- *     `invalidateCachedAuth` is called after a fresh login bumps
- *     token_generation so the OLD device's next request hits Postgres and
- *     gets superseded immediately, rather than continuing to authenticate
- *     under a stale (still-true) cache entry for up to TTL_MS.
- *
- *  2. **Expired entries don't stay readable.**
- *     The cache must not return an entry once its `expiresAt` is past,
- *     otherwise an admin disabling an agency would have no upper bound on
- *     when handsets actually lose access.
- *
- * `clearAuthCache` is the test-isolation handle the rest of the project
- * uses; we exercise it too so any future regression that drops the export
- * (or that mutates other state) is caught here.
- */
-
-import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
@@ -87,17 +63,6 @@ function payload(tokenGeneration: number): {
     userDisabled: false,
     agencyDisabled: false,
   };
-function withFakeNow<T>(start: number, fn: (advance: (ms: number) => void) => T): T {
-  const realNow = Date.now;
-  let now = start;
-  Date.now = () => now;
-  try {
-    return fn((ms) => {
-      now += ms;
-    });
-  } finally {
-    Date.now = realNow;
-  }
 }
 
 test("getCachedAuth: returns null for an uncached user", () => {
@@ -147,6 +112,16 @@ test("getCachedAuth: stores+returns every typed field independently", () => {
   assert.equal(u71.agencyDisabled, true);
   assert.equal(u72.userDisabled, true);
   assert.equal(u72.agencyDisabled, true);
+});
+
+test("setCachedAuth: overwrites a prior entry for the same userId (last write wins)", () => {
+  clearAuthCache();
+  setCachedAuth(7, { tokenGeneration: 1, userDisabled: false, agencyDisabled: false });
+  setCachedAuth(7, { tokenGeneration: 2, userDisabled: true, agencyDisabled: false });
+  const got = getCachedAuth(7);
+  assert.ok(got);
+  assert.equal(got.tokenGeneration, 2, "second set must replace the first");
+  assert.equal(got.userDisabled, true);
 });
 
 test("getCachedAuth: returns null and deletes the entry once TTL has passed", (t: TestContext) => {
@@ -212,60 +187,6 @@ test("invalidateCachedAuth evicts only the requested user", (t: TestContext) => 
   assert.notEqual(getCachedAuth(13), null);
 });
 
-test("invalidateCachedAuth is idempotent for a user that was never cached", () => {
-  // The login route calls invalidate() unconditionally after bumping the
-  // token generation; it must not throw or otherwise misbehave for a
-  // brand-new user whose row has not yet been read by anyone.
-  clearAuthCache();
-  assert.doesNotThrow(() => invalidateCachedAuth(424242));
-  assert.equal(getCachedAuth(424242), null);
-});
-
-test("clearAuthCache evicts every cached user", () => {
-  clearAuthCache();
-  setCachedAuth(1, payload(1));
-  setCachedAuth(2, payload(2));
-  setCachedAuth(3, payload(3));
-  assert.equal(getCachedAuth(123), null);
-});
-
-test("setCachedAuth + getCachedAuth: round-trip carries the same auth state", () => {
-  clearAuthCache();
-  setCachedAuth(42, {
-    tokenGeneration: 7,
-    userDisabled: false,
-    agencyDisabled: false,
-  });
-  const got = getCachedAuth(42);
-  assert.ok(got, "value just set should be readable");
-  assert.equal(got.tokenGeneration, 7);
-  assert.equal(got.userDisabled, false);
-  assert.equal(got.agencyDisabled, false);
-});
-
-test("setCachedAuth: overwrites a prior entry for the same userId (last write wins)", () => {
-  clearAuthCache();
-  setCachedAuth(7, { tokenGeneration: 1, userDisabled: false, agencyDisabled: false });
-  setCachedAuth(7, { tokenGeneration: 2, userDisabled: true, agencyDisabled: false });
-  const got = getCachedAuth(7);
-  assert.ok(got);
-  assert.equal(got.tokenGeneration, 2, "second set must replace the first");
-  assert.equal(got.userDisabled, true);
-});
-
-test("getCachedAuth: an expired entry is evicted (TTL=15s)", () => {
-  clearAuthCache();
-  withFakeNow(1_000_000, (advance) => {
-    setCachedAuth(11, { tokenGeneration: 1, userDisabled: false, agencyDisabled: false });
-    advance(14_999);
-    assert.ok(getCachedAuth(11), "still inside TTL");
-    advance(2); // total +15_001
-    assert.equal(getCachedAuth(11), null, "must be evicted past 15s");
-    // And the second call must also be null (eviction is sticky).
-    assert.equal(getCachedAuth(11), null);
-  });
-});
-
 test("invalidateCachedAuth: forces the NEXT read to miss even mid-TTL", () => {
   // This is the load-bearing semantic for "newest sign-in wins": the
   // freshly-logged-in client just bumped token_generation in Postgres, and
@@ -278,28 +199,19 @@ test("invalidateCachedAuth: forces the NEXT read to miss even mid-TTL", () => {
   assert.equal(getCachedAuth(99), null);
 });
 
-test("invalidateCachedAuth: only touches the targeted user (no collateral eviction)", () => {
+test("invalidateCachedAuth is idempotent for a user that was never cached", () => {
+  // The login route calls invalidate() unconditionally after bumping the
+  // token generation; it must not throw or otherwise misbehave for a
+  // brand-new user whose row has not yet been read by anyone.
   clearAuthCache();
-  setCachedAuth(1, { tokenGeneration: 1, userDisabled: false, agencyDisabled: false });
-  setCachedAuth(2, { tokenGeneration: 1, userDisabled: false, agencyDisabled: false });
-  invalidateCachedAuth(1);
-  assert.equal(getCachedAuth(1), null);
-  assert.ok(getCachedAuth(2), "user 2 must be untouched by invalidating user 1");
+  assert.doesNotThrow(() => invalidateCachedAuth(424242));
+  assert.equal(getCachedAuth(424242), null);
 });
 
-test("invalidateCachedAuth: invalidating an absent user is a safe no-op", () => {
-  clearAuthCache();
-  invalidateCachedAuth(404);
-  assert.equal(getCachedAuth(404), null);
-  // And it must not have somehow created a row by deleting nothing.
-  setCachedAuth(404, { tokenGeneration: 1, userDisabled: false, agencyDisabled: false });
-  assert.ok(getCachedAuth(404));
-});
-
-test("clearAuthCache: drops every entry (test-isolation handle)", () => {
-  setCachedAuth(1, { tokenGeneration: 1, userDisabled: false, agencyDisabled: false });
-  setCachedAuth(2, { tokenGeneration: 1, userDisabled: false, agencyDisabled: false });
-  setCachedAuth(3, { tokenGeneration: 1, userDisabled: false, agencyDisabled: false });
+test("clearAuthCache evicts every cached user", () => {
+  setCachedAuth(1, payload(1));
+  setCachedAuth(2, payload(2));
+  setCachedAuth(3, payload(3));
   clearAuthCache();
   assert.equal(getCachedAuth(1), null);
   assert.equal(getCachedAuth(2), null);
