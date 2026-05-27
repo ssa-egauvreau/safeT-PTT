@@ -1,9 +1,11 @@
 /** One playback at a time per agency + channel (TTS + 10-33 marker tones). */
 
+import { normalizedChannel } from "../presence.js";
+
 const tails = new Map<string, Promise<void>>();
 
 function lockKey(agencyId: number, channelName: string): string {
-  return `${agencyId}:${channelName.trim().toLowerCase()}`;
+  return `${agencyId}:${normalizedChannel(channelName)}`;
 }
 
 export async function withChannelPlaybackLock<T>(

@@ -261,10 +261,10 @@ test("withChannelPlaybackLock: same channel name across two agencies does NOT sh
 test("withChannelPlaybackLock: normalises channel name (case + whitespace) so 'Main' and 'main' share the lock", async () => {
   // If the lock were case- or whitespace-sensitive a dispatcher panel that
   // sent "Main" could fire concurrently with a transmission heading to
-  // "main", talking over each other on the air. The implementation lower-
-  // cases and trims; pin that contract so a future refactor that switches
-  // to a Map<string, ...> with raw keys breaks this test instead of
-  // breaking production audio quality.
+  // "main", talking over each other on the air. The implementation uses
+  // `normalizedChannel` (shared with the relay + presence paths); pin that
+  // contract so a future refactor that switches to a Map<string, ...> with
+  // raw keys breaks this test instead of breaking production audio quality.
   const ag = agencyId();
   const order: string[] = [];
   const d1 = defer<void>();
@@ -283,6 +283,33 @@ test("withChannelPlaybackLock: normalises channel name (case + whitespace) so 'M
   await Promise.resolve();
   await Promise.resolve();
   assert.deepEqual(order, ["start-1"], "second playback must wait — same channel under normalisation");
+
+  d1.resolve();
+  await Promise.all([p1, p2]);
+  assert.deepEqual(order, ["start-1", "end-1", "start-2"]);
+});
+
+test("withChannelPlaybackLock: collapses internal whitespace so 'Ops 1' and 'Ops   1' share one lock", async () => {
+  // The relay keys channels with `normalizedChannel`, which folds internal
+  // whitespace runs. If playback locking did not do the same, two dispatch
+  // replies on what users perceive as the same channel could run concurrently
+  // and interleave/drop audio on-air.
+  const ag = agencyId();
+  const order: string[] = [];
+  const d1 = defer<void>();
+
+  const p1 = withChannelPlaybackLock(ag, "Ops 1", async () => {
+    order.push("start-1");
+    await d1.promise;
+    order.push("end-1");
+  });
+  const p2 = withChannelPlaybackLock(ag, "Ops   1", async () => {
+    order.push("start-2");
+  });
+
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(order, ["start-1"], "second playback must wait — internal-whitespace variants are same channel");
 
   d1.resolve();
   await Promise.all([p1, p2]);
