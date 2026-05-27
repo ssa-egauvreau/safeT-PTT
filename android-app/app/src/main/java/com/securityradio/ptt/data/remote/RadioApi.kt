@@ -61,6 +61,33 @@ data class AudioConfigDto(
      *  TX conditioner's expander + makeup AGC. Matches the radio-bridge mic
      *  chain so handset audio sounds like bridge audio on the same channel. */
     @SerializedName("bypassMicProcessing") val bypassMicProcessing: Boolean = false,
+    /** RX-side post-decode chain (presence bell / saturation / shelves /
+     *  upsample mode). `null` when no shaping is in effect — handset uses the
+     *  legacy duplicate 8 → 16 kHz upsample with no biquads. */
+    @SerializedName("postDecode") val postDecode: AudioPostDecodeDto? = null,
+)
+
+/** Subset of `AudioLabConfig.postDecode` the handset applies on RX. Mirrors
+ *  the server-side `DevicePostDecodeConfig` and the web's
+ *  `AudioConfigPostDecode` so one tuned admin preset is identically applied
+ *  across all three clients. */
+data class AudioPostDecodeDto(
+    @SerializedName("upsampleMode") val upsampleMode: String = "duplicate",
+    @SerializedName("hpfEnabled") val hpfEnabled: Boolean? = null,
+    @SerializedName("hpfHz") val hpfHz: Float? = null,
+    @SerializedName("lpfEnabled") val lpfEnabled: Boolean? = null,
+    @SerializedName("lpfHz") val lpfHz: Float? = null,
+    @SerializedName("lowShelfEnabled") val lowShelfEnabled: Boolean? = null,
+    @SerializedName("lowShelfHz") val lowShelfHz: Float? = null,
+    @SerializedName("lowShelfDb") val lowShelfDb: Float? = null,
+    @SerializedName("highShelfEnabled") val highShelfEnabled: Boolean? = null,
+    @SerializedName("highShelfHz") val highShelfHz: Float? = null,
+    @SerializedName("highShelfDb") val highShelfDb: Float? = null,
+    @SerializedName("presenceEnabled") val presenceEnabled: Boolean? = null,
+    @SerializedName("presenceHz") val presenceHz: Float? = null,
+    @SerializedName("presenceDb") val presenceDb: Float? = null,
+    @SerializedName("presenceQ") val presenceQ: Float? = null,
+    @SerializedName("saturationAmount") val saturationAmount: Float? = null,
 )
 
 data class LocationReportDto(

@@ -70,6 +70,11 @@ class VoiceRelayTransport(
      *  AGC so handset audio matches the radio-bridge mic chain. Defaults to
      *  false for current behaviour when an admin hasn't pushed otherwise. */
     private val bypassMicProcessingProvider: () -> Boolean = { false },
+    /** Read on every inbound IMBE frame. When non-null, the decoded PCM
+     *  runs through the shared post-decode chain (presence bell / soft
+     *  saturation / shelves / polyphase upsample) before reaching the
+     *  player. Null = legacy duplicate-upsample fast path. */
+    private val postDecodeProcessorProvider: () -> PostDecodeChain.Processor? = { null },
 ) : StreamingPcmSink {
 
     private val _controlEvents = MutableSharedFlow<VoiceControlEvent>(extraBufferCapacity = 16)
@@ -209,11 +214,42 @@ class VoiceRelayTransport(
                         Log.w(TAG, "IMBE decode returned null for one frame — check peer encoder alignment")
                         return
                     }
-            val pcm16LittleEndian = P25ImbeNative.Frames.upsampleDup8kToLe16Mono(pcm8k160)
+            val pcm16LittleEndian = applyPostDecodeOrDup(pcm8k160)
             inbound.writePcmFromMain(pcm16LittleEndian)
             return
         }
         inbound.writePcmFromMain(payload)
+    }
+
+    /** Last inbound-voice frame timestamp (ns). Used purely to detect a
+     *  talk-spurt boundary on the RX side so the post-decode chain can
+     *  reset its biquad state before the next talker's first frame. */
+    private var lastInboundVoiceNs = 0L
+
+    /** Treat a > 300 ms gap between inbound voice frames as a new talk-spurt.
+     *  Matches the relay's claim-air TTL window for the same reason: longer
+     *  than worst-case framing jitter, shorter than the human gap between
+     *  separate transmissions. */
+    private val talkSpurtGapNs = 300_000_000L
+
+    /**
+     * Run the decoded 8 kHz frame through the agency's post-decode chain
+     * when configured, otherwise fall back to the legacy sample-duplicate
+     * upsample. Resets the processor's filter state at every talk-spurt
+     * boundary so a previous talker's biquad ring can't bleed into the
+     * next talker's first frame.
+     */
+    private fun applyPostDecodeOrDup(pcm8k160: ShortArray): ByteArray {
+        val processor = postDecodeProcessorProvider()
+        if (processor == null) {
+            return P25ImbeNative.Frames.upsampleDup8kToLe16Mono(pcm8k160)
+        }
+        val now = System.nanoTime()
+        if (lastInboundVoiceNs == 0L || now - lastInboundVoiceNs > talkSpurtGapNs) {
+            processor.reset()
+        }
+        lastInboundVoiceNs = now
+        return processor.process(pcm8k160)
     }
 
     /** One-shot load so mates' IMBE frames work even before user opens the PTT screen (RX path). */

@@ -24,7 +24,41 @@ class ScanVoiceListenTransport(
     private val authTokenProvider: () -> String,
     private val apiKeyProvider: () -> String,
     private val inbound: InboundVoicePlayer,
+    /** When non-null, decoded scan-channel IMBE runs through the agency
+     *  post-decode chain (same as the primary RX). Null = legacy fast path. */
+    private val postDecodeProcessorProvider: () -> PostDecodeChain.Processor? = { null },
 ) {
+    /** Per-scan-channel boundary state for the post-decode chain reset.
+     *  Each tuned-in scan channel has its own talker; resetting per-channel
+     *  on a talk-spurt boundary keeps biquad ring isolated from other
+     *  channels' transmissions. Keyed by channel label. */
+    private val scanLastInboundNs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val scanTalkSpurtGapNs = 300_000_000L
+
+    /**
+     * Apply the agency post-decode chain to a scan-channel IMBE frame, or
+     * fall back to the legacy duplicate upsample when no shaping is set.
+     *
+     * Each scan channel has independent talk-spurt boundary detection — a
+     * gap > [scanTalkSpurtGapNs] between frames on the same channel resets
+     * the processor's filter state for that channel so a previous talker's
+     * biquad ring stays out of the next talker's first frame.
+     *
+     * NB: all scan channels share one processor instance. That's
+     * intentional — a single tuned admin preset is one filter response,
+     * and the per-channel timestamp keys are only used to decide WHEN to
+     * call `processor.reset()`, not WHICH processor to use.
+     */
+    private fun applyPostDecodeOrDup(channelLabel: String, pcm8k160: ShortArray): ByteArray {
+        val processor = postDecodeProcessorProvider()
+            ?: return P25ImbeNative.Frames.upsampleDup8kToLe16Mono(pcm8k160)
+        val now = System.nanoTime()
+        val prev = scanLastInboundNs.put(channelLabel, now) ?: 0L
+        if (prev == 0L || now - prev > scanTalkSpurtGapNs) {
+            processor.reset()
+        }
+        return processor.process(pcm8k160)
+    }
     private val wsBaseUrl = httpApiBaseUrlToVoiceWebSocketUrl(httpApiBaseUrl)
 
     private val client = OkHttpClient.Builder()
@@ -227,7 +261,7 @@ class ScanVoiceListenTransport(
                 }
                 val codeword = payload.copyOfRange(2, 13)
                 val pcm8k160 = P25ImbeNative.decodeCodeword11(codeword) ?: return
-                val pcm16 = P25ImbeNative.Frames.upsampleDup8kToLe16Mono(pcm8k160)
+                val pcm16 = applyPostDecodeOrDup(channelLabel, pcm8k160)
                 inbound.writePcmFromScan(channelLabel, pcm16)
                 return
             }

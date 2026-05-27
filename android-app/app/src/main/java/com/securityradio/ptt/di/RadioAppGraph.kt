@@ -13,6 +13,8 @@ import com.securityradio.ptt.device.AppUpdater
 import com.securityradio.ptt.device.AssetRadioUiSoundPlayer
 import com.securityradio.ptt.device.AudioRecordPttCapture
 import com.securityradio.ptt.device.MicCaptureConfig
+import com.securityradio.ptt.device.PostDecodeChain
+import com.securityradio.ptt.data.remote.AudioPostDecodeDto
 import com.securityradio.ptt.device.ChannelSpeechHelper
 import com.securityradio.ptt.device.ConnectivityMonitor
 import com.securityradio.ptt.device.ExternalMicMonitor
@@ -124,6 +126,16 @@ class RadioAppGraph(val application: Application) {
         store = customSoundStore,
     )
 
+    /**
+     * Latest agency post-decode processor, or null when no shaping is in
+     * effect. Rebuilt whenever [refreshAudioConfigAsync] fetches a new
+     * config and a non-null `postDecode` block arrives. Both voice
+     * transports read it through their `postDecodeProcessorProvider`
+     * closure so the rebuild swaps live without recreating the transport.
+     */
+    private val postDecodeProcessor =
+        java.util.concurrent.atomic.AtomicReference<PostDecodeChain.Processor?>(null)
+
     val voiceRelay: VoiceRelayTransport = VoiceRelayTransport(
         httpApiBaseUrl = BuildConfig.API_BASE_URL,
         authTokenProvider = authTokenProvider,
@@ -133,6 +145,7 @@ class RadioAppGraph(val application: Application) {
             radioPreferences.hasServerAudioConfig() &&
                 radioPreferences.getServerBypassMicProcessing()
         },
+        postDecodeProcessorProvider = { postDecodeProcessor.get() },
     )
 
     val scanVoiceListen: ScanVoiceListenTransport = ScanVoiceListenTransport(
@@ -140,6 +153,7 @@ class RadioAppGraph(val application: Application) {
         authTokenProvider = authTokenProvider,
         apiKeyProvider = radioApiKeyProvider,
         inbound = inboundVoicePlayer,
+        postDecodeProcessorProvider = { postDecodeProcessor.get() },
     )
 
     /** Sidetone off; PCM also flows to [voiceRelay]. */
@@ -210,6 +224,15 @@ class RadioAppGraph(val application: Application) {
                         gainMultiplier = cfg.gainMultiplier,
                         bypassMicProcessing = cfg.bypassMicProcessing,
                     )
+                    // Rebuild the post-decode processor under the new config.
+                    // Server-side `derivePostDecodeBlock` already returns
+                    // `null` when shaping would be a no-op, so any non-null
+                    // value here is worth a processor.
+                    val newProcessor =
+                        cfg.postDecode?.let { it.toConfigOrNull() }?.let {
+                            if (it.isNoOp()) null else PostDecodeChain.Processor(it)
+                        }
+                    postDecodeProcessor.set(newProcessor)
                 }
                 // If the server has no config (cfg == null), leave whatever was cached — don't
                 // clear it so the device keeps working if the server is momentarily unreachable.
@@ -249,4 +272,34 @@ class RadioAppGraph(val application: Application) {
         // Pull the admin-pushed audio config (if any) so the next PTT uses it.
         refreshAudioConfigAsync()
     }
+}
+
+/**
+ * Convert the wire DTO from `/v1/audio/config` into the strongly-typed
+ * [PostDecodeChain.Config] the processor consumes. Returns null when the
+ * DTO has no upsample mode field — a guard against an entirely-empty
+ * object slipping past Gson's defaults. Optional fields fall back to the
+ * Config dataclass's own defaults so server-side omissions match the
+ * documented "feature off" semantics.
+ */
+private fun AudioPostDecodeDto.toConfigOrNull(): PostDecodeChain.Config? {
+    val mode = PostDecodeChain.UpsampleMode.fromString(upsampleMode)
+    return PostDecodeChain.Config(
+        upsampleMode = mode,
+        hpfEnabled = hpfEnabled ?: false,
+        hpfHz = hpfHz ?: 250f,
+        lpfEnabled = lpfEnabled ?: false,
+        lpfHz = lpfHz ?: 3300f,
+        lowShelfEnabled = lowShelfEnabled ?: false,
+        lowShelfHz = lowShelfHz ?: 200f,
+        lowShelfDb = lowShelfDb ?: 0f,
+        highShelfEnabled = highShelfEnabled ?: false,
+        highShelfHz = highShelfHz ?: 2500f,
+        highShelfDb = highShelfDb ?: 0f,
+        presenceEnabled = presenceEnabled ?: false,
+        presenceHz = presenceHz ?: 2200f,
+        presenceDb = presenceDb ?: 0f,
+        presenceQ = presenceQ ?: 1.0f,
+        saturationAmount = saturationAmount ?: 0f,
+    )
 }
