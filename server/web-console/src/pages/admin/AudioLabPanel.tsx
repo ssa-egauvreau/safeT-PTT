@@ -913,6 +913,55 @@ export function AudioLabPanel() {
             disabled={!config.postDecode.highShelfEnabled}
             onChange={(v) => updatePost("highShelfDb", v)}
           />
+          {/* Presence bell — narrow boost/cut to mimic the consonant-band
+              emphasis AMBE+2 applies internally. Used by the AMBE+2
+              character preset; can be tweaked freely here. */}
+          <Toggle
+            label="Presence bell (peaking EQ)"
+            value={config.postDecode.presenceEnabled ?? false}
+            onChange={(v) => updatePost("presenceEnabled", v)}
+          />
+          <RangeRow
+            label="Presence cutoff"
+            unit="Hz"
+            min={1200}
+            max={3000}
+            step={50}
+            value={config.postDecode.presenceHz ?? 2200}
+            disabled={!config.postDecode.presenceEnabled}
+            onChange={(v) => updatePost("presenceHz", v)}
+          />
+          <RangeRow
+            label="Presence gain"
+            unit="dB"
+            min={-6}
+            max={6}
+            step={0.5}
+            value={config.postDecode.presenceDb ?? 0}
+            disabled={!config.postDecode.presenceEnabled}
+            onChange={(v) => updatePost("presenceDb", v)}
+          />
+          <RangeRow
+            label="Presence Q"
+            unit=""
+            min={0.4}
+            max={2.0}
+            step={0.1}
+            value={config.postDecode.presenceQ ?? 1.0}
+            disabled={!config.postDecode.presenceEnabled}
+            onChange={(v) => updatePost("presenceQ", v)}
+          />
+          {/* Soft-saturation waveshaper. Adds the "compressed warmth" of a
+              hardware vocoder; 0 disables it entirely. */}
+          <RangeRow
+            label="Soft saturation"
+            unit=""
+            min={0}
+            max={1}
+            step={0.05}
+            value={config.postDecode.saturationAmount ?? 0}
+            onChange={(v) => updatePost("saturationAmount", v)}
+          />
         </fieldset>
         </>)}
       </section>

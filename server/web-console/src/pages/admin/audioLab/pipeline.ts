@@ -66,6 +66,20 @@ export interface AudioLabConfig {
     highShelfEnabled: boolean;
     highShelfHz: number;
     highShelfDb: number;
+    /** Narrow presence bell — used to mimic the consonant emphasis AMBE+2
+     *  applies internally. Optional so legacy stored presets (no field) still
+     *  load cleanly with the rest of the chain. */
+    presenceEnabled?: boolean;
+    /** Centre frequency of the presence bell (Hz). */
+    presenceHz?: number;
+    /** Peak gain at the centre frequency (dB, can be negative). */
+    presenceDb?: number;
+    /** Bell width — higher = narrower. 0.7–1.2 is the useful range. */
+    presenceQ?: number;
+    /** Soft-saturation amount (0..1). Adds the "compressed warmth" that
+     *  distinguishes hardware-codec audio from a clean software round-trip.
+     *  Internally maps to a tanh-style waveshaper drive. */
+    saturationAmount?: number;
   };
 }
 
@@ -147,6 +161,26 @@ class Biquad {
       (A * (A + 1 - (A - 1) * cw - beta * sw)) / a0,
       (-2 * (A - 1 + (A + 1) * cw)) / a0,
       (A + 1 + (A - 1) * cw - beta * sw) / a0,
+    );
+  }
+
+  /** RBJ peaking EQ — narrow boost or cut centred at fc, ±gainDb, with Q.
+   *  Higher Q = narrower bell. Used by the "presence" stage in the
+   *  AMBE+2-character preset to add a small bump around 2.2 kHz where the
+   *  proprietary codec spends most of its bits on consonant intelligibility. */
+  static peak(fc: number, gainDb: number, q: number, fs: number): Biquad {
+    const A = Math.pow(10, gainDb / 40);
+    const w0 = (2 * Math.PI * fc) / fs;
+    const cw = Math.cos(w0);
+    const sw = Math.sin(w0);
+    const alpha = sw / (2 * q);
+    const a0 = 1 + alpha / A;
+    return new Biquad(
+      (1 + alpha * A) / a0,
+      (-2 * cw) / a0,
+      (1 - alpha * A) / a0,
+      (-2 * cw) / a0,
+      (1 - alpha / A) / a0,
     );
   }
 
@@ -536,7 +570,54 @@ export async function processClip(input: Int16Array, cfg: AudioLabConfig): Promi
       Biquad.highshelf(cfg.postDecode.highShelfHz, cfg.postDecode.highShelfDb, FS),
     );
   }
+  // Presence bell + soft saturation. Both default off (and the fields are
+  // optional on AudioLabConfig) so legacy presets that never knew about these
+  // stages process exactly as before. When `presenceEnabled` is true but a
+  // sub-field is missing, fall back to the same defaults the UI displays —
+  // keeps "enabled means audible" as an invariant, instead of silently
+  // skipping the whole stage when only some fields were touched.
+  if (cfg.postDecode.presenceEnabled) {
+    applyBiquadInPlace(
+      shaped,
+      Biquad.peak(
+        cfg.postDecode.presenceHz ?? 2200,
+        cfg.postDecode.presenceDb ?? 0,
+        cfg.postDecode.presenceQ ?? 1.0,
+        FS,
+      ),
+    );
+  }
+  const satAmount = cfg.postDecode.saturationAmount ?? 0;
+  if (satAmount > 0) {
+    applySoftSaturationInPlace(shaped, satAmount);
+  }
   return shaped;
+}
+
+/**
+ * tanh-style waveshaper. `amount` in [0, 1] maps to a perceptual drive: at 0
+ * it's a no-op; at 1 the linear drive is 3.0 (~9.5 dB into the curve), which
+ * is firmly into the saturation region for full-scale input. The output is
+ * normalised against `tanh(drive)` so peak amplitude stays ≤ ±1, removing
+ * the need for an extra limiter downstream.
+ */
+function applySoftSaturationInPlace(pcm: Int16Array, amount: number): void {
+  const clamped = Math.max(0, Math.min(1, amount));
+  if (clamped === 0) {
+    return;
+  }
+  // drive = 1..3 across the [0..1] amount range. The tanh's "knee" sits
+  // around input ±1, so feeding 2..3× drive into a normalised signal
+  // produces a gentle but audible bite without slamming into hard clip.
+  const drive = 1 + clamped * 2;
+  // Output normalisation so peak amplitude stays at ±1 after the shaper —
+  // tanh(drive) is the asymptotic peak for the largest possible input.
+  const norm = 1 / Math.tanh(drive);
+  for (let i = 0; i < pcm.length; i++) {
+    const x = pcm[i] / 32768;
+    const y = Math.tanh(x * drive) * norm;
+    pcm[i] = clamp16(y * 32768);
+  }
 }
 
 /** Runs a recorded clip through the EXACT production audio path — the real
@@ -887,9 +968,64 @@ export const BRIDGE_MINIMAL_PRESET: AudioLabConfig = {
   },
 };
 
+/** Approximation of the perceived "AMBE+2 hardware radio" timbre — applied on
+ *  top of the existing IMBE round-trip. Does NOT change the codec; just shapes
+ *  the decoded output so it sounds more like the proprietary codec used in DMR
+ *  / P25 Phase 2. Combines:
+ *
+ *    - Tighter low-shelf cut around 150 Hz (AMBE+2 rolls off lows more aggressively
+ *      than IMBE)
+ *    - +2 dB presence bell at 2.2 kHz, Q≈1.0 (the band where AMBE+2 spends bits
+ *      on consonant intelligibility)
+ *    - −2 dB high-shelf above 3.4 kHz (sharper HF rolloff than IMBE)
+ *    - Soft-saturation drive (~0.35) for the "compressed warmth" hardware
+ *      vocoders impart that pure software round-trips lack
+ *    - Polyphase 8→16 kHz upsample so the post-decode EQ has room to breathe
+ *    - Bridge-style mic chain (no expander/AGC pumping going INTO the codec) */
+export const AMBE_CHARACTER_PRESET: AudioLabConfig = {
+  preImbe: {
+    windGateEnabled: false,
+    windGateThresholdDb: 6,
+    windGateAttenuationDb: -18,
+    windHpfEnabled: false,
+    windHpfHz: 200,
+    windHpfOrder: 4,
+    hpfEnabled: true,
+    hpfHz: 180,
+    lpfEnabled: true,
+    lpfHz: 3400,
+    agcEnabled: false,
+    agcTargetRms: 6000,
+    agcMaxGain: 6,
+    bypassMicProcessing: true,
+  },
+  vocoder: {
+    bypass: false,
+  },
+  postDecode: {
+    upsampleMode: "polyphase",
+    hpfEnabled: false,
+    hpfHz: 250,
+    lpfEnabled: false,
+    lpfHz: 3300,
+    lowShelfEnabled: true,
+    lowShelfHz: 150,
+    lowShelfDb: -3.5,
+    highShelfEnabled: true,
+    highShelfHz: 3400,
+    highShelfDb: -2,
+    presenceEnabled: true,
+    presenceHz: 2200,
+    presenceDb: 2,
+    presenceQ: 1.0,
+    saturationAmount: 0.35,
+  },
+};
+
 export const BUILTIN_PRESETS: Record<string, AudioLabConfig> = {
   "Default IMBE": DEFAULT_PRESET,
   "Bridge-style minimal": BRIDGE_MINIMAL_PRESET,
+  "AMBE+2 character": AMBE_CHARACTER_PRESET,
   "Phase 2 voice": PHASE2_PRESET,
   Bypass: BYPASS_PRESET,
   "Deep P25 mobile": DEEP_MOBILE_PRESET,
