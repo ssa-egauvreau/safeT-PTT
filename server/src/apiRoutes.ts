@@ -474,43 +474,77 @@ export function createApiRouter(): Router {
           return;
         }
       }
+      const hasDb = !!getPool();
       // Mint a fresh session generation so any token still floating around for
       // this account immediately fails the freshness check on its next call.
-      const newGen = getPool() ? await bumpTokenGeneration(user!.id) : 0;
+      const newGen = hasDb ? await bumpTokenGeneration(user!.id) : 0;
       // Drop the cached "auth is fine" entry for this user so the next request from any prior
       // device sees the new token_generation and gets a 401 immediately, instead of waiting
       // up to TTL for the cache to expire.
       invalidateCachedAuth(user!.id);
+      const postBumpUser = hasDb ? await getUserById(user!.id) : user;
+      // If the row vanished / was disabled between password verification and generation bump,
+      // fail the login so we never seed a "healthy" cache state for a revoked account.
+      if (
+        hasDb &&
+        (!postBumpUser ||
+          postBumpUser.disabled ||
+          postBumpUser.token_generation !== newGen)
+      ) {
+        await writeAudit({
+          agencyId: user?.agency_id ?? null,
+          actorUserId: user?.id ?? null,
+          actorName: username,
+          action: "login_failed",
+          ip: clientIp(req),
+        });
+        res.status(401).json({ error: "invalid_login" });
+        return;
+      }
+      if (hasDb && postBumpUser?.agency_id != null) {
+        const postBumpAgency = await getAgencyById(postBumpUser.agency_id);
+        if (!postBumpAgency || postBumpAgency.disabled) {
+          await writeAudit({
+            agencyId: user?.agency_id ?? null,
+            actorUserId: user?.id ?? null,
+            actorName: username,
+            action: "login_failed",
+            ip: clientIp(req),
+          });
+          res.status(401).json({ error: "invalid_login" });
+          return;
+        }
+      }
       // Seed the cache with the bumped generation right away so a stale in-flight request that
       // read the old generation from Postgres cannot repopulate an older cache entry afterward.
-      setCachedAuth(user!.id, {
+      setCachedAuth(postBumpUser!.id, {
         tokenGeneration: newGen,
         userDisabled: false,
         agencyDisabled: false,
       });
-      const evictedSockets = dropUserVoiceConnections(user!.id);
+      const evictedSockets = dropUserVoiceConnections(postBumpUser!.id);
       const authUser: AuthUser = {
-        id: user!.id,
-        username: user!.username,
-        displayName: user!.display_name,
-        role: user!.role,
-        unitId: user!.unit_id,
-        agencyId: user!.agency_id,
+        id: postBumpUser!.id,
+        username: postBumpUser!.username,
+        displayName: postBumpUser!.display_name,
+        role: postBumpUser!.role,
+        unitId: postBumpUser!.unit_id,
+        agencyId: postBumpUser!.agency_id,
         agencyName: user!.agency_name,
         gen: newGen,
       };
       await writeAudit({
-        agencyId: user!.agency_id,
-        actorUserId: user!.id,
-        actorName: user!.username,
+        agencyId: postBumpUser!.agency_id,
+        actorUserId: postBumpUser!.id,
+        actorName: postBumpUser!.username,
         action: "login",
         ip: clientIp(req),
       });
       if (evictedSockets > 0) {
         await writeAudit({
-          agencyId: user!.agency_id,
-          actorUserId: user!.id,
-          actorName: user!.username,
+          agencyId: postBumpUser!.agency_id,
+          actorUserId: postBumpUser!.id,
+          actorName: postBumpUser!.username,
           action: "session_evicted",
           detail: { dropped_voice_sockets: evictedSockets, new_ip: clientIp(req) },
           ip: clientIp(req),
