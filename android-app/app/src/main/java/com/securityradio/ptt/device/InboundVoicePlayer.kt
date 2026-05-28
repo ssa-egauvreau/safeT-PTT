@@ -11,6 +11,12 @@ import android.os.SystemClock
  *
  * Home-channel RX takes priority over scan listen sockets so two WebSockets
  * cannot interleave samples into one [AudioTrack] (which causes harsh clipping).
+ *
+ * Inbound PCM is handed to an [InboundJitterBuffer] rather than written
+ * directly to AudioTrack so that bursty arrival (the relay forwards frames
+ * the instant they arrive over WebSocket, with no smoothing) is paced out at
+ * a steady cadence and isolated network stalls produce a short fade-to-silence
+ * via PLC instead of a hard cutout.
  */
 class InboundVoicePlayer(
     private val lastRxRecorder: LastRxAudioRecorder? = null,
@@ -18,8 +24,6 @@ class InboundVoicePlayer(
     private val onScanRxActivity: ((channelName: String) -> Unit)? = null,
 ) {
 
-    private val lock = Any()
-    private var track: AudioTrack? = null
     @Volatile
     private var released: Boolean = false
 
@@ -31,6 +35,8 @@ class InboundVoicePlayer(
 
     @Volatile
     private var scanRxHoldUntilMs: Long = 0L
+
+    private val jitterBuffer = InboundJitterBuffer(trackFactory = ::createTrack)
 
     /** PCM from the tuned (home) channel WebSocket. */
     fun writePcmFromMain(chunk: ByteArray) {
@@ -69,15 +75,7 @@ class InboundVoicePlayer(
         } else {
             scalePcm16(chunk, gain)
         }
-        synchronized(lock) {
-            if (released) return
-            var t = track
-            if (t == null) {
-                t = createTrack() ?: return
-                track = t
-            }
-            t.write(out, 0, out.size)
-        }
+        jitterBuffer.enqueue(out)
     }
 
     private fun scalePcm16(chunk: ByteArray, gain: Float): ByteArray {
@@ -149,19 +147,7 @@ class InboundVoicePlayer(
     }
 
     fun stop() {
-        synchronized(lock) {
-            track?.run {
-                try {
-                    if (playState == AudioTrack.PLAYSTATE_PLAYING) {
-                        pause()
-                        flush()
-                    }
-                } catch (_: Exception) {
-                }
-                release()
-            }
-            track = null
-        }
+        jitterBuffer.stop()
         mainRxHoldUntilMs = 0L
         activeScanChannel = null
         scanRxHoldUntilMs = 0L
@@ -170,7 +156,7 @@ class InboundVoicePlayer(
     /** Permanently stop playback; instance must not be used after release. */
     fun release() {
         released = true
-        stop()
+        jitterBuffer.release()
     }
 
     private companion object {
