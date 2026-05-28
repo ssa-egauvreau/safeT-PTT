@@ -99,6 +99,22 @@ export function opusEncoderAvailable(): boolean {
   return getAudioEncoderCtor() !== null && getAudioDataCtor() !== null;
 }
 
+/** RFC 7845 OpusHead — WebCodecs may emit this as a config chunk; Android
+ *  MediaCodec treats it as audio if we forward it on the wire. */
+function isOpusHeadPacket(payload: Uint8Array): boolean {
+  if (payload.length < 8) return false;
+  return (
+    payload[0] === 0x4f &&
+    payload[1] === 0x70 &&
+    payload[2] === 0x75 &&
+    payload[3] === 0x73 &&
+    payload[4] === 0x48 &&
+    payload[5] === 0x65 &&
+    payload[6] === 0x61 &&
+    payload[7] === 0x64
+  );
+}
+
 export class OpusWebEncoder {
   private encoder: AudioEncoderLike | null = null;
   private timestampUs = 0;
@@ -181,12 +197,25 @@ export class OpusWebEncoder {
           console.warn("[opus] encoder error", err);
         },
       });
-      encoder.configure({
-        codec: "opus",
-        sampleRate: SAMPLE_RATE,
-        numberOfChannels: CHANNELS,
-        bitrate: TARGET_BITRATE,
-      });
+      const codecCandidates = ["opus.16000.1", "opus"];
+      let configured = false;
+      for (const codec of codecCandidates) {
+        try {
+          encoder.configure({
+            codec,
+            sampleRate: SAMPLE_RATE,
+            numberOfChannels: CHANNELS,
+            bitrate: TARGET_BITRATE,
+          });
+          configured = true;
+          break;
+        } catch {
+          /* try next registration string */
+        }
+      }
+      if (!configured) {
+        throw new Error("no supported Opus codec string");
+      }
       this.encoder = encoder;
       this.configured = true;
     } catch (err) {
@@ -204,8 +233,18 @@ export class OpusWebEncoder {
    *  decoding. */
   private dispatchEncoded(chunk: EncodedAudioChunkLike): void {
     try {
+      const chunkType = chunk.type;
+      if (chunkType !== "key" && chunkType !== "delta") {
+        return;
+      }
+      if (chunk.byteLength < 1) {
+        return;
+      }
       const payload = new Uint8Array(chunk.byteLength);
       chunk.copyTo(payload);
+      if (isOpusHeadPacket(payload)) {
+        return;
+      }
       const framed = new Uint8Array(2 + payload.length);
       framed[0] = OPUS_MAGIC_0;
       framed[1] = OPUS_MAGIC_1;

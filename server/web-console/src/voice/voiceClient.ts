@@ -995,11 +995,8 @@ export class VoiceChannelClient {
         if (this.currentTxCodec === "opus") {
           const enc = this.ensureOpusEncoder();
           if (enc && enc.isReady()) {
-            // Worklet emits 640 samples (40 ms); Opus needs 320 (20 ms) — same
-            // split IMBE/Codec2 already do via their inner loops.
-            for (let off = 0; off + FRAME_SAMPLES <= pcm.length; off += FRAME_SAMPLES) {
-              enc.encodeFrame(pcm.subarray(off, off + FRAME_SAMPLES));
-            }
+            // Encoded chunks ship from the OpusWebEncoder output callback.
+            enc.encodeFrame(pcm);
             return;
           }
           // Opus asked for but unavailable — fall through to IMBE.

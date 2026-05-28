@@ -215,6 +215,18 @@ class OpusDecoder : VoiceDecoder {
 
     override val isReady: Boolean get() = mediaCodec != null
 
+    override fun resetForTalkSpurt() {
+        synchronized(lock) {
+            val mc = mediaCodec ?: return
+            try {
+                mc.flush()
+                presentationTimeUs = 0
+            } catch (t: Throwable) {
+                Log.w(TAG, "Opus decoder flush failed", t)
+            }
+        }
+    }
+
     override fun decodeFrame(framedBytes: ByteArray): ShortArray? {
         if (framedBytes.size < 3) return null
         if (framedBytes[0] != codec.magic0 || framedBytes[1] != codec.magic1) return null
@@ -265,7 +277,7 @@ class OpusDecoder : VoiceDecoder {
                         val samples = ShortArray(shorts.remaining())
                         shorts.get(samples)
                         mc.releaseOutputBuffer(outputId, false)
-                        return samples
+                        return normalizeFrame(samples)
                     }
                 }
             }
@@ -282,5 +294,24 @@ class OpusDecoder : VoiceDecoder {
             try { mc.stop() } catch (_: Throwable) {}
             try { mc.release() } catch (_: Throwable) {}
         }
+    }
+
+    /** WebCodecs packets occasionally decode to slightly off-size buffers;
+     *  resample to exactly 20 ms @ 16 kHz so playout pacing stays correct. */
+    private fun normalizeFrame(samples: ShortArray): ShortArray {
+        if (samples.size == FRAME_SAMPLES) return samples
+        if (samples.isEmpty()) return samples
+        val out = ShortArray(FRAME_SAMPLES)
+        val last = samples.lastIndex
+        for (i in 0 until FRAME_SAMPLES) {
+            val srcPos = i.toFloat() * last / (FRAME_SAMPLES - 1).coerceAtLeast(1)
+            val idx = srcPos.toInt().coerceIn(0, last)
+            val frac = srcPos - idx
+            val a = samples[idx].toInt()
+            val b = samples[minOf(idx + 1, last)].toInt()
+            val v = (a + (b - a) * frac).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+            out[i] = v.toShort()
+        }
+        return out
     }
 }

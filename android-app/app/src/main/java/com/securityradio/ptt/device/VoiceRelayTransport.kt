@@ -248,9 +248,19 @@ class VoiceRelayTransport(
      * pre-vocoder clients and the soundboard tone-out path).
      */
     private fun dispatchInboundVoice(payload: ByteArray) {
+        val now = System.nanoTime()
+        val newSpurt = lastInboundVoiceNs == 0L || now - lastInboundVoiceNs > talkSpurtGapNs
+        lastInboundVoiceNs = now
+
         if (payload.size >= 2) {
             val decoder = codecRegistry.decoderForMagic(payload[0], payload[1])
             if (decoder != null) {
+                if (newSpurt) {
+                    decoder.resetForTalkSpurt()
+                    if (decoder.nativeSampleRate == 8000) {
+                        postDecodeProcessorProvider()?.reset()
+                    }
+                }
                 if (decoder.codec == VoiceCodec.IMBE && !ensureImbeNativeLoadedForRx()) {
                     // Lazy-load the JNI lib on first IMBE frame so peers stay audible
                     // even before this radio opens the PTT screen. Other codecs load
@@ -322,11 +332,6 @@ class VoiceRelayTransport(
         if (processor == null) {
             return P25ImbeNative.Frames.upsampleDup8kToLe16Mono(pcm8k160)
         }
-        val now = System.nanoTime()
-        if (lastInboundVoiceNs == 0L || now - lastInboundVoiceNs > talkSpurtGapNs) {
-            processor.reset()
-        }
-        lastInboundVoiceNs = now
         return processor.process(pcm8k160)
     }
 

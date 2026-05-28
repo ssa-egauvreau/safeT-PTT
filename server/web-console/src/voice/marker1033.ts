@@ -1,4 +1,5 @@
 import { getToken } from "../api";
+import { resamplePcm16 } from "./wavPcm";
 
 const TARGET_RATE = 16_000;
 
@@ -17,23 +18,6 @@ function audioBufferToPcm16(buffer: AudioBuffer): Int16Array {
     sample /= channels;
     const clamped = Math.max(-1, Math.min(1, sample));
     out[i] = Math.round(clamped * 32767);
-  }
-  return out;
-}
-
-function resamplePcm(input: Int16Array, fromRate: number, toRate: number): Int16Array {
-  if (fromRate === toRate) {
-    return input;
-  }
-  const outLen = Math.max(1, Math.round((input.length * toRate) / fromRate));
-  const out = new Int16Array(outLen);
-  for (let i = 0; i < outLen; i++) {
-    const srcPos = (i * fromRate) / toRate;
-    const idx = Math.floor(srcPos);
-    const frac = srcPos - idx;
-    const a = input[Math.min(idx, input.length - 1)] ?? 0;
-    const b = input[Math.min(idx + 1, input.length - 1)] ?? a;
-    out[i] = Math.round(a + (b - a) * frac);
   }
   return out;
 }
@@ -67,7 +51,7 @@ export async function loadMarker1033Pcm(): Promise<Int16Array> {
       await ctx.close();
       let pcm = audioBufferToPcm16(decoded);
       if (decoded.sampleRate !== TARGET_RATE) {
-        pcm = resamplePcm(pcm, decoded.sampleRate, TARGET_RATE);
+        pcm = resamplePcm16(pcm, decoded.sampleRate, TARGET_RATE);
       }
       cachedPcm = pcm;
       return pcm;

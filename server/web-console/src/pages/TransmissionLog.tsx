@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, describeError, fetchTransmissionAudio, type Transmission, type UserChannel } from "../api";
 import { useUnitAliasResolver } from "../unitAliases";
 import { imbeRoundtripPcm16k, pcm16ToWavBlob } from "../voice/imbeRoundtrip";
+import { pcm16kFromTransmissionWav } from "../voice/wavPcm";
 
 export function formatDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000));
@@ -275,30 +276,9 @@ export function TransmissionLog() {
       return cached;
     }
     const blob = await fetchTransmissionAudio(id);
-    // Reuse the browser's WAV parser (handles header + unknown chunks) so we
-    // don't ship a second decoder. AudioContext gives floats; clamp + scale
-    // back to Int16 for the codec input.
-    const ctx = new AudioContext();
-    let pcm16: Int16Array;
-    let sampleRate: number;
-    try {
-      const audioBuffer = await ctx.decodeAudioData(await blob.arrayBuffer());
-      sampleRate = audioBuffer.sampleRate;
-      const channel = audioBuffer.getChannelData(0);
-      pcm16 = new Int16Array(channel.length);
-      for (let i = 0; i < channel.length; i++) {
-        const s = Math.max(-1, Math.min(1, channel[i]));
-        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-      }
-    } finally {
-      void ctx.close();
-    }
-    // The recorder writes 16 kHz mono PCM. If we ever get a different rate
-    // (older test recording, custom upload), bail rather than producing
-    // wrong-pitched output.
-    if (sampleRate !== 16000) {
-      throw new Error(`Vocoder preview only supports 16 kHz audio (got ${sampleRate} Hz).`);
-    }
+    // Parse the WAV header directly — decodeAudioData often reports 48 kHz
+    // even for 16 kHz files from the recorder.
+    const pcm16 = pcm16kFromTransmissionWav(await blob.arrayBuffer());
     const vocoded = await imbeRoundtripPcm16k(pcm16);
     const wav = pcm16ToWavBlob(vocoded, 16000);
     const url = URL.createObjectURL(wav);

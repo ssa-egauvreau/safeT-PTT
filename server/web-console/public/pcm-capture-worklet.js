@@ -1,5 +1,5 @@
 // AudioWorklet processor: resamples microphone audio to 16 kHz and emits
-// 16-bit signed little-endian PCM frames (~40 ms) for the voice relay.
+// 16-bit signed little-endian PCM frames (20 ms) for the voice relay.
 class PcmCaptureProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -7,7 +7,7 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     // `sampleRate` is a global supplied to the worklet (the AudioContext rate).
     this._step = sampleRate / this._targetRate;
     this._readPos = 0;
-    this._frameSamples = 640; // 40 ms at 16 kHz
+    this._frameSamples = 320; // 20 ms at 16 kHz — matches relay + Opus/IMBE/Codec2 cadence
     this._frame = new Int16Array(this._frameSamples);
     this._frameLen = 0;
   }

@@ -52,4 +52,7 @@ interface VoiceDecoder {
      * samples, or null if the frame is malformed or the codec is not ready.
      */
     fun decodeFrame(framedBytes: ByteArray): ShortArray?
+
+    /** Reset decoder state at an inbound talk-spurt boundary (Opus overrides). */
+    fun resetForTalkSpurt() {}
 }
