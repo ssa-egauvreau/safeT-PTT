@@ -200,11 +200,13 @@ final class ScanVoiceListenTransport {
             switch message {
             case .data(let payload):
                 dispatchInboundVoice(payload)
-            case .string:
-                // Server-side state frames ("joined", "busy", "error") aren't
-                // actionable for a listen-only scan socket — primary RX/TX
-                // signalling already comes from the home channel's transport.
-                break
+            case .string(let text):
+                // `busy`/`error` aren't actionable for a listen-only scan socket —
+                // primary RX/TX signalling comes from the home channel's transport.
+                // `joined` still matters: it confirms a reconnect succeeded, so
+                // reset the backoff counter to avoid stale 30 s delays on the next
+                // isolated drop.
+                if isJoinedFrame(text) { reconnectAttempts = 0 }
             @unknown default:
                 break
             }
@@ -235,6 +237,13 @@ final class ScanVoiceListenTransport {
             // Clear-PCM payload from a peer that lacks the vocoder.
             audio.enqueueIncoming(payload)
             onRx(channelLabel)
+        }
+
+        private func isJoinedFrame(_ text: String) -> Bool {
+            guard let data = text.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = object["type"] as? String else { return false }
+            return type == "joined"
         }
 
         private func scheduleReconnect() {
