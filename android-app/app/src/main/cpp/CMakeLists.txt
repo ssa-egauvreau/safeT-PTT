@@ -58,7 +58,10 @@ if(EXISTS "${CODEC2_DIR}/src/codec2.h")
         "${CODEC2_DIR}/src/interp.c"
         "${CODEC2_DIR}/src/mbest.c"
         "${CODEC2_DIR}/src/newamp1.c"
-        "${CODEC2_DIR}/src/newamp2.c"
+        # newamp2.c does not exist in libcodec2 1.2.0 — only newamp2.h, which
+        # codec2.c includes but doesn't actually call functions from. The
+        # newamp2 codebook tables below ARE referenced as extern data, so
+        # they stay.
         "${CODEC2_DIR}/src/codebook.c"
         "${CODEC2_DIR}/src/codebookd.c"
         "${CODEC2_DIR}/src/codebookjmv.c"
