@@ -235,3 +235,119 @@ test("deriveDeviceAudioConfig: every field type matches the device-side contract
   assert.equal(typeof out.bypassMicProcessing, "boolean");
   assert.equal(Number.isFinite(out.gainMultiplier), true);
 });
+
+// --- DMR character dial -----------------------------------------------------
+
+test("deriveDeviceAudioConfig: dmrCharacter=0 (off) leaves admin postDecode fields untouched", () => {
+  const out = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: {
+      upsampleMode: "polyphase",
+      hpfEnabled: false,
+      lpfEnabled: false,
+      saturationAmount: 0.1,
+      dmrCharacter: 0,
+    },
+    vocoder: {},
+  });
+  // Saturation passes through untouched; HPF/LPF stay disabled.
+  assert.equal(out.postDecode?.saturationAmount, 0.1);
+  assert.equal(out.postDecode?.hpfEnabled, false);
+  assert.equal(out.postDecode?.lpfEnabled, false);
+  assert.equal(out.postDecode?.dmrCharacter, undefined);
+});
+
+test("deriveDeviceAudioConfig: dmrCharacter=50 overrides HPF/LPF/saturation/presence with mid preset", () => {
+  const out = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: {
+      upsampleMode: "polyphase",
+      hpfEnabled: false, // should be force-overridden
+      saturationAmount: 0,
+      dmrCharacter: 50,
+    },
+    vocoder: {},
+  });
+  const pd = out.postDecode!;
+  assert.equal(pd.dmrCharacter, 50);
+  // 250 + 200 * 0.5 = 350 Hz
+  assert.equal(pd.hpfEnabled, true);
+  assert.equal(pd.hpfHz, 350);
+  // 4000 - 1300 * 0.5 = 3350 Hz
+  assert.equal(pd.lpfEnabled, true);
+  assert.equal(pd.lpfHz, 3350);
+  // 0.5 * 0.5 = 0.25
+  assert.equal(pd.saturationAmount, 0.25);
+  // 6 dB * 0.5 = 3 dB
+  assert.equal(pd.presenceEnabled, true);
+  assert.equal(pd.presenceHz, 2200);
+  assert.equal(pd.presenceDb, 3.0);
+});
+
+test("deriveDeviceAudioConfig: dmrCharacter=100 maxes out the radio aesthetic", () => {
+  const out = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: { upsampleMode: "polyphase", dmrCharacter: 100 },
+    vocoder: {},
+  });
+  const pd = out.postDecode!;
+  assert.equal(pd.hpfHz, 450);
+  assert.equal(pd.lpfHz, 2700);
+  assert.equal(pd.saturationAmount, 0.5);
+  assert.equal(pd.presenceDb, 6.0);
+});
+
+test("deriveDeviceAudioConfig: non-numeric dmrCharacter falls back to 0 (untouched)", () => {
+  for (const bad of ["loud", null, NaN, Infinity, undefined]) {
+    const out = deriveDeviceAudioConfig({
+      preImbe: {},
+      postDecode: {
+        upsampleMode: "polyphase",
+        hpfEnabled: false,
+        dmrCharacter: bad,
+      },
+      vocoder: {},
+    });
+    // dmrCharacter coerced to 0 → admin's HPF=false stays.
+    assert.equal(out.postDecode?.hpfEnabled, false, `bad=${String(bad)}`);
+    assert.equal(out.postDecode?.dmrCharacter, undefined, `bad=${String(bad)}`);
+  }
+});
+
+test("deriveDeviceAudioConfig: numeric dmrCharacter outside 0..100 clamps into range", () => {
+  // An admin pushing 200 (e.g. via API or a buggy slider step) should land
+  // on the heavy end of the dial rather than being silently rejected; -50
+  // clamps to 0 (chain off).
+  const high = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: { upsampleMode: "polyphase", dmrCharacter: 200 },
+    vocoder: {},
+  });
+  assert.equal(high.postDecode?.dmrCharacter, 100);
+  assert.equal(high.postDecode?.lpfHz, 2700);
+
+  const negative = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: {
+      upsampleMode: "polyphase",
+      hpfEnabled: false,
+      dmrCharacter: -50,
+    },
+    vocoder: {},
+  });
+  assert.equal(negative.postDecode?.dmrCharacter, undefined);
+  assert.equal(negative.postDecode?.hpfEnabled, false);
+});
+
+test("deriveDeviceAudioConfig: dmrCharacter=1 enables the chain even with duplicate upsample (no longer no-op)", () => {
+  // Without dmrCharacter, this config would short-circuit to postDecode=null
+  // (the no-shaping fast path). With the dial engaged at all, the chain
+  // engages so the radio character is audible.
+  const out = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: { upsampleMode: "duplicate", dmrCharacter: 1 },
+    vocoder: {},
+  });
+  assert.notEqual(out.postDecode, null);
+  assert.equal(out.postDecode?.hpfEnabled, true);
+});

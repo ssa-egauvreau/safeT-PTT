@@ -69,6 +69,14 @@ export interface DevicePostDecodeConfig {
   presenceDb?: number;
   presenceQ?: number;
   saturationAmount?: number;
+  /**
+   * Echoed back to the client purely for telemetry / display ("this channel
+   * is on Radio Character 60"). The actual chain values (HPF / LPF /
+   * presence / saturation) are already baked into the fields above by
+   * [applyDmrCharacter], so the client doesn't have to know what the slider
+   * means — it just applies whatever HPF/LPF/etc it's told.
+   */
+  dmrCharacter?: number;
 }
 
 /**
@@ -197,6 +205,16 @@ function derivePostDecodeBlock(
   optNum("presenceQ");
   optNum("saturationAmount");
 
+  // Radio character dial: an admin can move a single 0–100 slider in the
+  // Audio Lab to get progressively more "trunked-radio" sound (narrower
+  // bandwidth, softer compression, presence bell). The mapping happens
+  // here so legacy admin-pushed fields stay editable while the dial
+  // provides a quick one-knob preset.
+  const dmrCharacter = clampDmrCharacter(raw.dmrCharacter);
+  if (dmrCharacter > 0) {
+    applyDmrCharacter(out, dmrCharacter);
+  }
+
   // Short-circuit: if nothing is actually enabled / engaged AND the upsample
   // is the legacy default, return null so the client takes the no-op fast
   // path. The voice client checks `postDecode === null` exactly for this.
@@ -211,4 +229,42 @@ function derivePostDecodeBlock(
     return null;
   }
   return out;
+}
+
+/** Coerce the admin-supplied `dmrCharacter` to a 0..100 integer. Anything
+ *  out-of-range or non-numeric falls back to 0 (chain off — admin fields
+ *  pass through untouched). */
+function clampDmrCharacter(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, Math.round(raw)));
+}
+
+/**
+ * Map a 0..100 `dmrCharacter` slider value to chain fields that progressively
+ * narrow the audio band and increase saturation, mirroring what AMBE+2 / DMR
+ * hardware does internally. Always overrides the admin-pushed values for
+ * the affected fields — the dial is a one-knob preset, not a hint.
+ *
+ * Anchor points:
+ *   - HPF goes from 250 Hz (subtle) to 450 Hz (heavy low-cut)
+ *   - LPF goes from 4 kHz (light edge taming) to 2.7 kHz (telephone narrow)
+ *   - Soft saturation goes from 0 to 0.5 (audible "warmth")
+ *   - Presence bell adds 0 to +6 dB at 2.2 kHz to mimic consonant emphasis
+ *
+ * Linear interpolation between 0 and 100 keeps the slider smooth.
+ */
+function applyDmrCharacter(out: DevicePostDecodeConfig, c: number): void {
+  out.dmrCharacter = c;
+  const t = c / 100;
+  out.hpfEnabled = true;
+  out.hpfHz = Math.round(250 + 200 * t);
+  out.lpfEnabled = true;
+  out.lpfHz = Math.round(4000 - 1300 * t);
+  out.saturationAmount = Math.round(0.5 * t * 100) / 100;
+  out.presenceEnabled = true;
+  out.presenceHz = 2200;
+  out.presenceDb = Math.round(6 * t * 10) / 10;
+  out.presenceQ = 1.0;
 }

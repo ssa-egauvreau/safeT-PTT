@@ -80,6 +80,12 @@ export interface AudioLabConfig {
      *  distinguishes hardware-codec audio from a clean software round-trip.
      *  Internally maps to a tanh-style waveshaper drive. */
     saturationAmount?: number;
+    /** "Radio character" one-knob preset (0..100). When non-zero, the
+     *  server overrides hpfHz / lpfHz / saturationAmount / presence with
+     *  values derived from this slider, producing progressively more
+     *  "trunked-radio" sound (narrower band, harder saturation, presence
+     *  bell). Zero leaves the manual fields above untouched. */
+    dmrCharacter?: number;
   };
 }
 

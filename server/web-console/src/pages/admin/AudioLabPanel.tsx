@@ -813,6 +813,29 @@ export function AudioLabPanel() {
 
         <fieldset disabled={config.vocoder.bypass}>
           <legend>After decoding — shape the sound for playback</legend>
+          <RangeRow
+            label="Radio character"
+            unit={
+              (config.postDecode.dmrCharacter ?? 0) === 0
+                ? "off"
+                : `/ 100`
+            }
+            min={0}
+            max={100}
+            step={1}
+            value={config.postDecode.dmrCharacter ?? 0}
+            onChange={(v) => updatePost("dmrCharacter", v)}
+          />
+          {(config.postDecode.dmrCharacter ?? 0) > 0 && (
+            <div className="muted small">
+              One-knob preset for the &ldquo;trunked digital radio&rdquo; sound.
+              Higher values narrow the audio band (HPF / LPF), add a presence
+              bell at 2.2 kHz, and increase soft saturation — mimicking what
+              AMBE+2 / DMR hardware does internally. Overrides the HPF, LPF,
+              presence, and saturation fields below; leave at 0 to dial those
+              manually.
+            </div>
+          )}
           <label>
             <span>Upsample mode</span>
             <select
