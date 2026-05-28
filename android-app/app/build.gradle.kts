@@ -170,12 +170,4 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-
-    // Pure-Java Opus encoder/decoder used by OpusVoiceCodec. Pulled from
-    // JitPack because Concentus has no stable Maven Central coordinate.
-    // If JitPack can't resolve this artifact for your build, swap to a
-    // libopus NDK build (mirror the dvmvocoder CMake setup); the registry
-    // falls back to IMBE on TX while Opus is unavailable, so a missing dep
-    // does not make the app silent — only IMBE-only.
-    implementation("com.github.lostromb:concentus:1.0.2")
 }
