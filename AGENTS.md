@@ -36,6 +36,8 @@ This is a push-to-talk radio platform with three Node.js packages:
 ### Key caveats
 
 - The server runs without a database (`DATABASE_URL` not set) and logs "database_unavailable" warnings — this is expected and non-fatal. Radio endpoints (channels, air, presence, talk-activity, voice WebSocket) still function.
+- In Cursor Cloud, if `DATABASE_URL` is inherited from Railway and points at `postgres.railway.internal`, unset it before local API startup unless that private hostname is reachable; otherwise the API may crash after boot when background DB tasks run.
 - The Whisper transcription model and KB embedding model load asynchronously on first boot. If `TRANSCRIPTION=off` and `KB_ENABLED=off` are set, they are skipped entirely (faster startup for dev).
 - The Vite dev server at `:5173` proxies all `/v1/*` and `/health` requests to the API server at `:8080`. Always start the API server first.
 - The desktop-console (`desktop-console/`) is Electron and requires a display; skip it in headless Cloud Agent environments.
+- Android debug builds need the `android-app/app/src/main/cpp/codec2` submodule initialized and an Android SDK with platform 35, build-tools 35.0.0, CMake 3.22.1, and an NDK installed. In this Cloud VM the SDK is under `$HOME/android-sdk`; export `ANDROID_HOME=$HOME/android-sdk`, `ANDROID_SDK_ROOT=$HOME/android-sdk`, and add `$HOME/android-sdk/cmdline-tools/latest/bin:$HOME/android-sdk/platform-tools` to `PATH` before running `cd android-app && ./gradlew assembleDebug`.
