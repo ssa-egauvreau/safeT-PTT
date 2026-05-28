@@ -220,10 +220,7 @@ export class VoiceChannelClient {
   private ws: WebSocket | null = null;
   private state: VoiceState = "idle";
   private permission: Permission = "listen_only";
-  /** Codec the channel asked us to TX with. The web client only encodes
-   *  IMBE today, but tracking the value lets the UI surface it and avoids
-   *  the "raw PCM" cluster warning when a peer's Codec2/Opus frames
-   *  arrive — those frames are now identified by the registry. */
+  /** Codec the channel asked us to TX with (IMBE / Codec2 / Opus). */
   private currentTxCodec: VoiceCodec = DEFAULT_VOICE_CODEC;
 
   private playCtx: AudioContext | null = null;
@@ -998,9 +995,11 @@ export class VoiceChannelClient {
         if (this.currentTxCodec === "opus") {
           const enc = this.ensureOpusEncoder();
           if (enc && enc.isReady()) {
-            // Encoded chunks ship from the OpusWebEncoder output callback,
-            // wired in ensureOpusEncoder to call ws.send directly.
-            enc.encodeFrame(pcm);
+            // Worklet emits 640 samples (40 ms); Opus needs 320 (20 ms) — same
+            // split IMBE/Codec2 already do via their inner loops.
+            for (let off = 0; off + FRAME_SAMPLES <= pcm.length; off += FRAME_SAMPLES) {
+              enc.encodeFrame(pcm.subarray(off, off + FRAME_SAMPLES));
+            }
             return;
           }
           // Opus asked for but unavailable — fall through to IMBE.
