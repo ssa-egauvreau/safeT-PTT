@@ -6,6 +6,13 @@ import { ImbeTxConditioner } from "./imbeTxConditioner";
 import { imbeDecode, imbeEncode, imbeReady, initImbe } from "./imbeVocoder";
 import { PostDecodeProcessor, type PostDecodeConfig } from "./postDecodeChain";
 import { loadMarker1033Pcm } from "./marker1033";
+import {
+  DEFAULT_VOICE_CODEC,
+  WEB_ENCODE_CAPS,
+  detectFrameCodec,
+  isVoiceCodec,
+  type VoiceCodec,
+} from "./voiceCodecRegistry";
 
 export type VoiceState = "idle" | "connecting" | "listening" | "transmitting" | "error" | "closed";
 
@@ -18,6 +25,11 @@ export interface VoiceCallbacks {
   onBusy: (holderUnit: string | null) => void;
   /** Fired when a dispatcher live-moves this unit to another channel (Live Channel Control). */
   onMove?: (toChannel: string, by: string | null) => void;
+  /** Fired when the admin flips the channel's transmit codec, so the UI can
+   *  surface "Channel switched to Opus" or similar. The web client itself
+   *  only encodes IMBE today, so a switch to Codec2/Opus is purely
+   *  informational and the registry's fallback keeps IMBE on TX. */
+  onCodecChange?: (codec: VoiceCodec) => void;
 }
 
 const TARGET_RATE = 16000;
@@ -185,6 +197,11 @@ export class VoiceChannelClient {
   private ws: WebSocket | null = null;
   private state: VoiceState = "idle";
   private permission: Permission = "listen_only";
+  /** Codec the channel asked us to TX with. The web client only encodes
+   *  IMBE today, but tracking the value lets the UI surface it and avoids
+   *  the "raw PCM" cluster warning when a peer's Codec2/Opus frames
+   *  arrive — those frames are now identified by the registry. */
+  private currentTxCodec: VoiceCodec = DEFAULT_VOICE_CODEC;
 
   private playCtx: AudioContext | null = null;
   private playGain: GainNode | null = null;
@@ -244,14 +261,33 @@ export class VoiceChannelClient {
   private warnedClearTx = false;
   /** Already warned once that a peer is shipping continuous raw PCM (voice fallback). */
   private warnedClearRx = false;
+  /** Codecs we have already warned about being unsupported in this client. */
+  private warnedUnsupportedCodecs: Set<VoiceCodec> = new Set();
   /** Timestamps of recent raw PCM frames received — used to distinguish a sustained
    *  voice talk-spurt (many frames in quick succession) from a one-shot marker tone or
    *  tone-out (a single big PCM message). Only the warn-burst window of samples is kept. */
   private clearRxFrameTimes: number[] = [];
 
+  private warnUnsupportedCodecOnce(codec: VoiceCodec): void {
+    if (this.warnedUnsupportedCodecs.has(codec)) return;
+    this.warnedUnsupportedCodecs.add(codec);
+    console.warn(
+      `[voice] received ${codec} frame on "${this.channelName}" — web client cannot decode this codec yet. ` +
+        `Audio from this channel will be silent until the ${codec} WASM module ships.`,
+    );
+  }
+
   constructor(channelName: string, callbacks: VoiceCallbacks) {
     this.channelName = channelName;
     this.callbacks = callbacks;
+  }
+
+  /** Codec the channel is currently asking us to transmit with. Updated by
+   *  the joined reply and by codec_change pushes. The web client only
+   *  encodes IMBE today regardless of this value — exposed for UI display
+   *  and for future TX-side codec selection. */
+  get transmitCodec(): VoiceCodec {
+    return this.currentTxCodec;
   }
 
   get currentPermission(): Permission {
@@ -465,7 +501,16 @@ export class VoiceChannelClient {
 
     ws.onopen = () => {
       ws.send(
-        JSON.stringify({ type: "join", unit_id: "WEB", channel: this.channelName, client: consolePlatform() }),
+        JSON.stringify({
+          type: "join",
+          unit_id: "WEB",
+          channel: this.channelName,
+          client: consolePlatform(),
+          // Web console encodes IMBE only today; Codec2/Opus magic bytes are
+          // recognised on the RX side (so we don't play them as garbage)
+          // but no encoder ships yet. See voiceCodecRegistry.ts.
+          caps: WEB_ENCODE_CAPS,
+        }),
       );
       void loadMarker1033Pcm().catch(() => undefined);
     };
@@ -499,6 +544,7 @@ export class VoiceChannelClient {
       ai_dispatch_listen_pcm?: boolean;
       record_listen_pcm?: boolean;
       enabled?: boolean;
+      codec?: string;
     };
     try {
       msg = JSON.parse(text);
@@ -514,7 +560,22 @@ export class VoiceChannelClient {
       if (msg.ai_dispatch_listen_pcm === true) {
         this.setAiDispatchListenPcm(true);
       }
+      if (isVoiceCodec(msg.codec)) {
+        this.currentTxCodec = msg.codec;
+      } else {
+        this.currentTxCodec = DEFAULT_VOICE_CODEC;
+      }
       this.setState("listening");
+    } else if (msg.type === "codec_change") {
+      // Admin flipped this channel's codec while we were connected. The
+      // web client only encodes IMBE today, so the registry's fallback
+      // keeps us transmitting on IMBE regardless; this just lets the UI
+      // surface the change and stops us logging "raw PCM" warnings when a
+      // peer's Codec2/Opus frames arrive on the new codec.
+      if (isVoiceCodec(msg.codec)) {
+        this.currentTxCodec = msg.codec;
+        this.callbacks.onCodecChange?.(msg.codec);
+      }
     } else if (msg.type === "ai_dispatch_pcm") {
       this.setAiDispatchListenPcm(msg.enabled === true);
     } else if (msg.type === "busy") {
@@ -552,8 +613,11 @@ export class VoiceChannelClient {
     }
     this.markInbound();
     const bytes = new Uint8Array(buffer);
-    // P25 IMBE digital-voice frame: 2-byte marker + 11-byte codeword.
-    if (bytes.byteLength === 13 && bytes[0] === IMBE_MAGIC_0 && bytes[1] === IMBE_MAGIC_1) {
+
+    // Codec dispatch: detect by leading magic bytes so a channel can mix
+    // codecs mid-session without any client-side signaling.
+    const codec = detectFrameCodec(bytes);
+    if (codec === "imbe") {
       const pcm8k = imbeDecode(bytes.subarray(2));
       if (pcm8k) {
         // When the agency pushed post-decode shaping (presence / saturation
@@ -568,6 +632,14 @@ export class VoiceChannelClient {
           this.schedulePcm(upsample8kTo16k(pcm8k));
         }
       }
+      return;
+    }
+    if (codec === "codec2_3200" || codec === "opus") {
+      // Recognised vocoded frame for a codec the web client doesn't decode
+      // yet. Drop the frame (don't feed the speaker the encoded bytes as
+      // PCM) and log once per codec per channel session so the
+      // troubleshooting trail is clear.
+      this.warnUnsupportedCodecOnce(codec);
       return;
     }
     // A sustained burst of raw PCM (multiple frames within ~200 ms) means a peer's IMBE
