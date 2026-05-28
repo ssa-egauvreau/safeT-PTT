@@ -72,6 +72,17 @@ data class RadioUiState(
     val scanActive: Boolean,
 
     /**
+     * True while every desired scan-channel WebSocket is up. Flips false only
+     * after a connection that was once known-good has dropped, so the scan
+     * icon doesn't flash red during the normal initial-connect window after
+     * toggling scan on. Drives the broken-link icon colour — gives the
+     * operator a visible signal when scan is silently failing (e.g. after a
+     * network blip leaves the server-side session dead while our TCP side
+     * still thinks the socket is alive).
+     */
+    val scanLinkHealthy: Boolean = true,
+
+    /**
      * Day / night **preference**: [ThemeMode.AUTO] follows the device light/dark setting in the Compose layer.
      */
     val themeMode: ThemeMode,

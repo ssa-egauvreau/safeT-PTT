@@ -918,6 +918,7 @@ private fun LcdStatusBar(
                         active = rememberScanIconActiveColor(
                             scanActive = state.scanActive,
                             scanReceiving = state.scanBackgroundActive,
+                            linkHealthy = state.scanLinkHealthy,
                         ),
                         muted = p.textMuted,
                         on = state.scanActive,
@@ -1110,11 +1111,19 @@ private fun rememberTen33PulseAlpha(active: Boolean): Float {
     return phase
 }
 
-/** Orange when scan is on; pulses while a scan channel is receiving. */
+/** Orange when scan is on; pulses while a scan channel is receiving; red
+ *  when scan is on but the side-channel sockets are silently broken (e.g.
+ *  a network blip left zombie WebSockets the server has already given up on
+ *  — see [ScanVoiceListenTransport.linkHealthy]). */
 @Composable
-private fun rememberScanIconActiveColor(scanActive: Boolean, scanReceiving: Boolean): Color {
+private fun rememberScanIconActiveColor(
+    scanActive: Boolean,
+    scanReceiving: Boolean,
+    linkHealthy: Boolean = true,
+): Color {
     val p = RadioLcdTheme.palette
     if (!scanActive) return p.statusAmber
+    if (!linkHealthy) return p.statusRed
     if (!scanReceiving) return p.statusAmber
     val transition = rememberInfiniteTransition(label = "scan_rx_icon_flash")
     val flash by transition.animateFloat(
@@ -1916,6 +1925,7 @@ private fun LcdHandsetToolbarStatusIcons(
     val scanIconColor = rememberScanIconActiveColor(
         scanActive = state.scanActive,
         scanReceiving = scanReceiving,
+        linkHealthy = state.scanLinkHealthy,
     )
     val arrangement =
         if (edgeToEdge) Arrangement.SpaceBetween else Arrangement.spacedBy(6.dp)
@@ -2009,6 +2019,7 @@ private fun LcdHandsetToolbarIrc590TopRow(
     val scanIconColor = rememberScanIconActiveColor(
         scanActive = state.scanActive,
         scanReceiving = scanReceiving,
+        linkHealthy = state.scanLinkHealthy,
     )
     val accentOnEmergency = if (state.isEmergencyActive) Color.White else p.textSecondary
     BoxWithConstraints(

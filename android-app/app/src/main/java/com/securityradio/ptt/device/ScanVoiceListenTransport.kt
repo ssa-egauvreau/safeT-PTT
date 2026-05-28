@@ -1,5 +1,8 @@
 package com.securityradio.ptt.device
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -82,6 +85,32 @@ class ScanVoiceListenTransport(
     @Volatile
     private var wantListen: Boolean = false
 
+    private val _linkHealthy = MutableStateFlow(true)
+
+    /**
+     * True while every desired scan channel has a ready socket (or scanning is
+     * off — vacuously healthy). Flips false only after a connection that was
+     * once known-good has dropped, so the icon doesn't flash red during the
+     * normal initial-connect window after toggling scan on.
+     *
+     * Drives the scan icon's broken-link colour in the UI; this is intended
+     * as a defensive UX signal so silent zombie sockets (server gave up on a
+     * session while our TCP side hasn't noticed) are visible to the operator.
+     */
+    val linkHealthy: StateFlow<Boolean> = _linkHealthy.asStateFlow()
+
+    private fun recomputeLinkHealth() {
+        _linkHealthy.value = if (!wantListen) {
+            true
+        } else {
+            val snapshot = channels.values.toList()
+            // Empty (no scan channels configured) → vacuously healthy. Otherwise
+            // every connection must be in a healthy state (either currently
+            // ready, or still in its initial connect window).
+            snapshot.isEmpty() || snapshot.all { it.isHealthy() }
+        }
+    }
+
     fun updateScanListen(
         unitIdUpper: String,
         homeChannel: String,
@@ -114,6 +143,7 @@ class ScanVoiceListenTransport(
                 conn.close()
             }
             channels.clear()
+            recomputeLinkHealth()
             return
         }
         for ((key, label) in desiredByKey) {
@@ -121,6 +151,7 @@ class ScanVoiceListenTransport(
                 ScanChannelConnection(channelLabel = label)
             }?.ensureConnected()
         }
+        recomputeLinkHealth()
     }
 
     fun disconnect() {
@@ -129,6 +160,7 @@ class ScanVoiceListenTransport(
             conn.close()
         }
         channels.clear()
+        recomputeLinkHealth()
     }
 
     fun shutdown() {
@@ -143,14 +175,23 @@ class ScanVoiceListenTransport(
         private val socketReady = AtomicBoolean(false)
         private val reconnectAttempt = AtomicInteger(0)
         private val reconnectPending = AtomicBoolean(false)
+        /** Set once the socket has reached the ready state at least once. Used
+         *  to distinguish "in the initial connect window" (don't flag the link
+         *  as broken yet) from "lost a known-good connection" (flag it). */
+        @Volatile
+        private var hadEverBeenReady: Boolean = false
         @Volatile
         private var webSocket: WebSocket? = null
+
+        fun isHealthy(): Boolean = socketReady.get() || !hadEverBeenReady
 
         private val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 socketReady.set(true)
+                hadEverBeenReady = true
                 reconnectAttempt.set(0)
                 sendJoin(webSocket)
+                recomputeLinkHealth()
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
@@ -159,6 +200,7 @@ class ScanVoiceListenTransport(
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 socketReady.set(false)
+                recomputeLinkHealth()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -166,6 +208,7 @@ class ScanVoiceListenTransport(
                 if (this@ScanChannelConnection.webSocket === webSocket) {
                     this@ScanChannelConnection.webSocket = null
                 }
+                recomputeLinkHealth()
                 scheduleReconnect()
             }
 
@@ -174,14 +217,29 @@ class ScanVoiceListenTransport(
                 if (this@ScanChannelConnection.webSocket === webSocket) {
                     this@ScanChannelConnection.webSocket = null
                 }
+                recomputeLinkHealth()
                 scheduleReconnect()
             }
         }
 
         fun ensureConnected() {
             if (!wantListen) return
-            if (webSocket != null && socketReady.get()) return
-            if (webSocket != null) return
+            val existing = webSocket
+            if (existing != null) {
+                if (socketReady.get()) {
+                    // Re-send the join on the live socket. Mirrors
+                    // VoiceRelayTransport.updateVoiceTarget — after a brief
+                    // network blip the server may have torn down its session
+                    // even though our TCP side hasn't noticed yet (OkHttp
+                    // pings are 25 s apart, so a sub-25 s outage often leaves
+                    // a zombie WS). A fresh join nudges the server to start
+                    // streaming voice again. Without this, scan stays "on" in
+                    // the UI but no audio arrives until the user toggles scan
+                    // off → on to force a fresh socket + join.
+                    sendJoin(existing)
+                }
+                return
+            }
             openSocket()
         }
 

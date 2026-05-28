@@ -360,6 +360,15 @@ class RadioViewModel(
                 .collect { online -> onConnectivityChanged(online) }
         }
         viewModelScope.launch {
+            scanVoiceListen.linkHealthy
+                .distinctUntilChanged()
+                .collect { healthy ->
+                    if (_uiState.value.scanLinkHealthy != healthy) {
+                        _uiState.update { it.copy(scanLinkHealthy = healthy) }
+                    }
+                }
+        }
+        viewModelScope.launch {
             externalMicMonitor.connected.collect { connected ->
                 if (_uiState.value.externalMicConnected != connected) {
                     _uiState.update { it.copy(externalMicConnected = connected) }
