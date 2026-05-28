@@ -2,17 +2,21 @@ package com.securityradio.ptt.device
 
 import android.media.AudioTrack
 import android.os.SystemClock
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * Software jitter buffer + PLC (packet-loss concealment) for inbound voice.
  *
- * The voice relay forwards IMBE frames over WebSocket as soon as they arrive,
- * with no smoothing on either side. Network jitter therefore lands directly on
- * playout: bursts of frames followed by stalls. Without a jitter buffer the
- * handset AudioTrack drains during a stall, underruns, and plays silence (or
- * stale samples on some OEM HALs) — heard by the operator as a hard cutout.
+ * The voice relay forwards voice frames over WebSocket as soon as they
+ * arrive, with no smoothing on either side. Network jitter therefore lands
+ * directly on playout: bursts of frames followed by stalls. Without a
+ * jitter buffer the handset AudioTrack drains during a stall, underruns,
+ * and plays silence (or stale samples on some OEM HALs) — heard by the
+ * operator as a hard cutout.
  *
- * This buffer sits between IMBE decode and AudioTrack:
+ * This buffer sits between the codec decoder and AudioTrack:
  *   - Producer (WebSocket thread) calls [enqueue] as PCM frames arrive.
  *   - A dedicated playout thread drains the queue at a fixed wall-clock cadence
  *     and writes to AudioTrack.
@@ -29,7 +33,8 @@ class InboundJitterBuffer(
     private val trackFactory: () -> AudioTrack?,
 ) {
 
-    private val lock: java.lang.Object = java.lang.Object()
+    private val lock = ReentrantLock()
+    private val notEmpty = lock.newCondition()
     private val queue = ArrayDeque<ByteArray>()
     private var lastGoodFrame: ByteArray? = null
     private var plcCount = 0
@@ -44,7 +49,7 @@ class InboundJitterBuffer(
 
     fun enqueue(pcm: ByteArray) {
         if (pcm.isEmpty()) return
-        synchronized(lock) {
+        lock.withLock {
             if (released) return
             if (track == null) {
                 val t = trackFactory() ?: return
@@ -71,7 +76,7 @@ class InboundJitterBuffer(
             while (queue.size > MAX_BUFFER_FRAMES) {
                 queue.removeFirst()
             }
-            lock.notifyAll()
+            notEmpty.signalAll()
         }
     }
 
@@ -79,7 +84,7 @@ class InboundJitterBuffer(
     fun stop() {
         val t: AudioTrack?
         val th: Thread?
-        synchronized(lock) {
+        lock.withLock {
             running = false
             t = track
             th = thread
@@ -89,7 +94,7 @@ class InboundJitterBuffer(
             lastGoodFrame = null
             plcCount = 0
             lastEnqueueMs = 0L
-            lock.notifyAll()
+            notEmpty.signalAll()
         }
         th?.interrupt()
         try {
@@ -118,13 +123,13 @@ class InboundJitterBuffer(
     private fun playoutLoop(t: AudioTrack) {
         // Initial cushion: wait for a small target depth before the first
         // write so an opening burst-then-stall does not immediately PLC.
-        synchronized(lock) {
+        lock.withLock {
             val waitStart = SystemClock.elapsedRealtime()
             while (running && queue.size < INITIAL_TARGET_FRAMES &&
                 SystemClock.elapsedRealtime() - waitStart < INITIAL_TIMEOUT_MS
             ) {
                 try {
-                    lock.wait(WAKE_POLL_MS)
+                    notEmpty.await(WAKE_POLL_MS, TimeUnit.MILLISECONDS)
                 } catch (_: InterruptedException) {
                     return
                 }
@@ -145,19 +150,7 @@ class InboundJitterBuffer(
                 }
             }
 
-            val frame: ByteArray = synchronized(lock) {
-                if (!running) return
-                if (queue.isNotEmpty()) {
-                    val f = queue.removeFirst()
-                    lastGoodFrame = f
-                    plcCount = 0
-                    f
-                } else {
-                    val plc = synthesizePlc()
-                    plcCount++
-                    plc
-                }
-            }
+            val frame = nextPlayoutFrame() ?: return
 
             try {
                 t.write(frame, 0, frame.size)
@@ -169,6 +162,27 @@ class InboundJitterBuffer(
             // chunks (e.g. clear-PCM fallback when the JNI vocoder is missing)
             // still play out at the correct rate.
             nextDeadline += frameDurationMs(frame.size)
+        }
+    }
+
+    /** Pulls one frame from the queue (real audio) or synthesises a PLC
+     *  frame when the queue is empty at playout time. Returns null when the
+     *  pacer should exit (the buffer has been stopped). Split out of
+     *  [playoutLoop] so the synchronized section has a clear scope and the
+     *  control-flow stays linear. */
+    private fun nextPlayoutFrame(): ByteArray? {
+        lock.withLock {
+            if (!running) return null
+            return if (queue.isNotEmpty()) {
+                val f = queue.removeFirst()
+                lastGoodFrame = f
+                plcCount = 0
+                f
+            } else {
+                val plc = synthesizePlc()
+                plcCount++
+                plc
+            }
         }
     }
 
