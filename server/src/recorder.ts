@@ -6,7 +6,8 @@ import { insertTransmission } from "./store.js";
 import { encodeWavPcm16 } from "./wav.js";
 import { enqueueTranscription } from "./transcribe.js";
 import { isAiDispatchChannelCached } from "./aiDispatch/channelCache.js";
-import { createImbeDecoder, type ImbeStreamDecoder } from "./imbeServerCodec.js";
+import { createImbeDecoder } from "./imbeServerCodec.js";
+import { createCodec2Decoder } from "./codec2ServerCodec.js";
 import { detectFrameCodec, type VoiceCodec } from "./voiceCodecs.js";
 
 const SAMPLE_RATE = 16000;
@@ -17,10 +18,29 @@ const MAX_MS = 5 * 60 * 1000;
 /** Ignore key bumps shorter than this (~300 ms of 16 kHz mono PCM-16). */
 const MIN_BYTES = Math.round(SAMPLE_RATE * 2 * 0.3);
 
-/** Codecs the server can decode for the recorder. Codec2 / Opus arrive via
- *  the clear-PCM sideband on the recording path today, so a vocoded frame in
- *  those codecs is dropped rather than written into the WAV as raw bytes. */
-const SERVER_DECODABLE: ReadonlySet<VoiceCodec> = new Set(["imbe"]);
+/** Common shape of every server-side vocoder decoder. Both
+ *  [ImbeStreamDecoder] and [Codec2StreamDecoder] satisfy this — the
+ *  recorder just calls decode/free without caring which codec is doing
+ *  the work. */
+interface VoiceStreamDecoder {
+  decode(framed: Buffer): Buffer | null;
+  free(): void;
+}
+
+/** Codecs the server can decode for the recorder. Opus arrives via the
+ *  clear-PCM sideband on the recording path today (no node-side Opus
+ *  decoder lib in tree yet); a vocoded Opus frame is dropped rather than
+ *  written into the WAV as raw bytes. */
+const SERVER_DECODABLE: ReadonlySet<VoiceCodec> = new Set(["imbe", "codec2_3200"]);
+
+/** Factory map keyed by codec — the per-recording decoder is allocated
+ *  lazily on the first vocoded frame of each talk-spurt so a channel
+ *  that only ever sees clear-PCM never pays the WASM init cost. */
+const DECODER_FACTORIES: Record<VoiceCodec, (() => VoiceStreamDecoder | null) | null> = {
+  imbe: createImbeDecoder,
+  codec2_3200: createCodec2Decoder,
+  opus: null,
+};
 
 /** Log "no server decoder for X" once per codec per process to avoid spam. */
 const warnedNoDecoder = new Set<VoiceCodec>();
@@ -52,8 +72,12 @@ interface ActiveRecording extends FrameAttribution {
   lastFrameMs: number;
   chunks: Buffer[];
   bytes: number;
-  /** Decoder dedicated to this talk-spurt's digital frames (created on demand). */
-  decoder: ImbeStreamDecoder | null;
+  /** Decoders dedicated to this talk-spurt's digital frames, keyed by
+   *  codec. Codec state carries frame-to-frame (LPC / pitch / sine
+   *  history) so each (recording, codec) pair gets its own decoder. A
+   *  mid-talk-spurt codec change (rare but possible) allocates a second
+   *  entry rather than reusing the first. */
+  decoders: Map<VoiceCodec, VoiceStreamDecoder>;
 }
 
 const active = new Map<string, ActiveRecording>();
@@ -71,10 +95,10 @@ async function finalize(rec: ActiveRecording): Promise<void> {
   if (active.get(recKey(rec)) === rec) {
     active.delete(recKey(rec));
   }
-  if (rec.decoder) {
-    rec.decoder.free();
-    rec.decoder = null;
+  for (const dec of rec.decoders.values()) {
+    dec.free();
   }
+  rec.decoders.clear();
   if (rec.bytes < MIN_BYTES) {
     return;
   }
@@ -113,7 +137,14 @@ export function recordFrame(attr: FrameAttribution, payload: Buffer): void {
     rec = undefined;
   }
   if (!rec) {
-    rec = { ...attr, startedAt: now, lastFrameMs: now, chunks: [], bytes: 0, decoder: null };
+    rec = {
+      ...attr,
+      startedAt: now,
+      lastFrameMs: now,
+      chunks: [],
+      bytes: 0,
+      decoders: new Map(),
+    };
     active.set(key, rec);
   }
   const preferClearPcm =
@@ -140,10 +171,22 @@ export function recordFrame(attr: FrameAttribution, payload: Buffer): void {
       }
       return;
     }
-    if (!rec.decoder) {
-      rec.decoder = createImbeDecoder();
+    let decoder = rec.decoders.get(codec);
+    if (!decoder) {
+      const factory = DECODER_FACTORIES[codec];
+      if (!factory) {
+        return;
+      }
+      const created = factory();
+      if (!created) {
+        // Codec lib failed to load (WASM init error, mismatched mode); the
+        // factory already logged once. Drop the frame; later frames retry.
+        return;
+      }
+      decoder = created;
+      rec.decoders.set(codec, decoder);
     }
-    const decoded = rec.decoder ? rec.decoder.decode(payload) : null;
+    const decoded = decoder.decode(payload);
     if (!decoded) {
       return;
     }
