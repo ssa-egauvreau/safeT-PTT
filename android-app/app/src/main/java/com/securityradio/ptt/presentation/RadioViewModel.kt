@@ -360,13 +360,14 @@ class RadioViewModel(
                 .collect { online -> onConnectivityChanged(online) }
         }
         viewModelScope.launch {
-            scanVoiceListen.linkHealthy
-                .distinctUntilChanged()
-                .collect { healthy ->
-                    if (_uiState.value.scanLinkHealthy != healthy) {
-                        _uiState.update { it.copy(scanLinkHealthy = healthy) }
-                    }
+            // StateFlow dedupes via Operator Fusion — no explicit
+            // `.distinctUntilChanged()` needed (kotlinx-coroutines flags that
+            // as a deprecation error on a StateFlow).
+            scanVoiceListen.linkHealthy.collect { healthy ->
+                if (_uiState.value.scanLinkHealthy != healthy) {
+                    _uiState.update { it.copy(scanLinkHealthy = healthy) }
                 }
+            }
         }
         viewModelScope.launch {
             externalMicMonitor.connected.collect { connected ->
