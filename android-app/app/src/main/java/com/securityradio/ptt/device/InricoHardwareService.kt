@@ -84,9 +84,10 @@ class InricoHardwareService : AccessibilityService() {
         val isPlayLast = repository.getMapping(HardwareAction.PLAY_LAST_TRANSMISSION).contains(keyCode)
         val isVolumeCheck = repository.getMapping(HardwareAction.VOLUME_CHECK).contains(keyCode)
         val isToggleDayNight = repository.getMapping(HardwareAction.TOGGLE_DAY_NIGHT).contains(keyCode)
+        val isForceInstallUpdate = repository.getMapping(HardwareAction.FORCE_INSTALL_UPDATE).contains(keyCode)
 
         if (isPtt || isEmergency || isChanUp || isChanDown || isScanToggle || isPlayLast || isVolumeCheck ||
-            isToggleDayNight
+            isToggleDayNight || isForceInstallUpdate
         ) {
             when (event.action) {
                 KeyEvent.ACTION_DOWN -> {
@@ -100,6 +101,7 @@ class InricoHardwareService : AccessibilityService() {
                             isPlayLast -> HardwareButtonRelay.sendEvent(HardwareButtonEvent.PlayLastTransmissionPressed)
                             isVolumeCheck -> HardwareButtonRelay.sendEvent(HardwareButtonEvent.VolumeCheckPressed)
                             isToggleDayNight -> HardwareButtonRelay.sendEvent(HardwareButtonEvent.ToggleDayNightPressed)
+                            isForceInstallUpdate -> HardwareButtonRelay.sendEvent(HardwareButtonEvent.ForceInstallUpdatePressed)
                         }
                     }
                 }

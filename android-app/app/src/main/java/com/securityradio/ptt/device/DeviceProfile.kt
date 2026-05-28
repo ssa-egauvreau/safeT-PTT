@@ -207,6 +207,7 @@ object DeviceProfileResolver {
         HardwareAction.PLAY_LAST_TRANSMISSION -> emptySet()
         HardwareAction.VOLUME_CHECK -> emptySet()
         HardwareAction.TOGGLE_DAY_NIGHT -> emptySet()
+        HardwareAction.FORCE_INSTALL_UPDATE -> emptySet()
     }
 
     /** IRC590 programmable side keys (Inrico key codes). */
@@ -219,6 +220,7 @@ object DeviceProfileResolver {
         HardwareAction.PLAY_LAST_TRANSMISSION -> setOf(232)
         HardwareAction.VOLUME_CHECK -> setOf(231)
         HardwareAction.TOGGLE_DAY_NIGHT -> setOf(230)
+        HardwareAction.FORCE_INSTALL_UPDATE -> emptySet()
     }
 
     /** Inrico TM-7 Plus hardware keys (emergency key + four programmable keys). */
@@ -231,5 +233,6 @@ object DeviceProfileResolver {
         HardwareAction.PLAY_LAST_TRANSMISSION -> setOf(133)
         HardwareAction.VOLUME_CHECK -> setOf(24, 25)
         HardwareAction.TOGGLE_DAY_NIGHT -> setOf(134)
+        HardwareAction.FORCE_INSTALL_UPDATE -> emptySet()
     }
 }
