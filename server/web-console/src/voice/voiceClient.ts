@@ -39,6 +39,26 @@ const TARGET_RATE = 16000;
 const CAPTURE_WORKLET_URL = "/pcm-capture-worklet.js";
 /** Small FFT window — enough for a smooth RMS level, cheap to read every frame. */
 const WAVEFORM_FFT_SIZE = 256;
+
+// --- Jitter buffer + PLC ---------------------------------------------------
+// These mirror the Android/iOS InboundJitterBuffer constants so dispatcher
+// consoles see the same cutout behaviour as field handsets.
+//
+// 20 ms frames at the relay's cadence; the cushion gives the playout
+// schedule ~80 ms of slack before the playHead falls behind ctx.currentTime
+// and PLC fill kicks in.
+const FRAME_SAMPLES = 320;
+const JITTER_CUSHION_SEC = 0.08;
+/** > 300 ms between voice frames marks a new talk-spurt — clear PLC state so
+ *  the next talker isn't preceded by a faded copy of the previous one. */
+const TALK_SPURT_GAP_SEC = 0.3;
+/** Number of PLC frames synthesised before the loop falls to silence.
+ *  3 × 20 ms = 60 ms of fade-out, then silence — masks an isolated late
+ *  frame without looping a stuck note when the network stalls for seconds. */
+const PLC_FADE_FRAMES = 3;
+/** Hard cap on how many PLC frames a single underrun can emit, so a multi-
+ *  second stall doesn't queue a wall of fade frames into the audio engine. */
+const MAX_PLC_FILL_FRAMES = 8;
 // Two-byte marker prefixing P25 IMBE digital-voice frames the browser cannot decode.
 const IMBE_MAGIC_0 = 0xf5;
 const IMBE_MAGIC_1 = 0xab;
@@ -212,6 +232,21 @@ export class VoiceChannelClient {
   private playHead = 0;
   private volume = 1;
   private muted = false;
+
+  /** Last decoded voice frame, kept so PLC can re-emit it with a fade when
+   *  the playout queue underruns. Set to null on talk-spurt boundary so a
+   *  stale tail can't bleed into the next talker's first frame.
+   *  [lastGoodVoicePcm.length] carries the sample count; PLC frames reuse
+   *  the same length so a sample-rate mismatch (admin switched upsample
+   *  mode mid-stream) doesn't desync the playout. */
+  private lastGoodVoicePcm: Int16Array | null = null;
+  /** Number of consecutive PLC frames synthesised since the last real
+   *  voice frame. Caps at PLC_FADE_FRAMES — after that the chain falls to
+   *  silence so a long stall doesn't loop a stuck note. */
+  private plcFrameCount: number = 0;
+  /** AudioContext time (seconds) of the last real voice frame. Used to
+   *  detect talk-spurt boundaries (>300 ms gap = new talker, reset PLC). */
+  private lastVoiceAt: number = 0;
 
   // Analyser taps for waveform visualisation: one on the inbound (RX) chain and
   // one on the mic (TX) chain. Both are read on demand by getLevel().
@@ -757,13 +792,68 @@ export class VoiceChannelClient {
     if (ctx.state === "suspended") {
       void ctx.resume();
     }
+    const sampleRate = opts.sampleRate ?? TARGET_RATE;
+    const now = ctx.currentTime;
+
+    // Voice frames go through the jitter buffer + PLC path; local tones
+    // (10-33 markers, tone-outs, soundboard cues — track=true) bypass it
+    // because they're one-shot and shouldn't be faded or filled.
+    if (!opts.track) {
+      // Talk-spurt boundary: > 300 ms of silence between voice frames means
+      // a new talker. Drop the stale tail so the next talker doesn't get a
+      // faded-out copy of the previous one in their opening moment.
+      if (
+        this.lastVoiceAt > 0 &&
+        now - this.lastVoiceAt > TALK_SPURT_GAP_SEC
+      ) {
+        this.lastGoodVoicePcm = null;
+        this.plcFrameCount = 0;
+      }
+
+      // Underrun fill: if the playout queue has drained (playHead is behind
+      // the audio context's current time), synthesise PLC frames to bridge
+      // the gap before scheduling the new frame. Capped so a multi-second
+      // stall produces ~80 ms of fade + silence, not minutes of stale audio.
+      if (this.playHead > 0 && this.playHead < now) {
+        const gapSec = now + JITTER_CUSHION_SEC - this.playHead;
+        const frameSec = FRAME_SAMPLES / sampleRate;
+        const gapFrames = Math.min(
+          MAX_PLC_FILL_FRAMES,
+          Math.max(0, Math.ceil(gapSec / frameSec)),
+        );
+        for (let i = 0; i < gapFrames; i++) {
+          this.scheduleRawPcm(this.synthesizePlcFrame(sampleRate), sampleRate, false);
+        }
+      }
+      this.lastVoiceAt = now;
+    }
+
+    this.scheduleRawPcm(pcm, sampleRate, opts.track ?? false);
+
+    if (!opts.track) {
+      // Cache the just-played frame for future PLC. Copy out so a caller
+      // that reuses the buffer (e.g. WebCodecs may recycle) can't mutate
+      // our cached frame from under us.
+      this.lastGoodVoicePcm = new Int16Array(pcm);
+      this.plcFrameCount = 0;
+    }
+  }
+
+  /** Schedule one PCM buffer at the running playHead. Splits out of
+   *  schedulePcm so the PLC fill loop above can re-enter without recursing
+   *  the talk-spurt / underrun bookkeeping. */
+  private scheduleRawPcm(pcm: Int16Array, sampleRate: number, track: boolean): void {
+    const ctx = this.playCtx;
+    if (!ctx || pcm.length === 0) {
+      return;
+    }
     // AudioBuffer carries its own sampleRate independent of the AudioContext;
     // the browser handles any resample to the context rate transparently. So
     // a 24 kHz buffer scheduled into a 16 kHz context plays correctly — just
     // slightly more expensive than rate-matched playback. The voice-client
     // AudioContext stays at TARGET_RATE so legacy tone-out / marker buffers
     // keep playing rate-matched.
-    const frame = ctx.createBuffer(1, pcm.length, opts.sampleRate ?? TARGET_RATE);
+    const frame = ctx.createBuffer(1, pcm.length, sampleRate);
     const out = frame.getChannelData(0);
     for (let i = 0; i < pcm.length; i++) {
       out[i] = pcm[i] / 0x8000;
@@ -778,15 +868,39 @@ export class VoiceChannelClient {
 
     const now = ctx.currentTime;
     if (this.playHead < now + 0.04) {
-      this.playHead = now + 0.08; // jitter cushion when starting or after a gap
+      this.playHead = now + JITTER_CUSHION_SEC; // initial / post-gap cushion
     }
     source.start(this.playHead);
     this.playHead += frame.duration;
 
-    if (opts.track) {
+    if (track) {
       this.localTones.add(source);
       source.onended = () => this.localTones.delete(source);
     }
+  }
+
+  /** Build a PLC concealment frame from the last good voice PCM. Linear
+   *  fade-out across [PLC_FADE_FRAMES] iterations, then silence. A short
+   *  fade masks an isolated late frame; the silence floor prevents a
+   *  multi-second stall from looping the same syllable. */
+  private synthesizePlcFrame(sampleRate: number): Int16Array {
+    const samples = Math.max(1, Math.round(FRAME_SAMPLES * (sampleRate / TARGET_RATE)));
+    const last = this.lastGoodVoicePcm;
+    if (!last) {
+      this.plcFrameCount++;
+      return new Int16Array(samples); // silence
+    }
+    if (this.plcFrameCount >= PLC_FADE_FRAMES) {
+      this.plcFrameCount++;
+      return new Int16Array(last.length); // silence at last frame's size
+    }
+    const gain = 1 - (this.plcFrameCount + 1) / (PLC_FADE_FRAMES + 1);
+    this.plcFrameCount++;
+    const out = new Int16Array(last.length);
+    for (let i = 0; i < last.length; i++) {
+      out[i] = (last[i] * gain) | 0;
+    }
+    return out;
   }
 
   /** Plays a locally-generated tone (marker / tone-out) that Stop All Sounds can cut. */
