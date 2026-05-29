@@ -51,10 +51,15 @@ const WAVEFORM_FFT_SIZE = 256;
 // consoles see the same cutout behaviour as field handsets.
 //
 // 20 ms frames at the relay's cadence; the cushion gives the playout
-// schedule ~80 ms of slack before the playHead falls behind ctx.currentTime
-// and PLC fill kicks in.
+// schedule ~120 ms of slack before the playHead falls behind ctx.currentTime
+// and PLC fill kicks in. Bumped from 80 ms (in lockstep with the handset
+// jitter buffers) after cutting-out reports on cellular — WebSocket runs
+// over TCP, so a single upstream loss triggers a retransmission burst that
+// can stall arrival for 100–200 ms. 120 ms of cushion absorbs typical
+// retransmits without PLC kicking in. Trade-off: +40 ms steady-state
+// mouth-to-ear latency.
 const FRAME_SAMPLES = 320;
-const JITTER_CUSHION_SEC = 0.08;
+const JITTER_CUSHION_SEC = 0.12;
 /** > 300 ms between voice frames marks a new talk-spurt — clear PLC state so
  *  the next talker isn't preceded by a faded copy of the previous one. */
 const TALK_SPURT_GAP_SEC = 0.3;

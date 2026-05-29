@@ -222,12 +222,19 @@ class InboundJitterBuffer(
         // 16 kHz mono PCM16 — 2 bytes per sample.
         const val BYTES_PER_SECOND = 16_000 * 2
 
-        // Initial cushion: 3 frames × 20 ms ≈ 60 ms before draining.
-        const val INITIAL_TARGET_FRAMES = 3
-        const val INITIAL_TIMEOUT_MS = 200L
+        // Initial cushion: 6 frames × 20 ms ≈ 120 ms before draining. Bumped from 60 ms after
+        // field reports of cutting-out on cellular — WebSocket is over TCP, so a single upstream
+        // loss triggers a retransmission burst that can stall arrival for 100–200 ms. 120 ms of
+        // cushion absorbs typical retransmit windows without the playout underrunning into PLC.
+        // Trade-off: +60 ms steady-state mouth-to-ear latency. Still well under perceptual PTT
+        // expectation (~400 ms before operators notice "lag").
+        const val INITIAL_TARGET_FRAMES = 6
+        const val INITIAL_TIMEOUT_MS = 300L
 
-        // Worst-case buffered audio. 16 × 20 ms ≈ 320 ms.
-        const val MAX_BUFFER_FRAMES = 16
+        // Worst-case buffered audio. 30 × 20 ms ≈ 600 ms. Bumped from 320 ms so a longer
+        // retransmission stall accumulates instead of dropping frames; steady-state latency is
+        // still governed by INITIAL_TARGET_FRAMES and the playout drain rate.
+        const val MAX_BUFFER_FRAMES = 30
 
         // Talk-spurt boundary; matches the relay air-claim window so an
         // operator gap between transmissions clears stale state cleanly.
