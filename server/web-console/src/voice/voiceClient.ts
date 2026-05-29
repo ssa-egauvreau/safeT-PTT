@@ -14,7 +14,7 @@ import {
 } from "./codec2Vocoder";
 import { OpusWebDecoder } from "./opusDecoder";
 import { OpusWebEncoder, opusEncoderAvailable } from "./opusEncoder";
-import { PostDecodeProcessor, type PostDecodeConfig } from "./postDecodeChain";
+import { PostDecodeProcessor, endOfTxCue, type PostDecodeConfig } from "./postDecodeChain";
 import { loadMarker1033Pcm } from "./marker1033";
 import {
   DEFAULT_VOICE_CODEC,
@@ -289,6 +289,10 @@ export class VoiceChannelClient {
    *  inbound talk-spurt boundary so a previous talker's biquad ring can't
    *  bleed into the next talker's first frame. */
   private postDecodeProcessor: PostDecodeProcessor | null = null;
+  /** Raw post-decode config cached from refreshAudioConfig(). Drives the
+   *  wideband (Opus) routing decision and the end-of-TX cue synthesis on
+   *  `air_released`. `null` when no shaping is configured. */
+  private postDecodeConfig: PostDecodeConfig | null = null;
   /** Promise resolved once refreshAudioConfig() has settled (success or fail)
    *  for the most recent connect(). startTransmit awaits this so the very
    *  first PTT after connect uses the right getUserMedia constraints instead
@@ -337,7 +341,7 @@ export class VoiceChannelClient {
    *  once per channel session that actually receives Opus. */
   private ensureOpusDecoder(): OpusWebDecoder | null {
     if (this.opusDecoder) return this.opusDecoder;
-    const dec = new OpusWebDecoder((pcm) => this.schedulePcm(pcm));
+    const dec = new OpusWebDecoder((pcm) => this.playOpusPcm(pcm));
     if (!dec.isReady()) {
       // Construction failed (no WebCodecs / no Opus support). Cache the
       // failed decoder anyway so we don't reconstruct on every frame.
@@ -429,6 +433,7 @@ export class VoiceChannelClient {
       // computes biquad coefficients once); the per-frame `process()` is
       // the hot path.
       const pd = (res.config?.postDecode ?? null) as PostDecodeConfig | null;
+      this.postDecodeConfig = pd;
       this.postDecodeProcessor = pd ? new PostDecodeProcessor(pd) : null;
     } catch (err) {
       console.warn(
@@ -680,6 +685,12 @@ export class VoiceChannelClient {
       // A dispatcher live-moved this unit (Live Channel Control). The client
       // re-joins the new channel; the relay does not migrate the socket itself.
       this.callbacks.onMove?.(msg.channel, msg.by ?? null);
+    } else if (msg.type === "air_released") {
+      // Another unit on this channel just unkeyed. Synthesize the close-side
+      // end-of-TX cue (roger beep / squelch tail) locally and inject it into
+      // playout. Gated by the agency config flags — does nothing unless at
+      // least one of rogerBeepEnabled / squelchTailEnabled is set.
+      this.playEndOfTxCue();
     } else if (msg.type === "error") {
       this.setState("error", JOIN_ERRORS[msg.code ?? ""] ?? `Join rejected (${msg.code ?? "unknown"}).`);
       this.close();
@@ -782,6 +793,20 @@ export class VoiceChannelClient {
       }
     }
     this.schedulePcm(new Int16Array(buffer, 0, Math.floor(buffer.byteLength / 2)));
+  }
+
+  /** Plays a decoded Opus frame (already 16 kHz mono Int16). When the agency
+   *  enabled `wideband`, the frame runs through the shared post-decode chain's
+   *  wideband entry point — same biquad → compressor → saturation tail as the
+   *  8 kHz vocoders, but skipping the upsample since Opus is already 16 kHz.
+   *  Otherwise the frame plays unshaped (today's behaviour). Output is always
+   *  16 kHz regardless of the config's `upsampleMode`. */
+  private playOpusPcm(pcm: Int16Array): void {
+    if (this.postDecodeProcessor && this.postDecodeConfig?.wideband === true) {
+      this.schedulePcm(this.postDecodeProcessor.processWideband(pcm), { sampleRate: TARGET_RATE });
+    } else {
+      this.schedulePcm(pcm);
+    }
   }
 
   /** Queues one PCM-16 chunk for gapless playback on the listen context. */
@@ -914,6 +939,22 @@ export class VoiceChannelClient {
   /** Plays a locally-generated tone (marker / tone-out) that Stop All Sounds can cut. */
   private playLocalTone(pcm: Int16Array): void {
     this.schedulePcm(pcm, { track: true });
+  }
+
+  /** Synthesize and play the close-side end-of-transmission cue (roger beep +
+   *  comfort-noise squelch tail) when the relay reports another unit unkeyed.
+   *  Pinned + identical to the Android / iOS cue. No-op unless the agency
+   *  enabled at least one of the cue flags. Plays via the local-tone path
+   *  (track:true) so it bypasses PLC and Stop All Sounds can cut it. */
+  private playEndOfTxCue(): void {
+    const cfg = this.postDecodeConfig;
+    if (!cfg || (cfg.rogerBeepEnabled !== true && cfg.squelchTailEnabled !== true)) {
+      return;
+    }
+    const cue = endOfTxCue(cfg);
+    if (cue.length > 0) {
+      this.playLocalTone(cue);
+    }
   }
 
   /** Begins microphone capture and transmission. Throws on permission/mic failure. */
