@@ -32,6 +32,24 @@ export interface PostDecodeConfig {
   presenceDb?: number;
   presenceQ?: number;
   saturationAmount?: number;
+  /** Run the chain on the Opus (16 kHz) path via `processWideband`. Shapes
+   *  nothing on its own — only routes Opus through the existing tail. */
+  wideband?: boolean;
+  /** Feed-forward compressor, run AFTER the biquads and BEFORE saturation.
+   *  Absent sub-fields fall back to the pinned defaults in [Compressor]. */
+  compressorEnabled?: boolean;
+  compressorThresholdDb?: number;
+  compressorRatio?: number;
+  compressorAttackMs?: number;
+  compressorReleaseMs?: number;
+  compressorMakeupDb?: number;
+  /** End-of-transmission cue synthesized locally on `air_released`. */
+  rogerBeepEnabled?: boolean;
+  rogerBeepHz?: number;
+  rogerBeepMs?: number;
+  squelchTailEnabled?: boolean;
+  squelchTailMs?: number;
+  squelchTailLevel?: number;
 }
 
 /**
@@ -157,6 +175,75 @@ class Biquad {
   processInPlace(pcm: Int16Array): void {
     for (let i = 0; i < pcm.length; i++) {
       pcm[i] = clamp16(this.process(pcm[i]));
+    }
+  }
+}
+
+// --- compressor ---------------------------------------------------------
+
+/** Pinned compressor defaults — applied client-side when a sub-field is
+ *  absent so all three platforms (web / Android / iOS) compute identical
+ *  coefficients. Mirror these EXACTLY in PostDecodeChain.kt / .swift. */
+const COMPRESSOR_DEFAULT_THRESHOLD_DB = -24;
+const COMPRESSOR_DEFAULT_RATIO = 3.0;
+const COMPRESSOR_DEFAULT_ATTACK_MS = 5;
+const COMPRESSOR_DEFAULT_RELEASE_MS = 80;
+const COMPRESSOR_DEFAULT_MAKEUP_DB = 0;
+
+/**
+ * Feed-forward (peak-sensing) compressor with a hard knee. Mirrors the
+ * [Biquad] class shape: coefficients are computed once at construction from
+ * the server-clamped params; only `envDb` evolves per sample. The exact same
+ * arithmetic runs in Kotlin (`Compressor`) and Swift (`Compressor`) so a
+ * channel sounds the same on a handset and the dispatch console.
+ *
+ * Runs at FS = the chain's output rate, AFTER the biquads and BEFORE
+ * saturation. All math is in f64 (number). `reset()` zeroes the envelope so a
+ * new talk-spurt opens with no gain-reduction carried over.
+ */
+class Compressor {
+  /** Gain-reduction envelope in dB; always <= 0. Zeroed in reset(). */
+  private envDb = 0.0;
+
+  private readonly attackCoef: number;
+  private readonly releaseCoef: number;
+  private readonly slope: number;
+  private readonly makeupLin: number;
+  private readonly thresholdDb: number;
+
+  private static readonly REF = 32768.0;
+
+  constructor(
+    thresholdDb: number,
+    ratio: number,
+    attackMs: number,
+    releaseMs: number,
+    makeupDb: number,
+    fs: number,
+  ) {
+    this.thresholdDb = thresholdDb;
+    this.attackCoef = Math.exp(-1.0 / (attackMs * 0.001 * fs));
+    this.releaseCoef = Math.exp(-1.0 / (releaseMs * 0.001 * fs));
+    this.slope = 1.0 / ratio - 1.0;
+    this.makeupLin = Math.pow(10.0, makeupDb / 20.0);
+  }
+
+  reset(): void {
+    this.envDb = 0.0;
+  }
+
+  processInPlace(pcm: Int16Array): void {
+    for (let i = 0; i < pcm.length; i++) {
+      const x = pcm[i];
+      const ax = Math.abs(x) / Compressor.REF;
+      const xDb = ax < 1e-9 ? -120.0 : 20.0 * Math.log10(ax);
+      const overDb = xDb - this.thresholdDb;
+      const grDb = overDb > 0.0 ? overDb * this.slope : 0.0;
+      // More-negative target gain-reduction => attacking; otherwise releasing.
+      const coef = grDb < this.envDb ? this.attackCoef : this.releaseCoef;
+      this.envDb = coef * this.envDb + (1.0 - coef) * grDb;
+      const g = Math.pow(10.0, this.envDb / 20.0) * this.makeupLin;
+      pcm[i] = clamp16(x * g);
     }
   }
 }
@@ -311,37 +398,74 @@ function applySoftSaturationInPlace(pcm: Int16Array, amount: number): void {
  */
 export class PostDecodeProcessor {
   private readonly outputRate: 16000 | 24000;
+  private readonly cfg: PostDecodeConfig;
   private readonly stages: Biquad[] = [];
+  private readonly compressor: Compressor | null;
   // Linear-upsample carryover so frame boundaries stay seamless.
   private readonly linearCarry = { prev: 0 };
   private readonly saturationAmount: number;
   private readonly upsampleMode: PostDecodeConfig["upsampleMode"];
 
+  // Lazy 16 kHz stage list + compressor for the Opus (wideband) path. Built
+  // once on the first processWideband() call so a channel that never receives
+  // Opus never pays the coefficient cost. Separate from `stages` because the
+  // main path's biquads may be built at 24 kHz (upsampleMode=polyphase24),
+  // whereas Opus is always already 16 kHz and skips the upsample entirely.
+  private stages16: Biquad[] | null = null;
+  private compressor16: Compressor | null = null;
+
   constructor(cfg: PostDecodeConfig) {
+    this.cfg = cfg;
     this.upsampleMode = cfg.upsampleMode;
     this.outputRate = postDecodeOutputRate(cfg);
     // Biquads run at the output rate, AFTER upsampling. That matches the
     // Audio Lab's chain (the lab also runs post-decode shaping post-upsample
     // — see processClip in pipeline.ts).
     const fs = this.outputRate;
+    for (const stage of PostDecodeProcessor.buildStages(cfg, fs)) {
+      this.stages.push(stage);
+    }
+    this.compressor = PostDecodeProcessor.buildCompressor(cfg, fs);
+    this.saturationAmount = cfg.saturationAmount ?? 0;
+  }
+
+  /** Build the biquad chain for a config at a given sample rate. Shared by
+   *  the constructor (output rate) and the lazy wideband path (16 kHz) so the
+   *  filter ordering and coefficients are identical on both. */
+  private static buildStages(cfg: PostDecodeConfig, fs: number): Biquad[] {
+    const stages: Biquad[] = [];
     if (cfg.hpfEnabled && cfg.hpfHz) {
-      this.stages.push(Biquad.highpass(cfg.hpfHz, 0.707, fs));
+      stages.push(Biquad.highpass(cfg.hpfHz, 0.707, fs));
     }
     if (cfg.lpfEnabled && cfg.lpfHz) {
-      this.stages.push(Biquad.lowpass(cfg.lpfHz, 0.707, fs));
+      stages.push(Biquad.lowpass(cfg.lpfHz, 0.707, fs));
     }
     if (cfg.lowShelfEnabled) {
-      this.stages.push(Biquad.lowshelf(cfg.lowShelfHz ?? 200, cfg.lowShelfDb ?? 0, fs));
+      stages.push(Biquad.lowshelf(cfg.lowShelfHz ?? 200, cfg.lowShelfDb ?? 0, fs));
     }
     if (cfg.highShelfEnabled) {
-      this.stages.push(Biquad.highshelf(cfg.highShelfHz ?? 2500, cfg.highShelfDb ?? 0, fs));
+      stages.push(Biquad.highshelf(cfg.highShelfHz ?? 2500, cfg.highShelfDb ?? 0, fs));
     }
     if (cfg.presenceEnabled) {
-      this.stages.push(
-        Biquad.peak(cfg.presenceHz ?? 2200, cfg.presenceDb ?? 0, cfg.presenceQ ?? 1, fs),
-      );
+      stages.push(Biquad.peak(cfg.presenceHz ?? 2200, cfg.presenceDb ?? 0, cfg.presenceQ ?? 1, fs));
     }
-    this.saturationAmount = cfg.saturationAmount ?? 0;
+    return stages;
+  }
+
+  /** Construct the compressor for a config at a given rate, applying the
+   *  pinned defaults for any absent sub-field. Null when compression is off. */
+  private static buildCompressor(cfg: PostDecodeConfig, fs: number): Compressor | null {
+    if (!cfg.compressorEnabled) {
+      return null;
+    }
+    return new Compressor(
+      cfg.compressorThresholdDb ?? COMPRESSOR_DEFAULT_THRESHOLD_DB,
+      cfg.compressorRatio ?? COMPRESSOR_DEFAULT_RATIO,
+      cfg.compressorAttackMs ?? COMPRESSOR_DEFAULT_ATTACK_MS,
+      cfg.compressorReleaseMs ?? COMPRESSOR_DEFAULT_RELEASE_MS,
+      cfg.compressorMakeupDb ?? COMPRESSOR_DEFAULT_MAKEUP_DB,
+      fs,
+    );
   }
 
   /** Sample rate of `process()`'s output. The voice client constructs its
@@ -351,11 +475,18 @@ export class PostDecodeProcessor {
     return this.outputRate;
   }
 
-  /** Clear filter state so a new talk-spurt opens from silence. */
+  /** Clear filter + compressor state so a new talk-spurt opens from silence. */
   reset(): void {
     for (const stage of this.stages) {
       stage.reset();
     }
+    this.compressor?.reset();
+    if (this.stages16) {
+      for (const stage of this.stages16) {
+        stage.reset();
+      }
+    }
+    this.compressor16?.reset();
     this.linearCarry.prev = 0;
   }
 
@@ -377,15 +508,115 @@ export class PostDecodeProcessor {
         break;
     }
     // Stage 2: optional 16 → 24 polyphase.
-    let shaped = this.upsampleMode === "polyphase24" ? upsamplePolyphase16To24(pcm16) : pcm16;
+    const shaped = this.upsampleMode === "polyphase24" ? upsamplePolyphase16To24(pcm16) : pcm16;
     // Stage 3: biquad chain at the output rate.
     for (const stage of this.stages) {
       stage.processInPlace(shaped);
     }
-    // Stage 4: soft saturation (output already int16-clamped by the biquads).
+    // Stage 4: compressor (after biquads, before saturation).
+    this.compressor?.processInPlace(shaped);
+    // Stage 5: soft saturation (output already int16-clamped by the biquads).
     if (this.saturationAmount > 0) {
       applySoftSaturationInPlace(shaped, this.saturationAmount);
     }
     return shaped;
   }
+
+  /**
+   * Wideband entry point for the Opus path: the input is ALREADY 16 kHz, so
+   * this skips the 8→16 upsample stage entirely and runs the same
+   * biquad → compressor → saturation tail at 16 kHz. The stage list is built
+   * lazily and once (Opus frames aren't 160 samples; this loop is
+   * length-agnostic). Mutates `pcm16` in place and returns it.
+   *
+   * Wideband output is always 16 kHz regardless of `upsampleMode` — the
+   * caller should schedule it at 16 kHz, not `rate()`.
+   */
+  processWideband(pcm16: Int16Array): Int16Array {
+    if (this.stages16 === null) {
+      this.stages16 = PostDecodeProcessor.buildStages(this.cfg, 16_000);
+      this.compressor16 = PostDecodeProcessor.buildCompressor(this.cfg, 16_000);
+    }
+    for (const stage of this.stages16) {
+      stage.processInPlace(pcm16);
+    }
+    this.compressor16?.processInPlace(pcm16);
+    if (this.saturationAmount > 0) {
+      applySoftSaturationInPlace(pcm16, this.saturationAmount);
+    }
+    return pcm16;
+  }
+}
+
+// --- end-of-transmission cue (roger beep + comfort-noise squelch tail) ---
+
+/** Cue sample rate — 16 kHz mono, matching the rest of the platform. */
+const CUE_FS = 16_000;
+
+// Pinned cue defaults — applied when a field is absent. Mirror EXACTLY in
+// PostDecodeChain.kt / .swift so the cue is byte-identical across platforms.
+const ROGER_BEEP_DEFAULT_HZ = 1200;
+const ROGER_BEEP_DEFAULT_MS = 120;
+const SQUELCH_TAIL_DEFAULT_MS = 90;
+const SQUELCH_TAIL_DEFAULT_LEVEL = 0.05;
+
+/**
+ * Shared deterministic LCG for the comfort-noise tail. Math.random /
+ * arc4random would diverge across platforms, so the noise MUST come from this
+ * fixed-seed generator with the same constants on web / Android / iOS. Each
+ * call advances the state and returns a sample in [-1, 1).
+ */
+class CueNoise {
+  private seed = 0x6d2b79f5 >>> 0;
+
+  next(): number {
+    // `* 1664525` can exceed 2^53; use Math.imul + >>> 0 to stay in uint32 so
+    // the sequence matches the Kotlin/Swift 32-bit overflow arithmetic.
+    this.seed = (Math.imul(this.seed, 1664525) + 1013904223) >>> 0;
+    return (this.seed / 4294967295.0) * 2.0 - 1.0;
+  }
+}
+
+/**
+ * Synthesize the close-side end-of-transmission cue as 16 kHz mono Int16.
+ * The cue is `[roger beep][comfort-noise tail]` concatenated; each segment is
+ * included only when its flag is on. Returns an empty array when neither flag
+ * is enabled. Pinned + identical across all three platforms — see the cue
+ * synth in PostDecodeChain.kt / .swift.
+ *
+ * NOTE: only the CLOSE-side cue ships (open-side is impossible on RX without
+ * added latency).
+ */
+export function endOfTxCue(cfg: PostDecodeConfig): Int16Array {
+  const fade = Math.round(CUE_FS * 0.006); // 6 ms raised-cosine fade in/out
+  const beep = cfg.rogerBeepEnabled === true;
+  const tail = cfg.squelchTailEnabled === true;
+
+  const beepHz = cfg.rogerBeepHz ?? ROGER_BEEP_DEFAULT_HZ;
+  const beepMs = cfg.rogerBeepMs ?? ROGER_BEEP_DEFAULT_MS;
+  const tailMs = cfg.squelchTailMs ?? SQUELCH_TAIL_DEFAULT_MS;
+  const tailLevel = cfg.squelchTailLevel ?? SQUELCH_TAIL_DEFAULT_LEVEL;
+
+  const beepN = beep ? Math.round((CUE_FS * beepMs) / 1000) : 0;
+  const tailN = tail ? Math.round((CUE_FS * tailMs) / 1000) : 0;
+  const out = new Int16Array(beepN + tailN);
+
+  // Roger beep: single sine, amplitude 0.5*FS, 6 ms cosine fade each edge.
+  for (let i = 0; i < beepN; i++) {
+    let g = 0.5;
+    if (i < fade) g *= i / fade;
+    else if (i > beepN - fade) g *= (beepN - i) / fade;
+    out[i] = clamp16(Math.sin((2 * Math.PI * beepHz * i) / CUE_FS) * g * 32767);
+  }
+
+  // Comfort-noise tail: deterministic LCG noise at `level`, same cosine fade.
+  const noise = new CueNoise();
+  for (let i = 0; i < tailN; i++) {
+    let faded = 1.0;
+    if (i < fade) faded *= i / fade;
+    else if (i > tailN - fade) faded *= (tailN - i) / fade;
+    out[beepN + i] = clamp16(noise.next() * tailLevel * faded * 32767);
+  }
+
+  return out;
 }

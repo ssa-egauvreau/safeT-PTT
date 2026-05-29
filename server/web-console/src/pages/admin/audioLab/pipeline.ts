@@ -86,6 +86,26 @@ export interface AudioLabConfig {
      *  "trunked-radio" sound (narrower band, harder saturation, presence
      *  bell). Zero leaves the manual fields above untouched. */
     dmrCharacter?: number;
+    /** Run the post-decode chain on the Opus (16 kHz) path as well. No effect
+     *  on the lab preview (which is an 8 kHz IMBE round-trip), but stored so
+     *  the admin can stage it; shapes nothing on its own. */
+    wideband?: boolean;
+    /** Feed-forward compressor, run AFTER the biquads and BEFORE saturation.
+     *  Mirrors the live PostDecodeProcessor so the lab A/B stays honest. */
+    compressorEnabled?: boolean;
+    compressorThresholdDb?: number;
+    compressorRatio?: number;
+    compressorAttackMs?: number;
+    compressorReleaseMs?: number;
+    compressorMakeupDb?: number;
+    /** End-of-transmission cue flags (synthesized by listeners on
+     *  `air_released`). Not auditioned by the clip preview, but stored. */
+    rogerBeepEnabled?: boolean;
+    rogerBeepHz?: number;
+    rogerBeepMs?: number;
+    squelchTailEnabled?: boolean;
+    squelchTailMs?: number;
+    squelchTailLevel?: number;
   };
 }
 
@@ -195,6 +215,57 @@ class Biquad {
     this.z1 = this.b1 * x - this.a1 * y + this.z2;
     this.z2 = this.b2 * x - this.a2 * y;
     return y;
+  }
+}
+
+// Pinned compressor defaults — must match postDecodeChain.ts (and the mobile
+// PostDecodeChain.kt / .swift) so the lab A/B previews exactly what the live
+// chain produces.
+const COMPRESSOR_DEFAULT_THRESHOLD_DB = -24;
+const COMPRESSOR_DEFAULT_RATIO = 3.0;
+const COMPRESSOR_DEFAULT_ATTACK_MS = 5;
+const COMPRESSOR_DEFAULT_RELEASE_MS = 80;
+const COMPRESSOR_DEFAULT_MAKEUP_DB = 0;
+
+/** Feed-forward (peak-sensing) compressor, hard knee. Identical arithmetic to
+ *  the live `Compressor` in postDecodeChain.ts so the lab preview matches what
+ *  listeners hear. All math in f64. */
+class Compressor {
+  private envDb = 0.0;
+  private readonly attackCoef: number;
+  private readonly releaseCoef: number;
+  private readonly slope: number;
+  private readonly makeupLin: number;
+  private readonly thresholdDb: number;
+  private static readonly REF = 32768.0;
+
+  constructor(
+    thresholdDb: number,
+    ratio: number,
+    attackMs: number,
+    releaseMs: number,
+    makeupDb: number,
+    fs: number,
+  ) {
+    this.thresholdDb = thresholdDb;
+    this.attackCoef = Math.exp(-1.0 / (attackMs * 0.001 * fs));
+    this.releaseCoef = Math.exp(-1.0 / (releaseMs * 0.001 * fs));
+    this.slope = 1.0 / ratio - 1.0;
+    this.makeupLin = Math.pow(10.0, makeupDb / 20.0);
+  }
+
+  processInPlace(pcm: Int16Array): void {
+    for (let i = 0; i < pcm.length; i++) {
+      const x = pcm[i];
+      const ax = Math.abs(x) / Compressor.REF;
+      const xDb = ax < 1e-9 ? -120.0 : 20.0 * Math.log10(ax);
+      const overDb = xDb - this.thresholdDb;
+      const grDb = overDb > 0.0 ? overDb * this.slope : 0.0;
+      const coef = grDb < this.envDb ? this.attackCoef : this.releaseCoef;
+      this.envDb = coef * this.envDb + (1.0 - coef) * grDb;
+      const g = Math.pow(10.0, this.envDb / 20.0) * this.makeupLin;
+      pcm[i] = clamp16(x * g);
+    }
   }
 }
 
@@ -592,6 +663,18 @@ export async function processClip(input: Int16Array, cfg: AudioLabConfig): Promi
         FS,
       ),
     );
+  }
+  // Compressor — after the biquads, before saturation. Same placement and
+  // arithmetic as the live PostDecodeProcessor so the lab A/B is honest.
+  if (cfg.postDecode.compressorEnabled) {
+    new Compressor(
+      cfg.postDecode.compressorThresholdDb ?? COMPRESSOR_DEFAULT_THRESHOLD_DB,
+      cfg.postDecode.compressorRatio ?? COMPRESSOR_DEFAULT_RATIO,
+      cfg.postDecode.compressorAttackMs ?? COMPRESSOR_DEFAULT_ATTACK_MS,
+      cfg.postDecode.compressorReleaseMs ?? COMPRESSOR_DEFAULT_RELEASE_MS,
+      cfg.postDecode.compressorMakeupDb ?? COMPRESSOR_DEFAULT_MAKEUP_DB,
+      FS,
+    ).processInPlace(shaped);
   }
   const satAmount = cfg.postDecode.saturationAmount ?? 0;
   if (satAmount > 0) {

@@ -136,6 +136,17 @@ class RadioAppGraph(val application: Application) {
     private val postDecodeProcessor =
         java.util.concurrent.atomic.AtomicReference<PostDecodeChain.Processor?>(null)
 
+    /**
+     * Latest raw post-decode config, or null when no shaping/cue is in effect.
+     * Held separately from [postDecodeProcessor] because the transport needs
+     * the config even when there is no DSP processor to build (e.g. a
+     * roger-beep-only config, which the cue path consumes directly): it drives
+     * the wideband (Opus) routing decision and the end-of-TX cue synthesis on
+     * `air_released`. Rebuilt alongside the processor by [refreshAudioConfigAsync].
+     */
+    private val postDecodeConfig =
+        java.util.concurrent.atomic.AtomicReference<PostDecodeChain.Config?>(null)
+
     val voiceRelay: VoiceRelayTransport = VoiceRelayTransport(
         httpApiBaseUrl = BuildConfig.API_BASE_URL,
         authTokenProvider = authTokenProvider,
@@ -146,6 +157,7 @@ class RadioAppGraph(val application: Application) {
                 radioPreferences.getServerBypassMicProcessing()
         },
         postDecodeProcessorProvider = { postDecodeProcessor.get() },
+        postDecodeConfigProvider = { postDecodeConfig.get() },
     )
 
     val scanVoiceListen: ScanVoiceListenTransport = ScanVoiceListenTransport(
@@ -224,14 +236,17 @@ class RadioAppGraph(val application: Application) {
                         gainMultiplier = cfg.gainMultiplier,
                         bypassMicProcessing = cfg.bypassMicProcessing,
                     )
-                    // Rebuild the post-decode processor under the new config.
-                    // Server-side `derivePostDecodeBlock` already returns
-                    // `null` when shaping would be a no-op, so any non-null
-                    // value here is worth a processor.
+                    // Rebuild the post-decode processor + raw config under the
+                    // new config. Server-side `derivePostDecodeBlock` already
+                    // returns `null` when nothing is in effect; a non-no-op
+                    // Config gets a processor, while the raw config is always
+                    // cached so the cue path (roger beep / squelch tail) and
+                    // the wideband routing can read it even when there is no
+                    // DSP processor to build.
+                    val newConfig = cfg.postDecode?.toConfigOrNull()
+                    postDecodeConfig.set(newConfig)
                     val newProcessor =
-                        cfg.postDecode?.let { it.toConfigOrNull() }?.let {
-                            if (it.isNoOp()) null else PostDecodeChain.Processor(it)
-                        }
+                        newConfig?.let { if (it.isNoOp()) null else PostDecodeChain.Processor(it) }
                     postDecodeProcessor.set(newProcessor)
                 }
                 // If the server has no config (cfg == null), leave whatever was cached — don't
@@ -301,5 +316,18 @@ private fun AudioPostDecodeDto.toConfigOrNull(): PostDecodeChain.Config? {
         presenceDb = presenceDb ?: 0f,
         presenceQ = presenceQ ?: 1.0f,
         saturationAmount = saturationAmount ?: 0f,
+        wideband = wideband ?: false,
+        compressorEnabled = compressorEnabled ?: false,
+        compressorThresholdDb = compressorThresholdDb ?: -24f,
+        compressorRatio = compressorRatio ?: 3.0f,
+        compressorAttackMs = compressorAttackMs ?: 5f,
+        compressorReleaseMs = compressorReleaseMs ?: 80f,
+        compressorMakeupDb = compressorMakeupDb ?: 0f,
+        rogerBeepEnabled = rogerBeepEnabled ?: false,
+        rogerBeepHz = rogerBeepHz ?: 1200f,
+        rogerBeepMs = rogerBeepMs ?: 120f,
+        squelchTailEnabled = squelchTailEnabled ?: false,
+        squelchTailMs = squelchTailMs ?: 90f,
+        squelchTailLevel = squelchTailLevel ?: 0.05f,
     )
 }

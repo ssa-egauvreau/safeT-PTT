@@ -2,6 +2,8 @@ package com.securityradio.ptt.device
 
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -51,10 +53,31 @@ object PostDecodeChain {
         val presenceDb: Float = 0f,
         val presenceQ: Float = 1.0f,
         val saturationAmount: Float = 0f,
+        /** Run the chain on the Opus (16 kHz) path via [Processor.processWideband].
+         *  Shapes nothing on its own — only routes Opus through the tail. */
+        val wideband: Boolean = false,
+        /** Feed-forward compressor — after the biquads, before saturation.
+         *  Defaults mirror the web reference (postDecodeChain.ts). */
+        val compressorEnabled: Boolean = false,
+        val compressorThresholdDb: Float = -24f,
+        val compressorRatio: Float = 3.0f,
+        val compressorAttackMs: Float = 5f,
+        val compressorReleaseMs: Float = 80f,
+        val compressorMakeupDb: Float = 0f,
+        /** End-of-transmission cue synthesized by [endOfTxCue] on `air_released`. */
+        val rogerBeepEnabled: Boolean = false,
+        val rogerBeepHz: Float = 1200f,
+        val rogerBeepMs: Float = 120f,
+        val squelchTailEnabled: Boolean = false,
+        val squelchTailMs: Float = 90f,
+        val squelchTailLevel: Float = 0.05f,
     ) {
-        /** True when no biquad / saturation is engaged AND the upsample is the
-         *  legacy duplicate — caller should skip the chain entirely. Mirrors
-         *  the server's `derivePostDecodeBlock` short-circuit. */
+        /** True when no biquad / compressor / saturation is engaged AND the
+         *  upsample is the legacy duplicate — caller should skip building a
+         *  [Processor] entirely. Mirrors the server's `derivePostDecodeBlock`
+         *  short-circuit (minus the cue flags, which are handled separately by
+         *  the transport via the raw config, not the Processor). `wideband` is
+         *  intentionally excluded — it shapes nothing on its own. */
         fun isNoOp(): Boolean =
             upsampleMode == UpsampleMode.DUPLICATE &&
                 !hpfEnabled &&
@@ -62,6 +85,7 @@ object PostDecodeChain {
                 !lowShelfEnabled &&
                 !highShelfEnabled &&
                 !presenceEnabled &&
+                !compressorEnabled &&
                 saturationAmount <= 0f
     }
 
@@ -90,14 +114,21 @@ object PostDecodeChain {
      * ring can't bleed into the next talker's first frame.
      */
     class Processor(cfg: Config) {
+        // Biquads are always built at FS_16K (the AudioTrack rate), so the same
+        // stage list + compressor serve both the 8 kHz vocoder path (process,
+        // which upsamples first) and the Opus wideband path (processWideband,
+        // which skips the upsample). A channel uses one codec per talk-spurt and
+        // reset() runs at spurt boundaries, so the shared state never crosses.
         private val stages: List<Biquad> = buildStages(cfg)
+        private val compressor: Compressor? = buildCompressor(cfg)
         private val saturationAmount: Float = cfg.saturationAmount.coerceIn(0f, 1f)
         private val upsampleMode: UpsampleMode = cfg.upsampleMode
         private val linearCarry = FloatArray(1) // size-1 so process() can mutate it
 
-        /** Reset filter state so the next frame opens from silence. */
+        /** Reset filter + compressor state so the next frame opens from silence. */
         fun reset() {
             for (stage in stages) stage.reset()
+            compressor?.reset()
             linearCarry[0] = 0f
         }
 
@@ -111,14 +142,29 @@ object PostDecodeChain {
             for (stage in stages) {
                 stage.processInPlace(pcm16k)
             }
+            compressor?.processInPlace(pcm16k)
             if (saturationAmount > 0f) {
                 applySoftSaturation(pcm16k, saturationAmount)
             }
-            // Encode to LE PCM-16 bytes for the AudioTrack.
-            val out = ByteArray(pcm16k.size * 2)
-            val bb = ByteBuffer.wrap(out).order(ByteOrder.LITTLE_ENDIAN)
-            for (s in pcm16k) bb.putShort(s)
-            return out
+            return shortLeBytes(pcm16k)
+        }
+
+        /**
+         * Opus wideband entry point: the input is ALREADY 16 kHz, so this
+         * skips the 8→16 upsample and runs the SAME biquad → compressor →
+         * saturation tail (the stages are at FS_16K). Length-agnostic — Opus
+         * frames are not 160 samples, and nothing here assumes the *2 upsample
+         * length. Returns LE PCM-16 bytes for the AudioTrack.
+         */
+        fun processWideband(pcm16k: ShortArray): ByteArray {
+            for (stage in stages) {
+                stage.processInPlace(pcm16k)
+            }
+            compressor?.processInPlace(pcm16k)
+            if (saturationAmount > 0f) {
+                applySoftSaturation(pcm16k, saturationAmount)
+            }
+            return shortLeBytes(pcm16k)
         }
 
         private fun upsampleTo16k(pcm8k160: ShortArray): ShortArray {
@@ -238,6 +284,54 @@ object PostDecodeChain {
                     (1.0 - alpha / A) / a0,
                 )
             }
+        }
+    }
+
+    // --- compressor (feed-forward, hard knee) -----------------------------
+
+    /**
+     * Feed-forward (peak-sensing) compressor with a hard knee. Identical
+     * arithmetic to the web reference `Compressor` in postDecodeChain.ts and
+     * the iOS `Compressor` so a channel sounds the same everywhere: all math
+     * in Double, coefficients computed once, only [envDb] evolves per sample.
+     * Runs at FS_16K, after the biquads and before saturation.
+     */
+    private class Compressor(
+        thresholdDb: Double,
+        ratio: Double,
+        attackMs: Double,
+        releaseMs: Double,
+        makeupDb: Double,
+        fs: Double,
+    ) {
+        /** Gain-reduction envelope in dB; always <= 0. Zeroed in [reset]. */
+        private var envDb = 0.0
+        private val attackCoef = exp(-1.0 / (attackMs * 0.001 * fs))
+        private val releaseCoef = exp(-1.0 / (releaseMs * 0.001 * fs))
+        private val slope = 1.0 / ratio - 1.0
+        private val makeupLin = 10.0.pow(makeupDb / 20.0)
+        private val threshold = thresholdDb
+
+        fun reset() {
+            envDb = 0.0
+        }
+
+        fun processInPlace(pcm: ShortArray) {
+            for (i in pcm.indices) {
+                val x = pcm[i].toDouble()
+                val ax = kotlin.math.abs(x) / REF
+                val xDb = if (ax < 1e-9) -120.0 else 20.0 * log10(ax)
+                val overDb = xDb - threshold
+                val grDb = if (overDb > 0.0) overDb * slope else 0.0
+                val coef = if (grDb < envDb) attackCoef else releaseCoef
+                envDb = coef * envDb + (1.0 - coef) * grDb
+                val g = 10.0.pow(envDb / 20.0) * makeupLin
+                pcm[i] = clamp16(x * g).toShort()
+            }
+        }
+
+        companion object {
+            private const val REF = 32768.0
         }
     }
 
@@ -362,5 +456,79 @@ object PostDecodeChain {
             )
         }
         return stages
+    }
+
+    private fun buildCompressor(cfg: Config): Compressor? {
+        if (!cfg.compressorEnabled) return null
+        return Compressor(
+            cfg.compressorThresholdDb.toDouble(),
+            cfg.compressorRatio.toDouble(),
+            cfg.compressorAttackMs.toDouble(),
+            cfg.compressorReleaseMs.toDouble(),
+            cfg.compressorMakeupDb.toDouble(),
+            FS_16K,
+        )
+    }
+
+    /** Pack shorts to little-endian PCM-16 bytes for the AudioTrack. */
+    private fun shortLeBytes(pcm: ShortArray): ByteArray {
+        val out = ByteArray(pcm.size * 2)
+        val bb = ByteBuffer.wrap(out).order(ByteOrder.LITTLE_ENDIAN)
+        for (s in pcm) bb.putShort(s)
+        return out
+    }
+
+    // --- end-of-transmission cue (roger beep + comfort-noise squelch tail) -
+
+    /**
+     * Deterministic LCG for the comfort-noise tail — Math.random / arc4random
+     * diverge across platforms, so the noise MUST come from this fixed-seed
+     * generator with the same constants on web / Android / iOS. `seed` is a
+     * UInt so the multiply overflows mod 2^32 exactly like the web's
+     * Math.imul/>>>0 form.
+     */
+    private class CueNoise {
+        private var seed: UInt = 0x6d2b79f5u
+
+        fun next(): Double {
+            seed = seed * 1664525u + 1013904223u
+            return (seed.toDouble() / 4294967295.0) * 2.0 - 1.0
+        }
+    }
+
+    /**
+     * Synthesize the close-side end-of-transmission cue as 16 kHz mono LE
+     * PCM-16 bytes. The cue is `[roger beep][comfort-noise tail]` concatenated;
+     * each segment is included only when its flag is on. Returns an empty array
+     * when neither flag is enabled. Pinned + identical to the web/iOS cue.
+     */
+    fun endOfTxCue(cfg: Config): ByteArray {
+        val fs = FS_16K
+        val fade = (fs * 0.006).roundToInt() // 6 ms raised-cosine fade in/out
+        val beep = cfg.rogerBeepEnabled
+        val tail = cfg.squelchTailEnabled
+
+        val beepN = if (beep) (fs * cfg.rogerBeepMs.toDouble() / 1000.0).roundToInt() else 0
+        val tailN = if (tail) (fs * cfg.squelchTailMs.toDouble() / 1000.0).roundToInt() else 0
+        val out = ShortArray(beepN + tailN)
+
+        val beepHz = cfg.rogerBeepHz.toDouble()
+        for (i in 0 until beepN) {
+            var g = 0.5
+            if (i < fade) g *= i.toDouble() / fade
+            else if (i > beepN - fade) g *= (beepN - i).toDouble() / fade
+            out[i] = clamp16(sin(2.0 * PI * beepHz * i / fs) * g * 32767.0).toShort()
+        }
+
+        val level = cfg.squelchTailLevel.toDouble()
+        val noise = CueNoise()
+        for (i in 0 until tailN) {
+            var faded = 1.0
+            if (i < fade) faded *= i.toDouble() / fade
+            else if (i > tailN - fade) faded *= (tailN - i).toDouble() / fade
+            out[beepN + i] = clamp16(noise.next() * level * faded * 32767.0).toShort()
+        }
+
+        return shortLeBytes(out)
     }
 }

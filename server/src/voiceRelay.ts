@@ -606,6 +606,43 @@ export function __setVoiceRosterRecordForTest(record: VoiceRosterTestRecord): vo
 export function __resetVoiceRosterForTest(): void {
   voiceRoster.clear();
   voiceAirByChannel.clear();
+  clientMeta.clear();
+}
+
+/**
+ * Test-only: register a minimal `clientMeta` entry so the per-channel control
+ * fan-out (e.g. the `air_released` broadcast) can be exercised without the full
+ * WebSocket upgrade/join path. The `ws` should be a stub exposing `send` and a
+ * `readyState` of `WebSocket.OPEN`. @internal
+ */
+export function __registerVoiceMemberForTest(opts: {
+  ws: WebSocket;
+  agencyId: number;
+  channel: string;
+}): void {
+  const chNorm = normalizedChannel(opts.channel);
+  clientMeta.set(opts.ws, {
+    identity: { kind: "legacy", agencyId: opts.agencyId },
+    agencyId: opts.agencyId,
+    unitId: "",
+    channelNorm: chNorm,
+    channelKey: channelKey(opts.agencyId, chNorm),
+    channelName: opts.channel,
+    channelId: null,
+    userId: null,
+    displayName: null,
+    permission: "talk",
+    joined: true,
+    simulcastTargets: null,
+    yields: false,
+    lastBusyMs: 0,
+    markerToneUntilMs: 0,
+    aiDispatchListenPcm: false,
+    recordListenPcm: false,
+    deviceType: null,
+    codec: DEFAULT_VOICE_CODEC,
+    caps: [],
+  });
 }
 
 /** Test-only: seed a channel air slot as if a talker were live. @internal */
@@ -739,11 +776,37 @@ function claimAir(
   return { ok: true };
 }
 
-/** Frees any channel a closing socket was holding, so the air clears at once. */
+/** Frees any channel a closing socket was holding, so the air clears at once.
+ *  When a slot actually existed, forwards an `air_released` control message to
+ *  every OTHER member of that channel so each listener can synthesize the
+ *  end-of-transmission cue (roger beep / squelch tail) locally — precise
+ *  timing, clean PCM, and the talker correctly excluded. Idempotent: a slot is
+ *  deleted at most once, so the broadcast fires exactly once per real release;
+ *  a stray release_air from a socket holding nothing emits nothing. */
 function releaseAir(ws: WebSocket): void {
   for (const [chanKey, slot] of voiceAirByChannel) {
     if (slot.ws === ws) {
       voiceAirByChannel.delete(chanKey);
+      broadcastAirReleased(ws, chanKey);
+    }
+  }
+}
+
+/** Tell every other member of `chanKey` the air was released. Reuses the same
+ *  per-channel `clientMeta` fan-out as `broadcastExcept` / `notifyChannelCodec`.
+ *  The releasing socket is excluded. The channel display name is taken from
+ *  each peer's own `meta.channelName` (they are, by the key filter, on that
+ *  exact channel) so the client can match it against the channel it is tuned
+ *  to. */
+function broadcastAirReleased(from: WebSocket, chanKey: string): void {
+  for (const [peer, meta] of clientMeta) {
+    if (peer === from) continue;
+    if (!meta.channelKey || meta.channelKey !== chanKey) continue;
+    if (peer.readyState !== WebSocket.OPEN) continue;
+    try {
+      peer.send(JSON.stringify({ type: "air_released", channel: meta.channelName }));
+    } catch {
+      /* socket closing */
     }
   }
 }

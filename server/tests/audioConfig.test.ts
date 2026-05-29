@@ -351,3 +351,227 @@ test("deriveDeviceAudioConfig: dmrCharacter=1 enables the chain even with duplic
   assert.notEqual(out.postDecode, null);
   assert.equal(out.postDecode?.hpfEnabled, true);
 });
+
+// --- Radio Voice Character: wideband / compressor / roger beep / squelch tail
+
+test("deriveDeviceAudioConfig: wideband:true ALONE stays a no-op (postDecode=null)", () => {
+  // wideband only unlocks the Opus post-decode entry point — it shapes
+  // nothing on its own. With no other shaping it MUST still collapse to null
+  // so default-off behaviour is byte-identical to today.
+  const out = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: { upsampleMode: "duplicate", wideband: true },
+    vocoder: {},
+  });
+  assert.equal(out.postDecode, null);
+});
+
+test("deriveDeviceAudioConfig: wideband rides along when some other stage is enabled", () => {
+  // Once any real shaping is on, the block is emitted and wideband passes
+  // through verbatim so the client can route Opus through the chain.
+  const out = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: { upsampleMode: "duplicate", wideband: true, hpfEnabled: true, hpfHz: 200 },
+    vocoder: {},
+  });
+  assert.notEqual(out.postDecode, null);
+  assert.equal(out.postDecode?.wideband, true);
+  assert.equal(out.postDecode?.hpfEnabled, true);
+});
+
+test("deriveDeviceAudioConfig: compressorEnabled flips the block non-null and passes fields verbatim", () => {
+  const out = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: {
+      upsampleMode: "duplicate",
+      compressorEnabled: true,
+      compressorThresholdDb: -18,
+      compressorRatio: 4,
+      compressorAttackMs: 8,
+      compressorReleaseMs: 120,
+      compressorMakeupDb: 3,
+    },
+    vocoder: {},
+  });
+  assert.notEqual(out.postDecode, null);
+  const pd = out.postDecode!;
+  assert.equal(pd.compressorEnabled, true);
+  assert.equal(pd.compressorThresholdDb, -18);
+  assert.equal(pd.compressorRatio, 4);
+  assert.equal(pd.compressorAttackMs, 8);
+  assert.equal(pd.compressorReleaseMs, 120);
+  assert.equal(pd.compressorMakeupDb, 3);
+});
+
+test("deriveDeviceAudioConfig: compressor fields are clamped only when the compressor is enabled", () => {
+  const out = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: {
+      upsampleMode: "duplicate",
+      compressorEnabled: true,
+      compressorRatio: 99, // > 20 -> 20
+      compressorAttackMs: -5, // < 1 -> 1
+      compressorReleaseMs: 99999, // > 2000 -> 2000
+      compressorThresholdDb: 5, // > 0 -> 0
+      compressorMakeupDb: 99, // > 24 -> 24
+    },
+    vocoder: {},
+  });
+  const pd = out.postDecode!;
+  assert.equal(pd.compressorRatio, 20);
+  assert.equal(pd.compressorAttackMs, 1);
+  assert.equal(pd.compressorReleaseMs, 2000);
+  assert.equal(pd.compressorThresholdDb, 0);
+  assert.equal(pd.compressorMakeupDb, 24);
+});
+
+test("deriveDeviceAudioConfig: compressor fields are left untouched (and the block stays null) when the compressor is disabled", () => {
+  // A stray out-of-range field with the feature off must NOT clamp (the field
+  // is simply not in effect) AND must not, by itself, defeat the no-op
+  // short-circuit — only the enable flags do that.
+  const out = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: { upsampleMode: "duplicate", compressorRatio: 99 },
+    vocoder: {},
+  });
+  assert.equal(out.postDecode, null);
+});
+
+test("deriveDeviceAudioConfig: rogerBeepEnabled flips the block non-null, clamps hz/ms", () => {
+  const out = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: {
+      upsampleMode: "duplicate",
+      rogerBeepEnabled: true,
+      rogerBeepHz: 99, // < 300 -> 300
+      rogerBeepMs: 9999, // > 500 -> 500
+    },
+    vocoder: {},
+  });
+  assert.notEqual(out.postDecode, null);
+  const pd = out.postDecode!;
+  assert.equal(pd.rogerBeepEnabled, true);
+  assert.equal(pd.rogerBeepHz, 300);
+  assert.equal(pd.rogerBeepMs, 500);
+});
+
+test("deriveDeviceAudioConfig: squelchTailEnabled flips the block non-null, clamps ms/level", () => {
+  const out = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: {
+      upsampleMode: "duplicate",
+      squelchTailEnabled: true,
+      squelchTailMs: 5, // < 20 -> 20
+      squelchTailLevel: 2, // > 0.5 -> 0.5
+    },
+    vocoder: {},
+  });
+  assert.notEqual(out.postDecode, null);
+  const pd = out.postDecode!;
+  assert.equal(pd.squelchTailEnabled, true);
+  assert.equal(pd.squelchTailMs, 20);
+  assert.equal(pd.squelchTailLevel, 0.5);
+});
+
+test("deriveDeviceAudioConfig: roger/squelch numeric fields pass through verbatim when in range", () => {
+  const out = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: {
+      upsampleMode: "duplicate",
+      rogerBeepEnabled: true,
+      rogerBeepHz: 1500,
+      rogerBeepMs: 150,
+      squelchTailEnabled: true,
+      squelchTailMs: 110,
+      squelchTailLevel: 0.08,
+    },
+    vocoder: {},
+  });
+  const pd = out.postDecode!;
+  assert.equal(pd.rogerBeepHz, 1500);
+  assert.equal(pd.rogerBeepMs, 150);
+  assert.equal(pd.squelchTailMs, 110);
+  assert.equal(pd.squelchTailLevel, 0.08);
+});
+
+test("deriveDeviceAudioConfig: applyWidebandCharacter anchors at 0 / 50 / 100", () => {
+  // 0 -> dial off, gentle Opus-clarity anchors don't apply (and wideband alone
+  // is a no-op).
+  const off = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: { upsampleMode: "duplicate", wideband: true, dmrCharacter: 0 },
+    vocoder: {},
+  });
+  assert.equal(off.postDecode, null);
+
+  // 50 -> midpoints of the gentle wideband anchors.
+  const mid = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: { upsampleMode: "duplicate", wideband: true, dmrCharacter: 50 },
+    vocoder: {},
+  });
+  const m = mid.postDecode!;
+  assert.equal(m.dmrCharacter, 50);
+  assert.equal(m.hpfEnabled, true);
+  assert.equal(m.hpfHz, 200); // 150 + 100*0.5
+  assert.equal(m.lpfEnabled, true);
+  assert.equal(m.lpfHz, 6000); // 7000 - 2000*0.5
+  assert.equal(m.saturationAmount, 0.13); // round(0.25*0.5*100)/100 = 0.13
+  assert.equal(m.presenceEnabled, true);
+  assert.equal(m.presenceHz, 2600);
+  assert.equal(m.presenceDb, 1.5); // 3*0.5
+  assert.equal(m.presenceQ, 0.9);
+
+  // 100 -> full gentle wideband anchors.
+  const full = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: { upsampleMode: "duplicate", wideband: true, dmrCharacter: 100 },
+    vocoder: {},
+  });
+  const f = full.postDecode!;
+  assert.equal(f.hpfHz, 250);
+  assert.equal(f.lpfHz, 5000);
+  assert.equal(f.saturationAmount, 0.25);
+  assert.equal(f.presenceHz, 2600);
+  assert.equal(f.presenceDb, 3.0);
+  assert.equal(f.presenceQ, 0.9);
+});
+
+test("deriveDeviceAudioConfig: wideband dial uses GENTLER anchors than the 8 kHz dmr dial", () => {
+  // Same dial value, different path: wideband keeps more bandwidth (higher LPF,
+  // lower HPF) and less saturation than the heavy DMR voicing.
+  const wb = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: { upsampleMode: "duplicate", wideband: true, dmrCharacter: 100 },
+    vocoder: {},
+  }).postDecode!;
+  const dmr = deriveDeviceAudioConfig({
+    preImbe: {},
+    postDecode: { upsampleMode: "duplicate", dmrCharacter: 100 },
+    vocoder: {},
+  }).postDecode!;
+  assert.ok(wb.lpfHz! > dmr.lpfHz!, "wideband LPF should be higher (wider band)");
+  assert.ok(wb.hpfHz! < dmr.hpfHz!, "wideband HPF should be lower (wider band)");
+  assert.ok(wb.saturationAmount! < dmr.saturationAmount!, "wideband saturation should be gentler");
+});
+
+test("deriveDeviceAudioConfig: presenceQ is floored to 0.1 when the bell is enabled (parity with mobile max(0.1,Q))", () => {
+  // The mobile chains build the peak biquad with max(0.1, presenceQ); the
+  // web/lab chains used Q raw, so a hand-pushed Q < 0.1 diverged (and Q=0 went
+  // NaN on web). Clamp once server-side so every platform sees the same value.
+  const low = deriveDeviceAudioConfig({
+    postDecode: { presenceEnabled: true, presenceHz: 2200, presenceDb: 6, presenceQ: 0.05 },
+  }).postDecode!;
+  assert.equal(low.presenceQ, 0.1);
+
+  const zero = deriveDeviceAudioConfig({
+    postDecode: { presenceEnabled: true, presenceHz: 2200, presenceDb: 6, presenceQ: 0 },
+  }).postDecode!;
+  assert.equal(zero.presenceQ, 0.1);
+
+  // A normal Q passes through untouched (floor-only, no ceiling — matches mobile).
+  const ok = deriveDeviceAudioConfig({
+    postDecode: { presenceEnabled: true, presenceHz: 2200, presenceDb: 6, presenceQ: 2 },
+  }).postDecode!;
+  assert.equal(ok.presenceQ, 2);
+});

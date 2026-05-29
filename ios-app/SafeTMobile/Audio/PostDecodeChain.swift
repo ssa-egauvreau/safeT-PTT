@@ -51,10 +51,31 @@ enum PostDecodeChain {
         let presenceDb: Double
         let presenceQ: Double
         let saturationAmount: Double
+        /// Run the chain on the Opus (16 kHz) path via `Processor.processWideband`.
+        /// Shapes nothing on its own — only routes Opus through the tail.
+        let wideband: Bool
+        /// Feed-forward compressor — after the biquads, before saturation.
+        /// Defaults mirror the web reference (postDecodeChain.ts).
+        let compressorEnabled: Bool
+        let compressorThresholdDb: Double
+        let compressorRatio: Double
+        let compressorAttackMs: Double
+        let compressorReleaseMs: Double
+        let compressorMakeupDb: Double
+        /// End-of-transmission cue synthesized by `endOfTxCue` on `air_released`.
+        let rogerBeepEnabled: Bool
+        let rogerBeepHz: Double
+        let rogerBeepMs: Double
+        let squelchTailEnabled: Bool
+        let squelchTailMs: Double
+        let squelchTailLevel: Double
 
-        /// Mirrors the server's `derivePostDecodeBlock` short-circuit — when
-        /// nothing is engaged and the upsample is the legacy default, caller
-        /// should skip building a processor entirely.
+        /// Mirrors the server's `derivePostDecodeBlock` short-circuit — when no
+        /// biquad / compressor / saturation is engaged and the upsample is the
+        /// legacy default, the caller should skip building a `Processor`. The
+        /// cue flags and `wideband` are intentionally excluded: the cue is
+        /// synthesized separately by the transport from the raw config, and
+        /// `wideband` shapes nothing on its own.
         var isNoOp: Bool {
             return upsampleMode == .duplicate
                 && !hpfEnabled
@@ -62,6 +83,7 @@ enum PostDecodeChain {
                 && !lowShelfEnabled
                 && !highShelfEnabled
                 && !presenceEnabled
+                && !compressorEnabled
                 && saturationAmount <= 0
         }
     }
@@ -73,7 +95,13 @@ enum PostDecodeChain {
     final class Processor {
         private let upsampleMode: UpsampleMode
         private let saturationAmount: Double
+        // Biquads are always built at 16 kHz (the player rate), so the same
+        // stage list + compressor serve both the 8 kHz vocoder path (process,
+        // which upsamples first) and the Opus wideband path (processWideband,
+        // which skips the upsample). One codec per talk-spurt + reset() at spurt
+        // boundaries means the shared state never crosses.
         private var stages: [Biquad] = []
+        private var compressor: Compressor?
         /// One-sample carryover so linear upsample stays seamless across
         /// frame boundaries within a talk-spurt.
         private var linearPrev: Double = 0
@@ -100,10 +128,21 @@ enum PostDecodeChain {
                 stages.append(.peak(fc: cfg.presenceHz, gainDb: cfg.presenceDb,
                                     q: max(0.1, cfg.presenceQ), fs: fs))
             }
+            if cfg.compressorEnabled {
+                compressor = Compressor(
+                    thresholdDb: cfg.compressorThresholdDb,
+                    ratio: cfg.compressorRatio,
+                    attackMs: cfg.compressorAttackMs,
+                    releaseMs: cfg.compressorReleaseMs,
+                    makeupDb: cfg.compressorMakeupDb,
+                    fs: fs
+                )
+            }
         }
 
         func reset() {
             for i in 0..<stages.count { stages[i].reset() }
+            compressor?.reset()
             linearPrev = 0
         }
 
@@ -115,10 +154,32 @@ enum PostDecodeChain {
             for i in 0..<stages.count {
                 stages[i].processInPlace(&pcm16k)
             }
+            compressor?.processInPlace(&pcm16k)
             if saturationAmount > 0 {
                 Self.applySoftSaturation(&pcm16k, amount: saturationAmount)
             }
-            // Encode to little-endian PCM-16 bytes for the AudioTrack.
+            return Self.shortLeBytes(pcm16k)
+        }
+
+        /// Opus wideband entry point: the input is ALREADY 16 kHz, so this
+        /// skips the 8→16 upsample and runs the SAME biquad → compressor →
+        /// saturation tail (the stages are at 16 kHz). Length-agnostic — Opus
+        /// frames are not 160 samples, and nothing here assumes the *2 upsample
+        /// length. Returns LE PCM-16 bytes for the player.
+        func processWideband(pcm16k input: [Int16]) -> Data {
+            var pcm16k = input
+            for i in 0..<stages.count {
+                stages[i].processInPlace(&pcm16k)
+            }
+            compressor?.processInPlace(&pcm16k)
+            if saturationAmount > 0 {
+                Self.applySoftSaturation(&pcm16k, amount: saturationAmount)
+            }
+            return Self.shortLeBytes(pcm16k)
+        }
+
+        /// Pack `Int16` samples to little-endian PCM-16 bytes for the player.
+        private static func shortLeBytes(_ pcm16k: [Int16]) -> Data {
             var out = Data(count: pcm16k.count * 2)
             out.withUnsafeMutableBytes { raw in
                 let dst = raw.bindMemory(to: Int16.self)
@@ -235,10 +296,17 @@ enum PostDecodeChain {
     // ----- helpers -------------------------------------------------------
 
     /// Round + clamp a `Double` into the `Int16` range.
+    ///
+    /// Uses `floor(x + 0.5)` (round half toward +∞) to match JavaScript's
+    /// `Math.round` and Kotlin's `roundToInt()` — Swift's default `.rounded()`
+    /// is round-half-away-from-zero, which would round negative half-values the
+    /// other way (e.g. -2.5 → -3 vs -2) and break sample-exact cross-platform
+    /// parity. Audio samples rarely land on an exact half, but the DSP contract
+    /// is "byte-identical across web / Android / iOS", so we pin the tie rule.
     fileprivate static func clamp16(_ x: Double) -> Int {
         if x > 32767 { return 32767 }
         if x < -32768 { return -32768 }
-        return Int(x.rounded())
+        return Int((x + 0.5).rounded(.down))
     }
 
     /// RBJ-cookbook biquad — direct-form-II transposed. Same math as the
@@ -344,5 +412,110 @@ enum PostDecodeChain {
                 a2: (1 - alpha / A) / a0
             )
         }
+    }
+
+    /// Feed-forward (peak-sensing) compressor with a hard knee. Mirrors the
+    /// `Biquad` struct shape: coefficients computed once at construction, only
+    /// `envDb` evolves per sample. Identical arithmetic to the web reference
+    /// `Compressor` (postDecodeChain.ts) and the Android `Compressor` so a
+    /// channel sounds the same everywhere. All math in Double. Runs at 16 kHz,
+    /// after the biquads and before saturation.
+    struct Compressor {
+        private static let ref = 32768.0
+        private let attackCoef: Double
+        private let releaseCoef: Double
+        private let slope: Double
+        private let makeupLin: Double
+        private let thresholdDb: Double
+        /// Gain-reduction envelope in dB; always <= 0. Zeroed in `reset()`.
+        private var envDb: Double = 0
+
+        init(thresholdDb: Double, ratio: Double, attackMs: Double,
+             releaseMs: Double, makeupDb: Double, fs: Double) {
+            self.thresholdDb = thresholdDb
+            self.attackCoef = exp(-1.0 / (attackMs * 0.001 * fs))
+            self.releaseCoef = exp(-1.0 / (releaseMs * 0.001 * fs))
+            self.slope = 1.0 / ratio - 1.0
+            self.makeupLin = pow(10.0, makeupDb / 20.0)
+        }
+
+        mutating func reset() {
+            envDb = 0
+        }
+
+        mutating func processInPlace(_ pcm: inout [Int16]) {
+            for i in 0..<pcm.count {
+                let x = Double(pcm[i])
+                let ax = abs(x) / Compressor.ref
+                let xDb = ax < 1e-9 ? -120.0 : 20.0 * log10(ax)
+                let overDb = xDb - thresholdDb
+                let grDb = overDb > 0.0 ? overDb * slope : 0.0
+                let coef = grDb < envDb ? attackCoef : releaseCoef
+                envDb = coef * envDb + (1.0 - coef) * grDb
+                let g = pow(10.0, envDb / 20.0) * makeupLin
+                pcm[i] = Int16(PostDecodeChain.clamp16(x * g))
+            }
+        }
+    }
+
+    // ----- end-of-transmission cue (roger beep + comfort-noise tail) -----
+
+    /// Deterministic LCG for the comfort-noise tail — `arc4random` / `Double.random`
+    /// diverge across platforms, so the noise MUST come from this fixed-seed
+    /// generator with the same constants on web / Android / iOS. `seed` is a
+    /// `UInt32` so the multiply overflows mod 2^32 (with `&*` / `&+`) exactly
+    /// like the web's Math.imul/>>>0 form.
+    private struct CueNoise {
+        private var seed: UInt32 = 0x6d2b79f5
+
+        mutating func next() -> Double {
+            seed = seed &* 1664525 &+ 1013904223
+            return (Double(seed) / 4294967295.0) * 2.0 - 1.0
+        }
+    }
+
+    /// Synthesize the close-side end-of-transmission cue as 16 kHz mono LE
+    /// PCM-16 `Data`. The cue is `[roger beep][comfort-noise tail]` concatenated;
+    /// each segment is included only when its flag is on. Returns empty `Data`
+    /// when neither flag is enabled. Pinned + identical to the web / Android cue.
+    static func endOfTxCue(_ cfg: Config) -> Data {
+        let fs = 16_000.0
+        let fade = Int((fs * 0.006).rounded()) // 6 ms raised-cosine fade in/out
+        let beep = cfg.rogerBeepEnabled
+        let tail = cfg.squelchTailEnabled
+
+        let beepN = beep ? Int((fs * cfg.rogerBeepMs / 1000.0).rounded()) : 0
+        let tailN = tail ? Int((fs * cfg.squelchTailMs / 1000.0).rounded()) : 0
+        var out = [Int16](repeating: 0, count: beepN + tailN)
+
+        let beepHz = cfg.rogerBeepHz
+        if beepN > 0 {
+            for i in 0..<beepN {
+                var g = 0.5
+                if i < fade { g *= Double(i) / Double(fade) }
+                else if i > beepN - fade { g *= Double(beepN - i) / Double(fade) }
+                out[i] = Int16(PostDecodeChain.clamp16(sin(2 * .pi * beepHz * Double(i) / fs) * g * 32767.0))
+            }
+        }
+
+        let level = cfg.squelchTailLevel
+        var noise = CueNoise()
+        if tailN > 0 {
+            for i in 0..<tailN {
+                var faded = 1.0
+                if i < fade { faded *= Double(i) / Double(fade) }
+                else if i > tailN - fade { faded *= Double(tailN - i) / Double(fade) }
+                out[beepN + i] = Int16(PostDecodeChain.clamp16(noise.next() * level * faded * 32767.0))
+            }
+        }
+
+        var data = Data(count: out.count * 2)
+        data.withUnsafeMutableBytes { raw in
+            let dst = raw.bindMemory(to: Int16.self)
+            for i in 0..<out.count {
+                dst[i] = out[i].littleEndian
+            }
+        }
+        return data
     }
 }

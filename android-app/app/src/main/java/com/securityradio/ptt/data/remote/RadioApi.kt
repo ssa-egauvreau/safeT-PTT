@@ -88,6 +88,22 @@ data class AudioPostDecodeDto(
     @SerializedName("presenceDb") val presenceDb: Float? = null,
     @SerializedName("presenceQ") val presenceQ: Float? = null,
     @SerializedName("saturationAmount") val saturationAmount: Float? = null,
+    /** Run the chain on the Opus (16 kHz) path too. Shapes nothing on its own. */
+    @SerializedName("wideband") val wideband: Boolean? = null,
+    /** Feed-forward compressor, after the biquads and before saturation. */
+    @SerializedName("compressorEnabled") val compressorEnabled: Boolean? = null,
+    @SerializedName("compressorThresholdDb") val compressorThresholdDb: Float? = null,
+    @SerializedName("compressorRatio") val compressorRatio: Float? = null,
+    @SerializedName("compressorAttackMs") val compressorAttackMs: Float? = null,
+    @SerializedName("compressorReleaseMs") val compressorReleaseMs: Float? = null,
+    @SerializedName("compressorMakeupDb") val compressorMakeupDb: Float? = null,
+    /** End-of-transmission cue, synthesized locally on `air_released`. */
+    @SerializedName("rogerBeepEnabled") val rogerBeepEnabled: Boolean? = null,
+    @SerializedName("rogerBeepHz") val rogerBeepHz: Float? = null,
+    @SerializedName("rogerBeepMs") val rogerBeepMs: Float? = null,
+    @SerializedName("squelchTailEnabled") val squelchTailEnabled: Boolean? = null,
+    @SerializedName("squelchTailMs") val squelchTailMs: Float? = null,
+    @SerializedName("squelchTailLevel") val squelchTailLevel: Float? = null,
 )
 
 data class LocationReportDto(

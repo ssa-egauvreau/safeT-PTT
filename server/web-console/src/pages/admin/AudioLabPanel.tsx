@@ -985,6 +985,143 @@ export function AudioLabPanel() {
             value={config.postDecode.saturationAmount ?? 0}
             onChange={(v) => updatePost("saturationAmount", v)}
           />
+          {/* Compressor / AGC — feed-forward, runs after the biquads and
+              before saturation. Pinned defaults: threshold -24 dB, ratio 3,
+              attack 5 ms, release 80 ms, makeup 0 dB. */}
+          <Toggle
+            label="Compressor / AGC"
+            value={config.postDecode.compressorEnabled ?? false}
+            onChange={(v) => updatePost("compressorEnabled", v)}
+          />
+          <RangeRow
+            label="Threshold"
+            unit="dB"
+            min={-60}
+            max={0}
+            step={1}
+            value={config.postDecode.compressorThresholdDb ?? -24}
+            disabled={!config.postDecode.compressorEnabled}
+            onChange={(v) => updatePost("compressorThresholdDb", v)}
+          />
+          <RangeRow
+            label="Ratio"
+            unit=": 1"
+            min={1}
+            max={20}
+            step={0.5}
+            value={config.postDecode.compressorRatio ?? 3}
+            disabled={!config.postDecode.compressorEnabled}
+            onChange={(v) => updatePost("compressorRatio", v)}
+          />
+          <RangeRow
+            label="Attack"
+            unit="ms"
+            min={1}
+            max={200}
+            step={1}
+            value={config.postDecode.compressorAttackMs ?? 5}
+            disabled={!config.postDecode.compressorEnabled}
+            onChange={(v) => updatePost("compressorAttackMs", v)}
+          />
+          <RangeRow
+            label="Release"
+            unit="ms"
+            min={5}
+            max={2000}
+            step={5}
+            value={config.postDecode.compressorReleaseMs ?? 80}
+            disabled={!config.postDecode.compressorEnabled}
+            onChange={(v) => updatePost("compressorReleaseMs", v)}
+          />
+          <RangeRow
+            label="Make-up gain"
+            unit="dB"
+            min={-12}
+            max={24}
+            step={0.5}
+            value={config.postDecode.compressorMakeupDb ?? 0}
+            disabled={!config.postDecode.compressorEnabled}
+            onChange={(v) => updatePost("compressorMakeupDb", v)}
+          />
+          {/* Wideband: also run this whole chain on Opus (16 kHz) channels.
+              Has no effect on the clip preview above (an 8 kHz IMBE round-
+              trip), but is what live Opus listeners get. Shapes nothing on
+              its own — only unlocks the Opus post-decode path. */}
+          <Toggle
+            label="Apply chain to Opus (wideband) channels"
+            value={config.postDecode.wideband ?? false}
+            onChange={(v) => updatePost("wideband", v)}
+          />
+          <div className="muted small">
+            Off by default. When on, the filters / compressor / saturation
+            above also shape Opus (16 kHz) channels, not just the 8 kHz
+            vocoders. The clip preview is an 8 kHz round-trip, so this toggle
+            doesn&apos;t change the A/B — it only affects live Opus listeners.
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>End-of-transmission cue (listeners hear it)</legend>
+          <div className="muted small">
+            When another unit unkeys, each listener on the channel synthesizes
+            this cue locally and plays it into their own audio — precise timing,
+            clean PCM, and the talker is correctly excluded. Both segments are
+            off by default.
+          </div>
+          {/* Roger beep — single sine, 6 ms cosine fades. Pinned defaults
+              1200 Hz / 120 ms. */}
+          <Toggle
+            label="Roger beep"
+            value={config.postDecode.rogerBeepEnabled ?? false}
+            onChange={(v) => updatePost("rogerBeepEnabled", v)}
+          />
+          <RangeRow
+            label="Beep frequency"
+            unit="Hz"
+            min={300}
+            max={4000}
+            step={50}
+            value={config.postDecode.rogerBeepHz ?? 1200}
+            disabled={!config.postDecode.rogerBeepEnabled}
+            onChange={(v) => updatePost("rogerBeepHz", v)}
+          />
+          <RangeRow
+            label="Beep length"
+            unit="ms"
+            min={20}
+            max={500}
+            step={10}
+            value={config.postDecode.rogerBeepMs ?? 120}
+            disabled={!config.postDecode.rogerBeepEnabled}
+            onChange={(v) => updatePost("rogerBeepMs", v)}
+          />
+          {/* Comfort-noise squelch tail — deterministic LCG noise, same
+              cosine fades. Pinned defaults 90 ms / level 0.05. */}
+          <Toggle
+            label="Comfort-noise squelch tail"
+            value={config.postDecode.squelchTailEnabled ?? false}
+            onChange={(v) => updatePost("squelchTailEnabled", v)}
+          />
+          <RangeRow
+            label="Tail length"
+            unit="ms"
+            min={20}
+            max={500}
+            step={10}
+            value={config.postDecode.squelchTailMs ?? 90}
+            disabled={!config.postDecode.squelchTailEnabled}
+            onChange={(v) => updatePost("squelchTailMs", v)}
+          />
+          <RangeRow
+            label="Tail level"
+            unit=""
+            min={0}
+            max={0.5}
+            step={0.01}
+            value={config.postDecode.squelchTailLevel ?? 0.05}
+            disabled={!config.postDecode.squelchTailEnabled}
+            onChange={(v) => updatePost("squelchTailLevel", v)}
+          />
         </fieldset>
         </>)}
       </section>

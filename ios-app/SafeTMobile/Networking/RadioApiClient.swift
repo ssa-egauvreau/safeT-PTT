@@ -177,6 +177,22 @@ struct PostDecodeSummary: Decodable {
     let presenceDb: Double?
     let presenceQ: Double?
     let saturationAmount: Double?
+    /// Run the chain on the Opus (16 kHz) path too. Shapes nothing on its own.
+    let wideband: Bool?
+    /// Feed-forward compressor, after the biquads and before saturation.
+    let compressorEnabled: Bool?
+    let compressorThresholdDb: Double?
+    let compressorRatio: Double?
+    let compressorAttackMs: Double?
+    let compressorReleaseMs: Double?
+    let compressorMakeupDb: Double?
+    /// End-of-transmission cue, synthesized locally on `air_released`.
+    let rogerBeepEnabled: Bool?
+    let rogerBeepHz: Double?
+    let rogerBeepMs: Double?
+    let squelchTailEnabled: Bool?
+    let squelchTailMs: Double?
+    let squelchTailLevel: Double?
 
     /// Build the typed `PostDecodeChain.Config` the processor consumes.
     /// Optional fields default to the documented "feature off" values so an
@@ -198,7 +214,20 @@ struct PostDecodeSummary: Decodable {
             presenceHz: presenceHz ?? 2200,
             presenceDb: presenceDb ?? 0,
             presenceQ: presenceQ ?? 1.0,
-            saturationAmount: saturationAmount ?? 0
+            saturationAmount: saturationAmount ?? 0,
+            wideband: wideband ?? false,
+            compressorEnabled: compressorEnabled ?? false,
+            compressorThresholdDb: compressorThresholdDb ?? -24,
+            compressorRatio: compressorRatio ?? 3.0,
+            compressorAttackMs: compressorAttackMs ?? 5,
+            compressorReleaseMs: compressorReleaseMs ?? 80,
+            compressorMakeupDb: compressorMakeupDb ?? 0,
+            rogerBeepEnabled: rogerBeepEnabled ?? false,
+            rogerBeepHz: rogerBeepHz ?? 1200,
+            rogerBeepMs: rogerBeepMs ?? 120,
+            squelchTailEnabled: squelchTailEnabled ?? false,
+            squelchTailMs: squelchTailMs ?? 90,
+            squelchTailLevel: squelchTailLevel ?? 0.05
         )
     }
 }

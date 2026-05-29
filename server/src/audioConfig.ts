@@ -77,6 +77,34 @@ export interface DevicePostDecodeConfig {
    * means — it just applies whatever HPF/LPF/etc it's told.
    */
   dmrCharacter?: number;
+  /**
+   * Run the post-decode shaping chain on the Opus (16 kHz) path too, not just
+   * the 8 kHz vocoders. Opus already decodes at the chain's native rate so it
+   * skips the upsample stage entirely (`processWideband`). This flag alone
+   * shapes NOTHING — it only unlocks the wideband entry point — so it is
+   * deliberately excluded from `anyShapingEnabled`: with only `wideband` set
+   * the block must still collapse to `null` (byte-identical to today).
+   */
+  wideband?: boolean;
+  /** Feed-forward compressor / AGC, run AFTER the biquads and BEFORE
+   *  saturation. Off by default; the fields below only take effect when
+   *  `compressorEnabled` is true. */
+  compressorEnabled?: boolean;
+  compressorThresholdDb?: number;
+  compressorRatio?: number;
+  compressorAttackMs?: number;
+  compressorReleaseMs?: number;
+  compressorMakeupDb?: number;
+  /** End-of-transmission roger beep, synthesized by each listener when the
+   *  relay forwards an `air_released` event. Off by default. */
+  rogerBeepEnabled?: boolean;
+  rogerBeepHz?: number;
+  rogerBeepMs?: number;
+  /** Comfort-noise squelch tail appended after the roger beep on the same
+   *  `air_released` cue. Off by default. */
+  squelchTailEnabled?: boolean;
+  squelchTailMs?: number;
+  squelchTailLevel?: number;
 }
 
 /**
@@ -205,6 +233,53 @@ function derivePostDecodeBlock(
   optNum("presenceQ");
   optNum("saturationAmount");
 
+  optBool("wideband");
+
+  optBool("compressorEnabled");
+  optNum("compressorThresholdDb");
+  optNum("compressorRatio");
+  optNum("compressorAttackMs");
+  optNum("compressorReleaseMs");
+  optNum("compressorMakeupDb");
+
+  optBool("rogerBeepEnabled");
+  optNum("rogerBeepHz");
+  optNum("rogerBeepMs");
+
+  optBool("squelchTailEnabled");
+  optNum("squelchTailMs");
+  optNum("squelchTailLevel");
+
+  // Clamp the new numeric fields, but ONLY when the owning feature is enabled
+  // — an absent/disabled feature leaves its fields untouched (and usually
+  // absent) so the no-op short-circuit below still collapses to `null`. The
+  // clients re-apply the pinned defaults for any field left absent here.
+  if (out.compressorEnabled === true) {
+    clampField(out, "compressorRatio", 1, 20);
+    clampField(out, "compressorAttackMs", 1, 200);
+    clampField(out, "compressorReleaseMs", 5, 2000);
+    clampField(out, "compressorThresholdDb", -60, 0);
+    clampField(out, "compressorMakeupDb", -12, 24);
+  }
+  if (out.rogerBeepEnabled === true) {
+    clampField(out, "rogerBeepHz", 300, 4000);
+    clampField(out, "rogerBeepMs", 20, 500);
+  }
+  if (out.squelchTailEnabled === true) {
+    clampField(out, "squelchTailMs", 20, 500);
+    clampField(out, "squelchTailLevel", 0, 0.5);
+  }
+  // Presence-bell Q: the mobile chains floor this at 0.1 when building the peak
+  // biquad (`max(0.1, presenceQ)`), but the web/lab chains used it raw — so a
+  // hand-pushed Q below 0.1 produced different coefficients on handset vs
+  // console, and Q=0 drove the web peak filter to NaN. Clamp once here (the
+  // single source of truth) so every platform sees the same value, and only
+  // when the bell actually runs. Floor-only (no ceiling) to match the mobile
+  // `max(0.1, …)` exactly.
+  if (out.presenceEnabled === true && typeof out.presenceQ === "number" && out.presenceQ < 0.1) {
+    out.presenceQ = 0.1;
+  }
+
   // Radio character dial: an admin can move a single 0–100 slider in the
   // Audio Lab to get progressively more "trunked-radio" sound (narrower
   // bandwidth, softer compression, presence bell). The mapping happens
@@ -212,19 +287,35 @@ function derivePostDecodeBlock(
   // provides a quick one-knob preset.
   const dmrCharacter = clampDmrCharacter(raw.dmrCharacter);
   if (dmrCharacter > 0) {
-    applyDmrCharacter(out, dmrCharacter);
+    // On the Opus (wideband) path the dial uses gentler anchors that keep the
+    // codec's clarity; on the 8 kHz vocoders it uses the heavier trunked-radio
+    // anchors. Selecting on `wideband` here means a channel that flips between
+    // codecs gets the appropriate voicing for whichever path actually runs.
+    if (out.wideband === true) {
+      applyWidebandCharacter(out, dmrCharacter);
+    } else {
+      applyDmrCharacter(out, dmrCharacter);
+    }
   }
 
   // Short-circuit: if nothing is actually enabled / engaged AND the upsample
   // is the legacy default, return null so the client takes the no-op fast
   // path. The voice client checks `postDecode === null` exactly for this.
+  //
+  // `wideband` is INTENTIONALLY excluded: it shapes nothing on its own (it
+  // only unlocks the Opus post-decode entry point), so `wideband:true` with
+  // no other shaping must still collapse to `null` — that keeps the default-
+  // off behaviour byte-identical to today and the null-return tests passing.
   const anyShapingEnabled =
     out.hpfEnabled === true ||
     out.lpfEnabled === true ||
     out.lowShelfEnabled === true ||
     out.highShelfEnabled === true ||
     out.presenceEnabled === true ||
-    (typeof out.saturationAmount === "number" && out.saturationAmount > 0);
+    (typeof out.saturationAmount === "number" && out.saturationAmount > 0) ||
+    out.compressorEnabled === true ||
+    out.rogerBeepEnabled === true ||
+    out.squelchTailEnabled === true;
   if (!anyShapingEnabled && upsampleMode === "duplicate") {
     return null;
   }
@@ -267,4 +358,46 @@ function applyDmrCharacter(out: DevicePostDecodeConfig, c: number): void {
   out.presenceHz = 2200;
   out.presenceDb = Math.round(6 * t * 10) / 10;
   out.presenceQ = 1.0;
+}
+
+/**
+ * Wideband (Opus) sibling of {@link applyDmrCharacter}. Opus carries real
+ * 16 kHz audio, so the dial uses gentler anchors that preserve clarity rather
+ * than the heavier telephone-narrow band the 8 kHz vocoders get:
+ *
+ *   - HPF goes from 150 Hz (subtle) to 250 Hz (firm low-cut)
+ *   - LPF goes from 7 kHz (light edge taming) to 5 kHz (still wideband)
+ *   - Soft saturation goes from 0 to 0.25 (half the DMR depth)
+ *   - Presence bell adds 0 to +3 dB at 2.6 kHz, Q 0.9 (subtle consonant lift)
+ *
+ * Linear interpolation between 0 and 100 keeps the slider smooth.
+ */
+function applyWidebandCharacter(out: DevicePostDecodeConfig, c: number): void {
+  out.dmrCharacter = c;
+  const t = c / 100;
+  out.hpfEnabled = true;
+  out.hpfHz = Math.round(150 + 100 * t);
+  out.lpfEnabled = true;
+  out.lpfHz = Math.round(7000 - 2000 * t);
+  out.saturationAmount = Math.round(0.25 * t * 100) / 100;
+  out.presenceEnabled = true;
+  out.presenceHz = 2600;
+  out.presenceDb = Math.round(3 * t * 10) / 10;
+  out.presenceQ = 0.9;
+}
+
+/** Clamp a numeric field in-place to [lo, hi]. No-op when the field is absent
+ *  or non-finite (a disabled feature leaves its fields untouched so the no-op
+ *  short-circuit can still collapse the block to `null`). */
+function clampField(
+  out: DevicePostDecodeConfig,
+  key: keyof DevicePostDecodeConfig,
+  lo: number,
+  hi: number,
+): void {
+  const target = out as unknown as Record<string, unknown>;
+  const v = target[key];
+  if (typeof v === "number" && Number.isFinite(v)) {
+    target[key] = Math.max(lo, Math.min(hi, v));
+  }
 }
