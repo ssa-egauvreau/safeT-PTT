@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type Transmission } from "../api";
-
-const AIR_POLL_MS = 1200;
-const AIR_POLL_FAST_MS = 400;
+import {
+  TALK_ACTIVITY_FAST_POLL_MS,
+  TALK_ACTIVITY_POLL_MS,
+} from "../voice/voiceTiming";
 const TX_POLL_MS = 2000;
 
 export type LiveTalker = {
@@ -114,7 +115,9 @@ export function useChannelLiveRx({
 
     void pollAir();
     const pollMs =
-      homeReceiving || scanRxChannel ? AIR_POLL_FAST_MS : AIR_POLL_MS;
+      homeReceiving || scanRxChannel
+        ? TALK_ACTIVITY_FAST_POLL_MS
+        : TALK_ACTIVITY_POLL_MS;
     const id = window.setInterval(() => void pollAir(), pollMs);
     return () => {
       cancelled = true;

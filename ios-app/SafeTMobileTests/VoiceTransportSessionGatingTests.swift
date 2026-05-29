@@ -97,6 +97,10 @@ final class VoiceTransportSessionGatingTests: XCTestCase {
 
     // MARK: - UInt64 boundary behaviour matches VoiceAudio's id generator
 
+    func test_releaseAirJson_matchesRelayProtocol() {
+        XCTAssertEqual(VoiceTransport.releaseAirJSON, "{\"type\":\"release_air\"}")
+    }
+
     func test_stopUplinkCapture_sendsReleaseAirWithoutCrashingWhenSocketClosed() {
         let transport = makeTransport()
         transport.startUplinkCapture(sessionId: 1)

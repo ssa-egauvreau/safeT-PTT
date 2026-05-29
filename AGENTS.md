@@ -3,12 +3,12 @@
 ## Git: use `main` only
 
 - Put **all** changes on **`main`**: commit locally on `main`, then **`git push origin main`**.
-- **Do not** create topic branches or open pull requests for this project unless the owner explicitly asks.
+- **Do not** create topic branches or open pull requests for this project unless the owner explicitly asks (when they do, use `cursor/<description>-48a5` branches and open a PR — do **not** push directly to `main`).
 - **Android Studio:** stay on branch **`main`**. Use **Git → Pull** on `main`, then build and run. No branch switching required for normal updates.
 
 ## Cloud / automation agents
 
-When applying changes in this repo, **commit and push to `main`** directly. Skip separate `cursor/...` feature branches and skip opening PRs unless the user overrides this file.
+When applying changes in this repo, **commit and push to `main`** directly unless the user asks for pull requests. If they want PRs: branch `cursor/<description>-48a5`, push the branch, open a PR to `main`, and merge via GitHub — do not push feature commits straight to `main`.
 
 ## Cursor Cloud specific instructions
 

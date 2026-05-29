@@ -65,6 +65,10 @@ jobs:
         working-directory: server/web-console
         run: npm run typecheck
 
+      - name: Web-console unit tests
+        working-directory: server/web-console
+        run: npm test
+
       - name: Web-console build (production)
         working-directory: server/web-console
         run: npm run build

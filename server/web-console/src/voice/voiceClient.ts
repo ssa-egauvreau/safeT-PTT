@@ -23,6 +23,7 @@ import {
   isVoiceCodec,
   type VoiceCodec,
 } from "./voiceCodecRegistry";
+import { RX_GAP_MS, TALK_SPURT_GAP_SEC, releaseAirControlJson } from "./voiceTiming";
 
 export type VoiceState = "idle" | "connecting" | "listening" | "transmitting" | "error" | "closed";
 
@@ -55,9 +56,6 @@ const WAVEFORM_FFT_SIZE = 256;
 // and PLC fill kicks in.
 const FRAME_SAMPLES = 320;
 const JITTER_CUSHION_SEC = 0.08;
-/** > 300 ms between voice frames marks a new talk-spurt — clear PLC state so
- *  the next talker isn't preceded by a faded copy of the previous one. */
-const TALK_SPURT_GAP_SEC = 0.3;
 /** Number of PLC frames synthesised before the loop falls to silence.
  *  3 × 20 ms = 60 ms of fade-out, then silence — masks an isolated late
  *  frame without looping a stuck note when the network stalls for seconds. */
@@ -100,8 +98,6 @@ const JOIN_ERRORS: Record<string, string> = {
 };
 
 /** No inbound audio for this long means the channel is clear again. */
-/** Idle RX — align with mobile talk-spurt gap (see docs/voice-timing.md). */
-const RX_GAP_MS = 300;
 
 /** Voice-fallback detector: at least this many raw PCM frames clustered within
  *  CLEAR_RX_BURST_WINDOW_MS is treated as a sustained talk-spurt (not a marker/tone-out). */
@@ -1105,7 +1101,7 @@ export class VoiceChannelClient {
       return;
     }
     try {
-      ws.send(JSON.stringify({ type: "release_air" }));
+      ws.send(releaseAirControlJson());
     } catch {
       /* socket dropped */
     }

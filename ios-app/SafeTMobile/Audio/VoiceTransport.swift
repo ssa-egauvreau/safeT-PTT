@@ -140,8 +140,7 @@ final class VoiceTransport {
     func releaseTransmitHold() {
         pcmAcc.removeAll(keepingCapacity: true)
         guard let task else { return }
-        let payload = "{\"type\":\"release_air\"}"
-        task.send(.string(payload)) { _ in }
+        task.send(.string(Self.releaseAirJSON)) { _ in }
     }
 
     func resetUplinkState() {
@@ -447,6 +446,9 @@ final class VoiceTransport {
             break
         }
     }
+
+    /// Relay control frame — must match server `voiceRelay.ts` and Android/web clients.
+    static let releaseAirJSON = "{\"type\":\"release_air\"}"
 
     private func startReceivingHeartbeat() {
         receivingTimer?.invalidate()

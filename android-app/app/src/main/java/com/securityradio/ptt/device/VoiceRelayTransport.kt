@@ -390,7 +390,7 @@ class VoiceRelayTransport(
         val ws = webSocketRef.get() ?: return
         if (!socketReady.get()) return
         try {
-            ws.send("""{"type":"release_air"}""")
+            ws.send(RELEASE_AIR_JSON)
         } catch (_: Exception) {
         }
     }
@@ -608,6 +608,9 @@ class VoiceRelayTransport(
 
     private companion object {
         private const val TAG = "VoiceRelay"
+
+        /** Relay control frame — must match server `voiceRelay.ts` and web `voiceTiming.ts`. */
+        internal const val RELEASE_AIR_JSON = """{"type":"release_air"}"""
 
         /** A pause this long between mic frames marks a new talk-spurt (≈300 ms). */
         private const val TX_GAP_RESET_NS = 300_000_000L

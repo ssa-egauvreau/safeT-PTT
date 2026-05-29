@@ -160,6 +160,35 @@ final class RadioApiClientTests: XCTestCase {
         XCTAssertEqual(items.first { $0.name == "channel" }?.value, "OPS-1")
     }
 
+    // MARK: - talkActivity()
+
+    func test_talkActivity_decodesMainAndScan() async throws {
+        StubURLProtocol.handler = { _ in
+            let json = """
+            {
+              "main": {
+                "channel": "OPS-1",
+                "active": true,
+                "unit_id": "A1",
+                "username": "Patrol"
+              },
+              "scan": {
+                "channel": "OPS-2",
+                "active": false,
+                "unit_id": null,
+                "username": null
+              }
+            }
+            """
+            return .init(body: Data(json.utf8))
+        }
+
+        let ta = try await makeClient().talkActivity(home: "OPS-1", scan: "OPS-2")
+        XCTAssertEqual(ta.main?.unitId, "A1")
+        XCTAssertEqual(ta.main?.username, "Patrol")
+        XCTAssertEqual(ta.scan?.active, false)
+    }
+
     // MARK: - setEmergency()
 
     func test_setEmergency_encodesAllFields_andOmitsNilMessage() async throws {
