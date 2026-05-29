@@ -43,14 +43,19 @@ final class InboundJitterBuffer {
     /// sub-frame jitter on top of that.
     private let frameMs: Double = 20.0
 
-    /// Initial cushion: 3 × 20 ms ≈ 60 ms before the first scheduleBuffer call.
-    private let initialTargetFrames: Int = 3
-    private let initialTimeoutMs: Double = 200.0
+    /// Initial cushion: 6 × 20 ms ≈ 120 ms before the first scheduleBuffer call. Bumped from
+    /// 60 ms after field reports of cutting-out on cellular — WebSocket runs over TCP, so a
+    /// single upstream loss triggers a retransmission burst that can stall arrival for
+    /// 100–200 ms. 120 ms of cushion absorbs typical retransmit windows without underrunning.
+    /// Trade-off: +60 ms steady-state mouth-to-ear latency. Still well under PTT perceptual
+    /// expectation (~400 ms before operators notice "lag").
+    private let initialTargetFrames: Int = 6
+    private let initialTimeoutMs: Double = 300.0
 
-    /// Worst-case buffered audio. 16 × 20 ms ≈ 320 ms — if the producer
-    /// outpaces the player (sustained burst), drop the oldest frame rather
-    /// than letting the buffer grow without bound.
-    private let maxBufferFrames: Int = 16
+    /// Worst-case buffered audio. 30 × 20 ms ≈ 600 ms — bumped from 320 ms so a longer
+    /// retransmission stall accumulates instead of dropping frames. Steady-state latency is
+    /// still governed by `initialTargetFrames` and the playout drain rate.
+    private let maxBufferFrames: Int = 30
 
     /// Talk-spurt boundary; matches the relay air-claim window so an operator
     /// gap between transmissions clears stale state cleanly.

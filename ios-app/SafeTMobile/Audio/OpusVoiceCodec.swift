@@ -11,8 +11,10 @@ import os
 ///  - sample rate: 16 000 Hz (matches existing uplink/downlink)
 ///  - channels: 1 (mono)
 ///  - frame size: 20 ms (320 samples) — matches the relay's 20 ms cadence
-///  - bitrate: 20 kbps (wideband sweet spot for clear speech with FEC
-///    headroom)
+///  - bitrate: 32 kbps (was 20 — bumped after field reports of cutting-out
+///    and robotic audio on loss. AudioToolbox doesn't expose Opus FEC
+///    knobs, so we give the encoder more bits to fit harder voices
+///    cleanly. ~12 kbps extra is negligible for this app's profile.)
 ///
 /// Wire format: 2-byte magic (0x4F 0x70) + opaque Opus packet. Packet size
 /// is variable per frame (DTX, complexity), so receivers identify the codec
@@ -25,7 +27,7 @@ import os
 
 private let OPUS_SAMPLE_RATE: Double = 16_000
 private let OPUS_FRAME_SAMPLES: Int = 320  // 20 ms @ 16 kHz
-private let OPUS_BITRATE: Int = 20_000
+private let OPUS_BITRATE: Int = 32_000
 
 /// Source format: int16 mono 16 kHz LE (matches the wire PCM the encoder
 /// consumes and the decoder produces).

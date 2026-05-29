@@ -18,7 +18,10 @@ import java.nio.ByteOrder
  *  - sample rate: 16 000 Hz
  *  - channels: 1 (mono)
  *  - frame size: 20 ms (320 samples)
- *  - bitrate: 20 kbps
+ *  - bitrate: 32 kbps (was 20 — extra headroom helps the encoder cope
+ *    with sibilants and harder voices under loss, which was showing up
+ *    as intermittent robotic audio in the field. ~12 kbps extra is
+ *    negligible for this app's profile.)
  *
  * Wire format: 2-byte magic (0x4F 0x70) + opaque Opus packet. Packet
  * size varies per frame (DTX, complexity), so receivers identify the
@@ -36,7 +39,7 @@ private const val SAMPLE_RATE = 16_000
 private const val CHANNELS = 1
 private const val FRAME_SAMPLES = 320            // 20 ms @ 16 kHz
 private const val FRAME_BYTES = FRAME_SAMPLES * 2 // PCM-16
-private const val BITRATE = 20_000
+private const val BITRATE = 32_000
 private const val DEQUEUE_TIMEOUT_US = 20_000L   // 20 ms — one frame period
 
 /** Build the OpusHead identification header MediaCodec expects as csd-0

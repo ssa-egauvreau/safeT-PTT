@@ -17,15 +17,19 @@
  * Output preserves input order — WebCodecs guarantees that — so the
  * callback can write to WebSocket in the order encode() was called.
  *
- * Voice profile: 16 kHz mono, 20 ms frame, 20 kbps wideband, VOIP
+ * Voice profile: 16 kHz mono, 20 ms frame, 32 kbps wideband, VOIP
  * application. AudioEncoder doesn't expose FEC / DTX directly; the
- * browser picks reasonable defaults for the speech codec class.
+ * browser picks reasonable defaults for the speech codec class. Bitrate
+ * was bumped from 20 → 32 kbps after field reports of cutting-out and
+ * robotic audio under packet loss — extra headroom helps the encoder
+ * cope with harder voices on lossy links. WebCodecs doesn't surface
+ * Opus FEC, so bitrate is the only encoder knob we can push.
  */
 
 const SAMPLE_RATE = 16_000;
 const CHANNELS = 1;
 const FRAME_SAMPLES = 320; // 20 ms @ 16 kHz
-const TARGET_BITRATE = 20_000;
+const TARGET_BITRATE = 32_000;
 const FRAME_DURATION_US = 20_000;
 const OPUS_MAGIC_0 = 0x4f; // 'O'
 const OPUS_MAGIC_1 = 0x70; // 'p'
