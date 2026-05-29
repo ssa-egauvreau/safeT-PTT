@@ -7,6 +7,24 @@ import SwiftUI
 final class SettingsStore: ObservableObject {
     enum AudioRoute: String, CaseIterable, Codable {
         case auto, earpiece, speaker, bluetooth
+
+        var label: String {
+            switch self {
+            case .auto: return "Auto"
+            case .earpiece: return "Earpiece"
+            case .speaker: return "Speaker"
+            case .bluetooth: return "Bluetooth"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .auto: return "speaker.wave.2"
+            case .earpiece: return "ear"
+            case .speaker: return "speaker.wave.3.fill"
+            case .bluetooth: return "headphones"
+            }
+        }
     }
 
     static let shared = SettingsStore()

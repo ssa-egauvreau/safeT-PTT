@@ -191,7 +191,7 @@ struct RadioScreen: View {
     // MARK: - status strip
 
     private func statusStrip(_ state: RadioUiState) -> some View {
-        HStack {
+        HStack(spacing: 8) {
             Text("UNIT \(state.localShortUnitId)")
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
                 .foregroundColor(.safetTextDim)
@@ -200,8 +200,29 @@ struct RadioScreen: View {
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundColor(.safetText)
             Spacer()
+            audioRouteMenu
             networkPill(state)
         }
+    }
+
+    private var audioRouteMenu: some View {
+        Menu {
+            ForEach(SettingsStore.AudioRoute.allCases, id: \.self) { route in
+                Button {
+                    settings.audioRoute = route
+                    AudioSessionManager.applyRoute(route)
+                } label: {
+                    Label(route.label, systemImage: route.icon)
+                }
+            }
+        } label: {
+            Image(systemName: settings.audioRoute.icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.safetTextDim)
+                .frame(width: 24, height: 24)
+        }
+        .accessibilityLabel("Audio route")
+        .accessibilityValue(settings.audioRoute.label)
     }
 
     private func operatorStrip(_ state: RadioUiState) -> some View {
