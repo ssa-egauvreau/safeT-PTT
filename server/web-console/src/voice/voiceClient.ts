@@ -690,7 +690,7 @@ export class VoiceChannelClient {
       // end-of-TX cue (roger beep / squelch tail) locally and inject it into
       // playout. Gated by the agency config flags — does nothing unless at
       // least one of rogerBeepEnabled / squelchTailEnabled is set.
-      this.playEndOfTxCue();
+      this.playEndOfTxCue(typeof msg.channel === "string" ? msg.channel : null);
     } else if (msg.type === "error") {
       this.setState("error", JOIN_ERRORS[msg.code ?? ""] ?? `Join rejected (${msg.code ?? "unknown"}).`);
       this.close();
@@ -946,9 +946,22 @@ export class VoiceChannelClient {
    *  Pinned + identical to the Android / iOS cue. No-op unless the agency
    *  enabled at least one of the cue flags. Plays via the local-tone path
    *  (track:true) so it bypasses PLC and Stop All Sounds can cut it. */
-  private playEndOfTxCue(): void {
+  private playEndOfTxCue(messageChannel?: string | null): void {
     const cfg = this.postDecodeConfig;
     if (!cfg || (cfg.rogerBeepEnabled !== true && cfg.squelchTailEnabled !== true)) {
+      return;
+    }
+    // Defense-in-depth: if a dispatcher "move" raced the release, an
+    // air_released for the channel we just left could arrive after we re-joined
+    // elsewhere. The relay personalises the message with the recipient's own
+    // channel name, so a mismatch means it's stale — skip it. Fail open: only
+    // skip on a clear non-empty mismatch so a normalisation difference can never
+    // mute a legitimate cue.
+    if (
+      messageChannel &&
+      this.channelName &&
+      messageChannel.trim().toLowerCase() !== this.channelName.trim().toLowerCase()
+    ) {
       return;
     }
     const cue = endOfTxCue(cfg);

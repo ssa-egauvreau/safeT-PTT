@@ -243,7 +243,7 @@ class VoiceRelayTransport(
                     // close-side end-of-TX cue (roger beep / squelch tail)
                     // locally and inject it into playout. No-op unless the
                     // agency enabled at least one of the cue flags.
-                    playEndOfTxCue()
+                    playEndOfTxCue(json.optString("channel").trim())
                 }
             }
         } catch (e: Exception) {
@@ -254,12 +254,34 @@ class VoiceRelayTransport(
     /** Build + play the close-side end-of-TX cue when the relay reports another
      *  unit unkeyed. Pinned + identical to the web/iOS cue. No-op unless the
      *  agency enabled the roger beep and/or squelch tail. */
-    private fun playEndOfTxCue() {
+    private fun playEndOfTxCue(messageChannel: String? = null) {
         val cfg = postDecodeConfigProvider() ?: return
         if (!cfg.rogerBeepEnabled && !cfg.squelchTailEnabled) return
+        // Defense-in-depth: if a dispatcher "move" raced the release, an
+        // air_released for the channel we just left could arrive after we
+        // re-joined elsewhere. The relay personalises the message with the
+        // recipient's own channel name, so a mismatch means it's stale — skip
+        // it. Fail open: only skip on a clear non-empty mismatch so a
+        // normalisation difference can never mute a legitimate cue.
+        if (!messageChannel.isNullOrEmpty() &&
+            pendingChannelRaw.isNotEmpty() &&
+            !messageChannel.equals(pendingChannelRaw, ignoreCase = true)
+        ) {
+            return
+        }
         val cue = PostDecodeChain.endOfTxCue(cfg)
-        if (cue.isNotEmpty()) {
-            inbound.writePcmFromMain(cue)
+        if (cue.isEmpty()) return
+        // Inject in <=20 ms (640-byte) frames, not as one ~210 ms entry:
+        // a single large entry becomes the jitter buffer's lastGoodFrame and,
+        // since it's the tail of the queue, the next playout tick underruns and
+        // PLC re-emits a faded copy of the WHOLE cue — a stuttering echo that
+        // also stalls the 20 ms cadence. Frame-sized chunks keep PLC + pacing
+        // normal (mirrors the web track:true path bypassing PLC).
+        var off = 0
+        while (off < cue.size) {
+            val end = minOf(off + CUE_FRAME_BYTES, cue.size)
+            inbound.writePcmFromMain(cue.copyOfRange(off, end))
+            off = end
         }
     }
 
@@ -654,5 +676,9 @@ class VoiceRelayTransport(
 
         /** A pause this long between mic frames marks a new talk-spurt (≈300 ms). */
         private const val TX_GAP_RESET_NS = 300_000_000L
+
+        /** End-of-TX cue injection chunk: 20 ms of 16 kHz mono PCM16 = 640 bytes.
+         *  Keeps the cue flowing through the jitter buffer as normal-sized frames. */
+        private const val CUE_FRAME_BYTES = 640
     }
 }

@@ -554,3 +554,24 @@ test("deriveDeviceAudioConfig: wideband dial uses GENTLER anchors than the 8 kHz
   assert.ok(wb.hpfHz! < dmr.hpfHz!, "wideband HPF should be lower (wider band)");
   assert.ok(wb.saturationAmount! < dmr.saturationAmount!, "wideband saturation should be gentler");
 });
+
+test("deriveDeviceAudioConfig: presenceQ is floored to 0.1 when the bell is enabled (parity with mobile max(0.1,Q))", () => {
+  // The mobile chains build the peak biquad with max(0.1, presenceQ); the
+  // web/lab chains used Q raw, so a hand-pushed Q < 0.1 diverged (and Q=0 went
+  // NaN on web). Clamp once server-side so every platform sees the same value.
+  const low = deriveDeviceAudioConfig({
+    postDecode: { presenceEnabled: true, presenceHz: 2200, presenceDb: 6, presenceQ: 0.05 },
+  }).postDecode!;
+  assert.equal(low.presenceQ, 0.1);
+
+  const zero = deriveDeviceAudioConfig({
+    postDecode: { presenceEnabled: true, presenceHz: 2200, presenceDb: 6, presenceQ: 0 },
+  }).postDecode!;
+  assert.equal(zero.presenceQ, 0.1);
+
+  // A normal Q passes through untouched (floor-only, no ceiling — matches mobile).
+  const ok = deriveDeviceAudioConfig({
+    postDecode: { presenceEnabled: true, presenceHz: 2200, presenceDb: 6, presenceQ: 2 },
+  }).postDecode!;
+  assert.equal(ok.presenceQ, 2);
+});

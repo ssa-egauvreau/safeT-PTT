@@ -468,7 +468,7 @@ final class VoiceTransport {
             // close-side end-of-TX cue (roger beep / squelch tail) locally and
             // inject it into playout. No-op unless the agency enabled at least
             // one of the cue flags.
-            playEndOfTxCue()
+            playEndOfTxCue(messageChannel: object["channel"] as? String)
         case "error":
             let code = (object["code"] as? String) ?? "unknown"
             onError?(code)
@@ -480,13 +480,35 @@ final class VoiceTransport {
     /// Build + play the close-side end-of-TX cue when the relay reports another
     /// unit unkeyed. Pinned + identical to the web / Android cue. No-op unless
     /// the agency enabled the roger beep and/or squelch tail.
-    private func playEndOfTxCue() {
+    private func playEndOfTxCue(messageChannel: String? = nil) {
         guard let cfg = postDecodeConfig, cfg.rogerBeepEnabled || cfg.squelchTailEnabled else {
             return
         }
+        // Defense-in-depth: if a dispatcher "move" raced the release, an
+        // air_released for the channel we just left could arrive after we
+        // re-joined elsewhere. The relay personalises the message with the
+        // recipient's own channel name, so a mismatch means it's stale — skip.
+        // Fail open: only skip on a clear non-empty mismatch so a normalisation
+        // difference can never mute a legitimate cue.
+        if let mc = messageChannel, !mc.isEmpty,
+           let cur = currentChannel, !cur.isEmpty,
+           mc.caseInsensitiveCompare(cur) != .orderedSame {
+            return
+        }
         let cue = PostDecodeChain.endOfTxCue(cfg)
-        if !cue.isEmpty {
-            audio.enqueueIncoming(cue)
+        if cue.isEmpty { return }
+        // Inject in <=20 ms (640-byte) frames, not as one ~210 ms entry: a single
+        // large entry becomes the jitter buffer's lastGoodFrame and, since it's
+        // the tail of the queue, the next playout tick underruns and PLC re-emits
+        // a faded copy of the WHOLE cue — a stuttering echo that also stalls the
+        // 20 ms cadence. Frame-sized chunks keep PLC + pacing normal (mirrors the
+        // web track:true path bypassing PLC).
+        let cueFrameBytes = 640  // 20 ms of 16 kHz mono PCM16
+        var off = 0
+        while off < cue.count {
+            let end = min(off + cueFrameBytes, cue.count)
+            audio.enqueueIncoming(cue.subdata(in: off..<end))
+            off = end
         }
     }
 

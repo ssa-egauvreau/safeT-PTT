@@ -269,6 +269,16 @@ function derivePostDecodeBlock(
     clampField(out, "squelchTailMs", 20, 500);
     clampField(out, "squelchTailLevel", 0, 0.5);
   }
+  // Presence-bell Q: the mobile chains floor this at 0.1 when building the peak
+  // biquad (`max(0.1, presenceQ)`), but the web/lab chains used it raw — so a
+  // hand-pushed Q below 0.1 produced different coefficients on handset vs
+  // console, and Q=0 drove the web peak filter to NaN. Clamp once here (the
+  // single source of truth) so every platform sees the same value, and only
+  // when the bell actually runs. Floor-only (no ceiling) to match the mobile
+  // `max(0.1, …)` exactly.
+  if (out.presenceEnabled === true && typeof out.presenceQ === "number" && out.presenceQ < 0.1) {
+    out.presenceQ = 0.1;
+  }
 
   // Radio character dial: an admin can move a single 0–100 slider in the
   // Audio Lab to get progressively more "trunked-radio" sound (narrower
