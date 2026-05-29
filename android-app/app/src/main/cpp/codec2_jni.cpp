@@ -33,43 +33,69 @@ struct CODEC2* gDecoder = nullptr;
 constexpr int CODEC2_3200_SAMPLES = 160;  // 20 ms @ 8 kHz
 constexpr int CODEC2_3200_BYTES   = 8;    // 64 bits per frame
 
-/** Allocate encoder + decoder. Caller must hold gCodecMutex.
- *  Returns true on success — if any allocation fails, BOTH are cleared
- *  so the half-allocated state never gets used. */
-bool ensureAllocatedLocked() {
-    if (gEncoder != nullptr && gDecoder != nullptr) {
-        return true;
+bool encoderSizesOk(struct CODEC2* enc) {
+    return enc != nullptr &&
+           codec2_samples_per_frame(enc) == CODEC2_3200_SAMPLES &&
+           codec2_bytes_per_frame(enc) == CODEC2_3200_BYTES;
+}
+
+bool decoderSizesOk(struct CODEC2* dec) {
+    return dec != nullptr &&
+           codec2_samples_per_frame(dec) == CODEC2_3200_SAMPLES &&
+           codec2_bytes_per_frame(dec) == CODEC2_3200_BYTES;
+}
+
+/** Allocate encoder only. Caller must hold gCodecMutex. */
+bool ensureEncoderLocked() {
+    if (gEncoder != nullptr) {
+        return encoderSizesOk(gEncoder);
     }
-
-    if (gEncoder != nullptr) { codec2_destroy(gEncoder); gEncoder = nullptr; }
-    if (gDecoder != nullptr) { codec2_destroy(gDecoder); gDecoder = nullptr; }
-
     gEncoder = codec2_create(CODEC2_MODE_3200);
-    if (gEncoder == nullptr) {
-        return false;
-    }
-    gDecoder = codec2_create(CODEC2_MODE_3200);
-    if (gDecoder == nullptr) {
-        codec2_destroy(gEncoder);
+    if (!encoderSizesOk(gEncoder)) {
+        if (gEncoder != nullptr) {
+            codec2_destroy(gEncoder);
+        }
         gEncoder = nullptr;
         return false;
     }
+    return true;
+}
 
-    // Sanity-check: the frame sizes built into our wire framing depend on
-    // these exact values. If a future codec2 release changes mode 3200 we
-    // want to fail at init rather than corrupting wire data.
-    const bool sizesOk =
-        codec2_samples_per_frame(gEncoder) == CODEC2_3200_SAMPLES &&
-        codec2_bytes_per_frame(gEncoder)   == CODEC2_3200_BYTES   &&
-        codec2_samples_per_frame(gDecoder) == CODEC2_3200_SAMPLES &&
-        codec2_bytes_per_frame(gDecoder)   == CODEC2_3200_BYTES;
-    if (!sizesOk) {
-        codec2_destroy(gEncoder); gEncoder = nullptr;
-        codec2_destroy(gDecoder); gDecoder = nullptr;
+/** Allocate decoder only. Caller must hold gCodecMutex. */
+bool ensureDecoderLocked() {
+    if (gDecoder != nullptr) {
+        return decoderSizesOk(gDecoder);
+    }
+    gDecoder = codec2_create(CODEC2_MODE_3200);
+    if (!decoderSizesOk(gDecoder)) {
+        if (gDecoder != nullptr) {
+            codec2_destroy(gDecoder);
+        }
+        gDecoder = nullptr;
         return false;
     }
-
     return true;
+}
+
+/** Allocate encoder + decoder. Caller must hold gCodecMutex. */
+bool ensureAllocatedLocked() {
+    return ensureEncoderLocked() && ensureDecoderLocked();
+}
+
+void resetEncoderLocked() {
+    if (gEncoder != nullptr) {
+        codec2_destroy(gEncoder);
+        gEncoder = nullptr;
+    }
+    ensureEncoderLocked();
+}
+
+void resetDecoderLocked() {
+    if (gDecoder != nullptr) {
+        codec2_destroy(gDecoder);
+        gDecoder = nullptr;
+    }
+    ensureDecoderLocked();
 }
 
 }  // namespace
@@ -95,7 +121,7 @@ Java_com_securityradio_ptt_device_Codec2Native_nativeEncode(JNIEnv* env, jclass 
     uint8_t codeword[CODEC2_3200_BYTES]{};
 
     std::lock_guard<std::mutex> lock(gCodecMutex);
-    if (gEncoder == nullptr && !ensureAllocatedLocked()) {
+    if (!ensureEncoderLocked()) {
         return nullptr;
     }
     codec2_encode(gEncoder, codeword, samples);
@@ -120,7 +146,7 @@ Java_com_securityradio_ptt_device_Codec2Native_nativeDecode(JNIEnv* env, jclass 
     int16_t samples[CODEC2_3200_SAMPLES]{};
 
     std::lock_guard<std::mutex> lock(gCodecMutex);
-    if (gDecoder == nullptr && !ensureAllocatedLocked()) {
+    if (!ensureDecoderLocked()) {
         return nullptr;
     }
     codec2_decode(gDecoder, samples, codeword);
@@ -130,4 +156,16 @@ Java_com_securityradio_ptt_device_Codec2Native_nativeDecode(JNIEnv* env, jclass 
     env->SetShortArrayRegion(out, 0, CODEC2_3200_SAMPLES,
                              reinterpret_cast<const jshort*>(samples));
     return out;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_securityradio_ptt_device_Codec2Native_nativeResetEncoder(JNIEnv* /*env*/, jclass /*cls*/) {
+    std::lock_guard<std::mutex> lock(gCodecMutex);
+    resetEncoderLocked();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_securityradio_ptt_device_Codec2Native_nativeResetDecoder(JNIEnv* /*env*/, jclass /*cls*/) {
+    std::lock_guard<std::mutex> lock(gCodecMutex);
+    resetDecoderLocked();
 }

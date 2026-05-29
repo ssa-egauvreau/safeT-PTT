@@ -7,10 +7,10 @@ package com.securityradio.ptt.device
  *  - `nativeInit` allocates a singleton encoder + decoder for
  *    `CODEC2_MODE_3200` (3200 bps, 20 ms frames, 160 samples per frame
  *    at 8 kHz, 8 bytes per encoded codeword).
- *  - `encodeFrame` / `decodeCodeword8` are stateless from the caller's
- *    perspective; the underlying C state is shared per-process. The
- *    Kotlin wrappers thin-wrap the JNI methods with size checks so a
- *    malformed input never reaches the native layer.
+ *  - `encodeFrame` / `decodeCodeword8` wrap JNI with size checks. Call
+ *    `resetEncoderForTalkSpurt` / `resetDecoderForTalkSpurt` at talk-spurt
+ *    boundaries so LPC state from a prior transmission does not color the
+ *    next one (same pattern as Opus flush and the server recorder).
  *
  * The shared object is the same `libsecurityradiovocoder.so` that
  * carries IMBE — see app/src/main/cpp/CMakeLists.txt.
@@ -54,7 +54,21 @@ object Codec2Native {
         return nativeDecode(codeword8)
     }
 
+    /** Fresh LPC/pitch state for a new talk-spurt (TX). */
+    fun resetEncoderForTalkSpurt() {
+        if (!loadedOk) return
+        nativeResetEncoder()
+    }
+
+    /** Fresh LPC/pitch state for a new inbound talk-spurt (RX). */
+    fun resetDecoderForTalkSpurt() {
+        if (!loadedOk) return
+        nativeResetDecoder()
+    }
+
     @JvmStatic private external fun nativeInit(): Boolean
     @JvmStatic private external fun nativeEncode(samples8k160: ShortArray): ByteArray?
     @JvmStatic private external fun nativeDecode(codeword8: ByteArray): ShortArray?
+    @JvmStatic private external fun nativeResetEncoder()
+    @JvmStatic private external fun nativeResetDecoder()
 }

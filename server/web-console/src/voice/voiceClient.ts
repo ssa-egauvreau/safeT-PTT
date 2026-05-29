@@ -4,7 +4,14 @@
 import { api, getToken, type Permission } from "../api";
 import { ImbeTxConditioner } from "./imbeTxConditioner";
 import { imbeDecode, imbeEncode, imbeReady, initImbe } from "./imbeVocoder";
-import { codec2Decode, codec2Encode, codec2Ready, initCodec2 } from "./codec2Vocoder";
+import {
+  codec2Decode,
+  codec2Encode,
+  codec2Ready,
+  initCodec2,
+  resetCodec2DecoderForTalkSpurt,
+  resetCodec2EncoderForTalkSpurt,
+} from "./codec2Vocoder";
 import { OpusWebDecoder } from "./opusDecoder";
 import { OpusWebEncoder, opusEncoderAvailable } from "./opusEncoder";
 import { PostDecodeProcessor, type PostDecodeConfig } from "./postDecodeChain";
@@ -805,6 +812,10 @@ export class VoiceChannelClient {
       ) {
         this.lastGoodVoicePcm = null;
         this.plcFrameCount = 0;
+        if (codec2Ready()) {
+          resetCodec2DecoderForTalkSpurt();
+        }
+        this.postDecodeProcessor?.reset();
       }
 
       // Underrun fill: if the playout queue has drained (playHead is behind
@@ -966,6 +977,9 @@ export class VoiceChannelClient {
     }
 
     this.txConditioner.reset();
+    if (this.currentTxCodec === "codec2_3200" && codec2Ready()) {
+      resetCodec2EncoderForTalkSpurt();
+    }
     this.capSource = this.capCtx.createMediaStreamSource(this.micStream);
     // Parallel analyser tap for the TX waveform (the worklet path is untouched).
     this.capAnalyser = this.capCtx.createAnalyser();
@@ -1075,6 +1089,9 @@ export class VoiceChannelClient {
       void this.opusEncoder.flushAsync().finally(() => this.sendReleaseAir());
     } else {
       this.sendReleaseAir();
+    }
+    if (this.currentTxCodec === "codec2_3200" && codec2Ready()) {
+      resetCodec2EncoderForTalkSpurt();
     }
     if (this.state !== "closed" && this.state !== "error") {
       this.setState("listening");

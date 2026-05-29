@@ -32,22 +32,7 @@ final class Codec2Encoder: VoiceEncoder {
     private var state: OpaquePointer?
 
     init() {
-        guard let s = codec2_create(Int32(CODEC2_MODE_3200)) else {
-            logger.warning("codec2_create returned nil — Codec2 unavailable, falling back to IMBE on TX")
-            self.state = nil
-            return
-        }
-        // Sanity-check the mode's frame layout matches what our wire
-        // framing assumes. If a future libcodec2 release changes mode
-        // 3200 we want to fail at init rather than corrupt the wire.
-        if codec2_samples_per_frame(s) != Int32(CODEC2_FRAME_SAMPLES) ||
-           codec2_bytes_per_frame(s)   != Int32(CODEC2_FRAME_BYTES) {
-            logger.warning("Codec2 mode 3200 frame layout mismatch — disabling encoder")
-            codec2_destroy(s)
-            self.state = nil
-            return
-        }
-        self.state = s
+        state = Self.createState(logger: logger, role: "encoder")
     }
 
     deinit {
@@ -55,6 +40,27 @@ final class Codec2Encoder: VoiceEncoder {
     }
 
     var isReady: Bool { state != nil }
+
+    func resetForTalkSpurt() {
+        lock.lock()
+        if let s = state { codec2_destroy(s) }
+        state = Self.createState(logger: logger, role: "encoder")
+        lock.unlock()
+    }
+
+    private static func createState(logger: Logger, role: String) -> OpaquePointer? {
+        guard let s = codec2_create(Int32(CODEC2_MODE_3200)) else {
+            logger.warning("codec2_create returned nil — Codec2 \(role) unavailable")
+            return nil
+        }
+        if codec2_samples_per_frame(s) != Int32(CODEC2_FRAME_SAMPLES) ||
+           codec2_bytes_per_frame(s)   != Int32(CODEC2_FRAME_BYTES) {
+            logger.warning("Codec2 mode 3200 frame layout mismatch — disabling \(role)")
+            codec2_destroy(s)
+            return nil
+        }
+        return s
+    }
 
     func encodeFrame(_ pcm16kLe640: Data) -> Data? {
         guard let s = state else { return nil }
@@ -91,19 +97,7 @@ final class Codec2Decoder: VoiceDecoder {
     private var state: OpaquePointer?
 
     init() {
-        guard let s = codec2_create(Int32(CODEC2_MODE_3200)) else {
-            logger.warning("codec2_create returned nil — Codec2 unavailable; inbound frames will drop")
-            self.state = nil
-            return
-        }
-        if codec2_samples_per_frame(s) != Int32(CODEC2_FRAME_SAMPLES) ||
-           codec2_bytes_per_frame(s)   != Int32(CODEC2_FRAME_BYTES) {
-            logger.warning("Codec2 mode 3200 frame layout mismatch — disabling decoder")
-            codec2_destroy(s)
-            self.state = nil
-            return
-        }
-        self.state = s
+        state = Codec2Encoder.createState(logger: logger, role: "decoder")
     }
 
     deinit {
@@ -111,6 +105,13 @@ final class Codec2Decoder: VoiceDecoder {
     }
 
     var isReady: Bool { state != nil }
+
+    func resetForTalkSpurt() {
+        lock.lock()
+        if let s = state { codec2_destroy(s) }
+        state = Codec2Encoder.createState(logger: logger, role: "decoder")
+        lock.unlock()
+    }
 
     func decodeFrame(_ framedBytes: Data) -> [Int16]? {
         guard let s = state else { return nil }

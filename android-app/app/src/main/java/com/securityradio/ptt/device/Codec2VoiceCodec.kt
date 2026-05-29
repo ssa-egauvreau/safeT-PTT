@@ -46,6 +46,10 @@ class Codec2Encoder : VoiceEncoder {
         System.arraycopy(codeword, 0, packet, 2, codeword.size)
         return packet
     }
+
+    override fun resetForTalkSpurt() {
+        Codec2Native.resetEncoderForTalkSpurt()
+    }
 }
 
 class Codec2Decoder : VoiceDecoder {
@@ -62,5 +66,9 @@ class Codec2Decoder : VoiceDecoder {
         if (framedBytes[0] != codec.magic0 || framedBytes[1] != codec.magic1) return null
         val codeword = framedBytes.copyOfRange(2, 10)
         return Codec2Native.decodeCodeword8(codeword)
+    }
+
+    override fun resetForTalkSpurt() {
+        Codec2Native.resetDecoderForTalkSpurt()
     }
 }

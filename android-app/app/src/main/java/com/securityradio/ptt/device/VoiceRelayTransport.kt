@@ -387,6 +387,7 @@ class VoiceRelayTransport(
      */
     fun releaseTransmitHold() {
         discardPendingUplinkTail()
+        codecRegistry.encoderFor(currentTxCodec)?.resetForTalkSpurt()
         val ws = webSocketRef.get() ?: return
         if (!socketReady.get()) return
         try {

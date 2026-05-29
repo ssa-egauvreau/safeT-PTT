@@ -264,11 +264,6 @@ final class VoiceTransport {
         guard let processor = postDecodeProcessor else {
             return P25ImbeNative.Frames.upsampleDup8kToLe16Mono(pcm8k160: pcm8k)
         }
-        let now = ProcessInfo.processInfo.systemUptime
-        if lastInboundVoiceAt == 0 || (now - lastInboundVoiceAt) > talkSpurtGapSeconds {
-            processor.reset()
-        }
-        lastInboundVoiceAt = now
         return processor.process(pcm8k160: pcm8k)
     }
 
@@ -350,6 +345,15 @@ final class VoiceTransport {
         }
         if payload.count >= 2,
            let decoder = codecRegistry.decoder(forMagic: payload[payload.startIndex], payload[payload.startIndex + 1]) {
+            let now = ProcessInfo.processInfo.systemUptime
+            let newSpurt = lastInboundVoiceAt == 0 || (now - lastInboundVoiceAt) > talkSpurtGapSeconds
+            lastInboundVoiceAt = now
+            if newSpurt {
+                decoder.resetForTalkSpurt()
+                if decoder.nativeSampleRate == 8000 {
+                    postDecodeProcessor?.reset()
+                }
+            }
             // Lazy-load IMBE on first frame so peers stay audible even before
             // this radio opens the PTT screen. Other codecs load (or fail to
             // load) eagerly with their own native libs.

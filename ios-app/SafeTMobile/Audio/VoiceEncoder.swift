@@ -39,4 +39,11 @@ protocol VoiceDecoder: AnyObject {
     /// Decode one framed inbound voice payload. Returns native-rate mono
     /// samples, or nil if the frame is malformed or the codec is not ready.
     func decodeFrame(_ framedBytes: Data) -> [Int16]?
+
+    /// Reset decoder state at an inbound talk-spurt boundary.
+    func resetForTalkSpurt()
+}
+
+extension VoiceDecoder {
+    func resetForTalkSpurt() {}
 }

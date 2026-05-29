@@ -111,3 +111,25 @@ export function codec2Decode(codeword: Uint8Array): Int16Array | null {
     mod._free(samplesPtr);
   }
 }
+
+/** Codec2 LPC/pitch state carries across frames — recreate encoder at TX spurt start/end. */
+export function resetCodec2EncoderForTalkSpurt(): void {
+  const mod = codec;
+  if (!mod) return;
+  if (encoderState) {
+    mod._codec2_destroy(encoderState);
+    encoderState = 0;
+  }
+  encoderState = mod._codec2_create(CODEC2_MODE_3200);
+}
+
+/** Fresh decoder for a new inbound talk-spurt (matches server recorder per-spurt decoders). */
+export function resetCodec2DecoderForTalkSpurt(): void {
+  const mod = codec;
+  if (!mod) return;
+  if (decoderState) {
+    mod._codec2_destroy(decoderState);
+    decoderState = 0;
+  }
+  decoderState = mod._codec2_create(CODEC2_MODE_3200);
+}
