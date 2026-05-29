@@ -241,6 +241,106 @@ function asPermission(value: unknown): Permission | null {
   return PERMISSIONS.includes(value as Permission) ? (value as Permission) : null;
 }
 
+/** Maximum INT we'll accept for a single counter — caps a buggy / hostile
+ *  client at the Postgres `INT4` ceiling so a single oversize value can't make
+ *  the insert fail with a numeric-out-of-range error and burn a retry loop. */
+const VOICE_LINK_TELEMETRY_COUNTER_MAX = 2_000_000_000;
+
+/** Upper bound for one telemetry POST. Real client reports are ~200-400 bytes;
+ *  cap at 4 KB so a buggy or hostile client can't smuggle a large blob through
+ *  this endpoint. */
+const VOICE_LINK_TELEMETRY_MAX_BODY_BYTES = 4 * 1024;
+
+/** Hard cap on per-codec entries in one report so a buggy client can't smuggle
+ *  thousands of synthetic codec keys (one per report = O(N) JSONB merge work on
+ *  the aggregation query). 16 is comfortably larger than the 3 codecs we
+ *  actually ship (`imbe`, `codec2_3200`, `opus`) with room for future entries. */
+const VOICE_LINK_TELEMETRY_MAX_CODECS = 16;
+
+function clampCounter(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  if (n > VOICE_LINK_TELEMETRY_COUNTER_MAX) return VOICE_LINK_TELEMETRY_COUNTER_MAX;
+  return Math.floor(n);
+}
+
+/** Strict, side-effect-free parser for `POST /v1/telemetry/voice-link`. Returns
+ *  either a normalized {counters, codecBreakdown, clientTs} or an `error` code
+ *  for the route to surface with a 400. Validates body size, counter range,
+ *  and codec-breakdown shape — no exceptions inside the route. Exported so
+ *  the unit tests can pin the contract independently of the live router. */
+export function parseVoiceLinkTelemetryBody(body: Record<string, unknown>): {
+  ok: true;
+  counters: {
+    framesReceived: number;
+    framesDecoded: number;
+    decodeFailures: number;
+    plcFramesSynthesized: number;
+    bufferUnderruns: number;
+    maxBufferDepthFrames: number;
+    talkSpurtsStarted: number;
+    talkSpurtsEnded: number;
+    bytesReceived: number;
+    wallMsObservation: number;
+  };
+  codecBreakdown: Record<string, { framesReceived: number; framesDecoded: number }>;
+  clientTs: string | null;
+} | { ok: false; error: string } {
+  // Reject oversize JSON up front so a buggy/hostile client can't slip a large
+  // blob through this endpoint. We measure the JSON size of the parsed body
+  // rather than the raw Content-Length so the cap also covers cases where
+  // express.json() accepted a larger payload than we want here.
+  try {
+    const serialized = JSON.stringify(body);
+    if (serialized.length > VOICE_LINK_TELEMETRY_MAX_BODY_BYTES) {
+      return { ok: false, error: "payload_too_large" };
+    }
+  } catch {
+    return { ok: false, error: "invalid_json" };
+  }
+  const rawCounters = body.counters;
+  if (!rawCounters || typeof rawCounters !== "object") {
+    return { ok: false, error: "missing_counters" };
+  }
+  const c = rawCounters as Record<string, unknown>;
+  const counters = {
+    framesReceived: clampCounter(c.framesReceived),
+    framesDecoded: clampCounter(c.framesDecoded),
+    decodeFailures: clampCounter(c.decodeFailures),
+    plcFramesSynthesized: clampCounter(c.plcFramesSynthesized),
+    bufferUnderruns: clampCounter(c.bufferUnderruns),
+    maxBufferDepthFrames: clampCounter(c.maxBufferDepthFrames),
+    talkSpurtsStarted: clampCounter(c.talkSpurtsStarted),
+    talkSpurtsEnded: clampCounter(c.talkSpurtsEnded),
+    bytesReceived: clampCounter(c.bytesReceived),
+    wallMsObservation: clampCounter(c.wallMsObservation),
+  };
+  const codecBreakdown: Record<string, { framesReceived: number; framesDecoded: number }> = {};
+  const raw = body.codecBreakdown;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    let count = 0;
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (count >= VOICE_LINK_TELEMETRY_MAX_CODECS) break;
+      if (typeof k !== "string" || !k || k.length > 32) continue;
+      if (!v || typeof v !== "object") continue;
+      const entry = v as Record<string, unknown>;
+      codecBreakdown[k.slice(0, 32)] = {
+        framesReceived: clampCounter(entry.framesReceived),
+        framesDecoded: clampCounter(entry.framesDecoded),
+      };
+      count += 1;
+    }
+  }
+  let clientTs: string | null = null;
+  if (typeof body.clientTs === "string" && body.clientTs.length > 0 && body.clientTs.length <= 64) {
+    const parsed = Date.parse(body.clientTs);
+    if (Number.isFinite(parsed)) {
+      clientTs = new Date(parsed).toISOString();
+    }
+  }
+  return { ok: true, counters, codecBreakdown, clientTs };
+}
+
 /** Requires a signed-in account that belongs to an agency (blocks platform owners). */
 function requireAgencyMember(req: Request, res: Response, next: NextFunction): void {
   if (!req.authUser) {
