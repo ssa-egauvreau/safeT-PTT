@@ -1,10 +1,12 @@
 import { getAgencyIntegrationValue } from "../store.js";
 import { finalizeTen8NewIncidentBody } from "./incidentPayload.js";
 
-// 10-8 retired the AWS GovCloud gateway in the v1.1.0 spec (it now 502s). The
-// CAD API is served from connect.10-8systems.com. Per-agency overrides via
-// `ten8_api_base_url` still win for anyone on a different host.
-const DEFAULT_BASE = "https://connect.10-8systems.com";
+// 10-8's CAD API is served from the AWS GovCloud gateway (confirmed by 10-8
+// support as the correct host). The v1.1.0 spec lists connect.10-8systems.com,
+// but that host currently presents a TLS cert that does not cover its own name
+// (ERR_TLS_CERT_ALTNAME_INVALID), so it is not usable. Per-agency overrides via
+// `ten8_api_base_url` still win for anyone 10-8 moves to a different host.
+const DEFAULT_BASE = "https://ps569km5w9.execute-api.us-gov-west-1.amazonaws.com/prod";
 
 async function ten8Config(agencyId: number): Promise<{
   baseUrl: string;
