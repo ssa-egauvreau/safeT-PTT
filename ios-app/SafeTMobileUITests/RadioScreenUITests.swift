@@ -59,8 +59,15 @@ final class RadioScreenUITests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         settings.tap()
 
+        XCTAssertTrue(app.navigationBars["SETTINGS"].waitForExistence(timeout: 5),
+                      "SETTINGS sheet did not present")
+
+        // Sign Out lives at the bottom of a tall grouped list (Account,
+        // Controls, Scan, Location, About). CI simulators don't auto-scroll
+        // it into the accessibility tree until we swipe.
         let openConfirm = app.buttons["Sign Out…"]
-        XCTAssertTrue(openConfirm.waitForExistence(timeout: 5), "Sign Out… not found in SETTINGS sheet")
+        XCTAssertTrue(scrollUntilVisible(openConfirm, in: app, maxSwipes: 8),
+                      "Sign Out… not found in SETTINGS sheet")
         openConfirm.tap()
 
         let confirm = app.buttons["Sign Out"]
@@ -68,5 +75,14 @@ final class RadioScreenUITests: XCTestCase {
         confirm.tap()
 
         XCTAssertTrue(app.buttons["SIGN IN"].waitForExistence(timeout: 5))
+    }
+
+    /// Swipe up until `element` appears in the accessibility tree (or give up).
+    private func scrollUntilVisible(_ element: XCUIElement, in app: XCUIApplication, maxSwipes: Int) -> Bool {
+        for _ in 0..<maxSwipes {
+            if element.waitForExistence(timeout: 1) { return true }
+            app.swipeUp()
+        }
+        return element.waitForExistence(timeout: 2)
     }
 }

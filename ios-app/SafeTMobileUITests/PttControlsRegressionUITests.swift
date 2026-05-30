@@ -23,6 +23,9 @@ final class PttControlsRegressionUITests: XCTestCase {
         app.launchArguments += ["-uitest-logged-in", "-uitest-big-ptt-off"]
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["HOLD TO TALK"].waitForExistence(timeout: 5))
+        // CI simulators can take >5 s on cold launch before the legacy PTT bar
+        // paints; iteration 1 of this test has flaked with kAXErrorServerNotFound
+        // when we bail too early.
+        XCTAssertTrue(app.staticTexts["HOLD TO TALK"].waitForExistence(timeout: 15))
     }
 }

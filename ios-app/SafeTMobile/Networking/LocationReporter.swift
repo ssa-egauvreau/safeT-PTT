@@ -37,6 +37,13 @@ final class LocationReporter: NSObject, CLLocationManagerDelegate {
     func start() {
         guard !running else { return }
         running = true
+        // UI tests boot with `-uitest-logged-in`; skip the system location
+        // prompt so XCTest isn't blocked by SpringBoard's "Allow location?"
+        // sheet when tapping SETTINGS or the PTT bar.
+        if ProcessInfo.processInfo.arguments.contains("-uitest-logged-in") {
+            onAuthorizationChange?(true)
+            return
+        }
         manager.requestWhenInUseAuthorization()
         manager.startUpdatingLocation()
     }
