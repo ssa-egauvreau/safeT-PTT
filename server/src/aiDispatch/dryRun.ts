@@ -1,5 +1,10 @@
 import { getChannelAiDispatchRow } from "../store.js";
 import { adaptDispatcherResponseForChannel, detectEmergencyCodeFromTranscript } from "./emergencyCodes.js";
+import {
+  applyDistressDispatchRules,
+  buildDistressTen33Callout,
+  detectOfficerDistressFromTranscript,
+} from "./distressRules.js";
 import { handlePlateFromParse } from "./plateHandler.js";
 import { parseDispatcherTransmission, type AiDispatchParseResult } from "./parse.js";
 import {
@@ -236,14 +241,23 @@ export async function runAiDispatchDryRun(
       );
       parsed = applyOutWithCadRules(parsed, transcript, activeIncidents, unitId);
       parsed = applyCadDispatchRules(parsed, transcript);
+      parsed = applyDistressDispatchRules(parsed, transcript);
+      result.parsed = parsed;
+    } else {
+      parsed = applyDistressDispatchRules(parsed, transcript);
       result.parsed = parsed;
     }
 
     const emergencyRegex = detectEmergencyCodeFromTranscript(transcript);
+    const officerDistress = detectOfficerDistressFromTranscript(transcript);
+    const distressTen33Callout = officerDistress
+      ? await buildDistressTen33Callout(opts.agencyId, parsed.unit ?? unitId)
+      : null;
     const ten33Activated =
       emergencyRegex === "activate" ||
       parsed.trigger_emergency_tone === true ||
-      parsed.intent === "emergency";
+      parsed.intent === "emergency" ||
+      officerDistress;
 
     const plate = await phase("plate_lookup", () =>
       handlePlateFromParse({ agencyId: opts.agencyId, unitId, parsed: parsed! }),
@@ -521,7 +535,10 @@ export async function runAiDispatchDryRun(
       }
     }
 
-    if (!speakText && ten33Activated) {
+    if (ten33Activated && officerDistress && distressTen33Callout) {
+      speakText = distressTen33Callout;
+      ttsKind = "emergency";
+    } else if (!speakText && ten33Activated) {
       speakText = defaultTen33Callout(channelName);
       ttsKind = "emergency";
     }

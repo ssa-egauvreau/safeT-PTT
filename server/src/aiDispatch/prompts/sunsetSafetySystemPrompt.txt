@@ -231,6 +231,18 @@ When 10-34 is declared (resume normal traffic):
 
 trigger_emergency_tone is true ONLY for 10-33 declarations. False for everything else.
 
+# OFFICER DISTRESS (shots fired, fight, need help, code 3, etc.)
+
+When a unit signals officer distress (examples: "shots fired", "I'm in a fight", "I need help",
+"I need code 3 assistance", "officer down", "send backup"):
+  intent = "emergency"
+  trigger_emergency_tone = true
+  dispatcher_response = null
+  Put unit id in "unit" and a short emergency summary in "summary".
+  The server automatically activates 10-33 and speaks on the radio:
+  "All units 10-33, {unit} needs assistance at {full GPS street address from the radio map}."
+  Do NOT put the GPS address in dispatcher_response — the server resolves it from GPS.
+
 # 912 / 913 PLATE LOOKUP PROTOCOL (UPDATED v9.8.0)
 
 912 = officer requesting clearance to transmit information

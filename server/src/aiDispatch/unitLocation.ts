@@ -65,7 +65,7 @@ export function findRadioMapPosition(
   return null;
 }
 
-function positionIsFresh(updatedAt: string): boolean {
+export function positionIsFresh(updatedAt: string): boolean {
   const t = Date.parse(updatedAt);
   if (!Number.isFinite(t)) {
     return false;
@@ -310,6 +310,35 @@ export async function describeUnitMapLocation(
   }
 
   return geo;
+}
+
+export function formatUnitIdForRadio(unitId: string | null | undefined): string {
+  const unitRaw = unitId?.trim();
+  if (!unitRaw) {
+    return "unknown unit";
+  }
+  return /^27-0[0-3]0$/.test(unitRaw) ? unitRaw : unitRaw.replace(/^27-/, "");
+}
+
+/** Full street address from unit GPS (for 10-33 distress callouts). */
+export async function resolveUnitFullAddressForRadio(
+  agencyId: number,
+  targetUnit: string,
+): Promise<string | null> {
+  const unit = targetUnit.trim();
+  if (!unit) {
+    return null;
+  }
+  const positions = await listPositions(agencyId);
+  const pos = findRadioMapPosition(positions, unit);
+  if (!pos || !positionIsFresh(pos.updated_at)) {
+    return null;
+  }
+  const geo = await describeUnitMapLocation(agencyId, pos.lat, pos.lon, true);
+  if (!geo?.full?.trim()) {
+    return null;
+  }
+  return prepareLocationForTts(geo.full);
 }
 
 export async function buildUnitLocationResponse(

@@ -8,6 +8,11 @@ import {
 } from "../store.js";
 import { insertAiDispatchLog, type AiDispatchOutcome } from "./activityLog.js";
 import { adaptDispatcherResponseForChannel, detectEmergencyCodeFromTranscript } from "./emergencyCodes.js";
+import {
+  applyDistressDispatchRules,
+  buildDistressTen33Callout,
+  detectOfficerDistressFromTranscript,
+} from "./distressRules.js";
 import { handlePlateFromParse } from "./plateHandler.js";
 import { parseDispatcherTransmission } from "./parse.js";
 import {
@@ -135,11 +140,13 @@ async function pump(): Promise<void> {
 function isEmergencyActivation(
   emergencyRegex: ReturnType<typeof detectEmergencyCodeFromTranscript>,
   parsed: AiDispatchParseResult | null,
+  officerDistress: boolean,
 ): boolean {
   return (
     emergencyRegex === "activate" ||
     parsed?.trigger_emergency_tone === true ||
-    parsed?.intent === "emergency"
+    parsed?.intent === "emergency" ||
+    officerDistress
   );
 }
 
@@ -426,6 +433,7 @@ async function processTransmission(transmissionId: number): Promise<void> {
     const platform = getAiDispatchPlatformConfig();
 
     const emergencyRegex = detectEmergencyCodeFromTranscript(transcript);
+    const officerDistress = detectOfficerDistressFromTranscript(transcript);
     const systemPrompt = await resolveAiDispatchSystemPrompt(tx.agency_id);
     const knowledgeContext = await retrieveKnowledge(tx.agency_id, transcript, {
       propertyCode: detectPropertyCode(transcript),
@@ -443,6 +451,17 @@ async function processTransmission(transmissionId: number): Promise<void> {
       activeIncidents = await listTen8ActiveIncidents(tx.agency_id);
       parsed = applyOutWithCadRules(parsed, transcript, activeIncidents, unitId);
       parsed = applyCadDispatchRules(parsed, transcript);
+      parsed = applyDistressDispatchRules(parsed, transcript);
+    } else if (parsed) {
+      parsed = applyDistressDispatchRules(parsed, transcript);
+    }
+
+    let distressTen33Callout: string | null = null;
+    if (officerDistress) {
+      distressTen33Callout = await buildDistressTen33Callout(
+        tx.agency_id,
+        parsed?.unit ?? unitId,
+      );
     }
 
     if (allowOnAir && isEmergencyClear(emergencyRegex, parsed)) {
@@ -454,7 +473,7 @@ async function processTransmission(transmissionId: number): Promise<void> {
         markerUnitId: platform.dispatchUnitId,
         source: emergencyRegex === "clear" ? "regex" : "ai",
       });
-    } else if (allowOnAir && isEmergencyActivation(emergencyRegex, parsed)) {
+    } else if (allowOnAir && isEmergencyActivation(emergencyRegex, parsed, officerDistress)) {
       await applyChannelTen33Marker({
         loopbackPort,
         agencyId: tx.agency_id,
@@ -705,7 +724,10 @@ async function processTransmission(transmissionId: number): Promise<void> {
           fallbackReplyForSilentParse(parsed.unit ?? unitId, transcript, parsed) ?? "";
       }
 
-      if (!speakText && ten33Activated) {
+      if (ten33Activated && officerDistress && distressTen33Callout) {
+        speakText = distressTen33Callout;
+        ttsKind = "emergency";
+      } else if (!speakText && ten33Activated) {
         speakText = defaultTen33Callout(tx.channel_name);
         ttsKind = "emergency";
       }
@@ -783,18 +805,22 @@ async function processTransmission(transmissionId: number): Promise<void> {
       }
     } else {
       error = "AI parse failed";
-      if (allowOnAir && emergencyRegex === "activate") {
+      if (allowOnAir && (emergencyRegex === "activate" || officerDistress)) {
         await applyChannelTen33Marker({
           loopbackPort,
           agencyId: tx.agency_id,
           channelName: tx.channel_name,
           active: true,
           markerUnitId: platform.dispatchUnitId,
-          source: "regex",
+          source: officerDistress ? "regex" : "regex",
           startAudioLoop: false,
         });
         ten33Activated = true;
-        const reply = adaptDispatcherResponseForChannel(defaultTen33Callout(tx.channel_name), tx.channel_name);
+        const callout =
+          officerDistress && distressTen33Callout
+            ? distressTen33Callout
+            : defaultTen33Callout(tx.channel_name);
+        const reply = adaptDispatcherResponseForChannel(callout, tx.channel_name);
         spokeOnAir = await speakDispatcherReply(
           tx,
           transmissionId,
