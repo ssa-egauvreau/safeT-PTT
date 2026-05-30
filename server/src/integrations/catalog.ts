@@ -133,12 +133,13 @@ export const INTEGRATION_DEFINITIONS: IntegrationDefinition[] = [
   },
   {
     key: "ten8_api_base_url",
-    label: "10-8 CAD API base URL (v1.0.8)",
-    description: "Same as TEN8_API_BASE_URL. Optional; default is the standard 10-8 AWS gateway.",
+    label: "10-8 CAD API base URL (v1.1.0)",
+    description:
+      "Same as TEN8_API_BASE_URL. Optional; default is the 10-8 CAD host connect.10-8systems.com. (The old AWS GovCloud gateway was retired in v1.1.0.)",
     kind: "url",
     group: "ten8_cad",
     availability: "active",
-    placeholder: "https://ps569km5w9.execute-api.us-gov-west-1.amazonaws.com/prod",
+    placeholder: "https://connect.10-8systems.com",
   },
   {
     key: "ten8_live_execution",

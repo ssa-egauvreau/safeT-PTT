@@ -1,7 +1,10 @@
 import { getAgencyIntegrationValue } from "../store.js";
 import { finalizeTen8NewIncidentBody } from "./incidentPayload.js";
 
-const DEFAULT_BASE = "https://ps569km5w9.execute-api.us-gov-west-1.amazonaws.com/prod";
+// 10-8 retired the AWS GovCloud gateway in the v1.1.0 spec (it now 502s). The
+// CAD API is served from connect.10-8systems.com. Per-agency overrides via
+// `ten8_api_base_url` still win for anyone on a different host.
+const DEFAULT_BASE = "https://connect.10-8systems.com";
 
 async function ten8Config(agencyId: number): Promise<{
   baseUrl: string;

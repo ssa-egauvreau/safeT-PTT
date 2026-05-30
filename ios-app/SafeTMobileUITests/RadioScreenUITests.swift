@@ -46,21 +46,29 @@ final class RadioScreenUITests: XCTestCase {
 
     func test_radio_signOut_returnsToLogin() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-uitest-logged-in"]
+        // -uitest-big-ptt-off forces the legacy PTT bar so the big always-
+        // thumbable PTT button does not overlap the SETTINGS tab strip — the
+        // big-PTT layout was added in commit 9c7b653 and was found to block
+        // the SETTINGS tap on the CI simulator (see commit af8ce87 for the
+        // sibling test).
+        app.launchArguments += ["-uitest-logged-in", "-uitest-big-ptt-off"]
         app.launch()
 
         let settings = app.buttons["SETTINGS"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         settings.tap()
 
+        // CI simulators are 3-5x slower than dev hardware on first-paint of
+        // a sheet; the previous 3 s ceiling tripped intermittently on the
+        // Sign Out… confirm.
         let openConfirm = app.buttons["Sign Out…"]
-        XCTAssertTrue(openConfirm.waitForExistence(timeout: 3))
+        XCTAssertTrue(openConfirm.waitForExistence(timeout: 5), "Sign Out… not found in SETTINGS sheet")
         openConfirm.tap()
 
         let confirm = app.buttons["Sign Out"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         confirm.tap()
 
-        XCTAssertTrue(app.buttons["SIGN IN"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["SIGN IN"].waitForExistence(timeout: 5))
     }
 }
