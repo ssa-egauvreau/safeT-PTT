@@ -645,13 +645,17 @@ export function __registerVoiceMemberForTest(opts: {
   });
 }
 
-/** Test-only: seed a channel air slot as if a talker were live. @internal */
+/** Test-only: seed a channel air slot as if a talker were live. When
+ *  `lastPcmMs` is supplied the slot is timestamped at that millisecond
+ *  instead of `now()`, letting TTL-reap tests forge a stale entry without
+ *  fake timers. @internal */
 export function __claimVoiceAirForTest(opts: {
   agencyId: number;
   channel: string;
   ws: WebSocket;
   unitId: string;
   displayName?: string | null;
+  lastPcmMs?: number;
 }): void {
   const chNorm = normalizedChannel(opts.channel);
   const key = channelKey(opts.agencyId, chNorm);
@@ -659,7 +663,7 @@ export function __claimVoiceAirForTest(opts: {
     ws: opts.ws,
     unitUpper: opts.unitId.trim().toUpperCase(),
     displayName: opts.displayName?.trim() || null,
-    lastPcmMs: Date.now(),
+    lastPcmMs: opts.lastPcmMs ?? Date.now(),
     priority: false,
     yields: false,
   });
@@ -731,7 +735,17 @@ export function peekVoiceTransmittingTalker(
     return null;
   }
   if (Date.now() - slot.lastPcmMs > VOICE_AIR_TTL_MS) {
+    // The talker's socket dropped without sending `release_air`, so the slot
+    // has aged out. Mirror the explicit-release path and tell every other
+    // member of the channel the air just freed, so each listener can play
+    // the same end-of-transmission cue (roger beep / squelch tail) that
+    // PR #218 wired up. The dead talker's ws is excluded from the broadcast
+    // by `broadcastAirReleased`'s `peer === from` filter, so we cannot send
+    // to a closing socket. Idempotent: the delete-then-broadcast pair runs
+    // exactly once per real release — a second peek finds no slot and emits
+    // nothing.
     voiceAirByChannel.delete(key);
+    broadcastAirReleased(slot.ws, key);
     return null;
   }
   return { unit_id: slot.unitUpper, display_name: slot.displayName };

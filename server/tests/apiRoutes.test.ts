@@ -138,6 +138,18 @@ test("createApiRouter: business-critical routes stay registered with the expecte
     "POST /app/android/publish",
     // Inbound CAD webhook — silent removal would drop incident creation.
     "POST /webhooks/10-8",
+    // Recordings list + transcript search — `q`/`search` cap is enforced
+    // inside the handler; the smoke-level guarantee is that the verb is
+    // GET (not POST) so the existing dispatcher console keeps working.
+    "GET /transmissions",
+    // Audio Lab presets (per-agency named AudioLabConfig snapshots) — four
+    // additive routes that must stay wired through any future refactor of
+    // the audio-config block. Losing any one of them strands every saved
+    // preset in the agency.
+    "GET /admin/audio-lab-presets",
+    "GET /admin/audio-lab-presets/:name",
+    "PUT /admin/audio-lab-presets/:name",
+    "DELETE /admin/audio-lab-presets/:name",
   ];
   for (const route of required) {
     assert.ok(
@@ -227,6 +239,142 @@ test("GET /v1/audio/config: agency member with no DATABASE_URL → 503, not a cr
     const res = await fetch(`${baseUrl}/v1/audio/config`, {
       headers: { authorization: `Bearer ${token}` },
     });
+    assert.equal(res.status, 503);
+    const body = (await res.json()) as { error?: string };
+    assert.equal(body.error, "database_unavailable");
+  } finally {
+    await close();
+    clearAuthCache();
+    if (prevDbUrl !== undefined) {
+      process.env.DATABASE_URL = prevDbUrl;
+    }
+  }
+});
+
+test("PUT /v1/admin/audio-lab-presets/:name: validates the URL name before any DB call", async () => {
+  // Name validation runs BEFORE `requirePool()`, so a malformed name returns
+  // 400 even when no Postgres is configured. This proves the validator is
+  // wired ahead of the DB read — a future refactor that swapped the order
+  // would let "../etc/passwd" or "" leak through to the store layer.
+  const prevDbUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  clearAuthCache();
+  const adminUserId = 9_999_003;
+  setCachedAuth(adminUserId, {
+    tokenGeneration: 0,
+    userDisabled: false,
+    agencyDisabled: false,
+  });
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const token = tokenFor({ id: adminUserId, agencyId: 42, role: "admin" });
+    // "default" is reserved (see audioLabPresets.ts) — must 400.
+    const res = await fetch(`${baseUrl}/v1/admin/audio-lab-presets/default`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ preImbe: {}, postDecode: {}, vocoder: {} }),
+    });
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error?: string };
+    assert.equal(body.error, "invalid_name");
+  } finally {
+    await close();
+    clearAuthCache();
+    if (prevDbUrl !== undefined) {
+      process.env.DATABASE_URL = prevDbUrl;
+    }
+  }
+});
+
+test("PUT /v1/admin/audio-lab-presets/:name: validates the body shape before any DB call", async () => {
+  // The body must be the same `{ preImbe, postDecode, vocoder }` shape the
+  // existing PUT /v1/admin/audio-config expects. A malformed body returns
+  // 400, regardless of DB availability, so a partial JSON push can never
+  // sneak into the agency preset catalog.
+  const prevDbUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  clearAuthCache();
+  const adminUserId = 9_999_004;
+  setCachedAuth(adminUserId, {
+    tokenGeneration: 0,
+    userDisabled: false,
+    agencyDisabled: false,
+  });
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const token = tokenFor({ id: adminUserId, agencyId: 42, role: "admin" });
+    const res = await fetch(`${baseUrl}/v1/admin/audio-lab-presets/Patrol`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      // Missing `postDecode` + `vocoder`.
+      body: JSON.stringify({ preImbe: {} }),
+    });
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error?: string };
+    assert.equal(body.error, "missing_fields");
+  } finally {
+    await close();
+    clearAuthCache();
+    if (prevDbUrl !== undefined) {
+      process.env.DATABASE_URL = prevDbUrl;
+    }
+  }
+});
+
+test("GET /v1/admin/audio-lab-presets: requires admin role (dispatcher gets 403)", async () => {
+  // The /admin/* surface is admin-only — a dispatcher token is an agency
+  // member but lacks admin, so the route must refuse with 403 BEFORE
+  // touching Postgres. Catches a future "let dispatchers list things too"
+  // tweak from accidentally widening write access along with read.
+  clearAuthCache();
+  const dispatcherUserId = 9_999_005;
+  setCachedAuth(dispatcherUserId, {
+    tokenGeneration: 0,
+    userDisabled: false,
+    agencyDisabled: false,
+  });
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const token = tokenFor({
+      id: dispatcherUserId,
+      agencyId: 42,
+      role: "dispatcher",
+    });
+    const res = await fetch(`${baseUrl}/v1/admin/audio-lab-presets`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(res.status, 403);
+  } finally {
+    await close();
+    clearAuthCache();
+  }
+});
+
+test("GET /v1/transmissions: tolerates an oversized search query without crashing", async () => {
+  // The route slices the `search` param at 200 chars BEFORE handing it to
+  // the store layer (which already escapes %, _, \ and parameterises the
+  // ILIKE binding). With no Postgres we can't observe the query body, but
+  // we can confirm the route doesn't 500 on a 5,000-char `search`: the
+  // expected response is the same 503 `database_unavailable` agency
+  // members see for the empty-q path. A future regression that forgot to
+  // cap could blow the JSON parser before the 503 handler ran.
+  const prevDbUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  clearAuthCache();
+  const adminUserId = 9_999_006;
+  setCachedAuth(adminUserId, {
+    tokenGeneration: 0,
+    userDisabled: false,
+    agencyDisabled: false,
+  });
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const token = tokenFor({ id: adminUserId, agencyId: 42, role: "admin" });
+    const giant = "x".repeat(5_000);
+    const res = await fetch(
+      `${baseUrl}/v1/transmissions?search=${encodeURIComponent(giant)}`,
+      { headers: { authorization: `Bearer ${token}` } },
+    );
     assert.equal(res.status, 503);
     const body = (await res.json()) as { error?: string };
     assert.equal(body.error, "database_unavailable");

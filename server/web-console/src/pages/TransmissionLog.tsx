@@ -35,6 +35,55 @@ export function transcriptOf(tx: Transmission): { text: string; muted: boolean }
   }
 }
 
+/** Snippet around the first case-insensitive match of `query` in `text`, with
+ *  the match position returned. When `query` is empty or doesn't match, returns
+ *  the head of the text and `matchStart = -1`. The snippet length is bounded by
+ *  `maxLen` so the highlighted transcript row stays the same shape whether or
+ *  not the operator is searching. */
+export function highlightTranscriptSnippet(
+  text: string,
+  query: string,
+  maxLen = 120,
+): { snippet: string; matchStart: number; matchEnd: number; truncatedLead: boolean; truncatedTail: boolean } {
+  const trimmedQuery = query.trim();
+  // No query → straight head-of-text with the cap. The match indices stay at
+  // -1 so the renderer skips the <mark> wrapper entirely.
+  if (trimmedQuery === "") {
+    if (text.length <= maxLen) {
+      return { snippet: text, matchStart: -1, matchEnd: -1, truncatedLead: false, truncatedTail: false };
+    }
+    return {
+      snippet: text.slice(0, maxLen),
+      matchStart: -1,
+      matchEnd: -1,
+      truncatedLead: false,
+      truncatedTail: true,
+    };
+  }
+  const idx = text.toLowerCase().indexOf(trimmedQuery.toLowerCase());
+  if (idx < 0) {
+    // Match absent (the row matched on a different filter, or the search
+    // ran ahead of the transcript poll). Fall back to the head-of-text path.
+    return highlightTranscriptSnippet(text, "", maxLen);
+  }
+  const matchLen = trimmedQuery.length;
+  // Centre the window around the match: spend a third of the cap before it,
+  // the match itself, then the remainder after. Truncation flags drive the
+  // leading/trailing ellipsis so the operator knows the row was clipped.
+  const leadBudget = Math.floor((maxLen - matchLen) / 2);
+  const startMax = Math.max(0, idx - leadBudget);
+  const snippetStart = Math.max(0, Math.min(startMax, text.length - maxLen));
+  const snippetEnd = Math.min(text.length, snippetStart + maxLen);
+  const snippet = text.slice(snippetStart, snippetEnd);
+  return {
+    snippet,
+    matchStart: idx - snippetStart,
+    matchEnd: idx - snippetStart + matchLen,
+    truncatedLead: snippetStart > 0,
+    truncatedTail: snippetEnd < text.length,
+  };
+}
+
 const SORTS: { value: string; label: string }[] = [
   { value: "newest", label: "Newest first" },
   { value: "oldest", label: "Oldest first" },
@@ -539,7 +588,7 @@ export function TransmissionLog() {
                 {tx.display_name && tx.unit_id ? ` · ${aliasFor(tx.unit_id)}` : ""}
               </div>
               <div className={transcript.muted ? "tx-transcript muted" : "tx-transcript"}>
-                {transcript.text}
+                <TranscriptText text={transcript.text} query={transcript.muted ? "" : search} />
               </div>
               <div className="tx-card-actions">
                 <PlayButton
@@ -616,6 +665,38 @@ export function TransmissionLog() {
         ))}
       </div>
     </div>
+  );
+}
+
+/** Renders a transcript line, optionally truncating to a snippet around the
+ *  first match of `query` and wrapping that match in a styled span so the
+ *  operator's eye lands on the hit. When `query` is empty the snippet falls
+ *  back to the leading 120 chars — the existing visual shape stays unchanged
+ *  for the non-search case. */
+function TranscriptText({ text, query }: { text: string; query: string }) {
+  const { snippet, matchStart, matchEnd, truncatedLead, truncatedTail } = highlightTranscriptSnippet(
+    text,
+    query,
+  );
+  const lead = truncatedLead ? "… " : "";
+  const tail = truncatedTail ? " …" : "";
+  if (matchStart < 0) {
+    return (
+      <>
+        {lead}
+        {snippet}
+        {tail}
+      </>
+    );
+  }
+  return (
+    <>
+      {lead}
+      {snippet.slice(0, matchStart)}
+      <mark className="tx-transcript-hit">{snippet.slice(matchStart, matchEnd)}</mark>
+      {snippet.slice(matchEnd)}
+      {tail}
+    </>
   );
 }
 

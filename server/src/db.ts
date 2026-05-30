@@ -550,6 +550,32 @@ export async function ensureSchema(): Promise<void> {
       ON voice_link_telemetry (agency_id, server_ts DESC);
   `);
 
+  // Per-agency saved Audio Lab presets — admin operators store the current
+  // full AudioLabConfig under a human name ("Patrol", "Detective", "EMS-loud")
+  // so they can roll back to a known-good shaping later. The body is the same
+  // opaque JSON the global_audio_config row holds; loading a preset simply
+  // pushes it back through `setGlobalAudioConfig` so the live apply path is
+  // reused. Names are case-insensitive unique per agency to match the
+  // simulcast_channels convention (so "Patrol" and "patrol" collide).
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS audio_lab_presets (
+      id SERIAL PRIMARY KEY,
+      agency_id INT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      config JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await p.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_audio_lab_presets_agency_name
+       ON audio_lab_presets (agency_id, lower(name));`,
+  );
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS idx_audio_lab_presets_agency_updated
+       ON audio_lab_presets (agency_id, updated_at DESC);`,
+  );
+
   // --- migrate any pre-existing single-tenant data into the default agency ---
   const def = await p.query<{ id: number }>(
     `INSERT INTO agencies (name, slug)

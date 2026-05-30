@@ -124,6 +124,10 @@ import {
   writeAudit,
   getGlobalAudioConfig,
   setGlobalAudioConfig,
+  listAudioLabPresets,
+  getAudioLabPreset,
+  upsertAudioLabPreset,
+  deleteAudioLabPreset,
   type Permission,
   type TransmissionSort,
 } from "./store.js";
@@ -137,6 +141,7 @@ import {
 } from "./analytics.js";
 import { normalizeClientType } from "./clientType.js";
 import { deriveDeviceAudioConfig } from "./audioConfig.js";
+import { isValidPresetName, summarizePreset } from "./audioLabPresets.js";
 import { getPool } from "./db.js";
 import {
   insertVoiceLinkTelemetry,
@@ -2446,10 +2451,18 @@ export function createApiRouter(): Router {
       const agencyId = me.agencyId!;
       const str = (v: unknown): string | undefined =>
         typeof v === "string" && v.trim() !== "" ? v : undefined;
+      // Hard-cap the transcript search query at 200 chars so a malicious or
+      // accidental megabyte-long `search` param can't blow up either the
+      // ILIKE pattern length or the JSON parser. The store layer already
+      // escapes `%`, `_`, `\` and parameterises the binding (see `listTransmissions`
+      // in store.ts) so SQL-special characters in `search` are safe; this
+      // guard is purely about bounded resource use.
+      const rawSearch = str(req.query.search);
+      const search = rawSearch === undefined ? undefined : rawSearch.slice(0, 200);
       const opts = {
         agencyId,
         limit: Number(req.query.limit ?? 100),
-        search: str(req.query.search),
+        search,
         channel: str(req.query.channel),
         user: str(req.query.user),
         from: str(req.query.from),
@@ -3226,6 +3239,127 @@ export function createApiRouter(): Router {
         config: summary,
         updatedAt: row.updated_at,
       });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Audio Lab presets — admin-saved named snapshots of the AudioLabConfig.
+  // Loading a preset writes the body back through the existing
+  // PUT /v1/admin/audio-config path so live-apply behaviour is unchanged.
+  // ---------------------------------------------------------------------------
+
+  /** GET /v1/admin/audio-lab-presets — list every saved preset (config body
+   *  is read in the same SQL but only its derived summary is returned, so
+   *  the JSON payload stays small even on a large catalogue). */
+  router.get("/admin/audio-lab-presets", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const rows = await listAudioLabPresets(agencyId);
+      const presets = rows.map((r) => ({
+        name: r.name,
+        updatedAt: r.updated_at,
+        summary: summarizePreset(r.config),
+      }));
+      res.json({ presets });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  /** GET /v1/admin/audio-lab-presets/:name — read one preset's full config. */
+  router.get("/admin/audio-lab-presets/:name", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const name = String(req.params.name ?? "").trim();
+      if (!isValidPresetName(name)) {
+        res.status(400).json({ error: "invalid_name" });
+        return;
+      }
+      const row = await getAudioLabPreset(agencyId, name);
+      if (!row) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      res.json({
+        name: row.name,
+        config: row.config,
+        updatedAt: row.updated_at,
+      });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  /** PUT /v1/admin/audio-lab-presets/:name — upsert from an AudioLabConfig body. */
+  router.put("/admin/audio-lab-presets/:name", requireAdmin, async (req, res) => {
+    try {
+      const me = req.authUser!;
+      const agencyId = me.agencyId!;
+      const name = String(req.params.name ?? "").trim();
+      if (!isValidPresetName(name)) {
+        res.status(400).json({ error: "invalid_name" });
+        return;
+      }
+      // Mirror the PUT /v1/admin/audio-config validation: the body is the
+      // raw AudioLabConfig (no { config: ... } wrapper). Rejecting a malformed
+      // body here means a corrupt preset never sneaks into the agency catalog.
+      const config = req.body;
+      if (
+        !config ||
+        typeof config !== "object" ||
+        Array.isArray(config) ||
+        typeof (config as { preImbe?: unknown }).preImbe !== "object" ||
+        typeof (config as { postDecode?: unknown }).postDecode !== "object" ||
+        typeof (config as { vocoder?: unknown }).vocoder !== "object"
+      ) {
+        res.status(400).json({ error: "missing_fields" });
+        return;
+      }
+      const row = await upsertAudioLabPreset(agencyId, name, config);
+      await writeAudit({
+        agencyId,
+        actorUserId: me.id,
+        actorName: me.username,
+        action: "audio_lab_preset_save",
+        target: name,
+        ip: clientIp(req),
+      });
+      res.json({
+        name: row.name,
+        config: row.config,
+        updatedAt: row.updated_at,
+      });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  /** DELETE /v1/admin/audio-lab-presets/:name — remove a preset by name. */
+  router.delete("/admin/audio-lab-presets/:name", requireAdmin, async (req, res) => {
+    try {
+      const me = req.authUser!;
+      const agencyId = me.agencyId!;
+      const name = String(req.params.name ?? "").trim();
+      if (!isValidPresetName(name)) {
+        res.status(400).json({ error: "invalid_name" });
+        return;
+      }
+      const ok = await deleteAudioLabPreset(agencyId, name);
+      if (!ok) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      await writeAudit({
+        agencyId,
+        actorUserId: me.id,
+        actorName: me.username,
+        action: "audio_lab_preset_delete",
+        target: name,
+        ip: clientIp(req),
+      });
+      res.json({ ok: true });
     } catch (error) {
       fail(res, error);
     }

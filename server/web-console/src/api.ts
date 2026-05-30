@@ -667,6 +667,25 @@ export interface GlobalAudioConfigPushResponse {
   updatedBy: string | null;
 }
 
+/** One entry in the Audio Lab preset dropdown — body is not embedded so the
+ *  list payload stays small even when an agency saves a long catalogue. */
+export interface AudioLabPresetSummary {
+  name: string;
+  updatedAt: string;
+  /** One-line, operator-readable description of what the preset enables. */
+  summary: string;
+}
+
+export interface AudioLabPresetListResponse {
+  presets: AudioLabPresetSummary[];
+}
+
+export interface AudioLabPresetResponse {
+  name: string;
+  config: unknown;
+  updatedAt: string;
+}
+
 let authToken: string | null = null;
 
 export function setToken(token: string | null): void {
@@ -1136,6 +1155,29 @@ export const api = {
   /** Admin: push a new agency-wide audio config to all users and devices. */
   setGlobalAudioConfig: (config: unknown) =>
     request<GlobalAudioConfigPushResponse>("PUT", "/v1/admin/audio-config", config),
+
+  /** Admin: list saved Audio Lab presets for the caller's agency (newest-touched first). */
+  listAudioLabPresets: () =>
+    request<AudioLabPresetListResponse>("GET", "/v1/admin/audio-lab-presets"),
+  /** Admin: fetch the full AudioLabConfig body for one saved preset. */
+  getAudioLabPreset: (name: string) =>
+    request<AudioLabPresetResponse>(
+      "GET",
+      `/v1/admin/audio-lab-presets/${encodeURIComponent(name)}`,
+    ),
+  /** Admin: upsert a saved preset under the given name (body is an AudioLabConfig). */
+  saveAudioLabPreset: (name: string, config: unknown) =>
+    request<AudioLabPresetResponse>(
+      "PUT",
+      `/v1/admin/audio-lab-presets/${encodeURIComponent(name)}`,
+      config,
+    ),
+  /** Admin: delete a saved preset by name. */
+  deleteAudioLabPreset: (name: string) =>
+    request<{ ok: boolean }>(
+      "DELETE",
+      `/v1/admin/audio-lab-presets/${encodeURIComponent(name)}`,
+    ),
 };
 
 /** Uploads a custom agency logo (raw image body — not JSON). */

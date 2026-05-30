@@ -2335,3 +2335,86 @@ export async function setGlobalAudioConfig(
   );
   return res.rows[0]!;
 }
+
+// ---------------------------------------------------------------------------
+// Audio Lab presets — per-agency named snapshots of an AudioLabConfig.
+// Loading a preset writes the body back through `setGlobalAudioConfig` so the
+// existing live-apply path stays the single source of truth.
+// ---------------------------------------------------------------------------
+
+export interface AudioLabPresetRow {
+  name: string;
+  config: unknown;
+  updated_at: string;
+}
+
+export interface AudioLabPresetSummaryRow {
+  name: string;
+  config: unknown;
+  updated_at: string;
+}
+
+/** Lists every preset for an agency, newest-touched first. The config body
+ *  IS returned so the route can compute a one-line summary in a single
+ *  query (instead of issuing N follow-up reads). Callers that need only the
+ *  metadata can ignore `config`. */
+export async function listAudioLabPresets(
+  agencyId: number,
+): Promise<AudioLabPresetSummaryRow[]> {
+  const res = await requirePool().query<AudioLabPresetSummaryRow>(
+    `SELECT name, config, updated_at
+       FROM audio_lab_presets
+      WHERE agency_id = $1
+      ORDER BY updated_at DESC;`,
+    [agencyId],
+  );
+  return res.rows;
+}
+
+/** Returns the full preset for the given (agency, case-insensitive name). */
+export async function getAudioLabPreset(
+  agencyId: number,
+  name: string,
+): Promise<AudioLabPresetRow | null> {
+  const res = await requirePool().query<AudioLabPresetRow>(
+    `SELECT name, config, updated_at
+       FROM audio_lab_presets
+      WHERE agency_id = $1 AND lower(name) = lower($2);`,
+    [agencyId, name],
+  );
+  return res.rows[0] ?? null;
+}
+
+/** Upserts a preset for an agency. Case-insensitive on name (matches the
+ *  underlying unique index). Returns the freshly-stored row. */
+export async function upsertAudioLabPreset(
+  agencyId: number,
+  name: string,
+  config: unknown,
+): Promise<AudioLabPresetRow> {
+  const res = await requirePool().query<AudioLabPresetRow>(
+    `INSERT INTO audio_lab_presets (agency_id, name, config, updated_at)
+       VALUES ($1, $2, $3::jsonb, now())
+     ON CONFLICT (agency_id, lower(name)) DO UPDATE
+       SET name = EXCLUDED.name,
+           config = EXCLUDED.config,
+           updated_at = now()
+     RETURNING name, config, updated_at;`,
+    [agencyId, name, JSON.stringify(config)],
+  );
+  return res.rows[0]!;
+}
+
+/** Removes a preset by case-insensitive name. Returns true when a row was
+ *  actually deleted, false when no such preset existed. */
+export async function deleteAudioLabPreset(
+  agencyId: number,
+  name: string,
+): Promise<boolean> {
+  const res = await requirePool().query(
+    `DELETE FROM audio_lab_presets
+      WHERE agency_id = $1 AND lower(name) = lower($2);`,
+    [agencyId, name],
+  );
+  return (res.rowCount ?? 0) > 0;
+}

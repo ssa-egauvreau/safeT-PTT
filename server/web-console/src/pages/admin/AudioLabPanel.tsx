@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { api, describeError, type UserChannel } from "../../api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api, describeError, type AudioLabPresetSummary, type UserChannel } from "../../api";
 import { imbeDecode, imbeEncode, imbeReady, initImbe } from "../../voice/imbeVocoder";
 import {
   DEFAULT_PRESET,
@@ -112,6 +112,14 @@ export function AudioLabPanel() {
   const [config, setConfig] = useState<AudioLabConfig>(() => cloneConfig(DEFAULT_PRESET));
   const [presets, setPresets] = useState<PresetRecord[]>(() => listPresets());
   const [activePresetName, setActivePresetName] = useState<string>("Default IMBE");
+  // Server-side, agency-wide presets (loaded lazily from
+  // /v1/admin/audio-lab-presets). `selectedServerPreset` is the dropdown's
+  // current selection — separate from the local activePresetName so picking a
+  // server preset doesn't desync the local-preset display.
+  const [serverPresets, setServerPresets] = useState<AudioLabPresetSummary[]>([]);
+  const [selectedServerPreset, setSelectedServerPreset] = useState<string>("");
+  const [serverPresetsLoaded, setServerPresetsLoaded] = useState(false);
+  const [serverPresetBusy, setServerPresetBusy] = useState(false);
   const [state, setState] = useState<LabState>("idle");
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordedClip, setRecordedClip] = useState<Int16Array | null>(null);
@@ -449,6 +457,172 @@ export function AudioLabPanel() {
     setInfo_(`Deleted preset "${preset.name}".`);
   }
 
+  // ---------- Server-side, agency-wide presets ------------------------------
+
+  /** Refreshes the server preset dropdown. Tolerates a backend that doesn't
+   *  yet have the presets table (404 / 500) — the panel still works for
+   *  local presets and the existing apply-globally button. */
+  const reloadServerPresets = useCallback(async (): Promise<void> => {
+    try {
+      const res = await api.listAudioLabPresets();
+      setServerPresets(res.presets);
+      setServerPresetsLoaded(true);
+    } catch {
+      // Older agency / API surface — quietly hide the sub-panel by leaving
+      // `serverPresetsLoaded` false. No error toast: the local presets row
+      // and the existing apply path are unaffected.
+      setServerPresetsLoaded(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reloadServerPresets();
+  }, [reloadServerPresets]);
+
+  async function handleSaveServerPreset(): Promise<void> {
+    const raw = window.prompt(
+      "Save current settings as a shared preset (name):",
+      isDirty ? `${activePresetName} (custom)` : activePresetName,
+    );
+    if (raw === null) return;
+    const name = raw.trim();
+    if (!name) {
+      setError_("Preset name cannot be empty.");
+      return;
+    }
+    setError_(null);
+    setInfo_(null);
+    setServerPresetBusy(true);
+    try {
+      await api.saveAudioLabPreset(name, config);
+      await reloadServerPresets();
+      setSelectedServerPreset(name);
+      setInfo_(`Saved shared preset "${name}".`);
+    } catch (err) {
+      // The server enforces a 1–64 char alphanumeric+space+dash+underscore
+      // rule and rejects the reserved "default" name. Surface the server's
+      // error code in plain English so the operator knows how to fix it.
+      const msg = describeError(err);
+      if (msg === "invalid_name") {
+        setError_(
+          'Invalid preset name. Use 1–64 letters, digits, spaces, "-", or "_" and avoid the reserved name "default".',
+        );
+      } else {
+        setError_(`Could not save preset: ${msg}`);
+      }
+    } finally {
+      setServerPresetBusy(false);
+    }
+  }
+
+  async function handleLoadServerPreset(): Promise<void> {
+    if (!selectedServerPreset) {
+      setError_("Pick a saved preset to load.");
+      return;
+    }
+    setError_(null);
+    setInfo_(null);
+    setServerPresetBusy(true);
+    try {
+      const res = await api.getAudioLabPreset(selectedServerPreset);
+      // Reuse the existing live-apply path so listeners pick up the change
+      // through the same /v1/admin/audio-config push they already observe —
+      // no parallel state machine.
+      const cfg = res.config as AudioLabConfig;
+      await api.setGlobalAudioConfig(cfg);
+      setConfig(cloneConfig(cfg));
+      setGlobalConfig({
+        updatedAt: new Date().toISOString(),
+        updatedBy: null,
+        liveBypassMicProcessing: Boolean(cfg.preImbe?.bypassMicProcessing ?? false),
+      });
+      setInfo_(`Loaded shared preset "${selectedServerPreset}" and applied live.`);
+    } catch (err) {
+      setError_(`Could not load preset: ${describeError(err)}`);
+    } finally {
+      setServerPresetBusy(false);
+    }
+  }
+
+  async function handleRenameServerPreset(): Promise<void> {
+    if (!selectedServerPreset) {
+      setError_("Pick a saved preset to rename.");
+      return;
+    }
+    const raw = window.prompt(`Rename "${selectedServerPreset}" to:`, selectedServerPreset);
+    if (raw === null) return;
+    const newName = raw.trim();
+    if (!newName || newName === selectedServerPreset) {
+      return;
+    }
+    // Guard against a typo silently overwriting a different existing preset.
+    // The server's upsert is case-insensitive on name (matching the unique
+    // index), so we mirror that check here. The case-only rename "Patrol" →
+    // "patrol" is still allowed and folds into a single row.
+    const collides = serverPresets.some(
+      (p) =>
+        p.name.toLowerCase() === newName.toLowerCase() &&
+        p.name.toLowerCase() !== selectedServerPreset.toLowerCase(),
+    );
+    if (collides) {
+      setError_(`A preset named "${newName}" already exists.`);
+      return;
+    }
+    setError_(null);
+    setInfo_(null);
+    setServerPresetBusy(true);
+    try {
+      const res = await api.getAudioLabPreset(selectedServerPreset);
+      // Save under the new name first so a transient failure can't leave the
+      // agency with no preset at all (delete-then-save would).
+      await api.saveAudioLabPreset(newName, res.config);
+      // Skip the delete when the rename is just a case change — the server's
+      // case-insensitive upsert already updated the existing row's display
+      // name, and the delete would remove what we just saved.
+      if (newName.toLowerCase() !== selectedServerPreset.toLowerCase()) {
+        await api.deleteAudioLabPreset(selectedServerPreset);
+      }
+      await reloadServerPresets();
+      setSelectedServerPreset(newName);
+      setInfo_(`Renamed shared preset to "${newName}".`);
+    } catch (err) {
+      const msg = describeError(err);
+      if (msg === "invalid_name") {
+        setError_(
+          'Invalid preset name. Use 1–64 letters, digits, spaces, "-", or "_" and avoid the reserved name "default".',
+        );
+      } else {
+        setError_(`Could not rename preset: ${msg}`);
+      }
+    } finally {
+      setServerPresetBusy(false);
+    }
+  }
+
+  async function handleDeleteServerPreset(): Promise<void> {
+    if (!selectedServerPreset) {
+      setError_("Pick a saved preset to delete.");
+      return;
+    }
+    if (!window.confirm(`Delete shared preset "${selectedServerPreset}"?`)) {
+      return;
+    }
+    setError_(null);
+    setInfo_(null);
+    setServerPresetBusy(true);
+    try {
+      await api.deleteAudioLabPreset(selectedServerPreset);
+      const deleted = selectedServerPreset;
+      setSelectedServerPreset("");
+      await reloadServerPresets();
+      setInfo_(`Deleted shared preset "${deleted}".`);
+    } catch (err) {
+      setError_(`Could not delete preset: ${describeError(err)}`);
+    } finally {
+      setServerPresetBusy(false);
+    }
+  }
+
   async function handleMeasureLatency(): Promise<void> {
     setError_(null);
     setInfo_(null);
@@ -629,6 +803,65 @@ export function AudioLabPanel() {
           Reset to preset
         </button>
       </section>
+
+      {/* Server-side, agency-wide preset catalog. Renders only if the server
+          exposes the /v1/admin/audio-lab-presets routes — older deployments
+          quietly skip this row. The local-presets section above keeps working
+          either way. */}
+      {serverPresetsLoaded && (
+        <section className="audio-lab-presets" aria-label="Shared audio presets">
+          <label>
+            <span>Shared preset</span>
+            <select
+              value={selectedServerPreset}
+              onChange={(e) => setSelectedServerPreset(e.target.value)}
+              disabled={serverPresetBusy}
+            >
+              <option value="">
+                {serverPresets.length === 0
+                  ? "(no saved presets)"
+                  : "— Pick a saved preset —"}
+              </option>
+              {serverPresets.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.name}
+                  {p.summary ? ` · ${p.summary}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="btn sm"
+            onClick={() => void handleSaveServerPreset()}
+            disabled={serverPresetBusy}
+            title="Save the current Audio Lab settings as a shared preset all agency admins can load."
+          >
+            Save as preset…
+          </button>
+          <button
+            className="btn sm"
+            onClick={() => void handleLoadServerPreset()}
+            disabled={serverPresetBusy || !selectedServerPreset}
+            title="Apply this saved preset live (pushes through the same path as 'Apply live')."
+          >
+            Load
+          </button>
+          <button
+            className="btn sm"
+            onClick={() => void handleRenameServerPreset()}
+            disabled={serverPresetBusy || !selectedServerPreset}
+          >
+            Rename
+          </button>
+          <button
+            className="btn sm"
+            onClick={() => void handleDeleteServerPreset()}
+            disabled={serverPresetBusy || !selectedServerPreset}
+          >
+            Delete
+          </button>
+        </section>
+      )}
 
       {/* View mode toggle */}
       <div className="audio-lab-view-toggle">

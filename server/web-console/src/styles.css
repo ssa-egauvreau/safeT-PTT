@@ -4000,6 +4000,16 @@ code.mono {
   color: var(--text-muted);
   font-style: italic;
 }
+/* Highlights the first match of the current transcript search inside a
+   recordings row. Keeps the surrounding line legible — yellow on the page's
+   surface — instead of inheriting the browser's default <mark> styling, which
+   reads as "warning" against the dark console palette. */
+.tx-transcript-hit {
+  background: rgba(255, 215, 0, 0.35);
+  color: inherit;
+  padding: 0 2px;
+  border-radius: 2px;
+}
 .tx-card-actions {
   display: flex;
   gap: 6px;
