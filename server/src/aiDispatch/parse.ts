@@ -19,9 +19,21 @@ export interface InfoRequestFields {
     | "contact"
     | "legal_code"
     | "general_query"
+    | "cad_person_search"
+    | "cad_vehicle_search"
+    | "cad_incident_lookup"
     | "unknown";
   account_code: string | null;
   subject: string | null;
+}
+
+/** Link or create-and-link a person on the unit's open call (10-8 CAD API v1.1.0). */
+export interface CadPersonLinkFields {
+  relation: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  dob: string | null;
+  notes: string | null;
 }
 
 export interface AiDispatchParseResult {
@@ -40,6 +52,10 @@ export interface AiDispatchParseResult {
   info_request: InfoRequestFields | null;
   /** ALL-CAPS cop-shorthand for 10-8 CAD comment when logging on an open call. */
   comment_text: string | null;
+  /** Add/link a person on the matched open call (requires live CAD writes). */
+  cad_person_link: CadPersonLinkFields | null;
+  /** Add a tag by name on the matched open call (requires live CAD writes). */
+  cad_tag: string | null;
 }
 
 const VALID_INTENTS = new Set([
@@ -135,6 +151,9 @@ export function normalizeAiDispatchParse(raw: unknown): AiDispatchParseResult | 
       "contact",
       "legal_code",
       "general_query",
+      "cad_person_search",
+      "cad_vehicle_search",
+      "cad_incident_lookup",
       "unknown",
     ]);
     if (t && validTypes.has(t)) {
@@ -165,6 +184,26 @@ export function normalizeAiDispatchParse(raw: unknown): AiDispatchParseResult | 
       plate_request = null;
     }
   }
+
+  let cad_person_link: CadPersonLinkFields | null = null;
+  if (ai.cad_person_link && typeof ai.cad_person_link === "object" && !Array.isArray(ai.cad_person_link)) {
+    const pl = ai.cad_person_link as Record<string, unknown>;
+    const first = typeof pl.first_name === "string" ? pl.first_name.trim() : null;
+    const last = typeof pl.last_name === "string" ? pl.last_name.trim() : null;
+    if (first || last) {
+      cad_person_link = {
+        relation: typeof pl.relation === "string" && pl.relation.trim() ? pl.relation.trim() : null,
+        first_name: first,
+        last_name: last,
+        dob: typeof pl.dob === "string" && pl.dob.trim() ? pl.dob.trim() : null,
+        notes: typeof pl.notes === "string" && pl.notes.trim() ? pl.notes.trim().slice(0, 400) : null,
+      };
+    }
+  }
+
+  const cad_tag =
+    typeof ai.cad_tag === "string" && ai.cad_tag.trim() ? ai.cad_tag.trim().slice(0, 80) : null;
+
   return {
     actionable: ai.actionable,
     intent: ai.intent,
@@ -180,6 +219,8 @@ export function normalizeAiDispatchParse(raw: unknown): AiDispatchParseResult | 
     location_name,
     info_request,
     comment_text,
+    cad_person_link,
+    cad_tag,
   };
 }
 

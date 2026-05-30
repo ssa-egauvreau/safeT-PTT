@@ -137,6 +137,9 @@ test("infoRequestNeedsAsync: web-lookup types return true (engine speaks 'standb
     "external_address",
     "legal_code",
     "general_query",
+    "cad_person_search",
+    "cad_vehicle_search",
+    "cad_incident_lookup",
   ];
   for (const t of yes) {
     assert.equal(

@@ -37,11 +37,14 @@ import { lookupSsaProperty } from "./ssaProperties.js";
 import { listTen8ActiveIncidents, upsertTen8Incident } from "../ten8/store.js";
 import {
   ten8AddComment,
+  ten8AddPerson,
+  ten8AddTag,
   ten8AddVehicle,
   ten8Configured,
   ten8CreateIncident,
   ten8NewIncidentConfigured,
 } from "../ten8/client.js";
+import { buildCadPersonLinkBody } from "../ten8/cadRadioLookup.js";
 import { buildTen8NewIncidentBody } from "../ten8/incidentPayload.js";
 import {
   extractCallIdFromCreateResponse,
@@ -573,6 +576,24 @@ async function processTransmission(transmissionId: number): Promise<void> {
             ten8Actions.ten8_plate_vehicle = { skipped: "no_matching_open_call_for_plate" };
           }
         }
+
+        if (parsed.cad_person_link || parsed.cad_tag) {
+          const linkMatch = findMatchingOpenIncident(active, parsed, unitId);
+          const linkCallId = linkMatch?.call_id?.trim() || newCallIdFromCreate;
+          if (!linkCallId || !isVerifiedOpenCallId(linkCallId, active)) {
+            ten8Actions.ten8_cad_link = { skipped: "no_verified_open_call_for_cad_link" };
+          } else {
+            if (parsed.cad_person_link) {
+              const body = buildCadPersonLinkBody(parsed.cad_person_link);
+              const res = await ten8AddPerson(tx.agency_id, linkCallId, body);
+              ten8Actions.ten8_person = { call_id: linkCallId, request: body, ...res };
+            }
+            if (parsed.cad_tag) {
+              const res = await ten8AddTag(tx.agency_id, linkCallId, { tag: parsed.cad_tag });
+              ten8Actions.ten8_tag = { call_id: linkCallId, tag: parsed.cad_tag, ...res };
+            }
+          }
+        }
       }
 
       let speakText = plate.speakText || parsed.dispatcher_response?.trim() || "";
@@ -789,6 +810,8 @@ async function runAsyncInfoLookup(
         location_name: null,
         info_request: parsed.info_request,
         comment_text: null,
+        cad_person_link: null,
+        cad_tag: null,
       },
       plateLookup: null,
       ten8Actions: null,

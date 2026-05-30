@@ -1,5 +1,12 @@
 import { listPositions } from "../store.js";
 import { listTen8ActiveIncidents } from "../ten8/store.js";
+import { ten8Configured } from "../ten8/client.js";
+import {
+  fetchCadIncidentLookupRadio,
+  fetchCadOpenIncidentsRadio,
+  fetchCadPersonSearchRadio,
+  fetchCadVehicleSearchRadio,
+} from "../ten8/cadRadioLookup.js";
 import { lookupSsaProperty } from "./ssaProperties.js";
 import { accountCodeDashForm } from "./speech/numbers.js";
 import { prepareLocationForTts } from "./speech/locationSpeech.js";
@@ -203,7 +210,16 @@ export function buildInfoRequestAck(requestingUnit: string | null | undefined): 
 /** Slow lookups: web search (phone book uses web, not a local list). */
 export function infoRequestNeedsAsync(infoRequest: InfoRequestFields): boolean {
   const t = infoRequest.type;
-  return ["phone", "contact", "external_address", "legal_code", "general_query"].includes(t);
+  return [
+    "phone",
+    "contact",
+    "external_address",
+    "legal_code",
+    "general_query",
+    "cad_person_search",
+    "cad_vehicle_search",
+    "cad_incident_lookup",
+  ].includes(t);
 }
 
 function webNotConfiguredLine(csPart: string): string {
@@ -240,7 +256,22 @@ export async function buildInfoRequestResponse(
     }
 
     case "pending_calls": {
-      const pending = await listTen8ActiveIncidents(agencyId);
+      let pending: ActiveIncident[] = [];
+      if (await ten8Configured(agencyId)) {
+        const live = await fetchCadOpenIncidentsRadio(agencyId);
+        if (live.ok) {
+          pending = live.incidents.map((inc) => ({
+            ...inc,
+            priority: null,
+            updated_at: new Date().toISOString(),
+          }));
+        } else if (live.line) {
+          return `${csPart}${live.line}`;
+        }
+      }
+      if (pending.length === 0) {
+        pending = await listTen8ActiveIncidents(agencyId);
+      }
       if (pending.length === 0) {
         return `${csPart}no pending calls at this time.`;
       }
@@ -248,7 +279,8 @@ export async function buildInfoRequestResponse(
       const items = pending.slice(0, MAX_READ).map((inc) => {
         const codeOrType = callCodeForRadio(inc.incident_type);
         const loc = shortenLocationForRadio(inc.location);
-        return loc ? `${codeOrType} at ${loc}` : codeOrType;
+        const line = loc ? `${codeOrType} at ${loc}` : codeOrType;
+        return inc.call_id ? `${line}, call ${inc.call_id}` : line;
       });
       const intro = pending.length === 1 ? "one pending call:" : `${pending.length} pending calls:`;
       let body = items.join("; ");
@@ -274,6 +306,16 @@ export async function buildInfoRequestResponse(
     }
 
     case "call_details": {
+      const subject = infoRequest.subject?.trim();
+      if (subject && (await ten8Configured(agencyId))) {
+        const live = await fetchCadIncidentLookupRadio(agencyId, subject);
+        if (live.ok) {
+          return `${csPart}${live.line}.`;
+        }
+        if (live.status === 404) {
+          return `${csPart}${live.line}`;
+        }
+      }
       const active = await listTen8ActiveIncidents(agencyId);
       if (active.length === 0) {
         return `${csPart}no active calls at this time.`;
@@ -291,6 +333,39 @@ export async function buildInfoRequestResponse(
       const comments = extractCommentsFromPayload(match.payload);
       parts.push(comments ? `comments: ${comments}` : "no comments on the call yet");
       return `${csPart}${parts.join(", ")}.`;
+    }
+
+    case "cad_person_search": {
+      if (!(await ten8Configured(agencyId))) {
+        return `${csPart}negative, 10-8 CAD is not configured.`;
+      }
+      if (!infoRequest.subject?.trim()) {
+        return `${csPart}negative, no name or description for the person search.`;
+      }
+      const result = await fetchCadPersonSearchRadio(agencyId, infoRequest.subject);
+      return `${csPart}${result.line}.`;
+    }
+
+    case "cad_vehicle_search": {
+      if (!(await ten8Configured(agencyId))) {
+        return `${csPart}negative, 10-8 CAD is not configured.`;
+      }
+      if (!infoRequest.subject?.trim()) {
+        return `${csPart}negative, no plate, VIN, or vehicle description heard.`;
+      }
+      const result = await fetchCadVehicleSearchRadio(agencyId, infoRequest.subject);
+      return `${csPart}${result.line}.`;
+    }
+
+    case "cad_incident_lookup": {
+      if (!(await ten8Configured(agencyId))) {
+        return `${csPart}negative, 10-8 CAD is not configured.`;
+      }
+      if (!infoRequest.subject?.trim()) {
+        return `${csPart}negative, say the call number, incident number, or UUID.`;
+      }
+      const result = await fetchCadIncidentLookupRadio(agencyId, infoRequest.subject);
+      return `${csPart}${result.line}.`;
     }
 
     case "unit_location": {

@@ -18,8 +18,10 @@ Given a finalized radio transmission, the current Pacific time, and the STT conf
   "dispatcher_response": exact words dispatcher should say on radio, or null,
   "trigger_emergency_tone": true | false,
   "plate_request": { "plate": "RAW_ALPHANUMERIC_PLATE_2_TO_8_CHARS" | null, "state": "TWO_LETTER_STATE_CODE" | null, "spoken_plate": "phonetic transmission verbatim" | null, "vin": "17_CHAR_VIN_NO_IOQ" | null, "spoken_vin": "phonetic VIN transmission verbatim" | null } | null,
-  "info_request": { "type": "address" | "external_address" | "pending_calls" | "active_calls_for_unit" | "call_details" | "unit_location" | "phone" | "contact" | "legal_code" | "general_query" | "unknown", "account_code": "NNNN" | null, "subject": "string describing what they want to know" | null } | null,
+  "info_request": { "type": "address" | "external_address" | "pending_calls" | "active_calls_for_unit" | "call_details" | "unit_location" | "phone" | "contact" | "legal_code" | "general_query" | "cad_person_search" | "cad_vehicle_search" | "cad_incident_lookup" | "unknown", "account_code": "NNNN" | null, "subject": "string describing what they want to know" | null } | null,
   "comment_text": "ALL-CAPS cop-shorthand for the CAD comment, or null. See COMMENT_TEXT FORMAT section below.",
+  "cad_person_link": { "relation": "suspect|victim|witness|etc" | null, "first_name": "string" | null, "last_name": "string" | null, "dob": "MM/DD/YYYY" | null, "notes": "brief notes" | null } | null,
+  "cad_tag": "tag name to add on the unit's open call" | null,
   "confidence": 0.0 to 1.0
 }
 
@@ -1168,6 +1170,34 @@ Officer wants the details/comments on ONE specific active call — what it's abo
   Transcript: "352, details on the disturbance call?"
   → info_request={ "type": "call_details", "account_code": null, "subject": "disturbance" }
 
+When 10-8 CAD API is configured, call_details and pending_calls use the live CAD API (full comments, units, tags). Prefer call_details with an exact call number when they name one.
+
+### type="cad_person_search" (10-8 CAD API v1.1.0 — person records)
+Officer wants to search 10-8 person/master-name records (NOT DMV plate lookup — use plate_request for that). Put name, DOB, or description in subject.
+  Transcript: "27-000, run John Smith in CAD"
+  → intent="request_info"
+  → info_request={ "type": "cad_person_search", "account_code": null, "subject": "John Smith" }
+
+  Transcript: "352, any priors on Smith DOB 01/15/1990?"
+  → info_request={ "type": "cad_person_search", "account_code": null, "subject": "Smith DOB 01/15/1990" }
+
+### type="cad_vehicle_search" (10-8 CAD API v1.1.0 — vehicle records)
+Search 10-8 vehicle records linked to prior calls (NOT DMV registration — plate_request/plate_transmit is DMV). Put plate, VIN, or vehicle description in subject.
+  Transcript: "27-000, run plate 8ABC123 in records"
+  → intent="request_info"
+  → info_request={ "type": "cad_vehicle_search", "account_code": null, "subject": "CA 8ABC123" }
+
+  Transcript: "352, any calls on a black Honda Accord plate 7XYZ999?"
+  → info_request={ "type": "cad_vehicle_search", "account_code": null, "subject": "7XYZ999 black Honda Accord" }
+
+### type="cad_incident_lookup" (10-8 CAD API v1.1.0 — full incident by number or UUID)
+Pull one incident directly from CAD with comments, units, tags, persons, vehicles. Use when they name a specific call number or UUID (richer than call_details fuzzy match).
+  Transcript: "27-000, pull incident 26-2223 from CAD"
+  → intent="request_info"
+  → info_request={ "type": "cad_incident_lookup", "account_code": null, "subject": "26-2223" }
+
+DO NOT use cad_vehicle_search for "912" / "run that plate" DMV lookups — those stay plate_request + plate_transmit.
+
 ### type="phone" or type="contact"
 Officer asking for a phone number / contact info for an external company or person (towing, locksmith, property manager, etc.). The server will check local SSA contacts first, then fall back to web search.
   Transcript: "27-000, what's the phone number to Santa Ana Club towing?"
@@ -1225,6 +1255,19 @@ RADIO CHECKS / SIGNAL REPORTS — these are acknowledgments, NEVER request_info.
   Transcript: "27-000, how do you read me?"
   → intent="acknowledgment", info_request=null, dispatcher_response="Affirm 27-000, 10-2."
 (If the incoming transmission was genuinely garbled/static, instead reply with a poor-signal report using "10-1", e.g. "Last unit, 10-1, you're receiving poorly.")
+
+# CAD PERSON / TAG (cad_person_link and cad_tag fields)
+
+When the unit wants to link a person or add a tag on their **current open call** (not a database search), set cad_person_link and/or cad_tag in addition to intent/comment_text. Requires 10-8 live CAD writes enabled. Server matches the unit to their open call.
+
+  Transcript: "352, add suspect male white 6 foot to my call, name John Smith DOB 1/1/90"
+  → intent="on_scene", actionable=true, comment_text="SUSP M/W 6FT JOHN SMITH DOB 01/01/90"
+  → cad_person_link={ "relation": "suspect", "first_name": "John", "last_name": "Smith", "dob": "01/01/1990", "notes": "M/W 6FT" }
+
+  Transcript: "231, tag this call priority"
+  → intent="on_scene", cad_tag="priority"
+
+Use cad_person_search / cad_vehicle_search for **lookups**; use cad_person_link / cad_tag for **writes** on the active call.
 
 # COMMENT_TEXT FORMAT (for the comment_text field)
 

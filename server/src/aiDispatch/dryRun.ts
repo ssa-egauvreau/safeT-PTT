@@ -20,11 +20,14 @@ import { lookupSsaProperty } from "./ssaProperties.js";
 import { listTen8ActiveIncidents, upsertTen8Incident } from "../ten8/store.js";
 import {
   ten8AddComment,
+  ten8AddPerson,
+  ten8AddTag,
   ten8AddVehicle,
   ten8Configured,
   ten8CreateIncident,
   ten8NewIncidentConfigured,
 } from "../ten8/client.js";
+import { buildCadPersonLinkBody } from "../ten8/cadRadioLookup.js";
 import { buildTen8NewIncidentBody } from "../ten8/incidentPayload.js";
 import {
   extractCallIdFromCreateResponse,
@@ -427,6 +430,40 @@ export async function runAiDispatchDryRun(
             trustedFromCreate,
             note: "DRY RUN — vehicle + comment would be added to this call.",
           };
+        }
+      }
+
+      if (parsed.cad_person_link || parsed.cad_tag) {
+        const linkMatch = findMatchingOpenIncident(active, parsed, unitId);
+        const linkCallId = linkMatch?.call_id?.trim() || newCallIdFromCreate;
+        if (!linkCallId || !isVerifiedOpenCallId(linkCallId, active)) {
+          ten8Actions.ten8_cad_link = { skipped: "no_verified_open_call_for_cad_link" };
+        } else if (parsed.cad_person_link) {
+          const body = buildCadPersonLinkBody(parsed.cad_person_link);
+          if (sendForReal) {
+            const res = await ten8AddPerson(opts.agencyId, linkCallId, body);
+            ten8Actions.ten8_person = { call_id: linkCallId, request: body, would_post: true, ...res };
+          } else {
+            ten8Actions.ten8_person = {
+              call_id: linkCallId,
+              request: body,
+              would_post: false,
+              note: "DRY RUN — person would be linked on this call.",
+            };
+          }
+        }
+        if (parsed.cad_tag && linkCallId && isVerifiedOpenCallId(linkCallId, active)) {
+          if (sendForReal) {
+            const res = await ten8AddTag(opts.agencyId, linkCallId, { tag: parsed.cad_tag });
+            ten8Actions.ten8_tag = { call_id: linkCallId, tag: parsed.cad_tag, would_post: true, ...res };
+          } else {
+            ten8Actions.ten8_tag = {
+              call_id: linkCallId,
+              tag: parsed.cad_tag,
+              would_post: false,
+              note: "DRY RUN — tag would be added on this call.",
+            };
+          }
         }
       }
     }

@@ -198,6 +198,9 @@ test("normalizeAiDispatchParse: only documented info_request types are accepted"
     "contact",
     "legal_code",
     "general_query",
+    "cad_person_search",
+    "cad_vehicle_search",
+    "cad_incident_lookup",
     "unknown",
   ]) {
     const out = normalizeAiDispatchParse({
