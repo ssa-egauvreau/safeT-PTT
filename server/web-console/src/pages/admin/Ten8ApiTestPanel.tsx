@@ -218,6 +218,14 @@ export function Ten8ApiTestPanel() {
   const isWrite = currentAction?.write === true;
   const apiInfo = API_INFO[currentAction?.api ?? "cad"];
 
+  /** When the server couldn't reach 10-8 at all, ten8Fetch returns this structured error. */
+  const unreachable = useMemo(() => {
+    const d = result?.data as { error?: string; reason?: string; url?: string } | null | undefined;
+    return d && d.error === "ten8_unreachable"
+      ? { reason: d.reason, url: d.url }
+      : null;
+  }, [result]);
+
   function setField(key: FieldKey, value: string) {
     setValues((prev) => ({ ...prev, [key]: value }));
   }
@@ -433,6 +441,24 @@ export function Ten8ApiTestPanel() {
               shadow: <b>{String(result.shadow === true)}</b>
             </span>
           </div>
+
+          {unreachable && (
+            <div className="ai-test-section error">
+              <h3>Could not reach {apiInfo.label}</h3>
+              <p className="muted">
+                safeT could not connect to <code>{unreachable.url ?? apiInfo.host}</code>
+                {unreachable.reason ? (
+                  <>
+                    {" "}
+                    (<code>{unreachable.reason}</code>)
+                  </>
+                ) : null}
+                . This is a network/DNS/TLS failure reaching 10-8, not a safeT bug — check the{" "}
+                <b>{apiInfo.setting}</b> under Admin → Integrations and that the host is reachable
+                from the server.
+              </p>
+            </div>
+          )}
 
           <div className="ai-test-section">
             <h3>Raw response</h3>
