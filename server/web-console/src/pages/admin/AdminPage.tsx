@@ -11,6 +11,7 @@ import { IntegrationsPanel } from "./IntegrationsPanel";
 import { KnowledgeBasePanel } from "./KnowledgeBasePanel";
 import { DownloadsPanel } from "./DownloadsPanel";
 import { AiTestPanel } from "./AiTestPanel";
+import { Ten8ApiTestPanel } from "./Ten8ApiTestPanel";
 import { AudioLabPanel } from "./AudioLabPanel";
 import { VoiceLinkPanel } from "./VoiceLinkPanel";
 
@@ -70,7 +71,12 @@ export function AdminPage() {
           {tab === "aliases" && <UnitAliasesPanel />}
           {tab === "integrations" && <IntegrationsPanel />}
           {tab === "knowledge" && <KnowledgeBasePanel />}
-          {tab === "ai-test" && <AiTestPanel />}
+          {tab === "ai-test" && (
+            <>
+              <AiTestPanel />
+              <Ten8ApiTestPanel />
+            </>
+          )}
           {tab === "audio-lab" && <AudioLabPanel />}
           {tab === "link-health" && <VoiceLinkPanel />}
           {tab === "downloads" && <DownloadsPanel />}

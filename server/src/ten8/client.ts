@@ -222,3 +222,155 @@ export async function ten8CreateIncident(
   }
   return { ok: r.ok, status: r.status, data };
 }
+
+// --- v1.1.0 CAD API helpers (additive) -------------------------------------
+// Thin wrappers over ten8Fetch used by the admin "10-8 CAD API tester". They do
+// not change any base URL, auth, or sanitization: reads execute live; writes
+// shadow unless the agency has live CAD writes enabled (see ten8Fetch).
+
+/** Result shape returned by the CAD-API-tester helpers. */
+export type Ten8CallResult = { ok: boolean; shadow?: boolean; status?: number; data?: unknown };
+
+function wrapTen8(res: { ok: boolean; status: number; data: unknown }): Ten8CallResult {
+  return {
+    ok: res.ok,
+    shadow: (res.data as { shadow?: boolean })?.shadow === true,
+    status: res.status,
+    data: res.data,
+  };
+}
+
+/** Build a query string, keeping ONLY keys whose value is a non-empty string/number. */
+function ten8QueryString(params: Record<string, unknown> | undefined): string {
+  if (!params) {
+    return "";
+  }
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) {
+      continue;
+    }
+    const str = typeof value === "string" ? value.trim() : String(value);
+    if (str === "") {
+      continue;
+    }
+    search.set(key, str);
+  }
+  const qs = search.toString();
+  return qs ? `?${qs}` : "";
+}
+
+/** GET /v1/health — service health probe, routed through the agency's CAD config. */
+export async function ten8Health(agencyId: number): Promise<Ten8CallResult> {
+  return wrapTen8(await ten8Fetch(agencyId, "GET", "/v1/health"));
+}
+
+/** GET /v1/incidents/{lookup} — numeric id, incident number, or UUID. */
+export async function ten8GetIncident(agencyId: number, lookup: string): Promise<Ten8CallResult> {
+  return wrapTen8(await ten8Fetch(agencyId, "GET", `/v1/incidents/${encodeURIComponent(lookup)}`));
+}
+
+/** GET /v1/persons — fuzzy/explicit person search. */
+export async function ten8SearchPersons(
+  agencyId: number,
+  params: Record<string, unknown>,
+): Promise<Ten8CallResult> {
+  return wrapTen8(await ten8Fetch(agencyId, "GET", `/v1/persons${ten8QueryString(params)}`));
+}
+
+/** GET /v1/vehicles — fuzzy/explicit vehicle search. */
+export async function ten8SearchVehicles(
+  agencyId: number,
+  params: Record<string, unknown>,
+): Promise<Ten8CallResult> {
+  return wrapTen8(await ten8Fetch(agencyId, "GET", `/v1/vehicles${ten8QueryString(params)}`));
+}
+
+/** POST /v1/incidents/{lookup}/persons — link an existing person or create-and-link. */
+export async function ten8AddPerson(
+  agencyId: number,
+  lookup: string,
+  body: Record<string, unknown>,
+): Promise<Ten8CallResult> {
+  return wrapTen8(
+    await ten8Fetch(agencyId, "POST", `/v1/incidents/${encodeURIComponent(lookup)}/persons`, body),
+  );
+}
+
+/** DELETE /v1/incidents/{lookup}/persons — unlink a person by id. */
+export async function ten8RemovePerson(
+  agencyId: number,
+  lookup: string,
+  personId: number,
+): Promise<Ten8CallResult> {
+  return wrapTen8(
+    await ten8Fetch(agencyId, "DELETE", `/v1/incidents/${encodeURIComponent(lookup)}/persons`, {
+      personId,
+    }),
+  );
+}
+
+/** POST /v1/incidents/{lookup}/vehicles — link an existing vehicle or create-and-link. */
+export async function ten8AddVehicleRecord(
+  agencyId: number,
+  lookup: string,
+  body: Record<string, unknown>,
+): Promise<Ten8CallResult> {
+  return wrapTen8(
+    await ten8Fetch(agencyId, "POST", `/v1/incidents/${encodeURIComponent(lookup)}/vehicles`, body),
+  );
+}
+
+/** DELETE /v1/incidents/{lookup}/vehicles — unlink a vehicle by id. */
+export async function ten8RemoveVehicle(
+  agencyId: number,
+  lookup: string,
+  vehicleId: number,
+): Promise<Ten8CallResult> {
+  return wrapTen8(
+    await ten8Fetch(agencyId, "DELETE", `/v1/incidents/${encodeURIComponent(lookup)}/vehicles`, {
+      vehicleId,
+    }),
+  );
+}
+
+/** POST /v1/incidents/{lookup}/tags — add a tag by id or name. */
+export async function ten8AddTag(
+  agencyId: number,
+  lookup: string,
+  body: Record<string, unknown>,
+): Promise<Ten8CallResult> {
+  return wrapTen8(
+    await ten8Fetch(agencyId, "POST", `/v1/incidents/${encodeURIComponent(lookup)}/tags`, body),
+  );
+}
+
+/** DELETE /v1/incidents/{lookup}/tags — remove a tag by id. */
+export async function ten8RemoveTag(
+  agencyId: number,
+  lookup: string,
+  tagId: number,
+): Promise<Ten8CallResult> {
+  return wrapTen8(
+    await ten8Fetch(agencyId, "DELETE", `/v1/incidents/${encodeURIComponent(lookup)}/tags`, {
+      tagId,
+    }),
+  );
+}
+
+/** PUT /v1/incidents/{lookup}/comments/{commentId} — edit an existing comment. */
+export async function ten8UpdateComment(
+  agencyId: number,
+  lookup: string,
+  commentId: number,
+  comment: string,
+): Promise<Ten8CallResult> {
+  return wrapTen8(
+    await ten8Fetch(
+      agencyId,
+      "PUT",
+      `/v1/incidents/${encodeURIComponent(lookup)}/comments/${encodeURIComponent(String(commentId))}`,
+      { comment },
+    ),
+  );
+}

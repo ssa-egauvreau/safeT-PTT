@@ -214,6 +214,15 @@ export interface Ten8MapIncident {
   lon: number;
 }
 
+/** Raw result from the admin 10-8 CAD API tester (one action per call). */
+export interface Ten8ApiTestResult {
+  ok: boolean;
+  status?: number;
+  /** True when the write was shadowed (live CAD writes are OFF for the agency). */
+  shadow?: boolean;
+  data: unknown;
+}
+
 export interface Transmission {
   id: number;
   channel_id: number | null;
@@ -1178,6 +1187,10 @@ export const api = {
       "DELETE",
       `/v1/admin/audio-lab-presets/${encodeURIComponent(name)}`,
     ),
+
+  /** Admin: exercise a single 10-8 CAD Incident API (v1.1.0) action and return the raw JSON. */
+  ten8ApiTest: (input: { action: string; params?: Record<string, unknown> }) =>
+    request<Ten8ApiTestResult>("POST", "/v1/integrations/ten8/api-test", input),
 };
 
 /** Uploads a custom agency logo (raw image body — not JSON). */

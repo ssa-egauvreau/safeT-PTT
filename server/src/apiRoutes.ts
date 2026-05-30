@@ -176,6 +176,23 @@ import {
 } from "./appUpdate.js";
 import { listTen8MapIncidents } from "./ten8/mapIncidents.js";
 import { listTen8ActiveIncidents, listTen8WebhookLog } from "./ten8/store.js";
+import {
+  ten8Configured,
+  ten8Health,
+  ten8GetIncident,
+  ten8ListIncidents,
+  ten8SearchPersons,
+  ten8SearchVehicles,
+  ten8AddVehicle,
+  ten8RemoveVehicle,
+  ten8AddPerson,
+  ten8RemovePerson,
+  ten8AddTag,
+  ten8RemoveTag,
+  ten8AddComment,
+  ten8UpdateComment,
+  ten8CreateIncident,
+} from "./ten8/client.js";
 
 /** Legacy global radio key — lets a handset fetch its agency's custom tones. */
 const radioApiKey = process.env.RADIO_API_KEY?.trim();
@@ -2730,6 +2747,326 @@ export function createApiRouter(): Router {
         });
       }
       res.json(result);
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Per-function 10-8 CAD API tester (Admin → AI test page). Exercises one
+  // v1.1.0 endpoint at a time and returns the raw upstream response. Reads run
+  // live; writes shadow unless the agency has live CAD writes enabled (handled
+  // inside ten8Fetch — surfaced here as `shadow: true`).
+  router.post("/integrations/ten8/api-test", requireAgencyOperator, async (req, res) => {
+    try {
+      const agencyId = req.authUser?.agencyId;
+      if (agencyId == null) {
+        res.status(401).json({ error: "no_agency" });
+        return;
+      }
+      const body = (req.body ?? {}) as { action?: unknown; params?: unknown };
+      const action = String(body.action ?? "").trim();
+      const params = (body.params ?? {}) as Record<string, unknown>;
+      if (!action) {
+        res.status(400).json({ error: "missing_action" });
+        return;
+      }
+      if (!(await ten8Configured(agencyId))) {
+        res.status(400).json({
+          error: "ten8_not_configured",
+          message: "Add the 10-8 CAD API key and secret under Admin → Integrations first.",
+        });
+        return;
+      }
+
+      const str = (v: unknown): string =>
+        typeof v === "string" ? v.trim() : v == null ? "" : String(v);
+      const num = (v: unknown): number | null => {
+        if (typeof v === "number") {
+          return Number.isFinite(v) ? v : null;
+        }
+        const s = str(v).replace(/[^0-9-]/g, "");
+        if (!s) {
+          return null;
+        }
+        const n = Number.parseInt(s, 10);
+        return Number.isFinite(n) ? n : null;
+      };
+      // Keep only the listed keys with non-empty values (kept as strings; the
+      // search/query helpers send them as query params).
+      const pick = (keys: string[]): Record<string, unknown> => {
+        const out: Record<string, unknown> = {};
+        for (const k of keys) {
+          const val = str(params[k]);
+          if (val) {
+            out[k] = val;
+          }
+        }
+        return out;
+      };
+      const lookup = str(params.lookup);
+      const requireLookup = (): boolean => {
+        if (lookup) {
+          return true;
+        }
+        res.status(400).json({
+          error: "missing_lookup",
+          message: "lookup (incident id, number, or UUID) is required for this action",
+        });
+        return false;
+      };
+      const requireNum = (key: string): number | null => {
+        const n = num(params[key]);
+        if (n == null) {
+          res.status(400).json({ error: `missing_${key}`, message: `${key} (number) is required` });
+        }
+        return n;
+      };
+
+      let result: { ok: boolean; shadow?: boolean; status?: number; data?: unknown };
+
+      switch (action) {
+        case "health":
+          result = await ten8Health(agencyId);
+          break;
+        case "list_incidents":
+          result = await ten8ListIncidents(agencyId, {
+            from: num(params.from) ?? undefined,
+            to: num(params.to) ?? undefined,
+            field: str(params.field) || undefined,
+          });
+          break;
+        case "get_incident":
+          if (!requireLookup()) {
+            return;
+          }
+          result = await ten8GetIncident(agencyId, lookup);
+          break;
+        case "search_persons": {
+          const sp = pick([
+            "q",
+            "firstName",
+            "lastName",
+            "dob",
+            "phone",
+            "stateIDNumber",
+            "sex",
+            "race",
+            "limit",
+          ]);
+          if (Object.keys(sp).length === 0) {
+            res.status(400).json({
+              error: "missing_search",
+              message: "at least one person search parameter is required",
+            });
+            return;
+          }
+          result = await ten8SearchPersons(agencyId, sp);
+          break;
+        }
+        case "search_vehicles": {
+          const sv = pick([
+            "q",
+            "license",
+            "vin",
+            "make",
+            "model",
+            "color",
+            "state",
+            "type",
+            "year",
+            "limit",
+          ]);
+          if (Object.keys(sv).length === 0) {
+            res.status(400).json({
+              error: "missing_search",
+              message: "at least one vehicle search parameter is required",
+            });
+            return;
+          }
+          result = await ten8SearchVehicles(agencyId, sv);
+          break;
+        }
+        case "add_vehicle": {
+          if (!requireLookup()) {
+            return;
+          }
+          const vehicle = pick(["license", "vin", "state", "type", "make", "model", "color"]);
+          const year = num(params.year);
+          if (year != null) {
+            vehicle.year = year;
+          }
+          if (Object.keys(vehicle).length === 0) {
+            res.status(400).json({
+              error: "missing_vehicle",
+              message: "at least one vehicle field is required",
+            });
+            return;
+          }
+          const notes = str(params.notes);
+          result = await ten8AddVehicle(
+            agencyId,
+            lookup,
+            notes ? { notes, vehicle } : { vehicle },
+          );
+          break;
+        }
+        case "remove_vehicle": {
+          if (!requireLookup()) {
+            return;
+          }
+          const vehicleId = requireNum("vehicleId");
+          if (vehicleId == null) {
+            return;
+          }
+          result = await ten8RemoveVehicle(agencyId, lookup, vehicleId);
+          break;
+        }
+        case "add_person": {
+          if (!requireLookup()) {
+            return;
+          }
+          const person = pick([
+            "firstName",
+            "middleName",
+            "lastName",
+            "alias",
+            "dob",
+            "address",
+            "city",
+            "state",
+            "zip",
+            "phone",
+            "sex",
+            "race",
+          ]);
+          const personId = num(params.personId);
+          if (personId == null && Object.keys(person).length === 0) {
+            res.status(400).json({
+              error: "missing_person",
+              message: "personId or at least one person field is required",
+            });
+            return;
+          }
+          const payload: Record<string, unknown> = {};
+          if (personId != null) {
+            payload.personId = personId;
+          } else {
+            payload.person = person;
+          }
+          const relation = str(params.relation);
+          const notes = str(params.notes);
+          if (relation) {
+            payload.relation = relation;
+          }
+          if (notes) {
+            payload.notes = notes;
+          }
+          result = await ten8AddPerson(agencyId, lookup, payload);
+          break;
+        }
+        case "remove_person": {
+          if (!requireLookup()) {
+            return;
+          }
+          const personId = requireNum("personId");
+          if (personId == null) {
+            return;
+          }
+          result = await ten8RemovePerson(agencyId, lookup, personId);
+          break;
+        }
+        case "add_tag": {
+          if (!requireLookup()) {
+            return;
+          }
+          const tag = str(params.tag);
+          const tagId = num(params.tagId);
+          if (!tag && tagId == null) {
+            res.status(400).json({ error: "missing_tag", message: "tag (name) or tagId is required" });
+            return;
+          }
+          const payload: Record<string, unknown> = {};
+          if (tagId != null) {
+            payload.tagId = tagId;
+          }
+          if (tag) {
+            payload.tag = tag;
+          }
+          result = await ten8AddTag(agencyId, lookup, payload);
+          break;
+        }
+        case "remove_tag": {
+          if (!requireLookup()) {
+            return;
+          }
+          const tagId = requireNum("tagId");
+          if (tagId == null) {
+            return;
+          }
+          result = await ten8RemoveTag(agencyId, lookup, tagId);
+          break;
+        }
+        case "add_comment": {
+          if (!requireLookup()) {
+            return;
+          }
+          const comment = str(params.comment);
+          if (!comment) {
+            res.status(400).json({ error: "missing_comment", message: "comment text is required" });
+            return;
+          }
+          result = await ten8AddComment(agencyId, lookup, comment);
+          break;
+        }
+        case "update_comment": {
+          if (!requireLookup()) {
+            return;
+          }
+          const commentId = requireNum("commentId");
+          if (commentId == null) {
+            return;
+          }
+          const comment = str(params.comment);
+          if (!comment) {
+            res.status(400).json({ error: "missing_comment", message: "comment text is required" });
+            return;
+          }
+          result = await ten8UpdateComment(agencyId, lookup, commentId, comment);
+          break;
+        }
+        case "create_incident": {
+          const type = str(params.type);
+          if (!type) {
+            res.status(400).json({ error: "missing_type", message: "type (call type) is required" });
+            return;
+          }
+          const payload = pick([
+            "type",
+            "summary",
+            "priority",
+            "location",
+            "streetAddress",
+            "city",
+            "state",
+            "zip",
+            "county",
+            "units",
+            "dispatcher",
+          ]);
+          result = await ten8CreateIncident(agencyId, payload);
+          break;
+        }
+        default:
+          res.status(400).json({ error: "unknown_action", message: `unknown action: ${action}` });
+          return;
+      }
+
+      res.json({
+        ok: result.ok,
+        status: result.status ?? null,
+        shadow: result.shadow === true,
+        data: result.data ?? null,
+      });
     } catch (error) {
       fail(res, error);
     }
