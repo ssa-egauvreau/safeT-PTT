@@ -1,23 +1,42 @@
 import { useMemo, useState } from "react";
 import { api, describeError, type Ten8ApiTestResult } from "../../api";
 
-/** Every CAD-API action the tester can exercise, with a friendly label. */
-const ACTIONS: { value: string; label: string; write: boolean }[] = [
-  { value: "health", label: "Health check (GET /v1/health)", write: false },
-  { value: "list_incidents", label: "List incidents (GET /v1/incidents)", write: false },
-  { value: "get_incident", label: "Get incident (GET /v1/incidents/{lookup})", write: false },
-  { value: "search_persons", label: "Search persons (GET /v1/persons)", write: false },
-  { value: "search_vehicles", label: "Search vehicles (GET /v1/vehicles)", write: false },
-  { value: "add_vehicle", label: "Add vehicle (POST .../vehicles)", write: true },
-  { value: "remove_vehicle", label: "Remove vehicle (DELETE .../vehicles)", write: true },
-  { value: "add_person", label: "Add person (POST .../persons)", write: true },
-  { value: "remove_person", label: "Remove person (DELETE .../persons)", write: true },
-  { value: "add_tag", label: "Add tag (POST .../tags)", write: true },
-  { value: "remove_tag", label: "Remove tag (DELETE .../tags)", write: true },
-  { value: "add_comment", label: "Add comment (POST .../comments)", write: true },
-  { value: "update_comment", label: "Update comment (PUT .../comments/{id})", write: true },
-  { value: "create_incident", label: "Create incident (New Incident API)", write: true },
+/**
+ * Every action the tester can exercise. `api` records which 10-8 API (and therefore which
+ * base-URL setting) the action hits: the CAD Incident API v1.1.0 for everything except
+ * create, which uses the separate New Incident API v1.0.0 (Basic auth, different host).
+ */
+type Ten8Api = "cad" | "new_incident";
+const ACTIONS: { value: string; label: string; write: boolean; api: Ten8Api }[] = [
+  { value: "health", label: "Health check (GET /v1/health)", write: false, api: "cad" },
+  { value: "list_incidents", label: "List incidents (GET /v1/incidents)", write: false, api: "cad" },
+  { value: "get_incident", label: "Get incident (GET /v1/incidents/{lookup})", write: false, api: "cad" },
+  { value: "search_persons", label: "Search persons (GET /v1/persons)", write: false, api: "cad" },
+  { value: "search_vehicles", label: "Search vehicles (GET /v1/vehicles)", write: false, api: "cad" },
+  { value: "add_vehicle", label: "Add vehicle (POST .../vehicles)", write: true, api: "cad" },
+  { value: "remove_vehicle", label: "Remove vehicle (DELETE .../vehicles)", write: true, api: "cad" },
+  { value: "add_person", label: "Add person (POST .../persons)", write: true, api: "cad" },
+  { value: "remove_person", label: "Remove person (DELETE .../persons)", write: true, api: "cad" },
+  { value: "add_tag", label: "Add tag (POST .../tags)", write: true, api: "cad" },
+  { value: "remove_tag", label: "Remove tag (DELETE .../tags)", write: true, api: "cad" },
+  { value: "add_comment", label: "Add comment (POST .../comments)", write: true, api: "cad" },
+  { value: "update_comment", label: "Update comment (PUT .../comments/{id})", write: true, api: "cad" },
+  { value: "create_incident", label: "Create incident (POST /incidents)", write: true, api: "new_incident" },
 ];
+
+/** Human label + host for each underlying 10-8 API, shown next to the selected action. */
+const API_INFO: Record<Ten8Api, { label: string; host: string; setting: string }> = {
+  cad: {
+    label: "10-8 CAD API v1.1.0",
+    host: "connect.10-8systems.com",
+    setting: "10-8 CAD API base URL",
+  },
+  new_incident: {
+    label: "10-8 New Incident API v1.0.0",
+    host: "interface.10-8systems.com (Basic auth)",
+    setting: "10-8 New Incident API base URL",
+  },
+};
 
 /** Which input fields each action needs. Kept declarative so the form stays compact. */
 type FieldKey =
@@ -195,10 +214,9 @@ export function Ten8ApiTestPanel() {
   const [error, setError] = useState<string | null>(null);
 
   const fields = FIELDS_BY_ACTION[action] ?? [];
-  const isWrite = useMemo(
-    () => ACTIONS.find((a) => a.value === action)?.write === true,
-    [action],
-  );
+  const currentAction = useMemo(() => ACTIONS.find((a) => a.value === action), [action]);
+  const isWrite = currentAction?.write === true;
+  const apiInfo = API_INFO[currentAction?.api ?? "cad"];
 
   function setField(key: FieldKey, value: string) {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -309,13 +327,29 @@ export function Ten8ApiTestPanel() {
   return (
     <div className="ai-test-panel">
       <header className="ai-test-header">
-        <h2>10-8 CAD API Tester</h2>
+        <h2>10-8 API Tester</h2>
         <p className="muted">
-          Exercise each 10-8 CAD Incident API (v1.1.0) function individually and see the raw JSON
-          response. Searches and other reads run live against 10-8. WRITE actions (add / remove /
-          create / update) only hit 10-8 for real when the agency has <b>10-8 live CAD writes</b>{" "}
-          enabled — otherwise they shadow, and the response will show <code>shadow: true</code> with
-          the sanitized body that would have been sent.
+          Exercise each 10-8 function individually and see the raw JSON response. Two different 10-8
+          APIs are involved, each with its own base-URL setting under <b>Admin → Integrations</b>:
+        </p>
+        <ul className="muted" style={{ marginTop: 0 }}>
+          <li>
+            <b>10-8 CAD API v1.1.0</b> — reads, search, comments, tags, persons, vehicles. Host{" "}
+            <code>connect.10-8systems.com</code> (field: <i>10-8 CAD API base URL</i>). Every action
+            below <b>except</b> Create incident.
+          </li>
+          <li>
+            <b>10-8 New Incident API v1.0.0</b> — only <i>Create incident</i>. Host{" "}
+            <code>interface.10-8systems.com</code>, Basic auth (field: <i>10-8 New Incident API base
+            URL</i>).
+          </li>
+        </ul>
+        <p className="muted">
+          Reads run live against 10-8. WRITE actions (add / remove / create / update) only hit 10-8
+          for real when the agency has <b>10-8 live CAD writes</b> enabled — otherwise they shadow,
+          and the response shows <code>shadow: true</code> with the sanitized body that would have
+          been sent. A <b>502 “Internal server error”</b> here means the configured base URL is not
+          answering — check the host for the API shown beside the action.
         </p>
       </header>
 
@@ -333,11 +367,19 @@ export function Ten8ApiTestPanel() {
             {ACTIONS.map((a) => (
               <option key={a.value} value={a.value}>
                 {a.label}
+                {" · "}
+                {API_INFO[a.api].label}
                 {a.write ? " · WRITE" : ""}
               </option>
             ))}
           </select>
         </label>
+
+        <div className="ai-test-summary-row">
+          <span className="ai-test-pill">{apiInfo.label}</span>
+          <span className="ai-test-pill">host: {apiInfo.host}</span>
+          <span className="ai-test-pill">setting: {apiInfo.setting}</span>
+        </div>
 
         {fields.length === 0 ? (
           <p className="muted">No parameters — just run it.</p>
