@@ -42,16 +42,32 @@ async function ten8Fetch(
     return { ok: true, status: 200, data: { shadow: true, method, path, body: safeBody } };
   }
   const url = `${cfg.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
-  const r = await fetch(url, {
-    method,
-    headers: {
-      "X-API-Key": cfg.apiKey!,
-      "X-API-Secret": cfg.apiSecret!,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: safeBody !== undefined ? JSON.stringify(safeBody) : undefined,
-  });
+  let r: Response;
+  try {
+    r = await fetch(url, {
+      method,
+      headers: {
+        "X-API-Key": cfg.apiKey!,
+        "X-API-Secret": cfg.apiSecret!,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: safeBody !== undefined ? JSON.stringify(safeBody) : undefined,
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (err) {
+    // The host is unreachable (DNS/TLS/connection refused/timeout) — fetch rejects rather than
+    // returning a response. Surface it as a structured network error (status 0) instead of letting
+    // it bubble up as an opaque 500, so callers (and the API tester) can see why.
+    const e = err as { name?: string; message?: string; cause?: { code?: string; message?: string } };
+    const reason = e.cause?.code || e.cause?.message || e.message || "network_error";
+    console.error(`[ten8] ${method} ${url} failed: ${reason}`);
+    return {
+      ok: false,
+      status: 0,
+      data: { error: "ten8_unreachable", reason: String(reason), url: cfg.baseUrl },
+    };
+  }
   let data: unknown = null;
   try {
     data = await r.json();
@@ -208,15 +224,24 @@ export async function ten8CreateIncident(
     return { ok: true, shadow: true, data: { shadow: true, path: "/incidents", body: safeBody } };
   }
   const credentials = Buffer.from(`${cfg.apiKey}:${cfg.apiSecret}`).toString("base64");
-  const r = await fetch(`${cfg.baseUrl}/incidents`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(safeBody),
-  });
+  let r: Response;
+  try {
+    r = await fetch(`${cfg.baseUrl}/incidents`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(safeBody),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (err) {
+    const e = err as { message?: string; cause?: { code?: string; message?: string } };
+    const reason = e.cause?.code || e.cause?.message || e.message || "network_error";
+    console.error(`[ten8] POST ${cfg.baseUrl}/incidents failed: ${reason}`);
+    return { ok: false, status: 0, data: { error: "ten8_unreachable", reason: String(reason), url: cfg.baseUrl } };
+  }
   let data: unknown = null;
   try {
     data = await r.json();
