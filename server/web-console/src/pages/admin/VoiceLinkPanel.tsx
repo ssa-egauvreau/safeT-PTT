@@ -16,12 +16,14 @@ import {
   type AnalyticsRange,
   ANALYTICS_RANGES,
 } from "../../components/ui";
+import { mergeLinkHealthRows, type LinkHealthRow } from "./linkHealthMerge";
 
 /**
  * "Link Health" admin panel — surfaces per-unit inbound voice link quality from
- * the new `/v1/admin/voice-link-telemetry` aggregate so an operator can answer
- * "is this unit having voice problems?" with data instead of trusting an
- * end-user report.
+ * `/v1/admin/voice-link-telemetry`, merged with live voice channel rosters so
+ * every handset currently on a channel appears even before its first stats
+ * report (~30 s). Map/GPS "online" counts can be higher — only units on voice
+ * show here.
  *
  * Layout follows the same pattern as ChannelsPanel / AudioLabPanel:
  *   - Panel head with title + count.
@@ -57,7 +59,7 @@ function plcRatio(plc: number, decoded: number): number {
  *  consistent whether the aggregate is rendered server-side or fresh from a
  *  re-derived client view. The duplicate is small; the consistency is worth
  *  it. */
-function classify(u: VoiceLinkUnitSummary): HealthClassification {
+function classifyTelemetry(u: VoiceLinkUnitSummary): HealthClassification {
   if (u.frames_decoded === 0 && u.plc_frames_synthesized === 0) {
     return {
       badge: "unknown",
@@ -86,6 +88,39 @@ function classify(u: VoiceLinkUnitSummary): HealthClassification {
     label: "Degraded",
     description: "Operator-noticeable cutout — over 5 % PLC or frequent underruns.",
   };
+}
+
+function classifyRow(row: LinkHealthRow): HealthClassification {
+  if (row.telemetry) {
+    return classifyTelemetry(row.telemetry);
+  }
+  if (row.connected_now) {
+    return {
+      badge: "unknown",
+      label: "On channel",
+      description:
+        "Unit is on a voice channel now. Link stats appear after the app sends its first ~30 s report " +
+        "(update the handset app if this stays empty for several minutes).",
+    };
+  }
+  return {
+    badge: "unknown",
+    label: "No data",
+    description: "No stats in this time range and the unit is not on a voice channel right now.",
+  };
+}
+
+function lastSeenLabel(row: LinkHealthRow): string {
+  if (row.connected_now && !row.telemetry) {
+    return "On channel now";
+  }
+  if (row.connected_now && row.telemetry) {
+    return `On channel · stats ${formatRelative(row.telemetry.last_seen)}`;
+  }
+  if (row.telemetry) {
+    return formatRelative(row.telemetry.last_seen);
+  }
+  return "—";
 }
 
 function formatRelative(iso: string): string {
@@ -121,7 +156,7 @@ export function VoiceLinkPanel() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [channelFilter, setChannelFilter] = useState<string>("");
   const [search, setSearch] = useState<string>("");
-  const [units, setUnits] = useState<VoiceLinkUnitSummary[]>([]);
+  const [rows, setRows] = useState<LinkHealthRow[]>([]);
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<string | null>(null);
@@ -135,15 +170,16 @@ export function VoiceLinkPanel() {
     setState("loading");
     setError(null);
     try {
-      const [chRes, telemetryRes] = await Promise.all([
+      const [chRes, telemetryRes, rosterRes] = await Promise.all([
         api.listChannels().catch(() => ({ channels: [] as Channel[] })),
         api.listVoiceLinkTelemetry({
           sinceMs: rangeToMs(range),
           channel: channelFilter || undefined,
         }),
+        api.channelRosters().catch(() => ({ channels: [] as { channel: string; members: [] }[] })),
       ]);
       setChannels(chRes.channels);
-      setUnits(telemetryRes.units);
+      setRows(mergeLinkHealthRows(telemetryRes.units, rosterRes.channels, channelFilter));
       setState("ready");
     } catch (err) {
       setError(describeError(err));
@@ -194,15 +230,21 @@ export function VoiceLinkPanel() {
 
   // --- derived view --------------------------------------------------------
 
-  const filteredUnits = useMemo(() => {
+  const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return units;
-    return units.filter((u) => u.unit_id.toLowerCase().includes(q));
-  }, [units, search]);
+    if (!q) return rows;
+    return rows.filter((r) => r.unit_id.toLowerCase().includes(q));
+  }, [rows, search]);
+
+  const headCounts = useMemo(() => {
+    const onVoice = rows.filter((r) => r.connected_now).length;
+    const withStats = rows.filter((r) => r.telemetry != null).length;
+    return { total: rows.length, onVoice, withStats };
+  }, [rows]);
 
   const selected = useMemo(
-    () => (selectedUnit ? filteredUnits.find((u) => u.unit_id === selectedUnit) ?? null : null),
-    [selectedUnit, filteredUnits],
+    () => (selectedUnit ? filteredRows.find((r) => r.unit_id === selectedUnit) ?? null : null),
+    [selectedUnit, filteredRows],
   );
 
   // Charts — three series derived from the per-window points. Sized down to
@@ -276,13 +318,20 @@ export function VoiceLinkPanel() {
     <div>
       <div className="panel-head">
         <h2>Link Health</h2>
-        <span className="count">{filteredUnits.length} units</span>
+        <span className="count">
+          {filteredRows.length} shown
+          {headCounts.total > 0
+            ? ` · ${headCounts.onVoice} on voice · ${headCounts.withStats} with stats`
+            : ""}
+        </span>
       </div>
       <p className="panel-desc">
         Inbound voice quality per unit — jitter buffer underruns, PLC frames synthesised,
-        decode failures, and frames received per codec. Clients post a short summary every
-        ~30 s; rows here roll those windows up. Click a unit to see its
-        last-window-by-window trend.
+        decode failures, and frames received per codec. The table lists everyone currently
+        on a voice channel plus any unit that posted stats in the time range (about every
+        30 s from the handset app). This is not the same as GPS/map &ldquo;online&rdquo; —
+        a radio must be tuned to a channel here. Click a unit for trend charts when stats
+        exist.
       </p>
 
       <div className="card">
@@ -320,17 +369,17 @@ export function VoiceLinkPanel() {
         </div>
       </div>
 
-      {state === "loading" && units.length === 0 ? (
+      {state === "loading" && rows.length === 0 ? (
         <LoadingState label="Loading link health" />
-      ) : state === "error" && units.length === 0 ? (
+      ) : state === "error" && rows.length === 0 ? (
         <ErrorState title="Couldn't load link health" detail={error ?? undefined} onRetry={() => void reload()} />
-      ) : filteredUnits.length === 0 ? (
+      ) : filteredRows.length === 0 ? (
         <EmptyState
-          title="No telemetry in this window"
+          title="No units in this view"
           description={
             search
               ? "No units match the current search. Try clearing the filter."
-              : "Connect a client and wait ~30 s — every audio client posts a summary on that cadence."
+              : "No handsets are on a voice channel right now, and none posted link stats in this time range. Open a channel on a radio and wait ~30 s for the first stats row."
           }
         />
       ) : (
@@ -338,7 +387,7 @@ export function VoiceLinkPanel() {
           <thead>
             <tr>
               <th>Unit</th>
-              <th>Last seen</th>
+              <th>Status</th>
               <th>PLC ratio</th>
               <th>Underruns</th>
               <th>Decode fail</th>
@@ -348,28 +397,41 @@ export function VoiceLinkPanel() {
             </tr>
           </thead>
           <tbody>
-            {filteredUnits.map((u) => {
-              const ratio = plcRatio(u.plc_frames_synthesized, u.frames_decoded);
-              const h = classify(u);
-              const selectedRow = u.unit_id === selectedUnit;
+            {filteredRows.map((row) => {
+              const t = row.telemetry;
+              const ratio = t
+                ? plcRatio(t.plc_frames_synthesized, t.frames_decoded)
+                : null;
+              const h = classifyRow(row);
+              const selectedRow = row.unit_id === selectedUnit;
+              const channelHint =
+                row.connected_channels.length > 0
+                  ? row.connected_channels.join(", ")
+                  : t?.channels?.join(", ") ?? "";
               return (
                 <tr
-                  key={u.unit_id}
+                  key={row.unit_id}
                   className={selectedRow ? "selected" : undefined}
                   onClick={() =>
-                    setSelectedUnit((prev) => (prev === u.unit_id ? null : u.unit_id))
+                    setSelectedUnit((prev) => (prev === row.unit_id ? null : row.unit_id))
                   }
                   style={{ cursor: "pointer" }}
+                  title={channelHint ? `Channels: ${channelHint}` : undefined}
                 >
                   <td>
-                    <code className="mono">{u.unit_id}</code>
+                    <code className="mono">{row.unit_id}</code>
+                    {row.roster_client ? (
+                      <span className="muted small" style={{ display: "block" }}>
+                        {row.roster_client}
+                      </span>
+                    ) : null}
                   </td>
-                  <td>{formatRelative(u.last_seen)}</td>
-                  <td>{(ratio * 100).toFixed(2)}%</td>
-                  <td>{u.buffer_underruns}</td>
-                  <td>{u.decode_failures}</td>
-                  <td>{u.frames_decoded.toLocaleString()}</td>
-                  <td>{codecMixLabel(u.codec_mix)}</td>
+                  <td>{lastSeenLabel(row)}</td>
+                  <td>{ratio != null ? `${(ratio * 100).toFixed(2)}%` : "—"}</td>
+                  <td>{t != null ? t.buffer_underruns : "—"}</td>
+                  <td>{t != null ? t.decode_failures : "—"}</td>
+                  <td>{t != null ? t.frames_decoded.toLocaleString() : "—"}</td>
+                  <td>{t != null ? codecMixLabel(t.codec_mix) : "—"}</td>
                   <td>
                     <span
                       className={`vlt-badge vlt-badge-${h.badge}`}
@@ -402,6 +464,19 @@ export function VoiceLinkPanel() {
               title="Couldn't load detail"
               detail={detailError ?? undefined}
               onRetry={() => setSelectedUnit(selected.unit_id)}
+            />
+          ) : !selected.telemetry ? (
+            <EmptyState
+              title={
+                selected.connected_now
+                  ? "On channel — stats not in yet"
+                  : "No stats in this time range"
+              }
+              description={
+                selected.connected_now
+                  ? "This unit is on voice now. Wait one or two ~30 s reporter intervals, or update the handset app if nothing appears after a few minutes."
+                  : "This unit is not on a voice channel now and did not post link telemetry during the selected time range."
+              }
             />
           ) : !chartSeries ? (
             <EmptyState
