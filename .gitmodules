@@ -1,3 +1,6 @@
 [submodule "android-app/app/src/main/cpp/codec2"]
 	path = android-app/app/src/main/cpp/codec2
 	url = https://github.com/drowe67/codec2
+[submodule "android-app/app/src/main/cpp/opus"]
+	path = android-app/app/src/main/cpp/opus
+	url = https://github.com/xiph/opus.git

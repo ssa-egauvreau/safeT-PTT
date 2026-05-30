@@ -1,320 +1,137 @@
 package com.securityradio.ptt.device
 
-import android.media.MediaCodec
-import android.media.MediaFormat
 import android.util.Log
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 /**
- * Opus encoder + decoder backed by Android's built-in `MediaCodec`. Opus
- * encode + decode are mandatory MediaCodec types as of Android 10
- * (API 29); on older devices `createDecoderByType("audio/opus")` throws
- * and both wrappers report `isReady = false` — the registry then falls
- * back to IMBE on TX and inbound Opus frames drop with a log instead of
- * being played as garbage.
+ * Opus encoder + decoder backed by the bundled libopus (BSD-3-Clause; see
+ * cpp/opus submodule pinned to v1.5.2) via [OpusNative]. This replaces
+ * the previous `MediaCodec("audio/opus")` path so we can configure the
+ * encoder for **in-band FEC** (`OPUS_SET_INBAND_FEC = 1`) and the
+ * **packet-loss-percentage hint** (`OPUS_SET_PACKET_LOSS_PERC = 10`) —
+ * the proper fix for the field-reported "voice cuts out and gets
+ * robotic on lossy links" complaint that PR #217 worked around by
+ * enlarging the jitter buffer and bumping the bitrate to 32 kbps.
  *
- * Voice profile (matches iOS AudioToolbox and web WebCodecs):
+ * The system MediaCodec Opus path exposed bitrate as its only knob.
+ * libopus gives us the full encoder configuration surface plus the
+ * `opus_decode(..., fec=1)` LBRR-recovery API.
+ *
+ * Voice profile (matches iOS libopus and web WASM libopus paths):
  *  - sample rate: 16 000 Hz
  *  - channels: 1 (mono)
  *  - frame size: 20 ms (320 samples)
- *  - bitrate: 32 kbps (was 20 — extra headroom helps the encoder cope
- *    with sibilants and harder voices under loss, which was showing up
- *    as intermittent robotic audio in the field. ~12 kbps extra is
- *    negligible for this app's profile.)
+ *  - bitrate: 32 kbps
+ *  - application: OPUS_APPLICATION_VOIP
+ *  - signal hint: OPUS_SIGNAL_VOICE
+ *  - in-band FEC: ON (10 % packet-loss budget)
+ *  - DTX: OFF (would suppress LBRR-carrying packets)
+ *  - complexity: 8 (good quality, low CPU for rugged handsets)
  *
- * Wire format: 2-byte magic (0x4F 0x70) + opaque Opus packet. Packet
- * size varies per frame (DTX, complexity), so receivers identify the
- * codec by magic, not by length.
+ * Actual CTL values live inside `opus_jni.cpp` so encoder + decoder
+ * stay aligned with iOS + web by sharing one C-level definition.
  *
- * Why MediaCodec instead of a vendored libopus: zero new dependencies,
- * works on the system codec service that ships on every modern Android
- * handset, no NDK build to maintain, and the failure mode (graceful
- * fallback to IMBE) is the same behavior the registry already handles.
+ * Wire format: 2-byte magic (0x4F 0x70) + opaque Opus packet.
+ * **Unchanged** versus the MediaCodec path. RFC 6716 defines a single
+ * on-wire packet format for all Opus implementations, so old peers
+ * still on MediaCodec / AVAudioConverter / WebCodecs decode our libopus
+ * frames identically — and we decode theirs. The on-wire LBRR data is
+ * transparent to receivers that aren't FEC-aware.
+ *
+ * Falls back to IMBE on TX (via the registry) if libopus failed to load
+ * — e.g. the submodule wasn't initialised at build time, or
+ * opus_encoder_create returned an error. Inbound Opus frames drop with
+ * a one-shot log on a not-ready decoder, same pattern as Codec2.
  */
 
 private const val TAG = "OpusVoiceCodec"
-private const val MIME_TYPE = "audio/opus"
-private const val SAMPLE_RATE = 16_000
-private const val CHANNELS = 1
 private const val FRAME_SAMPLES = 320            // 20 ms @ 16 kHz
 private const val FRAME_BYTES = FRAME_SAMPLES * 2 // PCM-16
-private const val BITRATE = 32_000
-private const val DEQUEUE_TIMEOUT_US = 20_000L   // 20 ms — one frame period
-
-/** Build the OpusHead identification header MediaCodec expects as csd-0
- *  for the decoder. We have to construct it locally because the wire
- *  format only carries raw Opus packets — peers don't ship the header.
- *  Layout: RFC 7845 §5.1. */
-private fun buildOpusHead(channels: Int, preSkip: Int, inputSampleRate: Int): ByteArray {
-    val buf = ByteBuffer.allocate(19).order(ByteOrder.LITTLE_ENDIAN)
-    buf.put("OpusHead".toByteArray(Charsets.US_ASCII))   // 8 bytes
-    buf.put(1.toByte())                                  // version
-    buf.put(channels.toByte())                           // channel count
-    buf.putShort(preSkip.toShort())                      // pre-skip samples
-    buf.putInt(inputSampleRate)                          // original sample rate
-    buf.putShort(0)                                      // output gain Q7.8
-    buf.put(0.toByte())                                  // channel mapping family
-    return buf.array()
-}
-
-private fun longLeBuffer(value: Long): ByteBuffer {
-    val buf = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
-    buf.putLong(value)
-    buf.flip()
-    return buf
-}
 
 class OpusEncoder : VoiceEncoder {
     override val codec: VoiceCodec = VoiceCodec.OPUS
 
-    private val lock = Any()
-    private var mediaCodec: MediaCodec? = null
-    private val bufferInfo = MediaCodec.BufferInfo()
-    private var presentationTimeUs: Long = 0
-
-    init {
-        try {
-            val format = MediaFormat.createAudioFormat(MIME_TYPE, SAMPLE_RATE, CHANNELS)
-            format.setInteger(MediaFormat.KEY_BIT_RATE, BITRATE)
-            val mc = MediaCodec.createEncoderByType(MIME_TYPE)
-            mc.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            mc.start()
-            mediaCodec = mc
-        } catch (t: Throwable) {
-            // Most commonly: Opus encode isn't on this device (Android < 10
-            // or a stripped vendor image). Registry falls back to IMBE.
-            Log.w(TAG, "Opus encoder unavailable — falling back to IMBE on TX", t)
-            mediaCodec = null
-        }
-    }
-
-    override val isReady: Boolean get() = mediaCodec != null
+    override val isReady: Boolean
+        get() = OpusNative.isAvailable || OpusNative.tryLoadLibrary()
 
     override fun resetForTalkSpurt() {
-        synchronized(lock) {
-            val mc = mediaCodec ?: return
-            try {
-                mc.flush()
-                presentationTimeUs = 0
-            } catch (t: Throwable) {
-                Log.w(TAG, "Opus encoder flush failed", t)
-            }
-        }
+        OpusNative.resetEncoderForTalkSpurt()
     }
 
     override fun encodeFrame(pcm16kLe640: ByteArray): ByteArray? {
+        if (!isReady) return null
         if (pcm16kLe640.size != FRAME_BYTES) return null
-        synchronized(lock) {
-            val mc = mediaCodec ?: return null
 
-            val inputId = try {
-                mc.dequeueInputBuffer(DEQUEUE_TIMEOUT_US)
-            } catch (t: Throwable) {
-                Log.w(TAG, "Opus encoder dequeueInputBuffer threw", t)
-                return null
-            }
-            if (inputId < 0) {
-                // The encoder's input ring is full — drop this frame rather
-                // than wait. The wall-clock pacing on the capture side
-                // means there'll be another input opportunity in 20 ms.
-                return null
-            }
-            val inBuf = mc.getInputBuffer(inputId) ?: return null
-            inBuf.clear()
-            inBuf.put(pcm16kLe640)
-            mc.queueInputBuffer(inputId, 0, FRAME_BYTES, presentationTimeUs, 0)
-            presentationTimeUs += 20_000L
+        // PCM-16 LE → ShortArray for the JNI boundary. We always receive a
+        // 640-byte LE buffer from the capture worklet, so a straight cast
+        // would be a byte-order mismatch on big-endian; build the ShortArray
+        // explicitly so the wire format stays endian-stable.
+        //
+        // Both bytes are masked to 0xFF before assembly because Kotlin
+        // `Byte.toInt()` sign-extends — `0xAB.toByte().toInt() == -85`,
+        // which would smear high bits into the upper word.
+        val samples = ShortArray(FRAME_SAMPLES)
+        var i = 0
+        var off = 0
+        while (i < FRAME_SAMPLES) {
+            val lo = pcm16kLe640[off].toInt() and 0xFF
+            val hi = pcm16kLe640[off + 1].toInt() and 0xFF
+            samples[i] = ((hi shl 8) or lo).toShort()
+            off += 2
+            i++
+        }
 
-            // Drain output. The encoder may emit a CODEC_CONFIG buffer
-            // (CSD) first; we skip it because the wire format doesn't
-            // carry headers — peers reconstruct CSD locally from known
-            // codec params.
-            while (true) {
-                val outputId = try {
-                    mc.dequeueOutputBuffer(bufferInfo, DEQUEUE_TIMEOUT_US)
-                } catch (t: Throwable) {
-                    Log.w(TAG, "Opus encoder dequeueOutputBuffer threw", t)
-                    return null
-                }
-                when {
-                    outputId == MediaCodec.INFO_TRY_AGAIN_LATER -> return null
-                    outputId == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> continue
-                    outputId == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED -> continue
-                    outputId < 0 -> return null
-                    else -> {
-                        val isCodecConfig =
-                            (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0
-                        if (isCodecConfig) {
-                            mc.releaseOutputBuffer(outputId, false)
-                            continue
-                        }
-                        val outBuf = mc.getOutputBuffer(outputId)
-                        if (outBuf == null || bufferInfo.size <= 0) {
-                            mc.releaseOutputBuffer(outputId, false)
-                            return null
-                        }
-                        val opusBytes = ByteArray(bufferInfo.size)
-                        outBuf.position(bufferInfo.offset)
-                        outBuf.limit(bufferInfo.offset + bufferInfo.size)
-                        outBuf.get(opusBytes)
-                        mc.releaseOutputBuffer(outputId, false)
-
-                        val packet = ByteArray(2 + opusBytes.size)
-                        packet[0] = codec.magic0
-                        packet[1] = codec.magic1
-                        System.arraycopy(opusBytes, 0, packet, 2, opusBytes.size)
-                        return packet
-                    }
-                }
-            }
-            @Suppress("UNREACHABLE_CODE")
+        val opusBytes = OpusNative.encodeFrame(samples) ?: return null
+        if (opusBytes.isEmpty()) {
+            Log.w(TAG, "libopus encode returned empty packet — dropping frame")
             return null
         }
-    }
 
-    /** Release MediaCodec resources. Should be called when the codec is
-     *  no longer needed (e.g. transport disconnect). Idempotent. */
-    fun close() {
-        synchronized(lock) {
-            val mc = mediaCodec ?: return
-            mediaCodec = null
-            try { mc.stop() } catch (_: Throwable) {}
-            try { mc.release() } catch (_: Throwable) {}
-        }
+        // Prepend the 2-byte wire magic. Same layout as the legacy MediaCodec
+        // path so receivers identifying by magic continue to dispatch this
+        // frame to their Opus decoder unchanged.
+        val packet = ByteArray(2 + opusBytes.size)
+        packet[0] = codec.magic0
+        packet[1] = codec.magic1
+        System.arraycopy(opusBytes, 0, packet, 2, opusBytes.size)
+        return packet
     }
 }
 
 class OpusDecoder : VoiceDecoder {
     override val codec: VoiceCodec = VoiceCodec.OPUS
-    override val nativeSampleRate: Int = SAMPLE_RATE
+    override val nativeSampleRate: Int = 16_000
 
-    private val lock = Any()
-    private var mediaCodec: MediaCodec? = null
-    private val bufferInfo = MediaCodec.BufferInfo()
-    private var presentationTimeUs: Long = 0
-
-    init {
-        try {
-            val format = MediaFormat.createAudioFormat(MIME_TYPE, SAMPLE_RATE, CHANNELS)
-            // MediaCodec's Opus decoder needs three codec-specific buffers
-            // before it'll accept data — RFC-derived header + two timing hints.
-            // Pre-skip = 312 samples is libopus's default SILK warmup; codec
-            // delay reports the same as nanoseconds. Seek pre-roll is the
-            // platform's default (80 ms) — irrelevant for live streaming
-            // since we never seek.
-            format.setByteBuffer("csd-0", ByteBuffer.wrap(buildOpusHead(CHANNELS, 312, SAMPLE_RATE)))
-            format.setByteBuffer("csd-1", longLeBuffer(312L * 1_000_000_000L / 48_000L))
-            format.setByteBuffer("csd-2", longLeBuffer(80_000_000L))
-            val mc = MediaCodec.createDecoderByType(MIME_TYPE)
-            mc.configure(format, null, null, 0)
-            mc.start()
-            mediaCodec = mc
-        } catch (t: Throwable) {
-            Log.w(TAG, "Opus decoder unavailable — inbound Opus frames will drop", t)
-            mediaCodec = null
-        }
-    }
-
-    override val isReady: Boolean get() = mediaCodec != null
+    override val isReady: Boolean
+        get() = OpusNative.isAvailable || OpusNative.tryLoadLibrary()
 
     override fun resetForTalkSpurt() {
-        synchronized(lock) {
-            val mc = mediaCodec ?: return
-            try {
-                mc.flush()
-                presentationTimeUs = 0
-            } catch (t: Throwable) {
-                Log.w(TAG, "Opus decoder flush failed", t)
-            }
-        }
+        OpusNative.resetDecoderForTalkSpurt()
     }
 
     override fun decodeFrame(framedBytes: ByteArray): ShortArray? {
+        if (!isReady) return null
         if (framedBytes.size < 3) return null
         if (framedBytes[0] != codec.magic0 || framedBytes[1] != codec.magic1) return null
-        synchronized(lock) {
-            val mc = mediaCodec ?: return null
-            val payloadSize = framedBytes.size - 2
 
-            val inputId = try {
-                mc.dequeueInputBuffer(DEQUEUE_TIMEOUT_US)
-            } catch (t: Throwable) {
-                Log.w(TAG, "Opus decoder dequeueInputBuffer threw", t)
-                return null
-            }
-            if (inputId < 0) return null
-            val inBuf = mc.getInputBuffer(inputId) ?: return null
-            inBuf.clear()
-            inBuf.put(framedBytes, 2, payloadSize)
-            mc.queueInputBuffer(inputId, 0, payloadSize, presentationTimeUs, 0)
-            presentationTimeUs += 20_000L
-
-            while (true) {
-                val outputId = try {
-                    mc.dequeueOutputBuffer(bufferInfo, DEQUEUE_TIMEOUT_US)
-                } catch (t: Throwable) {
-                    Log.w(TAG, "Opus decoder dequeueOutputBuffer threw", t)
-                    return null
-                }
-                when {
-                    outputId == MediaCodec.INFO_TRY_AGAIN_LATER -> return null
-                    outputId == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> continue
-                    outputId == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED -> continue
-                    outputId < 0 -> return null
-                    else -> {
-                        val isCodecConfig =
-                            (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0
-                        if (isCodecConfig) {
-                            mc.releaseOutputBuffer(outputId, false)
-                            continue
-                        }
-                        val outBuf = mc.getOutputBuffer(outputId)
-                        if (outBuf == null || bufferInfo.size <= 0) {
-                            mc.releaseOutputBuffer(outputId, false)
-                            return null
-                        }
-                        outBuf.position(bufferInfo.offset)
-                        outBuf.limit(bufferInfo.offset + bufferInfo.size)
-                        val shorts = outBuf.order(ByteOrder.nativeOrder()).asShortBuffer()
-                        val samples = ShortArray(shorts.remaining())
-                        shorts.get(samples)
-                        mc.releaseOutputBuffer(outputId, false)
-                        return normalizeFrame(samples)
-                    }
-                }
-            }
-            @Suppress("UNREACHABLE_CODE")
-            return null
-        }
+        // Strip the 2-byte magic and hand the bare Opus packet to libopus.
+        val payload = framedBytes.copyOfRange(2, framedBytes.size)
+        return OpusNative.decodeFrame(payload)
     }
 
-    /** Release MediaCodec resources. Idempotent. */
-    fun close() {
-        synchronized(lock) {
-            val mc = mediaCodec ?: return
-            mediaCodec = null
-            try { mc.stop() } catch (_: Throwable) {}
-            try { mc.release() } catch (_: Throwable) {}
-        }
-    }
-
-    /** WebCodecs packets occasionally decode to slightly off-size buffers;
-     *  resample to exactly 20 ms @ 16 kHz so playout pacing stays correct. */
-    private fun normalizeFrame(samples: ShortArray): ShortArray {
-        if (samples.size == FRAME_SAMPLES) return samples
-        if (samples.isEmpty()) return samples
-        val out = ShortArray(FRAME_SAMPLES)
-        val last = samples.lastIndex
-        for (i in 0 until FRAME_SAMPLES) {
-            val srcPos = i.toFloat() * last / (FRAME_SAMPLES - 1).coerceAtLeast(1)
-            val idx = srcPos.toInt().coerceIn(0, last)
-            val frac = srcPos - idx
-            val a = samples[idx].toInt()
-            val b = samples[minOf(idx + 1, last)].toInt()
-            val v = (a + (b - a) * frac).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-            out[i] = v.toShort()
-        }
-        return out
+    /** Reconstruct the previous (lost) frame from the LBRR data embedded
+     *  in `nextFramedBytes`. Returns 320 samples of 16 kHz mono PCM-16,
+     *  or null if FEC was unavailable on the prior packet (e.g. the
+     *  sender never enabled in-band FEC) or the call failed.
+     *
+     *  This is exposed for the receiver-side jitter buffer to wire up
+     *  in a follow-up change once we have a reliable loss-detection
+     *  signal. The encoder side is enabled today so the LBRR data is
+     *  already on the wire for any FEC-aware peer to recover. */
+    fun decodeLostFrameFromNext(nextFramedBytes: ByteArray): ShortArray? {
+        if (!isReady) return null
+        if (nextFramedBytes.size < 3) return null
+        if (nextFramedBytes[0] != codec.magic0 || nextFramedBytes[1] != codec.magic1) return null
+        val payload = nextFramedBytes.copyOfRange(2, nextFramedBytes.size)
+        return OpusNative.decodeLostFrameFromNext(payload)
     }
 }

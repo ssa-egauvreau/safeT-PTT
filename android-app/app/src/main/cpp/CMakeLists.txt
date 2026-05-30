@@ -109,12 +109,106 @@ else()
     message(STATUS "libcodec2 submodule not present at ${CODEC2_DIR}/src — Codec2 native support will be disabled. Run `git submodule update --init --recursive` to enable.")
 endif()
 
+#
+# libopus — xiph.org's reference Opus codec (BSD-3-Clause). Vendored as a
+# git submodule at cpp/opus, pinned to tag v1.5.2. We build only the
+# float speech subset our voice profile needs (mono, 16 kHz, 20 ms) as
+# a static library that links into `securityradiovocoder.so`.
+#
+# Why not use upstream's CMakeLists via add_subdirectory: same reason as
+# libcodec2 above — upstream pulls in tests, demo programs, projection/
+# multistream code (we only do mono), and architecture-specific SIMD
+# detection that needs OPUS_X86_PRESUME_*/OPUS_ARM_*_INTR toggles per
+# ABI. The slim file list below matches the autotools `OPUS_SOURCES +
+# CELT_SOURCES + SILK_SOURCES + SILK_SOURCES_FLOAT` set with the
+# multistream/projection/mapping_matrix sources omitted.
+#
+
+set(OPUS_DIR "${CMAKE_CURRENT_LIST_DIR}/opus")
+
+if(EXISTS "${OPUS_DIR}/include/opus.h")
+    # Slim enumeration of the libopus C sources we need. Matches the iOS
+    # XcodeGen spec in ios-app/project.yml and the Emscripten build at
+    # server/web-console/cpp/build-opus.sh — keep all three lists in sync
+    # when the submodule is bumped.
+    set(OPUS_CORE_SRC
+        "${OPUS_DIR}/src/opus.c"
+        "${OPUS_DIR}/src/opus_decoder.c"
+        "${OPUS_DIR}/src/opus_encoder.c"
+        "${OPUS_DIR}/src/extensions.c"
+        "${OPUS_DIR}/src/repacketizer.c"
+        # OPUS_SOURCES_FLOAT — required when float SILK is enabled.
+        "${OPUS_DIR}/src/analysis.c"
+        "${OPUS_DIR}/src/mlp.c"
+        "${OPUS_DIR}/src/mlp_data.c"
+    )
+    set(OPUS_CELT_SRC
+        "${OPUS_DIR}/celt/bands.c"
+        "${OPUS_DIR}/celt/celt.c"
+        "${OPUS_DIR}/celt/celt_encoder.c"
+        "${OPUS_DIR}/celt/celt_decoder.c"
+        "${OPUS_DIR}/celt/cwrs.c"
+        "${OPUS_DIR}/celt/entcode.c"
+        "${OPUS_DIR}/celt/entdec.c"
+        "${OPUS_DIR}/celt/entenc.c"
+        "${OPUS_DIR}/celt/kiss_fft.c"
+        "${OPUS_DIR}/celt/laplace.c"
+        "${OPUS_DIR}/celt/mathops.c"
+        "${OPUS_DIR}/celt/mdct.c"
+        "${OPUS_DIR}/celt/modes.c"
+        "${OPUS_DIR}/celt/pitch.c"
+        "${OPUS_DIR}/celt/celt_lpc.c"
+        "${OPUS_DIR}/celt/quant_bands.c"
+        "${OPUS_DIR}/celt/rate.c"
+        "${OPUS_DIR}/celt/vq.c"
+    )
+    file(GLOB OPUS_SILK_SRC "${OPUS_DIR}/silk/*.c")
+    file(GLOB OPUS_SILK_FLOAT_SRC "${OPUS_DIR}/silk/float/*.c")
+
+    add_library(opus STATIC
+        ${OPUS_CORE_SRC}
+        ${OPUS_CELT_SRC}
+        ${OPUS_SILK_SRC}
+        ${OPUS_SILK_FLOAT_SRC}
+    )
+
+    target_include_directories(opus PUBLIC
+        "${OPUS_DIR}/include"
+        "${OPUS_DIR}/celt"
+        "${OPUS_DIR}/silk"
+        "${OPUS_DIR}/silk/float"
+    )
+    # Match the autotools default float-build defines. PACKAGE_VERSION is
+    # the version string libopus reports via opus_get_version_string(); the
+    # encoder header writes it into the comment block on encoded OggOpus
+    # streams. We never emit Ogg here but the symbol is referenced.
+    target_compile_definitions(opus PRIVATE
+        OPUS_BUILD
+        USE_ALLOCA
+        VAR_ARRAYS
+        HAVE_LRINTF
+        PACKAGE_VERSION="1.5.2"
+    )
+
+    set_target_properties(opus PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    set(HAVE_OPUS TRUE)
+else()
+    # Submodule not initialised — Opus stays disabled. The OpusVoiceCodec
+    # Kotlin wrapper reports isReady=false in that case and the registry
+    # falls back to IMBE on TX, same pattern as Codec2.
+    set(HAVE_OPUS FALSE)
+    message(STATUS "libopus submodule not present at ${OPUS_DIR}/include — Opus native support will be disabled. Run `git submodule update --init --recursive` to enable.")
+endif()
+
 find_library(android_log_lib log)
 find_library(cpp_shared NAMES c++_shared)
 
 set(JNI_SOURCES "${CMAKE_CURRENT_LIST_DIR}/p25_jni.cpp")
 if(HAVE_CODEC2)
     list(APPEND JNI_SOURCES "${CMAKE_CURRENT_LIST_DIR}/codec2_jni.cpp")
+endif()
+if(HAVE_OPUS)
+    list(APPEND JNI_SOURCES "${CMAKE_CURRENT_LIST_DIR}/opus_jni.cpp")
 endif()
 
 add_library(securityradiovocoder SHARED ${JNI_SOURCES})
@@ -126,6 +220,12 @@ if(HAVE_CODEC2)
     target_include_directories(securityradiovocoder PRIVATE "${CODEC2_DIR}/src")
     target_link_libraries(securityradiovocoder PRIVATE codec2)
     target_compile_definitions(securityradiovocoder PRIVATE HAVE_CODEC2=1)
+endif()
+
+if(HAVE_OPUS)
+    target_include_directories(securityradiovocoder PRIVATE "${OPUS_DIR}/include")
+    target_link_libraries(securityradiovocoder PRIVATE opus)
+    target_compile_definitions(securityradiovocoder PRIVATE HAVE_OPUS=1)
 endif()
 
 # Required for Android 15+ devices / emulators with 16 KB memory pages (ELF LOAD alignment).

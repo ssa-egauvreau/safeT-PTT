@@ -12,8 +12,14 @@ import {
   resetCodec2DecoderForTalkSpurt,
   resetCodec2EncoderForTalkSpurt,
 } from "./codec2Vocoder";
-import { OpusWebDecoder } from "./opusDecoder";
-import { OpusWebEncoder, opusEncoderAvailable } from "./opusEncoder";
+import {
+  initOpus,
+  opusDecode,
+  opusEncode,
+  opusReady,
+  resetOpusDecoderForTalkSpurt,
+  resetOpusEncoderForTalkSpurt,
+} from "./opusWasmCodec";
 import { PostDecodeProcessor, endOfTxCue, type PostDecodeConfig } from "./postDecodeChain";
 import { loadMarker1033Pcm } from "./marker1033";
 import {
@@ -315,17 +321,6 @@ export class VoiceChannelClient {
   /** Codecs we have already warned about being unsupported in this client. */
   private warnedUnsupportedCodecs: Set<VoiceCodec> = new Set();
 
-  /** Lazy Opus decoder (WebCodecs AudioDecoder). Constructed on the first
-   *  inbound Opus frame so a browser that never receives Opus never spends
-   *  the AudioDecoder configuration cost. Closed on disconnect to release
-   *  the WebCodecs context. */
-  private opusDecoder: OpusWebDecoder | null = null;
-
-  /** Lazy Opus encoder (WebCodecs AudioEncoder). Constructed on the first
-   *  outbound Opus frame so a console that always TXes on IMBE never pays
-   *  the AudioEncoder configuration cost. The output callback writes
-   *  directly to the WebSocket — feed-and-forget on the TX path. */
-  private opusEncoder: OpusWebEncoder | null = null;
   /** Timestamps of recent raw PCM frames received — used to distinguish a sustained
    *  voice talk-spurt (many frames in quick succession) from a one-shot marker tone or
    *  tone-out (a single big PCM message). Only the warn-burst window of samples is kept. */
@@ -338,44 +333,6 @@ export class VoiceChannelClient {
       `[voice] received ${codec} frame on "${this.channelName}" — web client cannot decode this codec yet. ` +
         `Audio from this channel will be silent until the ${codec} decoder ships.`,
     );
-  }
-
-  /** Lazily constructs the Opus decoder on the first inbound Opus frame.
-   *  WebCodecs construction is cheap on supported browsers and a no-op
-   *  fallback (isReady=false) on unsupported ones, so the cost is paid
-   *  once per channel session that actually receives Opus. */
-  private ensureOpusDecoder(): OpusWebDecoder | null {
-    if (this.opusDecoder) return this.opusDecoder;
-    const dec = new OpusWebDecoder((pcm) => this.playOpusPcm(pcm));
-    if (!dec.isReady()) {
-      // Construction failed (no WebCodecs / no Opus support). Cache the
-      // failed decoder anyway so we don't reconstruct on every frame.
-      this.opusDecoder = dec;
-      return null;
-    }
-    this.opusDecoder = dec;
-    return dec;
-  }
-
-  /** Lazily constructs the Opus encoder on the first outbound Opus frame.
-   *  Encoded chunks ship straight to the WebSocket from the output
-   *  callback — voiceClient hands the PCM in, the wire send happens
-   *  inside the callback. Returns null if the browser can't encode Opus
-   *  (caller falls back to IMBE). */
-  private ensureOpusEncoder(): OpusWebEncoder | null {
-    if (this.opusEncoder) return this.opusEncoder;
-    const enc = new OpusWebEncoder((framed) => {
-      const ws = this.ws;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(framed);
-      }
-    });
-    if (!enc.isReady()) {
-      this.opusEncoder = enc;
-      return null;
-    }
-    this.opusEncoder = enc;
-    return enc;
   }
 
   constructor(channelName: string, callbacks: VoiceCallbacks) {
@@ -558,6 +515,7 @@ export class VoiceChannelClient {
     this.setState("connecting");
     void initImbe(); // load the IMBE vocoder in the background for digital RX
     void initCodec2(); // libcodec2 WASM — ~270 KB, lazy single-shot load
+    void initOpus(); // libopus WASM — ~350 KB, lazy single-shot load with FEC
     // Reset client-side audio policy to defaults at the start of every
     // connect so a stale value from a previous session can't leak into the
     // first PTT before refreshAudioConfig settles.
@@ -609,9 +567,12 @@ export class VoiceChannelClient {
           unit_id: "WEB",
           channel: this.channelName,
           client: consolePlatform(),
-          // Caps are computed at every join so a browser that gained
-          // WebCodecs support since the last connection picks it up.
-          caps: computeWebEncodeCaps(opusEncoderAvailable()),
+          // Bundled libopus now ships with the console (vendor/opusModule.js),
+          // so every browser advertises Opus encode capability up front —
+          // mirrors the Codec2 pattern. The WASM loads lazily on first use;
+          // if the lazy load ever fails the encoder gates on opusReady() at
+          // call time and falls back to IMBE for that frame.
+          caps: computeWebEncodeCaps(),
         }),
       );
       void loadMarker1033Pcm().catch(() => undefined);
@@ -711,6 +672,15 @@ export class VoiceChannelClient {
       // talker's biquad state (especially shelves and the presence bell)
       // can't ring into the first few ms of the new talker's audio.
       this.postDecodeProcessor?.reset();
+      // Same for the libopus decoder: LPC + pitch + FEC LBRR history
+      // carries across frames, so a previous talker's tail can colour the
+      // first frame of the new one unless we reset. Codec2's per-spurt
+      // reset is fired further down on the inbound dispatch path for
+      // symmetry; Opus is reset here because the decoder is a process
+      // singleton with no per-channel allocation.
+      if (opusReady()) {
+        resetOpusDecoderForTalkSpurt();
+      }
       this.callbacks.onReceiving(true);
     }
   }
@@ -743,15 +713,18 @@ export class VoiceChannelClient {
       return;
     }
     if (codec === "opus") {
-      // WebCodecs decode is async; the decoder's output callback feeds
-      // schedulePcm directly. If the browser lacks WebCodecs Opus support,
-      // OpusWebDecoder reports isReady=false and we fall through to the
-      // one-shot "unsupported codec" warning.
-      const dec = this.ensureOpusDecoder();
-      if (dec && dec.isReady()) {
-        dec.decodeFrame(bytes.subarray(2));
-      } else {
+      if (!opusReady()) {
+        // The libopus WASM is loaded lazily on `joined`; if an Opus frame
+        // arrives before init resolves, kick off the load and drop this
+        // one. Following frames at the channel's 20 ms cadence catch up
+        // once the module is in memory.
+        void initOpus();
         this.warnUnsupportedCodecOnce(codec);
+        return;
+      }
+      const pcm = opusDecode(bytes.subarray(2));
+      if (pcm) {
+        this.playOpusPcm(pcm);
       }
       return;
     }
@@ -1039,6 +1012,9 @@ export class VoiceChannelClient {
     if (this.currentTxCodec === "codec2_3200" && codec2Ready()) {
       resetCodec2EncoderForTalkSpurt();
     }
+    if (this.currentTxCodec === "opus" && opusReady()) {
+      resetOpusEncoderForTalkSpurt();
+    }
     this.capSource = this.capCtx.createMediaStreamSource(this.micStream);
     // Parallel analyser tap for the TX waveform (the worklet path is untouched).
     this.capAnalyser = this.capCtx.createAnalyser();
@@ -1062,17 +1038,30 @@ export class VoiceChannelClient {
           ws.send(wrapListenPcm(pcmBuf));
         }
 
-        // Codec dispatch on TX. In order: Opus (if WebCodecs available),
+        // Codec dispatch on TX. In order: Opus (if libopus WASM loaded),
         // Codec2 (if WASM loaded), IMBE (the legacy default). Anything
         // that fails to encode falls through to clear PCM at the bottom.
         if (this.currentTxCodec === "opus") {
-          const enc = this.ensureOpusEncoder();
-          if (enc && enc.isReady()) {
-            // Encoded chunks ship from the OpusWebEncoder output callback.
-            enc.encodeFrame(pcm);
+          if (opusReady()) {
+            // libopus 16 kHz mono, 20 ms frames (320 samples), 32 kbps
+            // VOIP with in-band FEC. Wire frame = 2-byte magic + opaque
+            // Opus packet (variable size, typically 80-160 B). The worklet
+            // emits arbitrary-length capture buffers; slice into 20 ms
+            // sub-frames before handing to opusEncode.
+            for (let off = 0; off + 320 <= pcm.length; off += 320) {
+              const packet = opusEncode(pcm.subarray(off, off + 320));
+              if (!packet) continue;
+              const frame = new Uint8Array(2 + packet.length);
+              frame[0] = 0x4f;
+              frame[1] = 0x70;
+              frame.set(packet, 2);
+              ws.send(frame.buffer);
+            }
             return;
           }
-          // Opus asked for but unavailable — fall through to IMBE.
+          // Opus asked for but WASM not yet loaded — kick off the load
+          // for next time and fall through to IMBE for this frame.
+          void initOpus();
         }
         if (this.currentTxCodec === "codec2_3200") {
           if (codec2Ready()) {
@@ -1140,17 +1129,16 @@ export class VoiceChannelClient {
     }
     // capSource.disconnect() already detached the analyser; just drop the ref.
     this.capAnalyser = null;
-    // Drain any in-flight frames inside the Opus encoder so the tail of
-    // this talk-spurt actually makes it on the air rather than being
-    // stranded inside the WebCodecs pipeline, then drop `/v1/air` so peers
-    // do not show us as still talking for the relay TTL.
-    if (this.opusEncoder) {
-      void this.opusEncoder.flushAsync().finally(() => this.sendReleaseAir());
-    } else {
-      this.sendReleaseAir();
-    }
+    // libopus encodes synchronously inside the worklet callback, so by the
+    // time we get here there's nothing to drain — every frame already
+    // shipped on the WebSocket. (Contrast with the previous WebCodecs path,
+    // which buffered encode output asynchronously and needed a flush.)
+    this.sendReleaseAir();
     if (this.currentTxCodec === "codec2_3200" && codec2Ready()) {
       resetCodec2EncoderForTalkSpurt();
+    }
+    if (this.currentTxCodec === "opus" && opusReady()) {
+      resetOpusEncoderForTalkSpurt();
     }
     if (this.state !== "closed" && this.state !== "error") {
       this.setState("listening");
@@ -1309,14 +1297,9 @@ export class VoiceChannelClient {
     }
     this.playGain = null;
     this.playAnalyser = null;
-    if (this.opusDecoder) {
-      this.opusDecoder.close();
-      this.opusDecoder = null;
-    }
-    if (this.opusEncoder) {
-      this.opusEncoder.close();
-      this.opusEncoder = null;
-    }
+    // libopus state is a process-wide singleton inside opusWasmCodec.ts
+    // — no per-client teardown to do here. Re-init on next connect just
+    // recreates the encoder + decoder structs through opus_reset_*.
     const ws = this.ws;
     this.ws = null;
     if (ws) {

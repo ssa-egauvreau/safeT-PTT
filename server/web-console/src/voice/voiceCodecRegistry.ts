@@ -54,25 +54,25 @@ export function isVoiceCodec(value: unknown): value is VoiceCodec {
   );
 }
 
-/** Codecs the web console can currently encode (TX). IMBE always.
- *  Codec2 always (the libcodec2 WASM is small and loads lazily; the
- *  encoder gates on codec2Ready() at use time so a not-yet-loaded
- *  module falls back to IMBE rather than failing the join). Opus
- *  when the browser exposes WebCodecs `AudioEncoder` — feature
- *  detection is the parameter here because some older browsers
- *  ship without WebCodecs. */
-export function computeWebEncodeCaps(opusAvailable: boolean): readonly VoiceCodec[] {
-  return opusAvailable
-    ? ["imbe", "codec2_3200", "opus"]
-    : ["imbe", "codec2_3200"];
+/** Codecs the web console can currently encode (TX). All three are
+ *  advertised at join time because each is backed by a bundled WASM
+ *  vocoder that loads lazily and gates on its own readyness check at
+ *  use time. A WASM that fails to load at runtime falls back to IMBE
+ *  on TX rather than failing the join, mirroring the handset registries.
+ *
+ *  Previously this gated `opus` on a WebCodecs feature check. After
+ *  PR `claude/libopus-fec` Opus runs on the bundled libopus WASM (no
+ *  WebCodecs dependency) and is unconditionally encodeable on every
+ *  browser, so the feature-check parameter is gone. */
+export function computeWebEncodeCaps(): readonly VoiceCodec[] {
+  return ["imbe", "codec2_3200", "opus"];
 }
 
-/** Codecs the web console can currently decode (RX). IMBE always;
- *  Codec2 via the libcodec2 WASM; Opus via WebCodecs AudioDecoder
- *  when the browser supports it. All three are advertised optimistically
- *  because each one degrades gracefully at use time (isReady=false →
- *  frames drop with a one-shot log) on browsers that don't ship the
- *  required runtime, rather than crashing. */
+/** Codecs the web console can currently decode (RX). All three run on
+ *  bundled WASM vocoders (IMBE / libcodec2 / libopus). Each degrades
+ *  gracefully at use time (isReady=false → frames drop with a one-shot
+ *  log) if the WASM ever fails to load, rather than crashing the
+ *  client. */
 export const WEB_DECODE_CAPS: readonly VoiceCodec[] = [
   "imbe",
   "codec2_3200",

@@ -8,6 +8,7 @@ import { enqueueTranscription } from "./transcribe.js";
 import { isAiDispatchChannelCached } from "./aiDispatch/channelCache.js";
 import { createImbeDecoder } from "./imbeServerCodec.js";
 import { createCodec2Decoder } from "./codec2ServerCodec.js";
+import { createOpusDecoder } from "./opusServerCodec.js";
 import { detectFrameCodec, type VoiceCodec } from "./voiceCodecs.js";
 
 const SAMPLE_RATE = 16000;
@@ -27,11 +28,11 @@ interface VoiceStreamDecoder {
   free(): void;
 }
 
-/** Codecs the server can decode for the recorder. Opus arrives via the
- *  clear-PCM sideband on the recording path today (no node-side Opus
- *  decoder lib in tree yet); a vocoded Opus frame is dropped rather than
- *  written into the WAV as raw bytes. */
-const SERVER_DECODABLE: ReadonlySet<VoiceCodec> = new Set(["imbe", "codec2_3200"]);
+/** Codecs the server can decode for the recorder. All three native codecs
+ *  now have a server-side WASM decoder (libopus joined IMBE + Codec2 in
+ *  the libopus-FEC PR); the clear-PCM sideband is still used when the
+ *  WASM fails to load or when an agency policy keeps it on. */
+const SERVER_DECODABLE: ReadonlySet<VoiceCodec> = new Set(["imbe", "codec2_3200", "opus"]);
 
 /** Factory map keyed by codec — the per-recording decoder is allocated
  *  lazily on the first vocoded frame of each talk-spurt so a channel
@@ -39,7 +40,7 @@ const SERVER_DECODABLE: ReadonlySet<VoiceCodec> = new Set(["imbe", "codec2_3200"
 const DECODER_FACTORIES: Record<VoiceCodec, (() => VoiceStreamDecoder | null) | null> = {
   imbe: createImbeDecoder,
   codec2_3200: createCodec2Decoder,
-  opus: null,
+  opus: createOpusDecoder,
 };
 
 /** Log "no server decoder for X" once per codec per process to avoid spam. */

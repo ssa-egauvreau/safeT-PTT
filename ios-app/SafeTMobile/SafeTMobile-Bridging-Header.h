@@ -28,3 +28,26 @@ int codec2_samples_per_frame(struct CODEC2 *state);
 int codec2_bytes_per_frame(struct CODEC2 *state);
 
 #define CODEC2_MODE_3200 0
+
+// libopus 1.5.2 (BSD-3-Clause). The full public header is small and
+// well-bounded — include it directly so OpusVoiceCodec.swift gets the
+// real opus_encode / opus_decode signatures and the integer constants
+// (OPUS_OK, OPUS_APPLICATION_VOIP, ...) without us having to mirror
+// them. opus.h's transitive includes are just opus_defines.h +
+// opus_types.h + opus_custom.h, all from the same opus/include
+// directory we put on HEADER_SEARCH_PATHS.
+#include "opus.h"
+
+// libopus's opus_encoder_ctl / opus_decoder_ctl are variadic, and Swift
+// cannot call C variadic functions directly (only Objective-C variadic
+// methods with NSObject args are bridged). These non-variadic shims live
+// in SafeTMobile/Native/opus_swift_bridge.c and forward to the variadic
+// CTL with the right OPUS_SET_*-macro arity. Return values match the
+// underlying opus_encoder_ctl return — 0 (OPUS_OK) on success, negative
+// OpusError on failure.
+int opus_swift_encoder_set_signal(OpusEncoder *enc, int signal);
+int opus_swift_encoder_set_bitrate(OpusEncoder *enc, int bitrate);
+int opus_swift_encoder_set_inband_fec(OpusEncoder *enc, int enable);
+int opus_swift_encoder_set_packet_loss_perc(OpusEncoder *enc, int perc);
+int opus_swift_encoder_set_complexity(OpusEncoder *enc, int complexity);
+int opus_swift_encoder_set_dtx(OpusEncoder *enc, int enable);

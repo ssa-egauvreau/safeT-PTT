@@ -67,6 +67,69 @@ targets:
         includes:
           - "*.c"
         compilerFlags: "-DFLOATING_POINT -DVAR_ARRAYS"
+      # libopus — xiph reference Opus codec (BSD-3-Clause). Vendored as a
+      # submodule at cpp/opus pinned to v1.5.2 and shared with the Android
+      # NDK build at app/src/main/cpp/CMakeLists.txt and the Emscripten
+      # build at server/web-console/cpp/build-opus.sh. Keep the file lists
+      # in sync across all three build systems when the submodule is bumped.
+      # The slim enumeration drops projection/multistream/mapping_matrix
+      # (we are mono), fixed-point SILK (we are floating point), and the
+      # arch-specific SIMD .c files (NEON/SSE/AVX are runtime-detected
+      # inside the float code paths via cpu_support.h; the .c files in
+      # celt/{arm,x86,mips} are stub files that need a matching RTCD
+      # bootstrap which the autotools build wires in, not us).
+      #
+      # libopus compile flags repeated on every source block because
+      # XcodeGen's compilerFlags applies per-path. The flags match the
+      # autotools `--enable-float` build with VAR_ARRAYS, USE_ALLOCA and
+      # HAVE_LRINTF on. We deliberately omit `-DPACKAGE_VERSION="1.5.2"`
+      # because the xcconfig escape rules around the embedded quotes are
+      # brittle — libopus's celt/celt.c falls back to
+      # `PACKAGE_VERSION = "unknown"` and that string only ever surfaces
+      # via `opus_get_version_string()`, which we don't call. The Android
+      # NDK CMakeLists and the Emscripten build pass the real version
+      # string because their command-line escape is straightforward.
+      #
+      - path: ../android-app/app/src/main/cpp/opus/src
+        includes:
+          - opus.c
+          - opus_decoder.c
+          - opus_encoder.c
+          - extensions.c
+          - repacketizer.c
+          - analysis.c
+          - mlp.c
+          - mlp_data.c
+        compilerFlags: "-DOPUS_BUILD -DUSE_ALLOCA -DVAR_ARRAYS -DHAVE_LRINTF"
+      - path: ../android-app/app/src/main/cpp/opus/celt
+        includes:
+          - bands.c
+          - celt.c
+          - celt_encoder.c
+          - celt_decoder.c
+          - cwrs.c
+          - entcode.c
+          - entdec.c
+          - entenc.c
+          - kiss_fft.c
+          - laplace.c
+          - mathops.c
+          - mdct.c
+          - modes.c
+          - pitch.c
+          - celt_lpc.c
+          - quant_bands.c
+          - rate.c
+          - vq.c
+        compilerFlags: "-DOPUS_BUILD -DUSE_ALLOCA -DVAR_ARRAYS -DHAVE_LRINTF"
+      - path: ../android-app/app/src/main/cpp/opus/silk
+        includes:
+          - "*.c"
+        compilerFlags: "-DOPUS_BUILD -DUSE_ALLOCA -DVAR_ARRAYS -DHAVE_LRINTF"
+      - path: ../android-app/app/src/main/cpp/opus/silk/float
+        includes:
+          - "*.c"
+        compilerFlags: "-DOPUS_BUILD -DUSE_ALLOCA -DVAR_ARRAYS -DHAVE_LRINTF"
     configFiles:
       Debug: Local.xcconfig
       Release: Local.xcconfig
@@ -78,18 +141,29 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: SafeTMobile/SafeTMobile-Bridging-Header.h
         CLANG_CXX_LANGUAGE_STANDARD: "c++17"
         HEADER_SEARCH_PATHS:
-          # ORDER MATTERS: codec2's `defines.h` must be found before
-          # dvmvocoder's. The generated codebook *.c files in
-          # codec2_generated/ do `#include "defines.h"` with no local
-          # defines.h alongside them, so the search falls through to
-          # HEADER_SEARCH_PATHS. dvmvocoder's defines.h is a C++ header
-          # (#includes <cstdint>); pointing a C compile at it produces
-          # "'cstdint' file not found" because cstdint is C++-only.
+          # ORDER MATTERS, three-way:
+          # 1. libopus headers FIRST. Codec2 ships its own kiss_fft.h at
+          #    codec2/src/kiss_fft.h and so does libopus at opus/celt/kiss_fft.h.
+          #    libopus's analysis.c (in opus/src/, NOT on any -I) does
+          #    `#include "kiss_fft.h"` and falls through to HEADER_SEARCH_PATHS;
+          #    if codec2/src wins, the wrong kiss_fft_state / kiss_twiddle_scalar
+          #    defs land and analysis.c fails to compile. Codec2's own .c files
+          #    keep finding codec2's kiss_fft.h because the same-directory rule
+          #    for "" includes resolves from codec2/src/ first.
+          # 2. codec2/src must come BEFORE dvmvocoder, because the generated
+          #    codebook *.c files in codec2_generated/ do `#include "defines.h"`
+          #    with no local defines.h alongside them — falls through to
+          #    HEADER_SEARCH_PATHS. dvmvocoder's defines.h is a C++ header
+          #    (#includes <cstdint>); a C compile pointed at it produces
+          #    "'cstdint' file not found".
+          # 3. codec2_generated holds the vendored codebook arrays AND a static
+          #    `codec2/version.h` that codec2.h includes as <codec2/version.h>,
+          #    so this directory has to be on the angle-bracket search path.
+          - $(SRCROOT)/../android-app/app/src/main/cpp/opus/include
+          - $(SRCROOT)/../android-app/app/src/main/cpp/opus/celt
+          - $(SRCROOT)/../android-app/app/src/main/cpp/opus/silk
+          - $(SRCROOT)/../android-app/app/src/main/cpp/opus/silk/float
           - $(SRCROOT)/../android-app/app/src/main/cpp/codec2/src
-          # codec2_generated holds the vendored codebook arrays AND the
-          # static `codec2/version.h` — codec2.h includes it as
-          # <codec2/version.h>, so this directory has to be on the angle-
-          # bracket search path.
           - $(SRCROOT)/../android-app/app/src/main/cpp/codec2_generated
           - $(SRCROOT)/../android-app/app/src/main/cpp/dvmvocoder/vocoder
           - $(SRCROOT)/../android-app/app/src/main/cpp/dvmvocoder/vocoder/imbe
@@ -127,6 +201,23 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.safetptt.mobile.tests
         GENERATE_INFOPLIST_FILE: YES
+        # The Swift bridging header includes "opus.h" (and codec2/dvmvocoder
+        # headers), which live in directories referenced ONLY via HEADER_SEARCH_PATHS
+        # on the main target — they're not added as project sources, so they
+        # don't land in the auto-generated headermaps the test target gets from
+        # its SafeTMobile dependency. Mirror the main target's search paths so
+        # the bridging-header parse during SafeTMobileTests compilation finds
+        # opus.h. Keep the same ordering as the main target so the kiss_fft.h
+        # conflict between codec2 and libopus stays resolved in libopus's favour.
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/../android-app/app/src/main/cpp/opus/include
+          - $(SRCROOT)/../android-app/app/src/main/cpp/opus/celt
+          - $(SRCROOT)/../android-app/app/src/main/cpp/opus/silk
+          - $(SRCROOT)/../android-app/app/src/main/cpp/opus/silk/float
+          - $(SRCROOT)/../android-app/app/src/main/cpp/codec2/src
+          - $(SRCROOT)/../android-app/app/src/main/cpp/codec2_generated
+          - $(SRCROOT)/../android-app/app/src/main/cpp/dvmvocoder/vocoder
+          - $(SRCROOT)/../android-app/app/src/main/cpp/dvmvocoder/vocoder/imbe
 
   SafeTMobileUITests:
     type: bundle.ui-testing
