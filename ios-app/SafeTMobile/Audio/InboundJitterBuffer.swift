@@ -191,11 +191,22 @@ final class InboundJitterBuffer {
                 wasUnderrun = false
             } else {
                 frame = synthesizePlc()
+                // Only count concealment that happens DURING an active talk-
+                // spurt (within talkSpurtGapSeconds of the last received
+                // frame). The playout loop runs continuously for the whole
+                // session, so between transmissions the queue is empty on every
+                // tick too — counting that dead air would swamp the PLC ratio
+                // with channel idle time and a merely-quiet unit would read
+                // ~99% "loss" on the Link Health dashboard. The PLC fade itself
+                // still runs unconditionally (below) so audio is unchanged;
+                // only the counters are gated.
+                let now = ProcessInfo.processInfo.systemUptime
+                let inActiveSpurt = lastEnqueueAt != 0 && (now - lastEnqueueAt) <= talkSpurtGapSeconds
                 // First PLC frame in a contiguous underrun event = one
                 // "buffer underrun"; following PLC frames in the same
                 // event just bump the PLC counter.
-                wasUnderrun = plcCount == 0
-                wasPlc = true
+                wasUnderrun = inActiveSpurt && plcCount == 0
+                wasPlc = inActiveSpurt
                 plcCount += 1
             }
             lock.unlock()

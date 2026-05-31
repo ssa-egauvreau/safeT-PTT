@@ -184,15 +184,27 @@ class InboundJitterBuffer(
                 f
             } else {
                 val plc = synthesizePlc()
-                // Voice-link telemetry: every queue-empty playout tick is one
-                // PLC frame synthesised; the first PLC frame in a contiguous
-                // underrun event is also counted as one "buffer underrun" so
-                // the dashboard can distinguish outage frequency (underruns)
-                // from concealment volume (plc frames).
-                if (plcCount == 0) {
-                    VoiceLinkTelemetryReporter.recordBufferUnderrun()
+                // Voice-link telemetry: only count concealment that happens
+                // DURING an active talk-spurt (within TALK_SPURT_GAP_MS of the
+                // last received frame). The playout loop runs continuously for
+                // the whole session, so between transmissions the queue is
+                // empty on every tick too — counting that dead air would swamp
+                // the PLC ratio with channel idle time and a merely-quiet unit
+                // would read ~99% "loss" on the Link Health dashboard. The PLC
+                // fade itself still runs unconditionally so audio is unchanged;
+                // only the counters are gated.
+                val now = SystemClock.elapsedRealtime()
+                val inActiveSpurt = lastEnqueueMs != 0L && now - lastEnqueueMs <= TALK_SPURT_GAP_MS
+                if (inActiveSpurt) {
+                    // First PLC frame in a contiguous underrun event is also
+                    // counted as one "buffer underrun" so the dashboard can
+                    // distinguish outage frequency (underruns) from concealment
+                    // volume (plc frames).
+                    if (plcCount == 0) {
+                        VoiceLinkTelemetryReporter.recordBufferUnderrun()
+                    }
+                    VoiceLinkTelemetryReporter.recordPlcSynthesized()
                 }
-                VoiceLinkTelemetryReporter.recordPlcSynthesized()
                 plcCount++
                 plc
             }
