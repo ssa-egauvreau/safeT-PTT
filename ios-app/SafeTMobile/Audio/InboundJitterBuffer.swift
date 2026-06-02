@@ -43,9 +43,12 @@ final class InboundJitterBuffer {
     /// sub-frame jitter on top of that.
     private let frameMs: Double = 20.0
 
-    /// Initial cushion: 3 × 20 ms ≈ 60 ms before the first scheduleBuffer call.
-    private let initialTargetFrames: Int = 3
-    private let initialTimeoutMs: Double = 200.0
+    /// Initial cushion: 4 × 20 ms ≈ 80 ms before the first scheduleBuffer call.
+    /// A small step up from the 60 ms minimum to absorb brief cellular
+    /// retransmit stalls before the playout underruns into PLC, at ~+20 ms
+    /// latency (still far below the ~400 ms a PTT operator perceives as lag).
+    private let initialTargetFrames: Int = 4
+    private let initialTimeoutMs: Double = 250.0
 
     /// Worst-case buffered audio. 16 × 20 ms ≈ 320 ms — if the producer
     /// outpaces the player (sustained burst), drop the oldest frame rather

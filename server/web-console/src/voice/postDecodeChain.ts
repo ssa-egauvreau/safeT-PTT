@@ -99,11 +99,11 @@ export const OPUS_VOICE_SHAPING: PostDecodeConfig = {
   lpfEnabled: true,
   lpfHz: 7500,
   compressorEnabled: true,
-  compressorThresholdDb: -20,
+  compressorThresholdDb: -24,
   compressorRatio: 2.5,
   compressorAttackMs: 8,
   compressorReleaseMs: 150,
-  compressorMakeupDb: 4,
+  compressorMakeupDb: 2,
   saturationAmount: 0.1,
 };
 

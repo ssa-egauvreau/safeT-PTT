@@ -116,11 +116,11 @@ object PostDecodeChain {
         lpfEnabled = true,
         lpfHz = 7500f,
         compressorEnabled = true,
-        compressorThresholdDb = -20f,
+        compressorThresholdDb = -24f,
         compressorRatio = 2.5f,
         compressorAttackMs = 8f,
         compressorReleaseMs = 150f,
-        compressorMakeupDb = 4f,
+        compressorMakeupDb = 2f,
         saturationAmount = 0.1f,
     )
 

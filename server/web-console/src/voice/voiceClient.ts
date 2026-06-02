@@ -63,10 +63,12 @@ const WAVEFORM_FFT_SIZE = 256;
 // consoles see the same cutout behaviour as field handsets.
 //
 // 20 ms frames at the relay's cadence; the cushion gives the playout
-// schedule ~80 ms of slack before the playHead falls behind ctx.currentTime
-// and PLC fill kicks in.
+// schedule ~100 ms of slack before the playHead falls behind ctx.currentTime
+// and PLC fill kicks in. Nudged up from 80 ms (in lockstep with the handset
+// jitter buffers' 4-frame cushion) to absorb brief retransmit stalls before
+// PLC, at ~+20 ms latency — well under the ~400 ms perceptual PTT threshold.
 const FRAME_SAMPLES = 320;
-const JITTER_CUSHION_SEC = 0.08;
+const JITTER_CUSHION_SEC = 0.1;
 /** > 300 ms between voice frames marks a new talk-spurt — clear PLC state so
  *  the next talker isn't preceded by a faded copy of the previous one. */
 const TALK_SPURT_GAP_SEC = 0.3;
