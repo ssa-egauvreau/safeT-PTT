@@ -5,5 +5,6 @@ import WidgetKit
 struct SafeTMobileLiveActivityBundle: WidgetBundle {
     var body: some Widget {
         RadioLiveActivity()
+        RadioWidget()
     }
 }

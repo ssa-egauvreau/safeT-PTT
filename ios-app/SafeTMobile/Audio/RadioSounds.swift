@@ -27,7 +27,9 @@ final class RadioSounds {
 
     /// Play the cue once. No-op if the asset is missing from the bundle (logged
     /// but not crashed — radio UX shouldn't fail on a missing chime).
+    /// Emergency alerts always play regardless of the notification-sounds setting.
     func play(_ cue: Cue) {
+        guard cue == .emergency || SettingsStore.shared.notificationSoundsEnabled else { return }
         guard let player = player(for: cue) else { return }
         if player.isPlaying { player.currentTime = 0 }
         player.play()

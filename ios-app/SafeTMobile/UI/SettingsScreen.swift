@@ -15,8 +15,10 @@ struct SettingsScreen: View {
     var body: some View {
         NavigationStack {
             List {
+                appearanceSection
                 accountSection
                 controlsSection
+                audioSection
                 scanSection
                 gpsSection
                 aboutSection
@@ -43,8 +45,29 @@ struct SettingsScreen: View {
                 Text("You will be returned to the login screen.")
             }
         }
-        .preferredColorScheme(.dark)
     }
+
+    // MARK: - Appearance
+
+    private var appearanceSection: some View {
+        Section {
+            Picker("Theme", selection: $settings.appColorScheme) {
+                ForEach(SettingsStore.AppColorScheme.allCases, id: \.self) { scheme in
+                    Text(scheme.label).tag(scheme)
+                }
+            }
+            .pickerStyle(.segmented)
+        } header: {
+            Text("Appearance")
+        } footer: {
+            Text("System follows the iOS display setting. Dark is the default for night / low-light operations.")
+                .font(.system(size: 11))
+                .foregroundColor(.safetTextDim)
+        }
+        .listRowBackground(Color.safetSurface)
+    }
+
+    // MARK: - Account
 
     private var accountSection: some View {
         Section("Account") {
@@ -56,6 +79,8 @@ struct SettingsScreen: View {
         }
         .listRowBackground(Color.safetSurface)
     }
+
+    // MARK: - Controls
 
     private var controlsSection: some View {
         Section {
@@ -74,6 +99,45 @@ struct SettingsScreen: View {
         }
         .listRowBackground(Color.safetSurface)
     }
+
+    // MARK: - Audio
+
+    private var audioSection: some View {
+        Section {
+            Toggle("Notification Sounds", isOn: $settings.notificationSoundsEnabled)
+                .tint(.safetGreen)
+                .foregroundColor(.safetText)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Playback Volume")
+                        .foregroundColor(.safetText)
+                    Spacer()
+                    Text("\(Int(settings.playbackVolume * 100))%")
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundColor(.safetTextDim)
+                }
+                Slider(value: $settings.playbackVolume, in: 0...1, step: 0.05)
+                    .tint(.safetGreen)
+            }
+            .padding(.vertical, 4)
+            Picker("Audio Route", selection: $settings.audioRoute) {
+                ForEach(SettingsStore.AudioRoute.allCases, id: \.self) { route in
+                    Label(route.label, systemImage: route.icon).tag(route)
+                }
+            }
+            .foregroundColor(.safetText)
+            .tint(.safetGreen)
+        } header: {
+            Text("Audio")
+        } footer: {
+            Text("Notification sounds cover channel-switch beeps and PTT cues. Emergency alerts always play regardless of this setting. Playback volume controls incoming voice audio.")
+                .font(.system(size: 11))
+                .foregroundColor(.safetTextDim)
+        }
+        .listRowBackground(Color.safetSurface)
+    }
+
+    // MARK: - Scan
 
     private var scanSection: some View {
         Section {
@@ -121,6 +185,8 @@ struct SettingsScreen: View {
         .listRowBackground(Color.safetSurface)
     }
 
+    // MARK: - GPS
+
     private var gpsSection: some View {
         Section {
             HStack {
@@ -147,6 +213,8 @@ struct SettingsScreen: View {
         .listRowBackground(Color.safetSurface)
     }
 
+    // MARK: - About
+
     private var aboutSection: some View {
         Section("About") {
             row("App", "safeT Mobile")
@@ -156,6 +224,8 @@ struct SettingsScreen: View {
         .listRowBackground(Color.safetSurface)
     }
 
+    // MARK: - Sign out
+
     private var signOutSection: some View {
         Section {
             Button(role: .destructive) {
@@ -163,28 +233,18 @@ struct SettingsScreen: View {
             } label: {
                 HStack {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
-                        // Decorative — without this the system folds the SF
-                        // Symbol's localized name into the button's accessibility
-                        // label, so `app.buttons["Sign Out…"]` in the UI test
-                        // (and VoiceOver readout) wouldn't match a plain
-                        // "Sign Out…".
                         .accessibilityHidden(true)
-                    // Ellipsis is the iOS convention for "opens a
-                    // confirmation" — and keeps this label distinct from the
-                    // confirmation dialog's "Sign Out" so VoiceOver and UI
-                    // tests can target each unambiguously.
                     Text("Sign Out…")
                         .font(.system(size: 15, weight: .semibold))
                 }
                 .foregroundColor(.safetRed)
             }
-            // Pin the accessibility label explicitly so a future SwiftUI
-            // revision of how complex Button labels compose can't silently
-            // break `app.buttons["Sign Out…"]` again.
             .accessibilityLabel("Sign Out…")
         }
         .listRowBackground(Color.safetSurface)
     }
+
+    // MARK: - Helpers
 
     private func row(_ label: String, _ value: String) -> some View {
         HStack {
