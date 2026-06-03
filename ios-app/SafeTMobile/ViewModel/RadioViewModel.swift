@@ -179,6 +179,7 @@ final class RadioViewModel: ObservableObject {
         WidgetCenter.shared.reloadTimelines(ofKind: "RadioWidget")
     }
 
+
     // MARK: - catalog / tuning
 
     private var currentChannel: String? {
