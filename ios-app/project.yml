@@ -134,6 +134,11 @@ targets:
       - target: SafeTMobileLiveActivity
         embed: true
         codeSign: true
+    entitlements:
+      path: SafeTMobile/SafeTMobile.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.safetptt.mobile
     configFiles:
       Debug: Local.xcconfig
       Release: Local.xcconfig
@@ -205,6 +210,14 @@ targets:
       # Activity.request(...) which is host-app-only and will not be
       # available in the widget extension at runtime.
       - path: SafeTMobile/LiveActivity
+      # RadioTheme.swift provides the adaptive safet* Color extensions used by
+      # RadioWidget. Compiled separately per-target — no shared-module conflict.
+      - path: SafeTMobile/Support/RadioTheme.swift
+    entitlements:
+      path: SafeTMobileLiveActivity/SafeTMobileLiveActivity.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.safetptt.mobile
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.safetptt.mobile.liveactivity

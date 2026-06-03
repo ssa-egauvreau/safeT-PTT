@@ -2,6 +2,7 @@ import AVFoundation
 import Combine
 import Foundation
 import os
+import WidgetKit
 
 /// Owns radio state, the server connection, presence/inbox polling, GPS, and
 /// the half-duplex voice transport (mic capture + WebSocket + playback).
@@ -34,8 +35,12 @@ final class RadioViewModel: ObservableObject {
     private var pttAirPollTask: Task<Void, Never>?
     private var hardwarePtt: HardwarePttController?
     private var hardwarePttCancellable: AnyCancellable?
+    private var volumeCancellable: AnyCancellable?
+    private var routeCancellable: AnyCancellable?
     private var remotePttObserver: NSObjectProtocol?
     private var lastReceivedAudio = Data()
+
+    private static let widgetDefaults = UserDefaults(suiteName: "group.com.safetptt.mobile")
 
     private let clockFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -159,6 +164,21 @@ final class RadioViewModel: ObservableObject {
         voiceAudio.enqueueIncoming(lastReceivedAudio)
     }
 
+    // MARK: - widget data
+
+    private func updateWidgetData() {
+        let d = Self.widgetDefaults ?? .standard
+        d.set(uiState.channelLabel, forKey: "widget.channelName")
+        d.set(uiState.radiosOnlineOnChannel ?? 0, forKey: "widget.usersCount")
+        let status: String
+        if uiState.isTransmitting { status = "TX" }
+        else if uiState.isReceivingAudio { status = "RX" }
+        else if uiState.networkLabel == "ONLINE" { status = "IDLE" }
+        else { status = "OFFLINE" }
+        d.set(status, forKey: "widget.statusLabel")
+        WidgetCenter.shared.reloadTimelines(ofKind: "RadioWidget")
+    }
+
     // MARK: - catalog / tuning
 
     private var currentChannel: String? {
@@ -218,12 +238,14 @@ final class RadioViewModel: ObservableObject {
             uiState.channelLabel = "----"
             uiState.channelPosition = "-- / --"
             uiState.displayLine2 = "OPERATIONS"
+            updateWidgetData()
             return
         }
         let name = channelNames[channelIndex]
         uiState.channelLabel = name
         uiState.channelPosition = String(format: "%02ld / %02ld", channelIndex + 1, channelNames.count)
         uiState.displayLine2 = "OPS: " + name.uppercased()
+        updateWidgetData()
     }
 
     private func bumpChannel(_ delta: Int) {
@@ -267,6 +289,13 @@ final class RadioViewModel: ObservableObject {
                 self.lastReceivedAudio.removeFirst(excess)
             }
         }
+        voiceAudio.playbackVolume = SettingsStore.shared.playbackVolume
+        volumeCancellable = SettingsStore.shared.$playbackVolume
+            .receive(on: RunLoop.main)
+            .sink { [weak self] vol in self?.voiceAudio.playbackVolume = vol }
+        routeCancellable = SettingsStore.shared.$audioRoute
+            .receive(on: RunLoop.main)
+            .sink { AudioSessionManager.applyRoute($0) }
         voiceTransport.onJoined = { [weak self] joined in
             guard let self else { return }
             self.uiState.canTransmit = joined.permission != .listenOnly
@@ -310,6 +339,7 @@ final class RadioViewModel: ObservableObject {
                     )
                 }
             }
+            self.updateWidgetData()
         }
         voiceTransport.onBusy = { [weak self] holder in
             guard let self, self.uiState.isPttPressed else { return }
@@ -376,6 +406,7 @@ final class RadioViewModel: ObservableObject {
             sounds.play(.pttPermit)
             uiState.statusMessage = P25ImbeNative.isAvailable ? "ON AIR · IMBE" : "ON AIR · CLEAR PCM"
             uiState.isTransmitting = true
+            updateWidgetData()
             if #available(iOS 16.2, *), let channel = currentChannel {
                 RadioLiveActivityController.shared.startOrUpdate(
                     channel: channel,
@@ -421,6 +452,7 @@ final class RadioViewModel: ObservableObject {
         if uiState.isTransmitting {
             voiceAudio.stopCapture()
             uiState.isTransmitting = false
+            updateWidgetData()
         }
         // Always tear down uplink state so a denied/aborted key-up cannot leak
         // stale PCM/IMBE data into the next transmission.
@@ -772,6 +804,7 @@ final class RadioViewModel: ObservableObject {
                 .compactMap(\.displayName)
                 .sorted()
             uiState.unitsOnChannel = channelUnits
+            updateWidgetData()
         } catch {
             uiState.radiosOnlineOnChannel = nil
             uiState.unitsOnChannel = []

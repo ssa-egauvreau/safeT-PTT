@@ -20,6 +20,12 @@ final class VoiceAudio {
     /// Called when incoming PCM16 frames are enqueued for playback.
     var onEnqueuedIncoming: ((Data) -> Void)?
 
+    /// Gain applied to the AVAudioPlayerNode for incoming voice audio (0.0–1.0).
+    var playbackVolume: Float {
+        get { player.volume }
+        set { player.volume = newValue }
+    }
+
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
 

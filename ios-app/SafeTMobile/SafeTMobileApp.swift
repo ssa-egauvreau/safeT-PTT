@@ -17,7 +17,7 @@ struct SafeTMobileApp: App {
             RootView()
                 .environmentObject(session)
                 .environmentObject(settings)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(settings.appColorScheme.colorScheme)
         }
     }
 }
