@@ -35,6 +35,7 @@ final class RadioViewModel: ObservableObject {
     private var hardwarePtt: HardwarePttController?
     private var hardwarePttCancellable: AnyCancellable?
     private var remotePttObserver: NSObjectProtocol?
+    private var lastReceivedAudio = Data()
 
     private let clockFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -153,6 +154,11 @@ final class RadioViewModel: ObservableObject {
         }
     }
 
+    func replay() {
+        guard !lastReceivedAudio.isEmpty else { return }
+        voiceAudio.enqueueIncoming(lastReceivedAudio)
+    }
+
     // MARK: - catalog / tuning
 
     private var currentChannel: String? {
@@ -251,6 +257,15 @@ final class RadioViewModel: ObservableObject {
     private func wireVoiceCallbacks() {
         voiceAudio.onCapturedFrame = { [weak self] frame, captureSessionId in
             self?.voiceTransport.sendCaptured(frame, captureSessionId: captureSessionId)
+        }
+        voiceAudio.onEnqueuedIncoming = { [weak self] pcm16 in
+            guard let self else { return }
+            self.lastReceivedAudio.append(pcm16)
+            let maxBytes = 320 * 150
+            if self.lastReceivedAudio.count > maxBytes {
+                let excess = self.lastReceivedAudio.count - maxBytes
+                self.lastReceivedAudio.removeFirst(excess)
+            }
         }
         voiceTransport.onJoined = { [weak self] joined in
             guard let self else { return }

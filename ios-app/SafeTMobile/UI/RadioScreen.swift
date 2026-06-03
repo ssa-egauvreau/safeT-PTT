@@ -14,6 +14,7 @@ struct RadioScreen: View {
     @State private var showingUnits = false
     @State private var showingTranscripts = false
     @State private var showingSettings = false
+    @State private var showingMultiChannel = false
     @State private var micStatus: AVAudioSession.RecordPermission = Self.initialMicStatus()
     /// SF Symbol name reflecting whichever AVAudioSession output the OS has
     /// actually picked right now (not just the saved preference). Updated on
@@ -137,6 +138,11 @@ struct RadioScreen: View {
             .environmentObject(settings)
             .environmentObject(session)
         }
+        .sheet(isPresented: $showingMultiChannel) { sheetWrap("CHANNELS", isPresented: $showingMultiChannel) {
+            if let token = session.token {
+                MultiChannelScreen(api: RadioApiClient(token: token))
+            }
+        } }
     }
 
     @ViewBuilder
@@ -289,6 +295,7 @@ struct RadioScreen: View {
             tabButton(icon: "map", label: "MAP") { showingMap = true }
             tabButton(icon: "person.2.fill", label: "UNITS") { showingUnits = true }
             tabButton(icon: "text.bubble", label: "TX LOG") { showingTranscripts = true }
+            tabButton(icon: "waveform.circle", label: "CHANNELS") { showingMultiChannel = true }
             tabButton(
                 icon: "dot.radiowaves.left.and.right",
                 label: "SCAN",
@@ -483,6 +490,10 @@ struct RadioScreen: View {
             }
             .accessibilityLabel("Channel up")
             .accessibilityValue("Currently \(state.channelLabel)")
+            controlButton(title: "REPLAY", enabled: !state.channelsLoading) {
+                viewModel.replay()
+            }
+            .accessibilityLabel("Replay last message")
         }
     }
 

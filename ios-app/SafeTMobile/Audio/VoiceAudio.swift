@@ -17,6 +17,9 @@ final class VoiceAudio {
     /// session id that produced it. Configure before calling `startCapture()`.
     var onCapturedFrame: ((Data, UInt64) -> Void)?
 
+    /// Called when incoming PCM16 frames are enqueued for playback.
+    var onEnqueuedIncoming: ((Data) -> Void)?
+
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
 
@@ -176,6 +179,7 @@ final class VoiceAudio {
     /// stalls produce a short fade-to-silence via PLC instead of a hard cutout.
     func enqueueIncoming(_ pcm16: Data) {
         guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return }
+        onEnqueuedIncoming?(pcm16)
         jitterBuffer.enqueue(pcm16)
     }
 }
