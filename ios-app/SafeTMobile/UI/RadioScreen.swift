@@ -195,7 +195,6 @@ struct RadioScreen: View {
                     }
                 }
         }
-        .preferredColorScheme(.dark)
     }
 
     // MARK: - status strip
@@ -386,12 +385,20 @@ struct RadioScreen: View {
                     .minimumScaleFactor(0.5)
 
                 if !state.unitsOnChannel.isEmpty {
+                    let maxVisible = 4
+                    let displayed = Array(state.unitsOnChannel.prefix(maxVisible))
+                    let overflow = state.unitsOnChannel.count - maxVisible
                     VStack(alignment: .leading, spacing: 3) {
-                        ForEach(state.unitsOnChannel, id: \.self) { unit in
+                        ForEach(displayed, id: \.self) { unit in
                             Text("• \(unit)")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(.safetTextDim)
                                 .lineLimit(1)
+                        }
+                        if overflow > 0 {
+                            Text("+ \(overflow) more")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.safetTextDim.opacity(0.6))
                         }
                     }
                 }
