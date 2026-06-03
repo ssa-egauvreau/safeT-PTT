@@ -18,6 +18,8 @@ struct RadioUiState {
     var operatorDisplayName = ""
     var agencyName = ""
     var radiosOnlineOnChannel: Int?
+    /// Display names of units on the current channel
+    var unitsOnChannel: [String] = []
     /// True when the system has been granted location permission.
     /// GPS is always on by design — there is no user toggle.
     var locationAuthorized = false

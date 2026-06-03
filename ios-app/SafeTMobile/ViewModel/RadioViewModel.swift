@@ -743,14 +743,23 @@ final class RadioViewModel: ObservableObject {
     private func pulsePresence() async {
         guard uiState.networkLabel == "ONLINE", let channel = currentChannel else {
             uiState.radiosOnlineOnChannel = nil
+            uiState.unitsOnChannel = []
             return
         }
         do {
             try await api.presenceHeartbeat(unitId: unitId, channel: channel)
             let count = try await api.presenceCount(channel: channel)
             uiState.radiosOnlineOnChannel = max(count, 0)
+
+            let allUnits = try await api.positions()
+            let channelUnits = allUnits
+                .filter { $0.channel?.lowercased() == channel.lowercased() }
+                .map(\.displayName)
+                .sorted()
+            uiState.unitsOnChannel = channelUnits
         } catch {
             uiState.radiosOnlineOnChannel = nil
+            uiState.unitsOnChannel = []
         }
     }
 

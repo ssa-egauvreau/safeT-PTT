@@ -197,11 +197,11 @@ struct RadioScreen: View {
     private func statusStrip(_ state: RadioUiState) -> some View {
         HStack(spacing: 8) {
             Text("UNIT \(state.localShortUnitId)")
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(.safetTextDim)
             Spacer()
             Text(state.systemTime)
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.safetText)
             Spacer()
             audioRouteMenu
@@ -361,7 +361,7 @@ struct RadioScreen: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 10, weight: .bold))
                     Text("10-33 EMERGENCY TRAFFIC")
-                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                        .font(.system(size: 11, weight: .heavy))
                 }
                 .foregroundColor(.safetAmber)
                 .padding(.vertical, 4)
@@ -370,20 +370,29 @@ struct RadioScreen: View {
                 .background(Color.safetAmber.opacity(0.15))
                 .cornerRadius(6)
             }
-            Text(state.displayLine1.uppercased())
-                .font(.system(size: 11, weight: .bold))
-                .tracking(2)
-                .foregroundColor(.safetSignal)
 
-            Text(state.channelLabel)
-                .font(.system(.largeTitle, design: .rounded).weight(.heavy))
-                .foregroundColor(.safetText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(state.channelLabel)
+                    .font(.system(.largeTitle, design: .rounded).weight(.heavy))
+                    .foregroundColor(.safetText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+
+                if !state.unitsOnChannel.isEmpty {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(state.unitsOnChannel, id: \.self) { unit in
+                            Text("• \(unit)")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.safetTextDim)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+            }
 
             HStack {
                 Text(state.channelPosition)
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.safetTextDim)
                 Spacer()
                 if state.isReceivingAudio {
@@ -394,33 +403,11 @@ struct RadioScreen: View {
                         .padding(.vertical, 1)
                         .overlay(Capsule().stroke(Color.safetSignal.opacity(0.7), lineWidth: 1))
                 }
-                if let count = state.radiosOnlineOnChannel {
-                    Button {
-                        showingUnits = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "person.2.fill")
-                                .font(.system(size: 9, weight: .bold))
-                            Text("\(count) ON CHANNEL")
-                                .font(.system(size: 11, weight: .semibold))
-                        }
-                        .foregroundColor(.safetSignal)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .overlay(Capsule().stroke(Color.safetSignal.opacity(0.5), lineWidth: 1))
-                    }
-                    .accessibilityLabel("\(count) radios on channel. Open units roster.")
-                }
             }
-
-            Text(state.displayLine2)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.safetTextDim)
-                .lineLimit(1)
 
             if !state.rxAttributedLine.isEmpty, !state.channelTen33 {
                 Text(state.rxAttributedLine)
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundColor(state.rxFromScan ? .safetGreen : .safetSignal)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
@@ -433,7 +420,7 @@ struct RadioScreen: View {
             Divider().overlay(Color.safetBorder)
 
             Text(state.channelsLoading ? "SYNCING…" : state.statusMessage)
-                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .font(.system(size: 13, weight: .bold))
                 .foregroundColor(statusColor(state))
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
@@ -458,12 +445,12 @@ struct RadioScreen: View {
                 .font(.system(size: 10, weight: .bold))
             if let rx = state.scanRxChannel {
                 Text("SCAN: \(rx.uppercased())")
-                    .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                    .font(.system(size: 11, weight: .heavy))
             } else {
                 let home = state.channelLabel.lowercased()
                 let count = state.scanIncludedChannels.filter { $0 != home }.count
                 Text(count > 0 ? "SCAN ON · \(count) CH" : "SCAN ON · PICK CHANNELS")
-                    .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                    .font(.system(size: 11, weight: .heavy))
             }
             Spacer()
         }
