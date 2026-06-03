@@ -167,7 +167,7 @@ final class RadioViewModel: ObservableObject {
 
     func replay() {
         guard !lastReceivedAudio.isEmpty else { return }
-        voiceAudio.enqueueIncoming(lastReceivedAudio)
+        voiceAudio.replayAudio(lastReceivedAudio)
     }
 
     // MARK: - widget data

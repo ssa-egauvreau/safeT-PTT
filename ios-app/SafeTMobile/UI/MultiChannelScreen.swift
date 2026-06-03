@@ -2,16 +2,43 @@ import SwiftUI
 
 struct MultiChannelScreen: View {
     let api: RadioApiClient
+    /// Lowercased channel names currently included in scan (from RadioUiState).
+    let initialSelection: Set<String>
+    let scanActive: Bool
+    let onSelectionChanged: (Set<String>) -> Void
+    let onScanToggle: () -> Void
     @Environment(\.dismiss) var dismiss
 
     @State private var channels: [String] = []
     @State private var visibleChannels: Set<String> = []
-    @State private var selectedChannels: Set<String> = []
     @State private var loading = false
     @State private var error: String?
 
     var body: some View {
         VStack(spacing: 12) {
+            // Scan on/off toggle
+            HStack(spacing: 10) {
+                Toggle(isOn: Binding(
+                    get: { scanActive },
+                    set: { _ in onScanToggle() }
+                )) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(scanActive ? .safetGreen : .safetTextDim)
+                        Text("SCAN")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(scanActive ? .safetGreen : .safetText)
+                    }
+                }
+                .tint(.safetGreen)
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 4)
+
+            Divider().overlay(Color.safetBorder).padding(.horizontal, 12)
+
+            // ALL / NONE quick-select
             HStack(spacing: 8) {
                 Button("ALL") {
                     visibleChannels = Set(channels)
@@ -82,20 +109,21 @@ struct MultiChannelScreen: View {
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(Color.safetBackground.ignoresSafeArea())
-        .navigationTitle("MULTI-CHANNEL")
+        .navigationTitle("SCAN CHANNELS")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadChannels()
+        }
+        .onChange(of: visibleChannels) { newValue in
+            onSelectionChanged(Set(newValue.map { $0.lowercased() }))
         }
     }
 
     private func channelRow(_ channel: String) -> some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(channel.uppercased())
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.safetText)
-            }
+            Text(channel.uppercased())
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.safetText)
             Spacer()
             Toggle("", isOn: Binding(
                 get: { visibleChannels.contains(channel) },
@@ -122,9 +150,10 @@ struct MultiChannelScreen: View {
     private func loadChannels() async {
         loading = true
         do {
-            let channels = try await api.channels()
-            self.channels = channels.map(\.name).sorted()
-            visibleChannels = Set(self.channels)
+            let loaded = try await api.channels()
+            self.channels = loaded.map(\.name).sorted()
+            // Restore previously selected channels (initialSelection is lowercased)
+            visibleChannels = Set(self.channels.filter { initialSelection.contains($0.lowercased()) })
             error = nil
         } catch {
             self.error = "Failed to load channels: \(error)"

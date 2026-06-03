@@ -138,9 +138,15 @@ struct RadioScreen: View {
             .environmentObject(settings)
             .environmentObject(session)
         }
-        .sheet(isPresented: $showingMultiChannel) { sheetWrap("CHANNELS", isPresented: $showingMultiChannel) {
+        .sheet(isPresented: $showingMultiChannel) { sheetWrap("SCAN CHANNELS", isPresented: $showingMultiChannel) {
             if let token = session.token {
-                MultiChannelScreen(api: RadioApiClient(token: token))
+                MultiChannelScreen(
+                    api: RadioApiClient(token: token),
+                    initialSelection: viewModel.uiState.scanIncludedChannels,
+                    scanActive: viewModel.uiState.scanActive,
+                    onSelectionChanged: { channels in viewModel.handle(.setScanChannels(channels)) },
+                    onScanToggle: { viewModel.handle(.toggleScan) }
+                )
             }
         } }
     }
@@ -301,7 +307,7 @@ struct RadioScreen: View {
                 tint: state.scanActive ? .safetGreen : .safetTextDim,
                 highlighted: state.scanActive
             ) {
-                viewModel.handle(.toggleScan)
+                showingMultiChannel = true
             }
             tabButton(icon: "gearshape.fill", label: "SETTINGS") { showingSettings = true }
         }
