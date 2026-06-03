@@ -1,6 +1,18 @@
 import SwiftUI
 import WidgetKit
 
+// `.containerBackground(_:for:)` is iOS 17+; fall back to `.background()` on 16.
+private extension View {
+    @ViewBuilder
+    func widgetBackground(_ color: Color) -> some View {
+        if #available(iOS 17.0, *) {
+            containerBackground(color, for: .widget)
+        } else {
+            background(color)
+        }
+    }
+}
+
 // MARK: - Entry
 
 struct RadioWidgetEntry: TimelineEntry {
@@ -61,10 +73,10 @@ struct RadioWidgetView: View {
             rectangularView
         case .systemMedium:
             mediumView
-                .containerBackground(Color.safetBackground, for: .widget)
+                .widgetBackground(Color.safetBackground)
         default:
             smallView
-                .containerBackground(Color.safetBackground, for: .widget)
+                .widgetBackground(Color.safetBackground)
         }
     }
 
