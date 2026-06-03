@@ -768,8 +768,8 @@ final class RadioViewModel: ObservableObject {
 
             let allUnits = try await api.positions()
             let channelUnits = allUnits
-                .filter { $0.channel?.lowercased() == channel.lowercased() }
-                .map(\.displayName)
+                .filter { $0.channelName?.lowercased() == channel.lowercased() }
+                .compactMap(\.displayName)
                 .sorted()
             uiState.unitsOnChannel = channelUnits
         } catch {
