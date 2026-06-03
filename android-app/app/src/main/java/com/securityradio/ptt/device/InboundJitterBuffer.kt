@@ -294,9 +294,12 @@ class InboundJitterBuffer(
         // 16 kHz mono PCM16 — 2 bytes per sample.
         const val BYTES_PER_SECOND = 16_000 * 2
 
-        // Initial cushion: 3 frames × 20 ms ≈ 60 ms before draining.
-        const val INITIAL_TARGET_FRAMES = 3
-        const val INITIAL_TIMEOUT_MS = 200L
+        // Initial cushion: 4 frames × 20 ms ≈ 80 ms before draining. A small
+        // step up from the 60 ms minimum to absorb brief cellular retransmit
+        // stalls before the playout underruns into PLC, at ~+20 ms latency
+        // (still far below the ~400 ms a PTT operator perceives as lag).
+        const val INITIAL_TARGET_FRAMES = 4
+        const val INITIAL_TIMEOUT_MS = 250L
 
         // Worst-case buffered audio. 16 × 20 ms ≈ 320 ms.
         const val MAX_BUFFER_FRAMES = 16

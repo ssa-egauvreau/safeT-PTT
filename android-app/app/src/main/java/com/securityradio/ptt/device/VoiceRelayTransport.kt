@@ -320,6 +320,7 @@ class VoiceRelayTransport(
                     // so a previous talker's filter ring must not bleed into the
                     // next talker's first frame on either path.
                     postDecodeProcessorProvider()?.reset()
+                    opusVoiceProcessor?.reset()
                 }
                 if (decoder.codec == VoiceCodec.IMBE && !ensureImbeNativeLoadedForRx()) {
                     // Lazy-load the JNI lib on first IMBE frame so peers stay audible
@@ -378,8 +379,19 @@ class VoiceRelayTransport(
         if (processor != null && postDecodeConfigProvider()?.wideband == true) {
             return processor.processWideband(samples)
         }
-        return shortLeMonoBytes(samples)
+        // No agency wideband chain: apply the fixed "warm radio voice" Opus
+        // shaping so Opus sounds full and clear rather than thin. Opus path
+        // only — the 8 kHz vocoders (IMBE/Codec2) play raw via applyPostDecodeOrDup.
+        val proc = opusVoiceProcessor
+            ?: PostDecodeChain.Processor(PostDecodeChain.OPUS_VOICE_SHAPING).also { opusVoiceProcessor = it }
+        return proc.processWideband(samples)
     }
+
+    /** Fixed Opus-only voicing (see [PostDecodeChain.OPUS_VOICE_SHAPING]). Built
+     *  on the first Opus frame so IMBE/Codec2-only channels never pay for it;
+     *  reset at talk-spurt boundaries so a prior talker's biquad ring can't
+     *  bleed into the next talker's first frame. */
+    private var opusVoiceProcessor: PostDecodeChain.Processor? = null
 
     private fun shortLeMonoBytes(samples: ShortArray): ByteArray {
         val out = ByteArray(samples.size * 2)

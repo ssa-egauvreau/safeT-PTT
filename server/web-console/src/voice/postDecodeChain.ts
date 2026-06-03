@@ -53,6 +53,61 @@ export interface PostDecodeConfig {
 }
 
 /**
+ * Fixed "warm radio voice" shaping for the Opus (16 kHz wideband) path ONLY.
+ *
+ * Goal (per product direction): make Opus sound full and clear — bass and
+ * body, crisp consonants, easy to understand — without the narrow,
+ * static-y "elevator speaker" telephone sound. This is deliberately NOT the
+ * heavy AMBE+2/DMR narrowband voicing: Opus carries real wideband audio, so we
+ * keep the band wide and add musical EQ + gentle glue instead of shrinking it.
+ *
+ * This config is applied through the SAME `PostDecodeProcessor.processWideband`
+ * tail the agency chain uses, but it is wired independently in the Opus
+ * playback path on each client. It does NOT touch the 8 kHz vocoder path, so
+ * IMBE / Codec2 keep playing raw (their early, well-liked sound). It is also
+ * independent of any agency-pushed Audio Lab config (currently globally off).
+ *
+ * Mirror these values EXACTLY in PostDecodeChain.kt / .swift (Opus play path)
+ * so all three platforms voice Opus identically.
+ *
+ *   HPF 90 Hz       — trim sub-bass rumble / plosive thump, keep chest tone
+ *   low-shelf +3 dB @ 200 Hz   — warmth / body (the "bass")
+ *   presence +3.5 dB @ 2.6 kHz, Q 0.8  — consonant clarity / intelligibility
+ *   high-shelf +1 dB @ 6 kHz   — a touch of air so it isn't muffled
+ *   LPF 7.5 kHz     — tame the very top hiss edge, still fully wideband
+ *   compressor -20 dB, 2.5:1, 8/150 ms, +4 dB  — even levels, present voice
+ *   saturation 0.10 — subtle harmonic warmth, well short of crunch/static
+ *
+ * `wideband: true` routes Opus through `processWideband`; `upsampleMode` is
+ * irrelevant on that path (Opus is already 16 kHz) but must be a valid value.
+ */
+export const OPUS_VOICE_SHAPING: PostDecodeConfig = {
+  upsampleMode: "duplicate",
+  wideband: true,
+  hpfEnabled: true,
+  hpfHz: 90,
+  lowShelfEnabled: true,
+  lowShelfHz: 200,
+  lowShelfDb: 3,
+  presenceEnabled: true,
+  presenceHz: 2600,
+  presenceDb: 3.5,
+  presenceQ: 0.8,
+  highShelfEnabled: true,
+  highShelfHz: 6000,
+  highShelfDb: 1,
+  lpfEnabled: true,
+  lpfHz: 7500,
+  compressorEnabled: true,
+  compressorThresholdDb: -24,
+  compressorRatio: 2.5,
+  compressorAttackMs: 8,
+  compressorReleaseMs: 150,
+  compressorMakeupDb: 2,
+  saturationAmount: 0.1,
+};
+
+/**
  * The sample rate the processor will emit for the given config — the voice
  * client needs this BEFORE constructing its AudioContext (the context's
  * sampleRate is fixed at construction). polyphase24 is the only mode that

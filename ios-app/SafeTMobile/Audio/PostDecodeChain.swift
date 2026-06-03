@@ -86,6 +86,46 @@ enum PostDecodeChain {
                 && !compressorEnabled
                 && saturationAmount <= 0
         }
+
+        /// Fixed "warm radio voice" shaping for the Opus (16 kHz wideband) path
+        /// ONLY. Makes Opus sound full and clear — bass/body, crisp consonants,
+        /// easy to understand — instead of thin/static-y. NOT the narrow
+        /// AMBE+2/DMR voicing: Opus is real wideband, so keep the band wide and
+        /// add musical EQ + gentle glue. Applied independently in the Opus play
+        /// path; does NOT touch the 8 kHz vocoder path (IMBE/Codec2 stay raw)
+        /// and is independent of any agency Audio Lab config. Mirror EXACTLY in
+        /// postDecodeChain.ts / PostDecodeChain.kt.
+        static let opusVoiceShaping = Config(
+            upsampleMode: .duplicate,
+            hpfEnabled: true,
+            hpfHz: 90,
+            lpfEnabled: true,
+            lpfHz: 7500,
+            lowShelfEnabled: true,
+            lowShelfHz: 200,
+            lowShelfDb: 3,
+            highShelfEnabled: true,
+            highShelfHz: 6000,
+            highShelfDb: 1,
+            presenceEnabled: true,
+            presenceHz: 2600,
+            presenceDb: 3.5,
+            presenceQ: 0.8,
+            saturationAmount: 0.1,
+            wideband: true,
+            compressorEnabled: true,
+            compressorThresholdDb: -24,
+            compressorRatio: 2.5,
+            compressorAttackMs: 8,
+            compressorReleaseMs: 150,
+            compressorMakeupDb: 2,
+            rogerBeepEnabled: false,
+            rogerBeepHz: 1200,
+            rogerBeepMs: 120,
+            squelchTailEnabled: false,
+            squelchTailMs: 90,
+            squelchTailLevel: 0.05
+        )
     }
 
     /// Per-channel processor. Biquad state persists across the 20 ms IMBE

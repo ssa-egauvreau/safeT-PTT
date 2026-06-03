@@ -96,6 +96,12 @@ final class VoiceTransport {
     /// processor to build (e.g. a roger-beep-only config). `nil` when no
     /// shaping/cue is configured.
     private var postDecodeConfig: PostDecodeChain.Config?
+    /// Fixed Opus-only voicing (see `PostDecodeChain.Config.opusVoiceShaping`).
+    /// Built on the first Opus frame so IMBE/Codec2-only channels never pay for
+    /// it; reset at talk-spurt boundaries so a prior talker's biquad ring can't
+    /// bleed into the next talker's first frame. Independent of the agency
+    /// `postDecodeProcessor`, so the 8 kHz vocoders keep playing raw.
+    private var opusVoiceProcessor: PostDecodeChain.Processor?
     /// Last inbound voice frame timestamp (seconds, monotonic clock). Used
     /// only to detect a talk-spurt boundary on RX so the post-decode chain
     /// can reset its biquad state before the next talker's first frame.
@@ -413,6 +419,7 @@ final class VoiceTransport {
                 // talker's filter ring must not bleed into the next talker's
                 // first frame on either path.
                 postDecodeProcessor?.reset()
+                opusVoiceProcessor?.reset()
                 VoiceLinkTelemetryReporter.shared.recordTalkSpurtStart()
             }
             // Lazy-load IMBE on first frame so peers stay audible even before
@@ -470,7 +477,17 @@ final class VoiceTransport {
         if let processor = postDecodeProcessor, postDecodeConfig?.wideband == true {
             return processor.processWideband(pcm16k: samples)
         }
-        return shortLeMonoBytes(samples)
+        // No agency wideband chain: apply the fixed "warm radio voice" Opus
+        // shaping so Opus sounds full and clear rather than thin. Opus path
+        // only — the 8 kHz vocoders (IMBE/Codec2) play raw via applyPostDecodeOrDup.
+        let proc: PostDecodeChain.Processor
+        if let existing = opusVoiceProcessor {
+            proc = existing
+        } else {
+            proc = PostDecodeChain.Processor(config: .opusVoiceShaping)
+            opusVoiceProcessor = proc
+        }
+        return proc.processWideband(pcm16k: samples)
     }
 
     private func shortLeMonoBytes(_ samples: [Int16]) -> Data {

@@ -89,6 +89,41 @@ object PostDecodeChain {
                 saturationAmount <= 0f
     }
 
+    /**
+     * Fixed "warm radio voice" shaping for the Opus (16 kHz wideband) path
+     * ONLY. Makes Opus sound full and clear — bass/body, crisp consonants,
+     * easy to understand — instead of thin/static-y. NOT the narrow AMBE+2/DMR
+     * voicing: Opus is real wideband, so we keep the band wide and add musical
+     * EQ + gentle glue. Applied independently in the Opus play path; does NOT
+     * touch the 8 kHz vocoder path (IMBE/Codec2 stay raw) and is independent of
+     * any agency Audio Lab config. Mirror EXACTLY in postDecodeChain.ts /
+     * PostDecodeChain.swift. */
+    val OPUS_VOICE_SHAPING: Config = Config(
+        upsampleMode = UpsampleMode.DUPLICATE,
+        wideband = true,
+        hpfEnabled = true,
+        hpfHz = 90f,
+        lowShelfEnabled = true,
+        lowShelfHz = 200f,
+        lowShelfDb = 3f,
+        presenceEnabled = true,
+        presenceHz = 2600f,
+        presenceDb = 3.5f,
+        presenceQ = 0.8f,
+        highShelfEnabled = true,
+        highShelfHz = 6000f,
+        highShelfDb = 1f,
+        lpfEnabled = true,
+        lpfHz = 7500f,
+        compressorEnabled = true,
+        compressorThresholdDb = -24f,
+        compressorRatio = 2.5f,
+        compressorAttackMs = 8f,
+        compressorReleaseMs = 150f,
+        compressorMakeupDb = 2f,
+        saturationAmount = 0.1f,
+    )
+
     enum class UpsampleMode {
         DUPLICATE,
         LINEAR,
