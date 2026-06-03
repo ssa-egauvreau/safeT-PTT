@@ -42,6 +42,12 @@ final class RadioViewModel: ObservableObject {
 
     private static let widgetDefaults = UserDefaults(suiteName: "group.com.safetptt.mobile")
 
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
     private let clockFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
@@ -161,7 +167,7 @@ final class RadioViewModel: ObservableObject {
 
     func replay() {
         guard !lastReceivedAudio.isEmpty else { return }
-        voiceAudio.enqueueIncoming(lastReceivedAudio)
+        voiceAudio.replayAudio(lastReceivedAudio)
     }
 
     // MARK: - widget data
@@ -178,6 +184,7 @@ final class RadioViewModel: ObservableObject {
         d.set(status, forKey: "widget.statusLabel")
         WidgetCenter.shared.reloadTimelines(ofKind: "RadioWidget")
     }
+
 
     // MARK: - catalog / tuning
 
@@ -799,9 +806,19 @@ final class RadioViewModel: ObservableObject {
             uiState.radiosOnlineOnChannel = max(count, 0)
 
             let allUnits = try await api.positions()
+            let cutoff = Date().addingTimeInterval(-600) // 10-minute activity window
             let channelUnits = allUnits
                 .filter { $0.channelName?.lowercased() == channel.lowercased() }
+                .filter { pos in
+                    // Parse updatedAt; fall back to including the entry if unparseable
+                    let date = Self.isoFormatter.date(from: pos.updatedAt)
+                        ?? ISO8601DateFormatter().date(from: pos.updatedAt)
+                    return date.map { $0 > cutoff } ?? true
+                }
                 .compactMap(\.displayName)
+                .reduce(into: [String]()) { result, name in
+                    if !result.contains(name) { result.append(name) }
+                }
                 .sorted()
             uiState.unitsOnChannel = channelUnits
             updateWidgetData()

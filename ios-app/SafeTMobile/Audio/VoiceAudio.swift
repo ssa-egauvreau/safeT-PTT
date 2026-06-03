@@ -26,6 +26,7 @@ final class VoiceAudio {
         set { player.volume = newValue }
     }
 
+
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
 
@@ -186,6 +187,13 @@ final class VoiceAudio {
     func enqueueIncoming(_ pcm16: Data) {
         guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return }
         onEnqueuedIncoming?(pcm16)
+        jitterBuffer.enqueue(pcm16)
+    }
+
+    /// Plays back a PCM16 buffer without triggering `onEnqueuedIncoming`.
+    /// Use for replay so the replayed audio is not re-appended to the last-received buffer.
+    func replayAudio(_ pcm16: Data) {
+        guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return }
         jitterBuffer.enqueue(pcm16)
     }
 }
