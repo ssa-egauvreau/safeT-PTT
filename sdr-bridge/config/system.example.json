@@ -20,10 +20,9 @@
   },
 
   "system": {
-    "_comment": "From RadioReference. 'type' is p25. Set 'phase2' true if the OC site is P25 Phase II (TDMA) — most modern county systems are. List the site's control-channel frequency(ies) in Hz; trunk-recorder uses the first that locks.",
+    "_comment": "From RadioReference. 'type' is p25 — trunk-recorder auto-detects Phase I vs Phase II (TDMA) per call, so there is NO phase flag to set. 'modulation' is the CONTROL-CHANNEL modulation and is the knob that matters: 'qpsk' for CQPSK/LSM simulcast (most P25 Phase II county systems), 'fsk4' for C4FM. If the control channel won't lock on one, try the other. List the control-channel frequency(ies) in Hz; trunk-recorder uses the first that locks.",
     "shortName": "occcs",
     "type": "p25",
-    "phase2": true,
     "controlChannelsHz": [855737500, 856237500],
     "modulation": "qpsk"
   },

@@ -96,8 +96,10 @@ cp /path/to/your/export.csv config/talkgroups.csv
 
 Edit `config/system.json`:
 
-- **`system.controlChannelsHz`** + **`system.phase2`** — from RadioReference for
-  the OC CCCS site. Phase II (TDMA) is typical for modern county systems.
+- **`system.controlChannelsHz`** + **`system.modulation`** — from RadioReference
+  for the OC CCCS site. Phase I vs Phase II is auto-detected per call (no flag);
+  `modulation` is the *control-channel* modulation — `qpsk` for CQPSK/LSM
+  simulcast (typical P25 Phase II county systems), `fsk4` for C4FM.
 - **`sdr.centerHz` / `sdr.rateHz` / `sdr.gain` / `sdr.ppm`** — center the
   ~2 MHz window over the site's voice channels; `gain: 0` is auto to start.
 - **`icecast.sourcePassword` / `adminPassword`** — pick passwords.
@@ -197,8 +199,9 @@ So each bridge's `sourceUrl` must be reachable **from the server**:
   UDP targets reach the host streamers.
 - **SafeT bridge shows level 0 / never connects** — the server can't reach
   `sourceUrl`. Almost always the local-vs-cloud reachability issue above.
-- **Garbled / half-duplex audio** — P25 Phase II needs `phase2: true`; a Phase I
-  talkgroup on a Phase II system (or vice-versa) decodes as noise.
+- **Control channel won't lock / all noise** — wrong `modulation`. Try the other
+  (`qpsk` ↔ `fsk4`), confirm `controlChannelsHz`, `gain`, and `ppm`. Phase II voice
+  is auto-detected once the control channel locks — there's no phase flag.
 
 > The RF/decoder pipeline (trunk-recorder ↔ simplestream ↔ ffmpeg ↔ Icecast)
 > depends on your exact dongle, antenna, and the OC CCCS site — treat the RF
