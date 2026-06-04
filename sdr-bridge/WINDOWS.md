@@ -106,8 +106,25 @@ VS Code). Fill in: your **control-channel frequency(ies)**, **talkgroups**, Icec
 For `icecast.serverReachableBase`:
 - **SafeT self-hosted on this PC** (Windows or WSL) → leave `http://127.0.0.1:8000`
   (mirrored networking from step 2 makes it reachable).
-- **SafeT in the cloud (Railway)** → tunnel it: `cloudflared tunnel --url http://127.0.0.1:8000`
-  and paste the `https://…trycloudflare.com` URL here.
+- **SafeT in the cloud (Railway)** → the cloud server can't see your PC's Icecast,
+  so expose it with a tunnel. Install once in WSL:
+  ```bash
+  sudo apt install -y cloudflared || \
+    (curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+       -o /tmp/cf && sudo install /tmp/cf /usr/local/bin/cloudflared)
+  ```
+  Then run it in its own terminal and copy the URL it prints:
+  ```bash
+  cloudflared tunnel --url http://127.0.0.1:8000
+  # -> https://random-words.trycloudflare.com
+  ```
+  Put that URL in `serverReachableBase`, then `npm run generate && npm run import-bridges`.
+
+  > ⚠️ A free quick-tunnel gets a **new random URL every time you restart it**. If
+  > you stop/restart cloudflared, re-run `npm run generate && npm run import-bridges`
+  > so the bridges point at the new URL. For a stable URL, set up a
+  > [named Cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+  > (free, needs a domain on Cloudflare) — then you set it once and never touch it again.
 
 Then generate the configs:
 
