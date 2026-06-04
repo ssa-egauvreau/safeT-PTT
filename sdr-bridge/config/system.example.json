@@ -1,0 +1,53 @@
+{
+  "_README": "Copy this file to config/system.json and fill in the values for YOUR setup. Pull the RF values (control channel, site frequency spread, system type Phase I vs II) from your RadioReference export for Orange County CCCS. Anything in ALL_CAPS or marked CHANGE_ME must be edited.",
+
+  "icecast": {
+    "host": "127.0.0.1",
+    "port": 8000,
+    "sourcePassword": "CHANGE_ME_source_password",
+    "adminPassword": "CHANGE_ME_admin_password",
+    "_serverReachableBase": "The base URL the SafeT SERVER uses to pull each stream. The bridge worker (ffmpeg) runs on the SafeT server, NOT on this PC. If you self-host SafeT on THIS same PC, leave it as 127.0.0.1. If SafeT runs in the cloud (Railway), this PC's localhost is NOT reachable from there — expose Icecast with a tunnel (see README 'Cloud SafeT') and put the public URL here, e.g. https://occcs.example.trycloudflare.com",
+    "serverReachableBase": "http://127.0.0.1:8000"
+  },
+
+  "sdr": {
+    "_comment": "One Nooelec v5 (RTL-SDR, R820T2). ~2.4 MHz max capture; ~2.0 MHz reliable. 'gain' 0 = auto AGC; set a fixed dB (e.g. 36-49) once you tune. 'ppm' from your dongle's frequency error.",
+    "device": 0,
+    "centerHz": 854000000,
+    "rateHz": 2400000,
+    "gain": 0,
+    "ppm": 0
+  },
+
+  "system": {
+    "_comment": "From RadioReference. 'type' is p25. Set 'phase2' true if the OC site is P25 Phase II (TDMA) — most modern county systems are. List the site's control-channel frequency(ies) in Hz; trunk-recorder uses the first that locks.",
+    "shortName": "occcs",
+    "type": "p25",
+    "phase2": true,
+    "controlChannelsHz": [855737500, 856237500],
+    "modulation": "qpsk"
+  },
+
+  "safet": {
+    "_comment": "An ADMIN account on your SafeT-PTT server. baseUrl ends in /v1. agencySlug only needed for non-owner multi-tenant logins (leave \"\" otherwise).",
+    "baseUrl": "http://127.0.0.1:8080/v1",
+    "username": "admin",
+    "password": "CHANGE_ME_safet_admin_password",
+    "agencySlug": ""
+  },
+
+  "bridgeDefaults": {
+    "_comment": "Applied to every bridge unless overridden per-entry below. voxThreshold 0-1 (lower = more sensitive). yieldToUnits=false keeps scanner traffic on-air even when a real unit keys up; set true if you want live units to pre-empt the feed.",
+    "voxThreshold": 0.02,
+    "voxHangMs": 1500,
+    "yieldToUnits": false,
+    "enabled": true
+  },
+
+  "_bridges_comment": "The talkgroups you want as separate listenable channels. 'tgid' is the decimal Talkgroup ID from RadioReference. 'channel' is the SafeT channel name that gets created. 'mount' is the Icecast mountpoint (lowercase, no spaces) — keep these unique. Add as many as you like; each becomes one channel you can monitor simultaneously.",
+  "bridges": [
+    { "tgid": 16,  "channel": "DSP-DSP",      "mount": "dsp-dsp",     "name": "OCCCS DSP-DSP" },
+    { "tgid": 112, "channel": "Air Call",     "mount": "air-call",    "name": "OCCCS Air Call" },
+    { "tgid": 304, "channel": "JWA Silver 1", "mount": "jwa-silver1", "name": "John Wayne Silver 1" }
+  ]
+}
