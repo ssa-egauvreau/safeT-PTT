@@ -63,8 +63,8 @@ export const WORKSPACE_MEDIUM_ROWS = 4;
 export const WORKSPACE_LARGE_COLS = 4;
 export const WORKSPACE_LARGE_ROWS = 8;
 
-/** New tiles dock as medium (4×4). */
-export const WORKSPACE_DEFAULT_WIDGET_SIZE: WorkspaceWidgetSize = "medium";
+/** New tiles dock as large (4×8) when opened from the rail or dropped on the workspace. */
+export const WORKSPACE_DEFAULT_WIDGET_SIZE: WorkspaceWidgetSize = "large";
 export const WORKSPACE_WIDGET_SIZES: readonly WorkspaceWidgetSize[] = ["small", "medium", "large"];
 
 /** Footprint for S / M / L (grid cell units). */
@@ -255,18 +255,27 @@ function workspaceLayoutForExpanded(
   return out;
 }
 
-function tileIsValid(tile: WorkspaceTileLayout, gridCols: number): boolean {
+/** Footprint matches canonical S / M / L (not viewport-clamped width). */
+function tileFootprintIsValid(tile: WorkspaceTileLayout): boolean {
   const size = workspaceTileSize(tile);
-  const preset = workspaceFootprintForSize(size, gridCols);
+  const preset = workspacePresetForSize(size);
+  return tile.colSpan === preset.colSpan && tile.rowSpan === preset.rowSpan;
+}
+
+/** Tile origin fits on a grid with this many columns (width may clamp in the UI). */
+function tileFitsGridCols(tile: WorkspaceTileLayout, gridCols: number): boolean {
+  const w = Math.min(tile.colSpan, gridCols);
   return (
-    tile.colSpan === preset.colSpan &&
-    tile.rowSpan === preset.rowSpan &&
     Number.isFinite(tile.col) &&
     Number.isFinite(tile.row) &&
     tile.col >= 0 &&
     tile.row >= 0 &&
-    tile.col + tile.colSpan <= gridCols
+    tile.col + w <= gridCols
   );
+}
+
+function tileIsValid(tile: WorkspaceTileLayout, gridCols: number): boolean {
+  return tileFootprintIsValid(tile) && tileFitsGridCols(tile, gridCols);
 }
 
 function layoutFootprints(
@@ -649,7 +658,7 @@ export function syncWorkspaceTilesForViewport(gridCols: number): void {
   const cols = Math.max(WORKSPACE_GRID_MIN_COLS, Math.min(WORKSPACE_GRID_MAX_COLS, gridCols));
   const invalid = state.expanded.some((id) => {
     const t = state.workspaceLayout[layoutKey(id)];
-    return !t || !tileIsValid(t, cols);
+    return !t || !tileFootprintIsValid(t) || !tileFitsGridCols(t, cols);
   });
   if (!invalid) {
     return;
@@ -789,7 +798,7 @@ export function dockChannel(
   const workspaceLayout = packLayout(expanded, state.workspaceLayout, cols);
   commitWorkspaceIfChanged(expanded, workspaceLayout);
   if (at) {
-    placeWorkspaceTile(id, at.col, at.row, cols);
+    placeWorkspaceTile(id, at.col, at.row, cols, WORKSPACE_DEFAULT_WIDGET_SIZE);
   }
 }
 

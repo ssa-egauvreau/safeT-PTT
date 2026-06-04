@@ -49,7 +49,7 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
     if (!expanded.includes(id)) {
       dockChannel(id, at);
     } else if (at) {
-      placeWorkspaceTile(id, at.col, at.row, WORKSPACE_GRID_MAX_COLS);
+      placeWorkspaceTile(id, at.col, at.row, WORKSPACE_GRID_MAX_COLS, "large");
     }
     if (!open.includes(id)) {
       setChannelMonitoring(id, true);

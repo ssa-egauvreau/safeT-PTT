@@ -13,7 +13,7 @@ export type WidgetBoardProps = {
   rowHeight: number;
   /** Current layout items (react-grid-layout format). */
   layout: LayoutItem[];
-  /** Called when the user drags or the layout compacts. */
+  /** Called when the user finishes dragging a widget (not on mount / auto-compact). */
   onLayoutChange: (layout: readonly LayoutItem[]) => void;
   /** Render each widget by id. */
   renderItem: (id: string) => ReactNode;
@@ -56,7 +56,7 @@ export function WidgetBoard({
     return () => ro.disconnect();
   }, []);
 
-  const handleLayoutChange = useCallback(
+  const handleDragStop = useCallback(
     (next: readonly LayoutItem[]) => {
       onLayoutChange(cloneDeep([...next]));
     },
@@ -87,7 +87,7 @@ export function WidgetBoard({
           isDraggable
           isResizable={false}
           draggableHandle={dragHandleSelector}
-          onLayoutChange={handleLayoutChange}
+          onDragStop={handleDragStop}
           useCSSTransforms
         >
           {layout.map((item) => (

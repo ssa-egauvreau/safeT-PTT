@@ -18,7 +18,6 @@ import {
   getRailDragPreview,
   subscribeRailDragPreview,
   setRailDragPreview,
-  workspacePreviewForChannel,
 } from "./workspaceRailDrag";
 import {
   WORKSPACE_GRID_ROW_PX,
@@ -95,6 +94,8 @@ export function ChannelWorkspace({
     [expandedIds, workspaceLayout, gridCols],
   );
 
+  const gridColsRef = useRef(0);
+
   const updateGridCols = useCallback(() => {
     const el = wrapRef.current;
     if (!el) {
@@ -106,7 +107,10 @@ export function ChannelWorkspace({
     const inner = Math.max(0, el.clientWidth - padL - padR);
     const c = workspaceGridColsForWidth(inner);
     setGridCols(c);
-    syncWorkspaceTilesForViewport(c);
+    if (gridColsRef.current > 0 && gridColsRef.current !== c) {
+      syncWorkspaceTilesForViewport(c);
+    }
+    gridColsRef.current = c;
   }, []);
 
   useEffect(() => {
@@ -126,7 +130,7 @@ export function ChannelWorkspace({
     return () => window.removeEventListener("dragend", clearRailDrag);
   }, []);
 
-  const handleLayoutChange = useCallback(
+  const persistLayout = useCallback(
     (layout: readonly LayoutItem[]) => {
       applyWorkspaceRglLayout([...layout], gridCols);
     },
@@ -159,12 +163,7 @@ export function ChannelWorkspace({
         return;
       }
       const rect = wrap.getBoundingClientRect();
-      const channel = dockedChannels.find((c) => c.id === id);
-      const { size } = workspacePreviewForChannel(
-        channel ?? { id, name: "", color: null, simulcast: false } as UserChannel,
-        !!channel,
-      );
-      const foot = workspaceFootprintForSize(size, gridCols);
+      const foot = workspaceFootprintForSize("large", gridCols);
       const cell = pointerToGridCell(
         wrap.clientWidth,
         e.clientX,
@@ -216,7 +215,7 @@ export function ChannelWorkspace({
           cols={gridCols}
           rowHeight={WORKSPACE_GRID_ROW_PX}
           layout={rglLayout}
-          onLayoutChange={handleLayoutChange}
+          onLayoutChange={persistLayout}
           dragHandleSelector=".ch-card-title-row"
           dropHighlight={dockDragOver || !!railDrag}
           emptyState={
