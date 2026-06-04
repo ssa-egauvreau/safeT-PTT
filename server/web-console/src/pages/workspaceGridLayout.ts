@@ -1,6 +1,7 @@
 import type { LayoutItem } from "react-grid-layout/legacy";
-import type { WorkspaceTileLayout, WorkspaceWidgetSize } from "../consoleStore";
+import type { WorkspaceTileLayout } from "../consoleStore";
 import {
+  WORKSPACE_DEFAULT_WIDGET_SIZE,
   WORKSPACE_GRID_GAP_PX,
   WORKSPACE_GRID_ROW_PX,
   workspacePresetForSize,
@@ -52,7 +53,7 @@ export function rglLayoutFromStore(
   return expanded.map((id) => {
     const key = layoutKey(id);
     const stored = workspaceLayout[key];
-    const size = stored ? workspaceTileSize(stored) : ("medium" as WorkspaceWidgetSize);
+    const size = stored ? workspaceTileSize(stored) : WORKSPACE_DEFAULT_WIDGET_SIZE;
     const preset = workspacePresetForSize(size);
     const tile: WorkspaceTileLayout = stored
       ? { ...stored, colSpan: Math.min(stored.colSpan, gridCols), rowSpan: stored.rowSpan }
