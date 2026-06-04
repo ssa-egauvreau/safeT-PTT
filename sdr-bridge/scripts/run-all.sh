@@ -6,8 +6,18 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."   # -> sdr-bridge/
 
+# Pull the latest talkgroups from the bridges you created in the SafeT console
+# (Bridges -> Import from RadioReference) and regenerate the runtime files. Set
+# SDR_SKIP_SYNC=1 to use a hand-built config (npm run generate) instead.
+if [ "${SDR_SKIP_SYNC:-0}" != "1" ]; then
+  echo "[sync] reading bridges from SafeT..."
+  node scripts/sync-from-safet.mjs || {
+    echo "  ! sync failed — falling back to existing generated files (or run 'npm run generate')." >&2
+  }
+fi
+
 if [ ! -f icecast/icecast.xml ] || [ ! -f generated/stream-talkgroups.sh ]; then
-  echo "  ✗ Missing generated files. Run:  npm run generate" >&2
+  echo "  ✗ No runtime files yet. Create bridges in the console then re-run, or 'npm run generate'." >&2
   exit 1
 fi
 

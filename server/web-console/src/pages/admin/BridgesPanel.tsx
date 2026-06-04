@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, describeError, type Bridge, type BridgeInput, type BridgeStatus } from "../../api";
 import { BridgeMeter } from "../BridgeMeter";
+import { RadioRefImport } from "./RadioRefImport";
 
 function emptyInput(): BridgeInput {
   return {
@@ -384,6 +385,12 @@ export function BridgesPanel({ embedded = false }: { embedded?: boolean }) {
       </div>
 
       {error && <div className="banner error">{error}</div>}
+
+      <RadioRefImport
+        channelNames={channelNames}
+        bridgeNames={bridges.map((b) => b.name)}
+        onDone={() => void reload()}
+      />
 
       <h3>New bridge</h3>
       <BridgeForm

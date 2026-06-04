@@ -50,14 +50,33 @@ your RadioReference export to know which case you're in.
 
 ---
 
+## Two ways to pick talkgroups
+
+**A) From the SafeT console (recommended, no JSON editing).** In the console go to
+**Bridges → Import from RadioReference**, paste your RadioReference talkgroup
+export, tick the talkgroups you want, set the **Stream base URL** (your Icecast /
+tunnel address), and click **Create**. Each becomes a channel + bridge. On the PC
+you then run **`npm start`**, which reads those bridges back from SafeT and decodes
+exactly the talkgroups you picked — nothing to keep in sync. Add or remove
+talkgroups any time in the console and re-run `npm start`.
+
+**B) Offline, from a file.** List the talkgroups in `config/system.json`'s
+`bridges[]`, run `npm run generate`, then `npm run import-bridges` to push the
+channels/bridges up to SafeT. Useful with no console handy.
+
+Both paths use the same convention: each stream lives at `…/tg<TalkgroupID>`, which
+is how the PC launcher maps a bridge back to the talkgroup it should decode.
+
 ## What's in here
 
 | Path | What it is |
 |------|------------|
-| `config/system.example.json` | Copy to `config/system.json`, fill in. The single source of truth. |
-| `config/talkgroups.example.csv` | trunk-recorder talkgroup CSV (drop your RadioReference export here as `talkgroups.csv`). |
-| `scripts/generate.mjs` | `system.json` → trunk-recorder config, Icecast config, ffmpeg streamers, bridge manifest. |
-| `scripts/import-bridges.mjs` | Creates the SafeT channels + bridges over the admin API. Idempotent. |
+| `config/system.example.json` | Copy to `config/system.json`. Holds your RF, Icecast, and SafeT settings (talkgroups optional — only for path B). |
+| `config/talkgroups.example.csv` | trunk-recorder talkgroup CSV (path B / offline validation). |
+| `scripts/sync-from-safet.mjs` | **Path A:** reads the bridges you made in the console and regenerates the runtime files. (`npm run sync`) |
+| `scripts/run-all.sh` | One command: sync, then start Icecast + streamers + trunk-recorder. (`npm start`) |
+| `scripts/generate.mjs` | **Path B:** builds the runtime files + a bridge manifest from `system.json`. |
+| `scripts/import-bridges.mjs` | **Path B:** pushes the manifest's channels + bridges to SafeT. Idempotent. |
 | `docker-compose.yml` | Runs trunk-recorder (host-networked) against the USB dongle. |
 | `trunk-recorder/config.template.json` | Annotated reference of the generated config. |
 
@@ -87,7 +106,46 @@ On the PC with the dongle plugged in (the same PC where you have the SafeT
 
 ---
 
-## Setup
+## Setup (recommended console workflow — path A)
+
+### 1. Fill in the PC config (RF + Icecast + SafeT login — no talkgroups)
+
+```bash
+cd sdr-bridge
+cp config/system.example.json config/system.json
+```
+
+Edit `config/system.json` — for path A you only need these (leave `bridges[]` alone):
+
+- **`system.controlChannelsHz`** + **`system.modulation`** — from RadioReference
+  for the OC CCCS site. Phase I vs Phase II is auto-detected per call (no flag);
+  `modulation` is the *control-channel* modulation — `qpsk` for CQPSK/LSM
+  simulcast (typical P25 Phase II county systems), `fsk4` for C4FM.
+- **`sdr.centerHz` / `sdr.rateHz` / `sdr.gain` / `sdr.ppm`** — center the
+  ~2 MHz window over the site's voice channels; `gain: 0` is auto to start.
+- **`icecast.sourcePassword` / `adminPassword`** — pick passwords.
+- **`safet`** — your SafeT `baseUrl` (ends in `/v1`) + an **admin** login (used to
+  read back the bridges you create in the console).
+
+### 2. Pick talkgroups in the console
+
+SafeT console → **Bridges → Import from RadioReference** → paste your export →
+tick talkgroups → set **Stream base URL** (your Icecast address; for cloud SafeT
+that's your cloudflared tunnel URL) → **Create**. Done — channels + bridges exist.
+
+### 3. Start everything on the PC (one command)
+
+```bash
+npm start          # = sync from SafeT, then launch Icecast + streamers + trunk-recorder
+```
+
+That's the whole loop. To change which talkgroups you monitor, edit them in the
+console and re-run `npm start`. **The rest of this page (path B / "generate") is the
+offline alternative — skip it if you're using the console.**
+
+---
+
+## Offline alternative (path B)
 
 ### 1. Fill in your config
 
@@ -98,21 +156,13 @@ cp config/system.example.json config/system.json
 cp /path/to/your/export.csv config/talkgroups.csv
 ```
 
-Edit `config/system.json`:
+Edit `config/system.json` as above, plus:
 
-- **`system.controlChannelsHz`** + **`system.modulation`** — from RadioReference
-  for the OC CCCS site. Phase I vs Phase II is auto-detected per call (no flag);
-  `modulation` is the *control-channel* modulation — `qpsk` for CQPSK/LSM
-  simulcast (typical P25 Phase II county systems), `fsk4` for C4FM.
-- **`sdr.centerHz` / `sdr.rateHz` / `sdr.gain` / `sdr.ppm`** — center the
-  ~2 MHz window over the site's voice channels; `gain: 0` is auto to start.
-- **`icecast.sourcePassword` / `adminPassword`** — pick passwords.
 - **`icecast.serverReachableBase`** — *the URL the SafeT **server** uses to reach
   Icecast* (see [Local vs cloud](#local-safet-vs-cloud-safet) below).
-- **`safet`** — your SafeT `baseUrl` (ends in `/v1`) + an **admin** login.
-- **`bridges[]`** — one entry per talkgroup you want as a channel. `tgid` is the
-  decimal Talkgroup ID; `channel` is the SafeT channel name; `mount` is a unique
-  Icecast mountpoint name.
+- **`bridges[]`** — one entry per talkgroup. `tgid` is the decimal Talkgroup ID;
+  `channel` is the SafeT channel name; `mount` is a unique Icecast mountpoint
+  (use `tg<TGID>`, e.g. `tg16`, to match the console convention).
 
 ### 2. Generate everything
 

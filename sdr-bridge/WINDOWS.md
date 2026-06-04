@@ -95,67 +95,60 @@ cd safeT-PTT/sdr-bridge
 git checkout claude/festive-bohr-Eknpx
 
 cp config/system.example.json config/system.json
-cp /mnt/c/Users/<you>/Downloads/your_radioreference_export.csv config/talkgroups.csv
 ```
 
 Edit `config/system.json` (use `nano config/system.json` or open the WSL folder in
-VS Code). Fill in: your **control-channel frequency(ies)**, **talkgroups**, Icecast
-**passwords**, and your **SafeT admin login**. For OC CCCS (P25 Phase II) keep
-`modulation: "qpsk"` — there is no phase flag, trunk-recorder auto-detects Phase II.
+VS Code). For the console workflow you only fill in: your **control-channel
+frequency(ies)**, Icecast **passwords**, and your **SafeT admin login** — you do
+**not** list talkgroups here (you pick those in the console). For OC CCCS (P25
+Phase II) keep `modulation: "qpsk"` — there is no phase flag, trunk-recorder
+auto-detects Phase II.
 
-For `icecast.serverReachableBase`:
-- **SafeT self-hosted on this PC** (Windows or WSL) → leave `http://127.0.0.1:8000`
-  (mirrored networking from step 2 makes it reachable).
-- **SafeT in the cloud (Railway)** → the cloud server can't see your PC's Icecast,
-  so expose it with a tunnel. Install once in WSL:
-  ```bash
-  sudo apt install -y cloudflared || \
-    (curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
-       -o /tmp/cf && sudo install /tmp/cf /usr/local/bin/cloudflared)
-  ```
-  Then run it in its own terminal and copy the URL it prints:
-  ```bash
-  cloudflared tunnel --url http://127.0.0.1:8000
-  # -> https://random-words.trycloudflare.com
-  ```
-  Put that URL in `serverReachableBase`, then `npm run generate && npm run import-bridges`.
-
-  > ⚠️ A free quick-tunnel gets a **new random URL every time you restart it**. If
-  > you stop/restart cloudflared, re-run `npm run generate && npm run import-bridges`
-  > so the bridges point at the new URL. For a stable URL, set up a
-  > [named Cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
-  > (free, needs a domain on Cloudflare) — then you set it once and never touch it again.
-
-Then generate the configs:
+**If your SafeT is in the cloud (Railway)**, the cloud server can't see your PC's
+Icecast, so expose it with a tunnel. Install cloudflared once in WSL:
 
 ```bash
-npm run generate
+sudo apt install -y cloudflared || \
+  (curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+     -o /tmp/cf && sudo install /tmp/cf /usr/local/bin/cloudflared)
 ```
 
-### C. Launch everything (one command)
+Run it in its own terminal and copy the URL it prints — that's your **Stream base
+URL** for the console:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:8000
+# -> https://random-words.trycloudflare.com
+```
+
+> ⚠️ A free quick-tunnel gets a **new URL every restart**. If you restart
+> cloudflared, update the **Stream base URL** in the console (Bridges → Import)
+> and re-create, or re-run `npm start`. For a permanent URL set up a
+> [named Cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+> (free, needs a domain on Cloudflare) — set once, never touch again.
+>
+> Self-hosting SafeT on this PC instead? No tunnel — use `http://127.0.0.1:8000`
+> (mirrored networking from step 2 makes it reachable).
+
+### C. Pick talkgroups in the SafeT console
+
+In the SafeT console: **Bridges → Import from RadioReference**. Paste your
+RadioReference talkgroup export (or upload the CSV), tick the talkgroups you want,
+put your **Stream base URL** (the cloudflared URL above) in the box, and click
+**Create**. Each talkgroup becomes a channel + bridge. Add/remove any time — it's
+just clicking.
+
+### D. Launch everything (one command)
 
 ```bash
 sudo service docker start        # WSL doesn't auto-start the docker daemon
-npm run generate                 # (re-run only if you edited system.json)
-bash scripts/run-all.sh
+npm start                        # syncs your console talkgroups, then runs everything
 ```
 
-That starts Icecast, the per-talkgroup streamers, and trunk-recorder together.
-You'll see trunk-recorder lock the control channel and start logging calls. Leave
-it running; **Ctrl-C stops everything.**
-
-### D. Create the SafeT channels + bridges (one time, or after adding talkgroups)
-
-In a **second** Ubuntu terminal:
-
-```bash
-cd ~/safeT-PTT/sdr-bridge
-npm run import-bridges -- --dry-run   # preview
-npm run import-bridges                # do it
-```
-
-This logs into SafeT and creates a channel + bridge per talkgroup automatically.
-Re-running is safe — it reconciles instead of duplicating.
+`npm start` reads the bridges you just created, configures the decoder to match,
+and starts Icecast + the streamers + trunk-recorder together. You'll see it lock
+the control channel and log calls. Leave it running; **Ctrl-C stops everything.**
+Changed your talkgroups in the console? Just re-run `npm start`.
 
 ### E. Verify
 

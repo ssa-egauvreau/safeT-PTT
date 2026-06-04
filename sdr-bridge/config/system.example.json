@@ -43,7 +43,7 @@
     "enabled": true
   },
 
-  "_bridges_comment": "The talkgroups you want as separate listenable channels. 'tgid' is the decimal Talkgroup ID from RadioReference. 'channel' is the SafeT channel name that gets created. 'mount' is the Icecast mountpoint (lowercase, no spaces) — keep these unique. Add as many as you like; each becomes one channel you can monitor simultaneously.",
+  "_bridges_comment": "OPTIONAL — only used by the offline `npm run generate` path (B). If you pick talkgroups in the SafeT console (Bridges → Import from RadioReference) and run `npm start`, this list is IGNORED. For the offline path: 'tgid' is the decimal Talkgroup ID, 'channel' is the SafeT channel name, 'mount' should be tg<TGID> (e.g. tg16) to match the console convention.",
   "bridges": [
     { "tgid": 16,  "channel": "DSP-DSP",      "mount": "dsp-dsp",     "name": "OCCCS DSP-DSP" },
     { "tgid": 112, "channel": "Air Call",     "mount": "air-call",    "name": "OCCCS Air Call" },
