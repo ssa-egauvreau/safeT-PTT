@@ -69,6 +69,10 @@ passwords and credentials.
 
 ## Prerequisites
 
+> **On Windows 11?** Follow **[WINDOWS.md](./WINDOWS.md)** instead — it wraps all
+> of this in WSL2 (with the dongle shared via usbipd) and a one-command launcher.
+> The rest of this README still applies as background.
+
 On the PC with the dongle plugged in (the same PC where you have the SafeT
 **Bridges** tab open):
 
@@ -122,26 +126,32 @@ you change `system.json`.
 
 ### 3. Run it
 
-Four pieces run together on this PC. Use four terminals (or a process manager):
+**One command** starts Icecast + the streamers + trunk-recorder together
+(Ctrl-C stops all):
 
 ```bash
-# 1) Icecast (host) — uses the generated config
-icecast2 -c icecast/icecast.xml          # Debian/Ubuntu
-# (brew:  icecast -c icecast/icecast.xml)
+bash scripts/run-all.sh
+```
 
-# 2) The per-talkgroup streamers (ffmpeg: UDP PCM -> Icecast mounts)
-bash generated/stream-talkgroups.sh
+Then, in another terminal, create the SafeT channels + bridges:
 
-# 3) trunk-recorder (decodes the system, feeds the UDP ports)
-docker compose up            # or: trunk-recorder --config=trunk-recorder/config.json
-
-# 4) Create the SafeT channels + bridges
+```bash
 npm run import-bridges       # add --dry-run first to preview
 ```
 
-Order matters slightly: start Icecast, then the streamers (they listen on the
-UDP ports and publish empty mounts), then trunk-recorder (it fills the ports
-during calls). `import-bridges` can run any time once Icecast is reachable.
+<details><summary>Prefer to run the pieces by hand?</summary>
+
+```bash
+icecast2 -c icecast/icecast.xml     # 1) Icecast
+bash generated/stream-talkgroups.sh # 2) per-talkgroup ffmpeg streamers
+docker compose up                   # 3) trunk-recorder
+npm run import-bridges              # 4) SafeT channels + bridges
+```
+
+Order matters slightly: Icecast, then streamers (they publish empty mounts), then
+trunk-recorder (it fills the UDP ports during calls). `import-bridges` can run any
+time once SafeT is reachable.
+</details>
 
 ### 4. Verify
 
