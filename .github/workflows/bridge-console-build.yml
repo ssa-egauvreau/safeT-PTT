@@ -1,0 +1,40 @@
+name: Build Bridge Installer
+
+# Builds the safeT Bridge Windows installer (.exe) on a Windows runner so it can
+# be downloaded from the Actions tab without a local Node.js toolchain. Mirrors
+# desktop-build.yml (the dispatch-console installer).
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'bridge-console/**'
+      - '.github/workflows/bridge-console-build.yml'
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: bridge-console/package-lock.json
+
+      - name: Install dependencies
+        working-directory: bridge-console
+        run: npm ci
+
+      - name: Build Windows installer
+        working-directory: bridge-console
+        run: npm run dist:win
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: safeT-Bridge-Windows-Installer
+          path: bridge-console/release/*.exe
+          if-no-files-found: error

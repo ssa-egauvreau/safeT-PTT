@@ -1,0 +1,56 @@
+name: Bridge console PR check
+
+# Pull-request validation for safeT Bridge (the dedicated bridge-runner desktop
+# app). Type-checks the renderer and performs the production-shape Vite build so
+# TS errors and bundling regressions are caught on PR instead of only when the
+# Windows installer is built. The Electron shell itself needs a display and is
+# exercised by the installer workflow (bridge-console-build.yml), not here, so
+# the Electron binary download is skipped to keep this check fast.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bridge-console/**'
+      - '.github/workflows/bridge-console-pr.yml'
+  pull_request:
+    paths:
+      - 'bridge-console/**'
+      - '.github/workflows/bridge-console-pr.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bridge-console-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: renderer type-check + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: bridge-console/package-lock.json
+
+      - name: Install deps
+        working-directory: bridge-console
+        # The renderer build only needs Vite + TypeScript; skip downloading the
+        # Electron binary (this job never launches Electron).
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: npm ci --no-audit --no-fund
+
+      - name: Renderer type-check
+        working-directory: bridge-console
+        run: npm run typecheck
+
+      - name: Renderer build (production)
+        working-directory: bridge-console
+        run: npm run build
