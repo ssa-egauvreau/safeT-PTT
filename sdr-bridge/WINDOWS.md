@@ -1,5 +1,23 @@
 # Running this on Windows 11
 
+> ## ⭐ Easiest path: the double-click launcher
+>
+> The **[`windows/`](./windows/)** folder automates everything below. You only
+> touch two files:
+>
+> 1. **Double-click `Setup SafeT SDR.cmd`** — once. Installs WSL2 + Ubuntu, the
+>    tools, the dongle driver, clones the repo, seeds your config.
+> 2. Pick talkgroups in the SafeT console (Bridges → Import from RadioReference).
+> 3. **Double-click `Start SafeT SDR.cmd`** — every time you want to listen. It
+>    attaches the dongle, opens the tunnel, repoints your bridges to it, and runs
+>    the decoder.
+>
+> See **[windows/README.md](./windows/README.md)**. The rest of this page is the
+> manual version those scripts automate — use it if a step fails or you want to
+> understand what's happening.
+
+---
+
 trunk-recorder has no good native Windows build, and Docker-on-Windows can't
 cleanly pass the USB dongle through or use host networking. So on Windows you run
 the pipeline inside **WSL2** (a lightweight Ubuntu built into Windows) and hand

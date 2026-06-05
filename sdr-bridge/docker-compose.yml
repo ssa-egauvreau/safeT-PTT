@@ -17,7 +17,10 @@ services:
     privileged: true
     volumes:
       - ./trunk-recorder/config.json:/app/config.json:ro
-      - ./config/talkgroups.csv:/app/talkgroups.csv:ro
+      # Generated from your synced talkgroups, so it always exists.
+      - ./trunk-recorder/talkgroups.csv:/app/talkgroups.csv:ro
+      # Belt-and-suspenders USB access alongside privileged.
+      - /dev/bus/usb:/dev/bus/usb
       - tr-capture:/tmp/trunk-recorder
     command: ["--config=/app/config.json"]
 
