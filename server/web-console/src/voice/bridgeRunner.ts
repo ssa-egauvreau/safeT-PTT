@@ -204,7 +204,11 @@ export class BridgeRunnerClient {
       this.setState("running");
       resolve();
     } else if (msg.type === "error") {
-      this.setState("error", `Relay rejected the bridge (${msg.code ?? "unknown"}).`);
+      // Relay rejections during server redeploy are often transient. Treat them as connection
+      // failures that trigger a retry instead of terminal errors. Terminal errors (auth,
+      // permissions) from the relay layer are rare — most issues are temporary (channel not
+      // yet synced after redeploy, etc.).
+      this.setState("closed", `Relay rejected: ${msg.code ?? "unknown"} — reconnecting…`);
       reject(new Error(msg.code ?? "error"));
     }
     // "busy" is expected when a yielding bridge is pre-empted — frames are
