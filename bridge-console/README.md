@@ -85,9 +85,9 @@ and `dist:linux` targets exist for parity.) The renderer is built first, then
 1. Run the installer from `release/` on the bridge computer; pick an install
    folder; let it launch when finished.
 2. On first launch, enter:
-   - **Dispatch server address** — e.g. `https://safet-ptt.com`
    - **Username / Password** — an admin or dispatcher account for the agency
-     (owner accounts cannot run bridges).
+     (owner accounts cannot run bridges). The app already points at the
+     `https://safet-ptt.com` dispatch server, so there is no address to type.
    - **Agency code** — only if your server requires it at login.
 3. Leave **Stay signed in** and **Start automatically when Windows signs in**
    checked for a fully unattended box. Click **Sign in**.
