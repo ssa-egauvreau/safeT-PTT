@@ -1,0 +1,58 @@
+{
+  "name": "safet-bridge-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dedicated, unattended Windows desktop app for running safeT PTT radio bridges.",
+  "author": "safeT PTT",
+  "license": "UNLICENSED",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev:renderer": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "start": "vite build && electron .",
+    "dist:win": "vite build && electron-builder --win",
+    "dist:mac": "vite build && electron-builder --mac",
+    "dist:linux": "vite build && electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  },
+  "build": {
+    "appId": "com.safetptt.bridge",
+    "productName": "safeT Bridge",
+    "asar": false,
+    "files": ["electron/**/*", "dist/**/*"],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.business",
+      "icon": "build/icon.icns",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "safeT Bridge captures a line-in radio feed to key it onto a channel."
+      }
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "build/icon.png",
+      "category": "Office"
+    }
+  }
+}

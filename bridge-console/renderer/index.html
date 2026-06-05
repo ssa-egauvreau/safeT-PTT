@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob: data:; connect-src 'self' https: http: wss: ws:; worker-src 'self' blob:;"
+    />
+    <title>safeT Bridge</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <svg viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="10" y="60" width="12" height="20" rx="2.5" fill="#2563eb" />
+          <rect x="26" y="49" width="12" height="31" rx="2.5" fill="#2563eb" />
+          <rect x="42" y="38" width="12" height="42" rx="2.5" fill="#2563eb" />
+          <rect x="40" y="12" width="46" height="12" rx="3" fill="#2563eb" />
+          <path d="M67 24 L53 51 L63 51 L55 84 L80 48 L67 48 L75 24 Z" fill="#22c5e5" />
+        </svg>
+        <span class="brand-name">safe<span class="accent">T</span> <span class="sub">Bridge</span></span>
+      </div>
+      <div class="topbar-right">
+        <span id="conn-status" class="chip off">Starting…</span>
+        <span id="app-version" class="muted version"></span>
+      </div>
+    </header>
+    <main id="view" class="view"></main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
