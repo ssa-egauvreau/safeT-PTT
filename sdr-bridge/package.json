@@ -1,0 +1,15 @@
+{
+  "name": "safet-sdr-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Turn one RTL-SDR (e.g. Nooelec v5) tracking a P25 trunked system into many per-talkgroup live streams, then auto-create a SafeT-PTT channel + bridge for each.",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "sync": "node scripts/sync-from-safet.mjs",
+    "start": "bash scripts/run-all.sh",
+    "generate": "node scripts/generate.mjs",
+    "import-bridges": "node scripts/import-bridges.mjs",
+    "setup": "node scripts/generate.mjs && node scripts/import-bridges.mjs"
+  }
+}

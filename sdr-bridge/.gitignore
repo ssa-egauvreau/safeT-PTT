@@ -1,0 +1,12 @@
+# Your real config holds passwords / SafeT credentials — never commit it.
+config/system.json
+config/talkgroups.csv
+
+# Everything generate.mjs produces from your config.
+generated/
+
+# Local Icecast/trunk-recorder runtime state.
+trunk-recorder/config.json
+icecast/icecast.xml
+*.log
+.env

@@ -1,0 +1,25 @@
+# trunk-recorder in Docker, decoding the P25 system from the USB RTL-SDR.
+#
+# network_mode: host is deliberate — trunk-recorder must reach the per-talkgroup
+# ffmpeg streamers listening on the HOST at 127.0.0.1:9000+. With host networking
+# the container shares the host loopback, so the simplestream UDP targets in
+# trunk-recorder/config.json (127.0.0.1:<port>) land on the host's ffmpeg procs.
+#
+# Run Icecast and the ffmpeg streamers on the host (see README "Run it").
+# Host networking is Linux-only; on macOS/Windows install trunk-recorder natively.
+services:
+  trunk-recorder:
+    image: robotastic/trunk-recorder:latest
+    restart: unless-stopped
+    network_mode: host
+    # USB access for the Nooelec dongle. 'privileged' is the blunt-but-reliable
+    # option; to tighten it, pass just the specific /dev/bus/usb device instead.
+    privileged: true
+    volumes:
+      - ./trunk-recorder/config.json:/app/config.json:ro
+      - ./config/talkgroups.csv:/app/talkgroups.csv:ro
+      - tr-capture:/tmp/trunk-recorder
+    command: ["--config=/app/config.json"]
+
+volumes:
+  tr-capture:
