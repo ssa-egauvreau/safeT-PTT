@@ -80,7 +80,7 @@ function buildIcecastXml(cfg, plan) {
     <client-timeout>30</client-timeout>
     <header-timeout>15</header-timeout>
     <source-timeout>30</source-timeout>
-    <burst-size>0</burst-size>
+    <burst-size>65536</burst-size>
   </limits>
   <authentication>
     <source-password>${ice.sourcePassword ?? "hackme"}</source-password>
