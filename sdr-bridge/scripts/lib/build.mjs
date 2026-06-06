@@ -114,9 +114,9 @@ function buildStreamScript(cfg, plan) {
     .map(
       (p) => `# ${p.channel}  (TGID ${p.tgid})  ->  mount /${p.mount}
 ffmpeg -hide_banner -loglevel warning \\
-  -f lavfi -i "anullsrc=channel_layout=mono:sample_rate=8000" \\
+  -re -f lavfi -i "anullsrc=channel_layout=mono:sample_rate=8000" \\
   -f s16le -ar 8000 -ac 1 -fflags nobuffer \\
-  -i "udp://127.0.0.1:${p.udpPort}?listen=1&fifo_size=1000000&overrun_nonfatal=1" \\
+  -i "udp://127.0.0.1:${p.udpPort}?fifo_size=1000000&overrun_nonfatal=1" \\
   -filter_complex "[0:a][1:a]amix=inputs=2:duration=first:normalize=0,volume=1.6,alimiter=limit=0.95[a]" \\
   -map "[a]" -c:a libmp3lame -b:a 32k -ar 8000 -ac 1 \\
   -content_type audio/mpeg -f mp3 \\
@@ -153,10 +153,6 @@ trap cleanup EXIT INT TERM
 
 ${stanzas || "echo 'No talkgroups to stream.'"}
 ${monitorBlock}
-# Prime all ffmpeg→Icecast connections so every mount is live before the first call.
-# Sends 1 s of silence to each UDP port; ffmpeg's amix unblocks and connects immediately.
-(sleep 2 && python3 -c "import socket; [socket.socket(socket.AF_INET,socket.SOCK_DGRAM).sendto(bytes(16000),('127.0.0.1',p)) for p in [${plan.map((p) => p.udpPort).join(",")}]]") &
-
 echo "Streaming ${plan.length} talkgroup mount(s) + /monitor to icecast://${iceHost}:${icePort}/  (Ctrl-C to stop)"
 wait
 `;
