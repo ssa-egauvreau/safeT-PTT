@@ -34,17 +34,17 @@ fi
 
 PIDS=()
 cleanup() {
+  trap '' EXIT INT TERM
   echo
   echo "stopping..."
-  # Stop trunk-recorder first, then the background helpers.
   $COMPOSE down >/dev/null 2>&1 || true
-  for pid in "${PIDS[@]:-}"; do kill "$pid" >/dev/null 2>&1 || true; done
+  for pid in "${PIDS[@]:-}"; do kill "$pid" 2>/dev/null || true; done
 }
 trap cleanup EXIT INT TERM
 
 echo "[1/3] Icecast..."
 mkdir -p /tmp/icecast-logs
-sudo icecast2 -c icecast/icecast.xml >/tmp/sdr-icecast.log 2>&1 &
+icecast2 -c icecast/icecast.xml >/tmp/sdr-icecast.log 2>&1 &
 PIDS+=($!)
 sleep 2
 

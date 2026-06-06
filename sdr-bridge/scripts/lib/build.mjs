@@ -131,6 +131,7 @@ STREAMER_PIDS+=($!)`,
 
 STREAMER_PIDS=()
 cleanup() {
+  trap '' EXIT INT TERM
   echo "stopping streamers..."
   for pid in "\${STREAMER_PIDS[@]:-}"; do kill "\$pid" 2>/dev/null || true; done
 }
