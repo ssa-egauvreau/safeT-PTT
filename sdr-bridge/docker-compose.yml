@@ -22,7 +22,6 @@ services:
       # Belt-and-suspenders USB access alongside privileged.
       - /dev/bus/usb:/dev/bus/usb
       - tr-capture:/tmp/trunk-recorder
-    command: ["--config=/app/config.json"]
 
 volumes:
   tr-capture:
