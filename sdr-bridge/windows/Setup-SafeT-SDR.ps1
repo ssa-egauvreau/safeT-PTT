@@ -38,10 +38,23 @@ if (-not (Test-Admin)) {
 Write-Host "`n=== SafeT SDR one-time setup ===" -ForegroundColor Cyan
 
 # --- WSL + Ubuntu ----------------------------------------------------------
-$distros = (wsl -l -q) -join "`n"
-if ($distros -notmatch [Regex]::Escape($Distro)) {
+$distroExists = $false
+try {
+  $distros = wsl -l -q 2>$null
+  if ($distros -like "*$Distro*") {
+    $distroExists = $true
+  }
+} catch {}
+
+if (-not $distroExists) {
   Write-Host "`nInstalling WSL + $Distro..." -ForegroundColor Cyan
-  wsl --install -d $Distro
+  wsl --install -d $Distro 2>&1 | % {
+    if ($_ -match "already exists") {
+      Write-Host "WSL distro '$Distro' already exists." -ForegroundColor Green
+    } else {
+      Write-Host $_
+    }
+  }
   Write-Host "`n*** Reboot if asked, open '$Distro' from the Start menu, create your" -ForegroundColor Yellow
   Write-Host "*** username/password, then run this Setup again to finish.`n" -ForegroundColor Yellow
   Read-Host "Press Enter to close"
