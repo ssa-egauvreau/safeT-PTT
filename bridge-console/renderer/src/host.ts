@@ -7,7 +7,11 @@
 
 import type { BridgeConfig, BridgeHost, StoredCredentials } from "./types";
 
-const DEFAULT_CONFIG: BridgeConfig = { serverUrl: "", autoLaunch: true, bridges: {} };
+const DEFAULT_CONFIG: BridgeConfig = {
+  serverUrl: "https://safet-ptt.com",
+  autoLaunch: true,
+  bridges: {},
+};
 
 const CONFIG_KEY = "safetBridge.config";
 const CREDS_KEY = "safetBridge.credentials";

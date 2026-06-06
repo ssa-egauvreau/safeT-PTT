@@ -26,8 +26,8 @@ let mainWindow = null;
 
 /** Default persisted config; merged over whatever is on disk. */
 const DEFAULT_CONFIG = {
-  /** Dispatch server origin, e.g. "https://safet-ptt.com". */
-  serverUrl: "",
+  /** Dispatch server origin — fixed; the bridge box never needs to be told. */
+  serverUrl: "https://safet-ptt.com",
   /** Launch the app automatically when Windows signs in (unattended recovery). */
   autoLaunch: true,
   /** Per-bridge device + VOX + gain + run-intent, keyed by bridge id. */

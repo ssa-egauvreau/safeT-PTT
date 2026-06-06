@@ -4,10 +4,16 @@
 // auto-resume of running bridges, and the auth watchdog that keeps the token
 // fresh so reconnects survive server reboots unattended.
 
-import { Api, describeApiError, isAuthError, normalizeServerUrl } from "./api";
+import { Api, describeApiError, isAuthError } from "./api";
 import { host } from "./host";
 import { BridgeRunnerClient, type BridgeRunState } from "./bridgeRunner";
 import type { Bridge, BridgeConfig, BridgeSettings, SessionUser, StoredCredentials } from "./types";
+
+/**
+ * The dispatch server this app always talks to. Hard-wired so a bridge box
+ * never has to be told where the server is — no address to type or mistype.
+ */
+const DEFAULT_SERVER_URL = "https://safet-ptt.com";
 
 /** Re-validate the token on this cadence; re-login on failure. */
 const AUTH_WATCHDOG_MS = 30000;
@@ -16,7 +22,7 @@ const BRIDGE_REFRESH_MS = 60000;
 
 let api: Api | null = null;
 let user: SessionUser | null = null;
-let config: BridgeConfig = { serverUrl: "", autoLaunch: true, bridges: {} };
+let config: BridgeConfig = { serverUrl: DEFAULT_SERVER_URL, autoLaunch: true, bridges: {} };
 let credentials: StoredCredentials | null = null;
 let bridges: Bridge[] = [];
 let inputs: MediaDeviceInfo[] = [];
@@ -139,13 +145,6 @@ function showLogin(error?: string): void {
   const v = view();
   clear(v);
 
-  const serverInput = h("input", {
-    id: "f-server",
-    type: "text",
-    placeholder: "https://safet-ptt.com",
-    value: config.serverUrl || "",
-    autocomplete: "off",
-  });
   const userInput = h("input", {
     id: "f-user",
     type: "text",
@@ -178,11 +177,6 @@ function showLogin(error?: string): void {
   const submit = async (): Promise<void> => {
     errEl.removeAttribute("hidden");
     errEl.textContent = "Signing in…";
-    const serverUrl = normalizeServerUrl(serverInput.value);
-    if (!serverUrl) {
-      errEl.textContent = "Enter a valid server address (https://…).";
-      return;
-    }
     const creds: StoredCredentials = {
       username: userInput.value.trim(),
       password: passInput.value,
@@ -192,7 +186,6 @@ function showLogin(error?: string): void {
       errEl.textContent = "Enter a username and password.";
       return;
     }
-    config.serverUrl = serverUrl;
     config.autoLaunch = autostart.checked;
     await persistConfig();
     const ok = await doLogin(creds, { persist: remember.checked });
@@ -207,7 +200,6 @@ function showLogin(error?: string): void {
       h("p", { class: "muted" }, [
         "safeT Bridge runs your radio bridges from this computer and reconnects on its own when the server restarts.",
       ]),
-      field("Dispatch server address", serverInput),
       field("Username", userInput),
       field("Password", passInput),
       field("Agency code", agencyInput),
@@ -787,6 +779,12 @@ async function refreshBridgeList(): Promise<void> {
 // --- bootstrap ----------------------------------------------------------------
 export async function initApp(): Promise<void> {
   config = await host.getConfig();
+  // The server address is fixed — never rely on (or keep) a stored value, so an
+  // old or blank config can't point a bridge box at the wrong place.
+  if (config.serverUrl !== DEFAULT_SERVER_URL) {
+    config.serverUrl = DEFAULT_SERVER_URL;
+    await persistConfig();
+  }
   credentials = await host.loadCredentials();
   try {
     const version = await host.getVersion();
