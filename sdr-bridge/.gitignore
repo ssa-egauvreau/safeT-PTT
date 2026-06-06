@@ -14,3 +14,6 @@ icecast/icecast.xml
 
 # Windows launcher's saved settings (may contain the repo URL).
 windows/launcher.config.json
+
+# Locally-built launcher executable (build it with "Build EXE.cmd").
+windows/*.exe
