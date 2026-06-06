@@ -7,6 +7,13 @@ generated/
 
 # Local Icecast/trunk-recorder runtime state.
 trunk-recorder/config.json
+trunk-recorder/talkgroups.csv
 icecast/icecast.xml
 *.log
 .env
+
+# Windows launcher's saved settings (may contain the repo URL).
+windows/launcher.config.json
+
+# Locally-built launcher executable (build it with "Build EXE.cmd").
+windows/*.exe

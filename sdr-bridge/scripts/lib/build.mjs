@@ -155,6 +155,16 @@ export function writeArtifacts(root, cfg, plan) {
     join(root, "trunk-recorder", "config.json"),
     JSON.stringify(buildTrunkConfig(cfg, withPorts), null, 2) + "\n",
   );
+  // Always emit the talkgroups CSV trunk-recorder names calls from, so the file
+  // the container mounts is guaranteed to exist (the console path may have no
+  // hand-supplied config/talkgroups.csv) and calls get readable labels.
+  const csv =
+    "Decimal,Hex,Alpha Tag,Mode,Description,Tag,Category\n" +
+    withPorts
+      .map((p) => `${p.tgid},${Number(p.tgid).toString(16)},${p.channel},D,${p.channel},,SDR`)
+      .join("\n") +
+    "\n";
+  writeFileSync(join(root, "trunk-recorder", "talkgroups.csv"), csv);
   writeFileSync(join(root, "icecast", "icecast.xml"), buildIcecastXml(cfg, withPorts));
   writeFileSync(join(root, "generated", "stream-talkgroups.sh"), buildStreamScript(cfg, withPorts), {
     mode: 0o755,

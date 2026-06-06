@@ -21,12 +21,23 @@ if [ ! -f icecast/icecast.xml ] || [ ! -f generated/stream-talkgroups.sh ]; then
   exit 1
 fi
 
+# Pick whichever Compose is installed: the v2 plugin (`docker compose`) or the
+# standalone v1 binary (`docker-compose`).
+if docker compose version >/dev/null 2>&1; then
+  COMPOSE="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+  COMPOSE="docker-compose"
+else
+  echo "  ✗ Docker Compose not found. Install it (Setup does this) and retry." >&2
+  exit 1
+fi
+
 PIDS=()
 cleanup() {
   echo
   echo "stopping..."
   # Stop trunk-recorder first, then the background helpers.
-  docker compose down >/dev/null 2>&1 || true
+  $COMPOSE down >/dev/null 2>&1 || true
   for pid in "${PIDS[@]:-}"; do kill "$pid" >/dev/null 2>&1 || true; done
 }
 trap cleanup EXIT INT TERM
@@ -46,4 +57,4 @@ echo "      Icecast log:   /tmp/sdr-icecast.log"
 echo "      Streamer log:  /tmp/sdr-streamers.log"
 echo
 # Foreground so you see the decoder lock the control channel and log calls.
-docker compose up
+$COMPOSE up

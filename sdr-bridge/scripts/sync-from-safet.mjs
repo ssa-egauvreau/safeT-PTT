@@ -10,6 +10,11 @@
  * So the talkgroup list lives in ONE place — the SafeT console — and this PC
  * just follows it. No config/system.json `bridges[]` editing required; that file
  * only supplies the RF/Icecast settings.
+ *
+ * Auto-repoint: if env SDR_STREAM_BASE is set (the launcher passes the live
+ * cloudflared URL), every SDR bridge's stream URL is rewritten to
+ * `<SDR_STREAM_BASE>/tg<NNN>` so a tunnel URL that changed since you created the
+ * bridges in the console is fixed automatically — no manual edit each session.
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -19,6 +24,9 @@ import { writeArtifacts, tgidFromMount } from "./lib/build.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG = join(ROOT, "config", "system.json");
+
+/** Optional live stream base (e.g. the current cloudflared URL) to repoint bridges to. */
+const REPOINT_BASE = (process.env.SDR_STREAM_BASE ?? "").trim().replace(/\/+$/, "");
 
 function die(msg) {
   console.error(`\n  ✗ ${msg}\n`);
@@ -73,6 +81,9 @@ async function main() {
 
   const bridges = (await api("GET", "/admin/bridges", { token })).bridges ?? [];
 
+  if (REPOINT_BASE && !/^https?:\/\//.test(REPOINT_BASE))
+    die(`SDR_STREAM_BASE must start with http(s):// — got "${REPOINT_BASE}".`);
+
   // Keep only enabled stream bridges whose mount looks like /tg<NNN>.
   const plan = [];
   const seen = new Set();
@@ -86,7 +97,7 @@ async function main() {
     }
     if (seen.has(tgid)) continue;
     seen.add(tgid);
-    plan.push({ tgid, mount: `tg${tgid}`, channel: b.target_channel || b.name });
+    plan.push({ id: b.id, tgid, mount: `tg${tgid}`, channel: b.target_channel || b.name, sourceUrl: b.source_url });
   }
 
   if (plan.length === 0)
@@ -95,11 +106,29 @@ async function main() {
         "    pick talkgroups, and Create. Then run this again.",
     );
 
+  // Repoint stale stream URLs to the live tunnel base, if one was passed.
+  let repointed = 0;
+  if (REPOINT_BASE) {
+    for (const p of plan) {
+      const want = `${REPOINT_BASE}/${p.mount}`;
+      if (p.sourceUrl === want) continue;
+      try {
+        await api("PATCH", `/admin/bridges/${p.id}`, { token, body: { sourceUrl: want } });
+        p.sourceUrl = want;
+        repointed++;
+      } catch (e) {
+        console.warn(`  ! could not repoint ${p.channel} (TG ${p.tgid}): ${e.message}`);
+      }
+    }
+  }
+
   const withPorts = writeArtifacts(ROOT, cfg, plan);
 
   console.log(`\n  ✓ Synced ${withPorts.length} talkgroup(s) from SafeT:\n`);
   for (const p of withPorts)
     console.log(`    • ${String(p.channel).padEnd(18)} TGID ${String(p.tgid).padEnd(6)} udp:${p.udpPort} -> /${p.mount}`);
+  if (REPOINT_BASE)
+    console.log(`\n  ↻ Repointed ${repointed} bridge URL(s) to ${REPOINT_BASE}`);
   if (skipped.length)
     console.log(`\n  (ignored ${skipped.length} non-SDR bridge(s): ${skipped.join(", ")})`);
   console.log("");
