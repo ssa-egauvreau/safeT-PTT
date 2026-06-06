@@ -44,9 +44,21 @@ trap cleanup EXIT INT TERM
 
 echo "[1/3] Icecast..."
 mkdir -p /tmp/icecast-logs
+# Clear any stale icecast/streamers from a previous run and wait for port 8000
+# to free up first. Ubuntu's icecast2 SEGFAULTS instead of erroring when it
+# can't bind the port, so a leftover instance would crash this start.
+pkill -9 icecast2 2>/dev/null || true
+pkill -9 -f "icecast://source" 2>/dev/null || true
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  ss -ltn 2>/dev/null | grep -q ':8000 ' || break
+  sleep 1
+done
 icecast2 -c icecast/icecast.xml >/tmp/sdr-icecast.log 2>&1 &
 PIDS+=($!)
 sleep 2
+if ! ss -ltn 2>/dev/null | grep -q ':8000 '; then
+  echo "  ✗ Icecast failed to bind :8000 (see /tmp/sdr-icecast.log)." >&2
+fi
 
 echo "[2/3] talkgroup streamers (ffmpeg)..."
 bash generated/stream-talkgroups.sh >/tmp/sdr-streamers.log 2>&1 &
