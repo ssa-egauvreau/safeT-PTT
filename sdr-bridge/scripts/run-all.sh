@@ -43,7 +43,8 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "[1/3] Icecast..."
-icecast2 -c icecast/icecast.xml >/tmp/sdr-icecast.log 2>&1 &
+mkdir -p /tmp/icecast-logs
+sudo icecast2 -c icecast/icecast.xml >/tmp/sdr-icecast.log 2>&1 &
 PIDS+=($!)
 sleep 2
 
