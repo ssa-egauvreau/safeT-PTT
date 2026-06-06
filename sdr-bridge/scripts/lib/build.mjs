@@ -54,7 +54,7 @@ function buildTrunkConfig(cfg, plan) {
     plugins: [
       {
         name: "simplestream",
-        library: "libsimplestream_plugin.so",
+        library: "/usr/local/lib/trunk-recorder/libsimplestream.so",
         streams: plan.map((p) => ({
           TGID: Number(p.tgid),
           address: "127.0.0.1",
@@ -80,7 +80,6 @@ function buildIcecastXml(cfg, plan) {
     <client-timeout>30</client-timeout>
     <header-timeout>15</header-timeout>
     <source-timeout>30</source-timeout>
-    <burst-on-connect>1</burst-on-connect>
     <burst-size>65535</burst-size>
   </limits>
   <authentication>
@@ -95,7 +94,7 @@ function buildIcecastXml(cfg, plan) {
   </listen-socket>
   <fileserve>0</fileserve>
   <paths>
-    <logdir>/var/log/icecast2</logdir>
+    <logdir>/tmp/icecast-logs</logdir>
     <webroot>/usr/share/icecast2/web</webroot>
     <adminroot>/usr/share/icecast2/admin</adminroot>
   </paths>
