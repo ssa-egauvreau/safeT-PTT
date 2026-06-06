@@ -80,7 +80,7 @@ function buildIcecastXml(cfg, plan) {
     <client-timeout>30</client-timeout>
     <header-timeout>15</header-timeout>
     <source-timeout>30</source-timeout>
-    <burst-size>65535</burst-size>
+    <burst-size>0</burst-size>
   </limits>
   <authentication>
     <source-password>${ice.sourcePassword ?? "hackme"}</source-password>
@@ -138,6 +138,10 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 ${stanzas || "echo 'No talkgroups to stream.'"}
+
+# Prime all ffmpeg→Icecast connections so every mount is live before the first call.
+# Sends 1 s of silence to each UDP port; ffmpeg's amix unblocks and connects immediately.
+(sleep 2 && python3 -c "import socket; [socket.socket(socket.AF_INET,socket.SOCK_DGRAM).sendto(bytes(16000),('127.0.0.1',p)) for p in [${plan.map((p) => p.udpPort).join(",")}]]") &
 
 echo "Streaming ${plan.length} talkgroup mount(s) to icecast://${iceHost}:${icePort}/  (Ctrl-C to stop)"
 wait
