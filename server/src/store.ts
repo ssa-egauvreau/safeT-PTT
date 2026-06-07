@@ -3,6 +3,12 @@ import type { PoolClient } from "pg";
 import { getPool, requirePool, DEFAULT_AGENCY_SLUG } from "./db.js";
 import { hashPassword, type Role } from "./auth.js";
 import { EMERGENCY_CHANNEL_NAME_SQL_REGEX } from "./emergencyChannels.js";
+import {
+  isEmergencyLifecycleState,
+  nextEmergencyState,
+  type EmergencyTransition,
+  type EmergencyTransitionError,
+} from "./emergencyLifecycle.js";
 import { coerceVoiceCodec, type VoiceCodec } from "./voiceCodecs.js";
 
 export type Permission = "talk_priority" | "talk" | "listen_only";
@@ -1437,11 +1443,18 @@ export interface AlertRow {
   created_at: string;
   cleared_by: string | null;
   cleared_at: string | null;
+  /** Emergency lifecycle: 'active' | 'acknowledged' | 'resolved' (pages stay 'active'). */
+  lifecycle_state: string;
+  ack_by_user_id: number | null;
+  ack_at: string | null;
+  resolved_by_user_id: number | null;
+  resolved_at: string | null;
 }
 
 const ALERT_COLS =
   "id, kind, channel_name, target_unit, from_user_id, from_name, from_unit, message, " +
-  "active, created_at, cleared_by, cleared_at";
+  "active, created_at, cleared_by, cleared_at, " +
+  "lifecycle_state, ack_by_user_id, ack_at, resolved_by_user_id, resolved_at";
 
 export async function createAlert(input: {
   agencyId: number;
@@ -1525,6 +1538,98 @@ export async function clearEmergenciesFromUnit(agencyId: number, unit: string, c
     await appendEmergencyClearedMarker(agencyId, unit, clearedBy);
   }
   return cleared;
+}
+
+/**
+ * Outcome of an emergency lifecycle transition (acknowledge / resolve).
+ * `not_found` and `conflict` map to HTTP 404 / 409 at the route layer.
+ */
+export type EmergencyTransitionOutcome =
+  | { status: "ok"; alert: AlertRow }
+  | { status: "not_found" }
+  | { status: "conflict"; reason: EmergencyTransitionError; current: string };
+
+/**
+ * Explains why a conditional lifecycle UPDATE matched no rows: the emergency
+ * either doesn't exist in this agency (404) or is in a state the transition
+ * isn't legal from (409). Best-effort — the atomic UPDATE is the real guard;
+ * this only shapes the error a beaten caller sees.
+ */
+async function classifyEmergencyMiss(
+  id: number,
+  agencyId: number,
+  transition: EmergencyTransition,
+): Promise<EmergencyTransitionOutcome> {
+  const res = await requirePool().query<{ lifecycle_state: string }>(
+    `SELECT lifecycle_state FROM alerts WHERE id = $1 AND agency_id = $2 AND kind = 'emergency';`,
+    [id, agencyId],
+  );
+  const current = res.rows[0]?.lifecycle_state;
+  if (current === undefined) {
+    return { status: "not_found" };
+  }
+  const decision = isEmergencyLifecycleState(current)
+    ? nextEmergencyState(current, transition)
+    : ({ ok: false, reason: "invalid_state_transition" } as const);
+  // If the decision says the move is legal yet the UPDATE still matched nothing,
+  // another request transitioned the row between our UPDATE and this read — treat
+  // it as a conflict rather than reporting success we didn't actually perform.
+  const reason: EmergencyTransitionError = decision.ok
+    ? "invalid_state_transition"
+    : decision.reason;
+  return { status: "conflict", reason, current };
+}
+
+/**
+ * Acknowledge an active emergency — first acknowledger wins. The `WHERE
+ * lifecycle_state = 'active'` clause makes this atomic: a concurrent second ACK
+ * matches zero rows and is reported as a conflict.
+ */
+export async function acknowledgeEmergency(
+  id: number,
+  agencyId: number,
+  ackByUserId: number,
+): Promise<EmergencyTransitionOutcome> {
+  const res = await requirePool().query<AlertRow>(
+    `UPDATE alerts SET lifecycle_state = 'acknowledged', ack_by_user_id = $3, ack_at = now()
+     WHERE id = $1 AND agency_id = $2 AND kind = 'emergency' AND lifecycle_state = 'active'
+     RETURNING ${ALERT_COLS};`,
+    [id, agencyId, ackByUserId],
+  );
+  const row = res.rows[0];
+  if (row) {
+    return { status: "ok", alert: row };
+  }
+  return classifyEmergencyMiss(id, agencyId, "acknowledge");
+}
+
+/**
+ * Resolve an acknowledged emergency. Requires `lifecycle_state = 'acknowledged'`
+ * (you cannot resolve one nobody owns, nor re-resolve a closed one), and also
+ * flips the legacy `active`/`cleared_*` columns + appends a cleared marker so
+ * polling radios learn the emergency ended — same as a manual clear.
+ */
+export async function resolveEmergency(
+  id: number,
+  agencyId: number,
+  resolvedByUserId: number,
+  resolvedByName: string,
+): Promise<EmergencyTransitionOutcome> {
+  const res = await requirePool().query<AlertRow>(
+    `UPDATE alerts SET lifecycle_state = 'resolved', resolved_by_user_id = $3,
+       resolved_at = now(), active = FALSE, cleared_by = $4, cleared_at = now()
+     WHERE id = $1 AND agency_id = $2 AND kind = 'emergency' AND lifecycle_state = 'acknowledged'
+     RETURNING ${ALERT_COLS};`,
+    [id, agencyId, resolvedByUserId, resolvedByName],
+  );
+  const row = res.rows[0];
+  if (row) {
+    if (row.from_unit) {
+      await appendEmergencyClearedMarker(agencyId, row.from_unit, resolvedByName);
+    }
+    return { status: "ok", alert: row };
+  }
+  return classifyEmergencyMiss(id, agencyId, "resolve");
 }
 
 /** Alerts addressed to a radio (direct, its channel, or broadcast) newer than `sinceId`. */
