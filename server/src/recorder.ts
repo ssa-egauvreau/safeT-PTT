@@ -3,7 +3,7 @@
 
 import { getPool } from "./db.js";
 import { insertTransmission } from "./store.js";
-import { encodeWavPcm16 } from "./wav.js";
+import { encodeWavPcm16, upsample8kTo16k } from "./wav.js";
 import { enqueueTranscription } from "./transcribe.js";
 import { isAiDispatchChannelCached } from "./aiDispatch/channelCache.js";
 import { createImbeDecoder } from "./imbeServerCodec.js";
@@ -125,8 +125,17 @@ async function finalize(rec: ActiveRecording): Promise<void> {
   }
 }
 
-/** Feeds one accepted relay frame into the recorder. Call after the frame is broadcast. */
-export function recordFrame(attr: FrameAttribution, payload: Buffer): void {
+/**
+ * Feeds one accepted relay frame into the recorder. Call after the frame is
+ * broadcast. [pcmSampleRate] applies only to the clear-PCM sideband (raw, no
+ * codec magic): an 8 kHz sideband is upsampled to [SAMPLE_RATE] so the stored
+ * recording is always 16 kHz. Vocoded frames ignore it (decoders define rate).
+ */
+export function recordFrame(
+  attr: FrameAttribution,
+  payload: Buffer,
+  pcmSampleRate: number = SAMPLE_RATE,
+): void {
   if (!getPool() || payload.length === 0) {
     return;
   }
@@ -193,7 +202,9 @@ export function recordFrame(attr: FrameAttribution, payload: Buffer): void {
     }
     pcm = decoded;
   } else {
-    pcm = payload;
+    // Raw clear-PCM sideband. Bring a downsampled (8 kHz) sideband back up to
+    // 16 kHz so every stored recording shares one sample rate.
+    pcm = pcmSampleRate === 8000 ? upsample8kTo16k(payload) : payload;
   }
   // ws may reuse the frame buffer — copy before retaining it.
   rec.chunks.push(Buffer.from(pcm));

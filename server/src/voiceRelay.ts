@@ -50,10 +50,24 @@ import {
 
 /** Sideband PCM for transmission log / AI — not broadcast (pairs with on-air IMBE). */
 const LISTEN_PCM_MAGIC_0 = 0xf6;
-const LISTEN_PCM_MAGIC_1 = 0xac;
+/** 16 kHz clear-PCM sideband (legacy / iOS / web clients). */
+const LISTEN_PCM_MAGIC_1_16K = 0xac;
+/** 8 kHz clear-PCM sideband — Android downsamples the sideband to halve its
+ *  cellular uplink. The recorder upsamples it back to 16 kHz on receipt so the
+ *  stored recording, transcription and playback paths are unchanged. */
+const LISTEN_PCM_MAGIC_1_8K = 0xad;
 
 function isListenPcmFrame(payload: Buffer): boolean {
-  return payload.length >= 4 && payload[0] === LISTEN_PCM_MAGIC_0 && payload[1] === LISTEN_PCM_MAGIC_1;
+  return (
+    payload.length >= 4 &&
+    payload[0] === LISTEN_PCM_MAGIC_0 &&
+    (payload[1] === LISTEN_PCM_MAGIC_1_16K || payload[1] === LISTEN_PCM_MAGIC_1_8K)
+  );
+}
+
+/** Sample rate the sideband body carries, from its magic. */
+function listenPcmSampleRate(payload: Buffer): number {
+  return payload[1] === LISTEN_PCM_MAGIC_1_8K ? 8000 : 16000;
 }
 
 function listenPcmBody(payload: Buffer): Buffer {
@@ -1339,6 +1353,7 @@ export function attachVoiceRelay(
         // and fragment the real talker's recording (see channelAirBlocksRecord).
         if (isListenPcmFrame(payload)) {
           const pcm = listenPcmBody(payload);
+          const pcmRate = listenPcmSampleRate(payload);
           if (pcm.length > 0) {
             if (meta.simulcastTargets) {
               for (const target of meta.simulcastTargets) {
@@ -1355,10 +1370,11 @@ export function attachVoiceRelay(
                     recordListenPcm: true,
                   },
                   pcm,
+                  pcmRate,
                 );
               }
             } else if (meta.channelKey && !channelAirBlocksRecord(meta.channelKey, ws)) {
-              recordFrame(frameAttribution(meta), pcm);
+              recordFrame(frameAttribution(meta), pcm, pcmRate);
             }
           }
           return;

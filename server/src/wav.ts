@@ -21,6 +21,23 @@ export function encodeWavPcm16(pcm: Buffer, sampleRate: number): Buffer {
   return Buffer.concat([header, pcm]);
 }
 
+/**
+ * Duplicate-upsamples 8 kHz mono PCM-16 LE to 16 kHz (each sample emitted
+ * twice). Used by the recorder to bring a downsampled clear-PCM sideband back
+ * to the canonical 16 kHz recording rate, so the WAV / transcription / playback
+ * paths stay rate-agnostic. Mirrors the Android RX duplicate upsample.
+ */
+export function upsample8kTo16k(pcm8k: Buffer): Buffer {
+  const samples = pcm8k.length >> 1;
+  const out = Buffer.allocUnsafe(samples * 4);
+  for (let i = 0; i < samples; i++) {
+    const s = pcm8k.readInt16LE(i * 2);
+    out.writeInt16LE(s, i * 4);
+    out.writeInt16LE(s, i * 4 + 2);
+  }
+  return out;
+}
+
 /** Reads a PCM-16 WAV back into normalized Float32 samples (for the transcriber). */
 export function decodeWavToFloat32(wav: Buffer): Float32Array {
   let dataStart = WAV_HEADER_BYTES;
