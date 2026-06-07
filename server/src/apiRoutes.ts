@@ -28,10 +28,12 @@ import { coerceVoiceCodec, isVoiceCodec, type VoiceCodec } from "./voiceCodecs.j
 import { getBridgeStatus } from "./bridgeWorker.js";
 import {
   AGENCY_ROLES,
+  acknowledgeEmergency,
   bumpTokenGeneration,
   countActiveAdmins,
   clearAlert,
   clearEmergenciesFromUnit,
+  resolveEmergency,
   createAgencyWithAdmin,
   createAlert,
   createChannel,
@@ -3536,6 +3538,72 @@ export function createApiRouter(): Router {
         ip: clientIp(req),
       });
       res.json({ alert });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Emergency lifecycle: acknowledge (first acknowledger wins) then resolve.
+  // Both are agency-scoped — an id outside the caller's agency reads as 404.
+  router.post("/alerts/:id/ack", requireAgencyMember, async (req, res) => {
+    try {
+      const me = req.authUser!;
+      const agencyId = me.agencyId!;
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id)) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      const outcome = await acknowledgeEmergency(id, agencyId, me.id);
+      if (outcome.status === "not_found") {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      if (outcome.status === "conflict") {
+        res.status(409).json({ error: outcome.reason, state: outcome.current });
+        return;
+      }
+      await writeAudit({
+        agencyId,
+        actorUserId: me.id,
+        actorName: me.username,
+        action: "alert_acknowledge",
+        target: String(id),
+        ip: clientIp(req),
+      });
+      res.json({ alert: outcome.alert });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.post("/alerts/:id/resolve", requireAgencyMember, async (req, res) => {
+    try {
+      const me = req.authUser!;
+      const agencyId = me.agencyId!;
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id)) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      const outcome = await resolveEmergency(id, agencyId, me.id, me.displayName);
+      if (outcome.status === "not_found") {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      if (outcome.status === "conflict") {
+        res.status(409).json({ error: outcome.reason, state: outcome.current });
+        return;
+      }
+      await writeAudit({
+        agencyId,
+        actorUserId: me.id,
+        actorName: me.username,
+        action: "alert_resolve",
+        target: String(id),
+        ip: clientIp(req),
+      });
+      res.json({ alert: outcome.alert });
     } catch (error) {
       fail(res, error);
     }

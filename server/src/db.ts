@@ -258,6 +258,24 @@ export async function ensureSchema(): Promise<void> {
     );
   `);
   await p.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS agency_id INT REFERENCES agencies(id) ON DELETE CASCADE;`);
+  // Emergency lifecycle (active → acknowledged → resolved). The legacy `active`
+  // / `cleared_*` columns stay (radio inbox polling depends on them); these add
+  // the dispatcher-facing workflow on top. `state` defaults to 'active' so every
+  // existing emergency row is valid the instant the column appears.
+  await p.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS lifecycle_state TEXT NOT NULL DEFAULT 'active';`);
+  await p.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_by_user_id INT REFERENCES users(id) ON DELETE SET NULL;`);
+  await p.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_at TIMESTAMPTZ;`);
+  await p.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS resolved_by_user_id INT REFERENCES users(id) ON DELETE SET NULL;`);
+  await p.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;`);
+  // Guard the state column at the DB layer too (belt-and-suspenders alongside the
+  // app-level state machine). ADD CONSTRAINT has no IF NOT EXISTS, so gate on
+  // pg_constraint to keep this idempotent across boots.
+  await p.query(`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'alerts_lifecycle_state_chk') THEN
+      ALTER TABLE alerts ADD CONSTRAINT alerts_lifecycle_state_chk
+        CHECK (lifecycle_state IN ('active', 'acknowledged', 'resolved'));
+    END IF;
+  END $$;`);
 
   // Friendly labels for radio unit IDs, scoped per agency.
   await p.query(`
