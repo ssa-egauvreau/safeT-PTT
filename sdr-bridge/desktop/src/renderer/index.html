@@ -90,6 +90,28 @@
           </label>
         </div>
 
+        <h2>Second dongle (optional)</h2>
+        <label class="toggle">
+          <input id="dongle2on" type="checkbox" />
+          <span>I have a second RTL-SDR (wider coverage, or a UHF/VHF band)</span>
+        </label>
+        <small class="block">Both dongles run together — each covers its own ~2 MHz window, so you can span a wider band than one dongle alone (e.g. the full OC&nbsp;CCCS spread), or sit the second one on another band.</small>
+        <div id="dongle2fields" class="grid2" hidden>
+          <label>Center frequency (MHz)
+            <input id="d2center" type="number" step="0.0001" placeholder="859.8" />
+          </label>
+          <label>Gain (dB)
+            <input id="d2gain" type="number" step="0.1" placeholder="40" />
+          </label>
+          <label>PPM correction
+            <input id="d2ppm" type="number" step="1" placeholder="0" />
+          </label>
+          <label>Device index
+            <input id="d2device" type="number" step="1" placeholder="1" />
+            <small>0 = first dongle, 1 = second. Leave 1 unless Windows orders them oddly.</small>
+          </label>
+        </div>
+
         <h2>Streaming passwords (Icecast)</h2>
         <div class="grid2">
           <label>Source password

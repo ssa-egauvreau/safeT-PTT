@@ -26,36 +26,61 @@ export function tgidFromMount(mountOrUrl) {
 }
 
 function buildTrunkConfig(cfg, plan) {
-  const sdr = cfg.sdr ?? {};
-  const sys = cfg.system ?? {};
-  const shortName = sys.shortName ?? "occcs";
+  // Multiple dongles and multiple systems are both supported. The friendly
+  // single-dongle / single-system form (`sdr`, `system`) still works; if the
+  // `sources` / `systems` arrays are present they win. Each source (dongle)
+  // covers its own ~2 MHz window, so two dongles span a wider band — or a
+  // second one can sit on a different band entirely (UHF/VHF) for a 2nd system.
+  const sourcesCfg =
+    Array.isArray(cfg.sources) && cfg.sources.length ? cfg.sources : [cfg.sdr ?? {}];
+  const systemsCfg =
+    Array.isArray(cfg.systems) && cfg.systems.length ? cfg.systems : [cfg.system ?? {}];
+
+  // The talkgroups you picked in SafeT belong to the PRIMARY (first) system;
+  // simplestream tags its UDP streams with that system's shortName.
+  const primaryShort = systemsCfg[0]?.shortName ?? "occcs";
+
+  const sources = sourcesCfg.map((s, i) => ({
+    center: s.centerHz ?? 854000000,
+    rate: s.rateHz ?? 2400000,
+    gain: s.gain ?? 0,
+    ppm: s.ppm ?? 0,
+    digitalRecorders: Math.max(4, plan.length),
+    driver: "osmosdr",
+    // Default each dongle to its array index (rtl=0, rtl=1, …). Set `device`
+    // to a serial (e.g. "00000101") if Windows enumerates them inconsistently.
+    device: `rtl=${s.device ?? i}`,
+  }));
+
+  const systems = systemsCfg.map((s, i) => {
+    const isPrimary = i === 0;
+    const sys = {
+      shortName: s.shortName ?? (isPrimary ? "occcs" : `sys${i}`),
+      type: s.type ?? "p25",
+      modulation: s.modulation ?? "qpsk",
+      talkgroupsFile: "talkgroups.csv",
+    };
+    // Trunked systems lock a control channel; conventional (often the simplest
+    // way to do a VHF/UHF system) lists its channels directly.
+    if (Array.isArray(s.channelsHz) && s.channelsHz.length) {
+      sys.channels = s.channelsHz;
+    } else {
+      sys.control_channels = s.controlChannelsHz ?? [];
+    }
+    // Primary system records the SafeT talkgroups; extra systems use whatever
+    // talkgroup ids you list for them in config.
+    sys.talkgroups = isPrimary ? plan.map((p) => Number(p.tgid)) : s.talkgroups ?? [];
+    return sys;
+  });
+
   return {
     ver: 2,
     // REQUIRED for the simplestream plugin: hands decoded call audio to plugins.
     // Defaults to false — and with it off, trunk-recorder still records calls
     // but streams NOTHING to the UDP ports, so no audio reaches Icecast/SafeT.
     audioStreaming: true,
-    sources: [
-      {
-        center: sdr.centerHz ?? 854000000,
-        rate: sdr.rateHz ?? 2400000,
-        gain: sdr.gain ?? 0,
-        ppm: sdr.ppm ?? 0,
-        digitalRecorders: Math.max(4, plan.length),
-        driver: "osmosdr",
-        device: `rtl=${sdr.device ?? 0}`,
-      },
-    ],
-    systems: [
-      {
-        shortName,
-        type: sys.type ?? "p25",
-        modulation: sys.modulation ?? "qpsk",
-        control_channels: sys.controlChannelsHz ?? [],
-        talkgroupsFile: "talkgroups.csv",
-        talkgroups: plan.map((p) => Number(p.tgid)),
-      },
-    ],
+    sources,
+    systems,
     plugins: [
       {
         name: "simplestream",
@@ -65,7 +90,7 @@ function buildTrunkConfig(cfg, plan) {
           address: "127.0.0.1",
           port: p.udpPort,
           sendTGID: false,
-          shortName,
+          shortName: primaryShort,
         })),
       },
     ],

@@ -23,19 +23,21 @@ function Write-Result([string]$text) {
   Write-Output $text
 }
 
-function Find-Busid {
+function Find-Busids {
+  # Return the bus id of EVERY RTL-SDR (supports multiple dongles).
+  $ids = New-Object System.Collections.Generic.List[string]
   $list = usbipd list 2>$null
-  # Prefer an exact Realtek RTL2832/2838 hardware-id match.
   foreach ($line in $list) {
-    if ($line -match '^\s*(\d+-\d+)\s+0bda:283[28]') { return $matches[1] }
+    if ($line -match '^\s*(\d+-\d+)\s+0bda:283[28]') { $ids.Add($matches[1]) }
   }
-  # Fall back to a name match for odd re-brands.
-  foreach ($line in $list) {
-    if ($line -match '^\s*(\d+-\d+)\s' -and ($line -match 'RTL283|RTL-SDR|NESDR|Bulk-In, Interface')) {
-      return $matches[1]
+  if ($ids.Count -eq 0) {
+    foreach ($line in $list) {
+      if ($line -match '^\s*(\d+-\d+)\s' -and ($line -match 'RTL283|RTL-SDR|NESDR|Bulk-In, Interface')) {
+        $ids.Add($matches[1])
+      }
     }
   }
-  return $null
+  return ($ids | Select-Object -Unique)
 }
 
 if (-not (Get-Command usbipd -ErrorAction SilentlyContinue)) {
@@ -43,34 +45,38 @@ if (-not (Get-Command usbipd -ErrorAction SilentlyContinue)) {
   exit 3
 }
 
-$busid = Find-Busid
-if (-not $busid) {
+$busids = @(Find-Busids)
+if ($busids.Count -eq 0) {
   Write-Result "ERROR no-device"
   exit 2
 }
 
 if ($Action -eq "detach") {
-  & usbipd detach --busid $busid 2>$null
-  Write-Result "DETACHED $busid"
+  foreach ($b in $busids) { & usbipd detach --busid $b 2>$null }
+  Write-Result ("DETACHED " + ($busids -join ","))
   exit 0
 }
 
-# attach
-& usbipd bind --busid $busid 2>$null    # harmless if already bound / shared
-& usbipd attach --wsl --busid $busid 2>&1 | Out-Null
-$ok = ($LASTEXITCODE -eq 0)
-if (-not $ok) {
-  # Older usbipd syntax.
-  & usbipd wsl attach --busid $busid 2>&1 | Out-Null
+# attach every RTL-SDR found
+$attached = New-Object System.Collections.Generic.List[string]
+$failed = New-Object System.Collections.Generic.List[string]
+foreach ($b in $busids) {
+  & usbipd bind --busid $b 2>$null    # harmless if already bound / shared
+  & usbipd attach --wsl --busid $b 2>&1 | Out-Null
   $ok = ($LASTEXITCODE -eq 0)
+  if (-not $ok) { & usbipd wsl attach --busid $b 2>&1 | Out-Null; $ok = ($LASTEXITCODE -eq 0) }
+  if ($ok) { $attached.Add($b) } else { $failed.Add($b) }
 }
 
-if ($ok) {
-  Write-Result "ATTACHED $busid"
+if ($attached.Count -gt 0 -and $failed.Count -eq 0) {
+  Write-Result ("ATTACHED " + ($attached -join ","))
+  exit 0
+} elseif ($attached.Count -gt 0) {
+  Write-Result ("PARTIAL attached " + ($attached -join ",") + " failed " + ($failed -join ","))
   exit 0
 } else {
-  # Most common cause on this hardware: two devices share one bus id, which makes
-  # usbipd throw. Moving the dongle to a different USB port gives it its own id.
-  Write-Result "ERROR attach-failed $busid (try a different USB port)"
+  # Most common cause: two USB devices share one bus id, which makes usbipd
+  # throw. Moving the dongle to a different USB port gives it its own id.
+  Write-Result ("ERROR attach-failed " + ($failed -join ",") + " (try a different USB port)")
   exit 1
 }

@@ -31,15 +31,25 @@ function mhz(hz) {
 
 async function loadSettings() {
   const cfg = (await window.api.getConfig()) || {};
-  const sdr = cfg.sdr || {};
-  const sys = cfg.system || {};
+  const sources = Array.isArray(cfg.sources) && cfg.sources.length ? cfg.sources : [cfg.sdr || {}];
+  const d1 = sources[0] || {};
+  const d2 = sources[1] || null;
+  const sys = (Array.isArray(cfg.systems) && cfg.systems[0]) || cfg.system || {};
   const ice = cfg.icecast || {};
   const safet = cfg.safet || {};
 
-  $("centerMHz").value = mhz(sdr.centerHz);
-  $("gain").value = sdr.gain ?? "";
-  $("ppm").value = sdr.ppm ?? "";
-  $("rateHz").value = sdr.rateHz ?? 2400000;
+  $("centerMHz").value = mhz(d1.centerHz);
+  $("gain").value = d1.gain ?? "";
+  $("ppm").value = d1.ppm ?? "";
+  $("rateHz").value = d1.rateHz ?? 2400000;
+
+  // second dongle
+  $("dongle2on").checked = !!d2;
+  $("dongle2fields").hidden = !d2;
+  $("d2center").value = d2 ? mhz(d2.centerHz) : "";
+  $("d2gain").value = d2 && d2.gain != null ? d2.gain : "";
+  $("d2ppm").value = d2 && d2.ppm != null ? d2.ppm : "";
+  $("d2device").value = d2 && d2.device != null ? d2.device : 1;
   $("controlMHz").value = (sys.controlChannelsHz || []).map((h) => +(h / MHZ).toFixed(4)).join(", ");
   $("modulation").value = sys.modulation || "qpsk";
   $("icecastSource").value = ice.sourcePassword || "";
@@ -71,13 +81,25 @@ async function saveSettings() {
   msg.className = "save-msg";
   msg.textContent = "Saving…";
 
+  const num = (id) => ($(id).value !== "" ? Number($(id).value) : undefined);
+  const mhzToHz = (id) => ($(id).value ? Math.round(Number($(id).value) * MHZ) : undefined);
+
+  // Dongle 1 (always present) + optional dongle 2 -> a `sources` array.
+  const sources = [
+    { device: 0, centerHz: mhzToHz("centerMHz"), gain: num("gain"), ppm: num("ppm"), rateHz: num("rateHz") },
+  ];
+  if ($("dongle2on").checked) {
+    sources.push({
+      device: $("d2device").value !== "" ? Number($("d2device").value) : 1,
+      centerHz: mhzToHz("d2center"),
+      gain: num("d2gain"),
+      ppm: num("d2ppm"),
+      rateHz: num("rateHz"),
+    });
+  }
+
   const patch = {
-    sdr: {
-      centerHz: $("centerMHz").value ? Math.round(Number($("centerMHz").value) * MHZ) : undefined,
-      gain: $("gain").value !== "" ? Number($("gain").value) : undefined,
-      ppm: $("ppm").value !== "" ? Number($("ppm").value) : undefined,
-      rateHz: $("rateHz").value ? Number($("rateHz").value) : undefined,
-    },
+    sources,
     system: {
       controlChannelsHz: parseControl($("controlMHz").value),
       modulation: $("modulation").value,
@@ -92,8 +114,10 @@ async function saveSettings() {
       password: $("safetPass").value || undefined,
     },
   };
-  // Drop undefined leaves so we never overwrite a value with nothing.
-  for (const sect of Object.values(patch)) {
+  // Drop undefined leaves so we never overwrite a value with nothing
+  // (skip `sources` — it's an array we want written whole).
+  for (const [key, sect] of Object.entries(patch)) {
+    if (key === "sources" || typeof sect !== "object") continue;
     for (const k of Object.keys(sect)) if (sect[k] === undefined) delete sect[k];
   }
 
@@ -116,6 +140,9 @@ async function saveSettings() {
   }
 }
 $("saveBtn").addEventListener("click", saveSettings);
+$("dongle2on").addEventListener("change", () => {
+  $("dongle2fields").hidden = !$("dongle2on").checked;
+});
 
 // ---- start / stop --------------------------------------------------------
 function setRunState(state) {
