@@ -20,6 +20,13 @@ const CURRENT_LAYOUT_VERSION = 17;
 const MAX_STATE_STORAGE_BYTES = 256 * 1024;
 const MAX_OPEN_CHANNELS = 16;
 const MAX_DOCKED_CHANNELS = 12;
+/**
+ * Effective caps applied on every commit to keep Mission Control stable — too many tiles at once
+ * can freeze the tab (black screen) on reload. Kept below the looser dedup ceilings above. Raise
+ * cautiously and re-test reload performance with the higher counts.
+ */
+const MAX_SAFE_DOCKED_CHANNELS = 8;
+const MAX_SAFE_OPEN_CHANNELS = 10;
 const COMMIT_STORM_LIMIT = 24;
 const COMMIT_STORM_WINDOW_MS = 2000;
 
@@ -330,9 +337,9 @@ function normalizeConsoleState(input: ConsoleState): ConsoleState {
   // truncate a user's docked / monitored channels.
   let safeOpen = open;
   let safeExpanded = expanded;
-  if (safeExpanded.length > 6 || safeOpen.length > 8) {
-    safeExpanded = safeExpanded.slice(0, 6);
-    safeOpen = safeOpen.slice(0, 8);
+  if (safeExpanded.length > MAX_SAFE_DOCKED_CHANNELS || safeOpen.length > MAX_SAFE_OPEN_CHANNELS) {
+    safeExpanded = safeExpanded.slice(0, MAX_SAFE_DOCKED_CHANNELS);
+    safeOpen = safeOpen.slice(0, MAX_SAFE_OPEN_CHANNELS);
     workspaceLayout = workspaceLayoutForExpanded(safeExpanded, workspaceLayout);
   }
 
