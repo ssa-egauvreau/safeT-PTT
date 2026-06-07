@@ -28,8 +28,13 @@ export function tgidFromMount(mountOrUrl) {
 function buildTrunkConfig(cfg, plan) {
   const sdr = cfg.sdr ?? {};
   const sys = cfg.system ?? {};
+  const shortName = sys.shortName ?? "occcs";
   return {
     ver: 2,
+    // REQUIRED for the simplestream plugin: hands decoded call audio to plugins.
+    // Defaults to false — and with it off, trunk-recorder still records calls
+    // but streams NOTHING to the UDP ports, so no audio reaches Icecast/SafeT.
+    audioStreaming: true,
     sources: [
       {
         center: sdr.centerHz ?? 854000000,
@@ -43,7 +48,7 @@ function buildTrunkConfig(cfg, plan) {
     ],
     systems: [
       {
-        shortName: sys.shortName ?? "occcs",
+        shortName,
         type: sys.type ?? "p25",
         modulation: sys.modulation ?? "qpsk",
         control_channels: sys.controlChannelsHz ?? [],
@@ -60,6 +65,7 @@ function buildTrunkConfig(cfg, plan) {
           address: "127.0.0.1",
           port: p.udpPort,
           sendTGID: false,
+          shortName,
         })),
       },
     ],
