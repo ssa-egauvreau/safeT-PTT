@@ -51,9 +51,11 @@ test("detectFrameCodec returns null for unknown / short buffers", () => {
   assert.equal(detectFrameCodec(Buffer.alloc(0)), null);
   assert.equal(detectFrameCodec(Buffer.from([0xff])), null);
   assert.equal(detectFrameCodec(Buffer.from([0x00, 0x00, 0x00])), null);
-  // Clear-PCM sideband magic (0xF6 0xAC from voiceRelay.ts) is intentionally
-  // not a codec — it carries unvocoded PCM for the recorder, not for relay.
+  // Clear-PCM sideband magics (0xF6 0xAC = 16 kHz, 0xF6 0xAD = 8 kHz from
+  // voiceRelay.ts) are intentionally not codecs — they carry unvocoded PCM for
+  // the recorder, not for relay.
   assert.equal(detectFrameCodec(Buffer.from([0xf6, 0xac, 0x00])), null);
+  assert.equal(detectFrameCodec(Buffer.from([0xf6, 0xad, 0x00])), null);
 });
 
 test("isVoiceCodec validates admin-supplied strings", () => {

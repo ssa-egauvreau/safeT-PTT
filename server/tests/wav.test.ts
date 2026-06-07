@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { decodeWavToFloat32, encodeWavPcm16 } from "../src/wav.js";
+import { decodeWavToFloat32, encodeWavPcm16, upsample8kTo16k } from "../src/wav.js";
 
 const SR = 16_000;
 
@@ -122,4 +122,18 @@ test("decodeWavToFloat32: clamps a dataLen that overshoots the buffer", () => {
   wav.writeUInt32LE(pcm.length + 10_000, 40);
   const out = decodeWavToFloat32(wav);
   assert.equal(out.length, samples.length);
+});
+
+test("upsample8kTo16k: doubles each sample to convert 8 kHz to 16 kHz", () => {
+  const pcm8k = pcmFromSamples([100, -200, 32767, -32768]);
+  const pcm16k = upsample8kTo16k(pcm8k);
+  // Twice as many bytes, and every source sample appears as an adjacent pair.
+  assert.equal(pcm16k.length, pcm8k.length * 2);
+  const out: number[] = [];
+  for (let i = 0; i < pcm16k.length; i += 2) out.push(pcm16k.readInt16LE(i));
+  assert.deepEqual(out, [100, 100, -200, -200, 32767, 32767, -32768, -32768]);
+});
+
+test("upsample8kTo16k: empty input yields empty output", () => {
+  assert.equal(upsample8kTo16k(Buffer.alloc(0)).length, 0);
 });

@@ -1836,6 +1836,10 @@ class RadioViewModel(
     private suspend fun pollChannelCatalog() {
         while (currentCoroutineContext().isActive) {
             delay(CATALOG_POLL_MS)
+            // Config refresh only matters when someone is looking at the radio.
+            // Off-screen the catalog re-syncs on the next foreground tick; skip
+            // the network call to save cellular data.
+            if (!mainRadioUiVisible) continue
             if (_uiState.value.channelsLoading) continue
             val fresh = try {
                 channelRepository.loadCatalog()
@@ -1859,6 +1863,9 @@ class RadioViewModel(
     private suspend fun pollProfile() {
         while (currentCoroutineContext().isActive) {
             delay(PROFILE_POLL_MS)
+            // Display-name / unit-id edits are rare and only need to show when
+            // the screen is up; skip the poll off-screen to save data.
+            if (!mainRadioUiVisible) continue
             val me = try {
                 radioApi.me()
             } catch (_: Exception) {
@@ -1945,6 +1952,8 @@ class RadioViewModel(
     private suspend fun pollSoundsVersion() {
         while (currentCoroutineContext().isActive) {
             delay(SOUNDS_VERSION_POLL_MS)
+            // Tone-set changes are very rare; only check while on-screen.
+            if (!mainRadioUiVisible) continue
             val version = withContext(Dispatchers.IO) {
                 runCatching { customSoundDownloader.fetchVersion() }.getOrNull()
             } ?: continue
@@ -1960,7 +1969,7 @@ class RadioViewModel(
         var since = 0L
         var primed = false
         while (currentCoroutineContext().isActive) {
-            delay(INBOX_POLL_MS)
+            delay(if (mainRadioUiVisible) INBOX_POLL_MS else INBOX_BG_POLL_MS)
             if (_uiState.value.networkLabel != "ONLINE") continue
             val channel = _uiState.value.channelLabel.trim().takeUnless { it.isEmpty() || it == "----" }
             val response = try {
@@ -2113,11 +2122,21 @@ class RadioViewModel(
     private suspend fun pollTalkHints() {
         while (currentCoroutineContext().isActive) {
             val snapBefore = _uiState.value
+            val visible = mainRadioUiVisible
             val fastPoll =
-                snapBefore.rxAttributedLine.isNotEmpty() ||
-                    snapBefore.activeTalkUnitId.isNotEmpty() ||
-                    snapBefore.isPttPressed
-            delay(if (fastPoll) TALK_ACTIVITY_FAST_POLL_MS else TALK_ACTIVITY_POLL_MS)
+                visible &&
+                    (
+                        snapBefore.rxAttributedLine.isNotEmpty() ||
+                            snapBefore.activeTalkUnitId.isNotEmpty() ||
+                            snapBefore.isPttPressed
+                        )
+            delay(
+                when {
+                    fastPoll -> TALK_ACTIVITY_FAST_POLL_MS
+                    visible -> TALK_ACTIVITY_POLL_MS
+                    else -> TALK_ACTIVITY_BG_POLL_MS
+                },
+            )
             if (_uiState.value.networkLabel == "OFFLINE") {
                 if (_uiState.value.rxAttributedLine.isNotEmpty() ||
                     _uiState.value.activeTalkUnitId.isNotEmpty()
@@ -2405,15 +2424,23 @@ class RadioViewModel(
         const val TALK_ACTIVITY_POLL_MS = 1200L
         /** Faster refresh while someone appears on air (clears stale talker sooner). */
         const val TALK_ACTIVITY_FAST_POLL_MS = 400L
+        /** Backgrounded (screen off / another app on top) talk-activity cadence.
+         *  Voice still arrives over the relay WebSocket; this poll only drives the
+         *  on-screen talker text + RX screen-wake, so it slows hard off-screen to
+         *  cut cellular data (the dominant state for a belt-worn handset). */
+        const val TALK_ACTIVITY_BG_POLL_MS = 5_000L
         const val WAKE_DEBOUNCE_MS = 700L
         const val PRESENCE_POLL_MS = 12_000L
         const val INBOX_POLL_MS = 2_000L
+        /** Backgrounded inbox cadence. Kept short enough that emergency pages /
+         *  10-33 markers still surface within a few seconds while off-screen. */
+        const val INBOX_BG_POLL_MS = 5_000L
         const val STATUS_REFRESH_MS = 2_000L
-        const val SOUNDS_VERSION_POLL_MS = 60_000L
+        const val SOUNDS_VERSION_POLL_MS = 300_000L
         /** Foreground OTA poll while the radio screen is visible (matches [AppUpdater.CHECK_INTERVAL_MS]). */
         const val APP_UPDATE_POLL_MS = 30L * 60 * 1000
-        const val CATALOG_POLL_MS = 15_000L
-        const val PROFILE_POLL_MS = 15_000L
+        const val CATALOG_POLL_MS = 120_000L
+        const val PROFILE_POLL_MS = 120_000L
         const val OFFLINE_BANNER_CYCLE_MS = 2_000L
         const val OFFLINE_TONE_INTERVAL_MS = 15_000L
         const val RECONNECTED_BANNER_MS = 2_000L

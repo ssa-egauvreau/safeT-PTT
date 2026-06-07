@@ -151,8 +151,11 @@ class VoiceRelayTransport(
     @Volatile
     private var currentTxCodec: VoiceCodec = VoiceCodec.DEFAULT
 
-    /** Recording / AI sideband — server records only; not broadcast on the channel. */
-    private val listenPcmMagic = byteArrayOf(0xF6.toByte(), 0xAC.toByte())
+    /** Recording / AI sideband — server records only; not broadcast on the channel.
+     *  0xAD marks an 8 kHz body: we downsample the sideband to halve its cellular
+     *  uplink, and the relay upsamples it back to 16 kHz for storage. 0xAC (16 kHz)
+     *  stays in use by iOS / web clients; the relay accepts both. */
+    private val listenPcmMagic = byteArrayOf(0xF6.toByte(), 0xAD.toByte())
 
     private var pendingUnitId: String = ""
     private var pendingChannelRaw: String = ""
@@ -400,6 +403,26 @@ class VoiceRelayTransport(
         return out
     }
 
+    /**
+     * Downsamples 16 kHz mono PCM-16 LE to 8 kHz by averaging adjacent sample
+     * pairs (a cheap 2-tap low-pass + decimate). Used only for the clear-PCM
+     * transcription sideband, halving its cellular uplink; the relay upsamples
+     * the body back to 16 kHz for storage and Whisper transcribes 8 kHz speech
+     * fine. A trailing odd sample (≤1 per frame) is dropped — inaudible.
+     */
+    private fun downsampleLe16kTo8k(src: ByteArray, length: Int): ByteArray {
+        val inBuf = java.nio.ByteBuffer.wrap(src, 0, length).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        val outSamples = (length / 2) / 2
+        val out = ByteArray(outSamples * 2)
+        val outBuf = java.nio.ByteBuffer.wrap(out).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until outSamples) {
+            val s0 = inBuf.short.toInt()
+            val s1 = inBuf.short.toInt()
+            outBuf.putShort(((s0 + s1) shr 1).toShort())
+        }
+        return out
+    }
+
     /** Last inbound-voice frame timestamp (ns). Used purely to detect a
      *  talk-spurt boundary on the RX side so the post-decode chain can
      *  reset its biquad state before the next talker's first frame. */
@@ -563,10 +586,11 @@ class VoiceRelayTransport(
         // `record_listen_pcm` join ack — that arrives asynchronously, so a talk-spurt
         // keyed before the ack would ship vocoded only and the recorder would store
         // nothing, leaving the transmission silent in the log and invisible to AI dispatch.
-        val side = ByteArray(2 + length)
+        val side8k = downsampleLe16kTo8k(buffer, length)
+        val side = ByteArray(2 + side8k.size)
         side[0] = listenPcmMagic[0]
         side[1] = listenPcmMagic[1]
-        System.arraycopy(buffer, 0, side, 2, length)
+        System.arraycopy(side8k, 0, side, 2, side8k.size)
         sendBinaryWs(active, side)
 
         // A gap between mic frames means a fresh key-up — re-learn the noise floor

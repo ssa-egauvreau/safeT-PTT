@@ -40,6 +40,11 @@ class LocationReporter(
     @Volatile private var running = false
     /** Freshest position known — from a live update or a provider's cached fix. */
     @Volatile private var lastLocation: Location? = null
+    /** Last position actually POSTed to the server, and when, so a parked radio
+     *  stops re-uploading the same coordinates every cycle. */
+    private var lastReported: Location? = null
+    private var lastReportedAtMs: Long = 0L
+    private var lastReportedChannel: String? = null
     private var postJob: Job? = null
 
     // Explicit object (not a lambda): pre-API-30 LocationListener has extra abstract
@@ -125,6 +130,7 @@ class LocationReporter(
         }
         val location = lastLocation?.takeIf { isFreshEnough(it) } ?: return
         val unit = unitId.takeIf { it.isNotBlank() } ?: return
+        if (!shouldReport(location)) return
         radioApi.reportLocation(
             LocationReportDto(
                 unitId = unit,
@@ -136,6 +142,27 @@ class LocationReporter(
                 speedMps = if (location.hasSpeed()) location.speed.toDouble() else null,
             ),
         )
+        // Only mark as reported after a POST that didn't throw, so a failed
+        // upload is retried on the next cycle instead of being suppressed.
+        lastReported = location
+        lastReportedAtMs = System.currentTimeMillis()
+        lastReportedChannel = channel
+    }
+
+    /**
+     * Suppresses redundant uploads for a stationary radio. Reports when the
+     * position has moved at least [MIN_MOVE_METERS] since the last upload, or
+     * when [STATIONARY_KEEPALIVE_MS] has elapsed (a heartbeat so a parked radio
+     * stays inside the dispatch map's stale window). A channel change always
+     * reports so the map's per-channel filter stays correct.
+     */
+    private fun shouldReport(location: Location): Boolean {
+        val previous = lastReported ?: return true
+        if (channel != lastReportedChannel) return true
+        val now = System.currentTimeMillis()
+        if (now - lastReportedAtMs >= STATIONARY_KEEPALIVE_MS) return true
+        if (previous.distanceTo(location) >= MIN_MOVE_METERS) return true
+        return false
     }
 
     /** Most recent cached fix across providers, or null if none is recent enough. */
@@ -161,7 +188,13 @@ class LocationReporter(
     private companion object {
         val PROVIDERS = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
         /** Cadence for both location-update requests and server posts. */
-        const val POST_INTERVAL_MS = 15_000L
+        const val POST_INTERVAL_MS = 60_000L
+        /** A stationary radio still heartbeats its position this often so it stays
+         *  inside the dispatch map's 5-min stale window without re-posting every
+         *  cycle. Kept under [MAX_LOCATION_AGE_MS]. */
+        const val STATIONARY_KEEPALIVE_MS = 4 * 60_000L
+        /** Minimum movement since the last upload before a non-keepalive report. */
+        const val MIN_MOVE_METERS = 25f
         /** Do not report fixes older than this — matches dispatch map "stale" window (5 min). */
         const val MAX_LOCATION_AGE_MS = 5 * 60_000L
     }
