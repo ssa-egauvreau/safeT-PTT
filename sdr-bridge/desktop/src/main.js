@@ -13,6 +13,7 @@ const path = require("node:path");
 const orch = require("./orchestrator");
 
 const startedHidden = process.argv.includes("--hidden");
+const ICON_PATH = path.join(__dirname, "icon.png");
 let win = null;
 let tray = null;
 let isQuitting = false;
@@ -24,6 +25,7 @@ function createWindow() {
     minWidth: 720,
     minHeight: 560,
     title: "SafeT SDR",
+    icon: ICON_PATH,
     backgroundColor: "#0f1419",
     autoHideMenuBar: true,
     show: !startedHidden,
@@ -51,8 +53,8 @@ function createWindow() {
 }
 
 function createTray() {
-  // A 1x1 transparent fallback so the app still works without a packaged icon.
-  const img = nativeImage.createEmpty();
+  let img = nativeImage.createFromPath(ICON_PATH);
+  if (!img.isEmpty()) img = img.resize({ width: 16, height: 16 });
   try {
     tray = new Tray(img);
   } catch {
