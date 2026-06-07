@@ -8,6 +8,7 @@ import {
 import type { Permission, ToneOut, UserChannel } from "../api";
 import { api } from "../api";
 import { VoiceChannelClient, type VoiceState, type ToneOutKind } from "../voice/voiceClient";
+import { scheduleConnect } from "../voice/connectScheduler";
 import { AudioLevelMeter } from "../voice/AudioLevelMeter";
 import { ChannelMemberCount } from "../components/ChannelMemberCount";
 import { ChannelRoster } from "./ChannelRoster";
@@ -188,8 +189,11 @@ export function ChannelPanel({
       setVoiceDetail(null);
       return;
     }
-    connect();
+    // Stagger the initial connect so a reload with many docked channels doesn't open
+    // every AudioContext + WebSocket in the same frame (which can freeze the tab).
+    const cancelScheduled = scheduleConnect(connect);
     return () => {
+      cancelScheduled();
       wantConnectedRef.current = false;
       clearReconnectTimer();
       clientRef.current?.close();

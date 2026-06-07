@@ -9,6 +9,7 @@ import { SectionHeader, type SectionProps } from "./PopOutSection";
 import { keyLabel } from "./consoleShared";
 import {
   dockChannel,
+  MAX_SAFE_DOCKED_CHANNELS,
   placeWorkspaceTile,
   WORKSPACE_GRID_MAX_COLS,
   focusChannel,
@@ -38,18 +39,39 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
   const [loading, setLoading] = useState(true);
   const [simulcastOpen, setSimulcastOpen] = useState(false);
   const [rebindingPtt, setRebindingPtt] = useState(false);
+  const [dockNotice, setDockNotice] = useState<string | null>(null);
   const canSimulcast = user?.role === "admin" || user?.role === "dispatcher";
 
   const dockedChannels = expanded
     .map((id) => channels.find((c) => c.id === id))
     .filter((c): c is UserChannel => !!c);
   const dockedIdSet = new Set(expanded);
+  const workspaceFull = expanded.length >= MAX_SAFE_DOCKED_CHANNELS;
+
+  // Docking is capped to keep the tab from freezing on reload (see consoleStore).
+  // Returns false (and shows a notice) when the cap blocks a new channel — without
+  // this the extra tile would silently disappear on the next commit/reload.
+  function tryDock(id: number, at?: { col: number; row: number }): boolean {
+    if (expanded.includes(id)) {
+      if (at) {
+        placeWorkspaceTile(id, at.col, at.row, WORKSPACE_GRID_MAX_COLS, "large");
+      }
+      return true;
+    }
+    if (expanded.length >= MAX_SAFE_DOCKED_CHANNELS) {
+      setDockNotice(
+        `Mission Control is full — ${MAX_SAFE_DOCKED_CHANNELS} channels max. Undock one to add another.`,
+      );
+      return false;
+    }
+    setDockNotice(null);
+    dockChannel(id, at);
+    return true;
+  }
 
   function dockFromRail(id: number, at?: { col: number; row: number }) {
-    if (!expanded.includes(id)) {
-      dockChannel(id, at);
-    } else if (at) {
-      placeWorkspaceTile(id, at.col, at.row, WORKSPACE_GRID_MAX_COLS, "large");
+    if (!tryDock(id, at)) {
+      return;
     }
     if (!open.includes(id)) {
       setChannelMonitoring(id, true);
@@ -62,8 +84,10 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
       setChannelMonitoring(channelId, false);
       return;
     }
+    if (!tryDock(channelId)) {
+      return;
+    }
     setChannelMonitoring(channelId, true);
-    dockChannel(channelId);
     setPrimaryChannel(channelId);
   }
 
@@ -123,6 +147,16 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // Auto-dismiss the "workspace full" notice so it doesn't linger after the operator
+  // makes room. Re-armed each time a new notice is shown.
+  useEffect(() => {
+    if (!dockNotice) {
+      return;
+    }
+    const t = window.setTimeout(() => setDockNotice(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [dockNotice]);
+
   // PTT-key rebinding: capture the next keypress (Escape cancels). The capture
   // phase + stopPropagation keeps that keypress from also triggering transmit.
   useEffect(() => {
@@ -148,6 +182,7 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
 
       {loading && <div className="empty">Loading…</div>}
       {listError && <div className="banner error">{listError}</div>}
+      {dockNotice && <div className="banner warn compact">{dockNotice}</div>}
       {!loading && !listError && channels.length === 0 && (
         <div className="empty">No channels assigned to this account.</div>
       )}
@@ -163,13 +198,7 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
                   channel={channel}
                   monitoring={open.includes(channel.id)}
                   docked={dockedIdSet.has(channel.id)}
-                  onDock={() => {
-                    dockChannel(channel.id);
-                    if (!open.includes(channel.id)) {
-                      setChannelMonitoring(channel.id, true);
-                    }
-                    setPrimaryChannel(channel.id);
-                  }}
+                  onDock={() => dockFromRail(channel.id)}
                   onToggleMonitor={() => toggleMonitorFromRail(channel.id)}
                   onUndock={
                     dockedIdSet.has(channel.id)
@@ -183,6 +212,13 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
 
           {channels.length > 0 && (
             <div className="channel-rail-footer">
+              <div
+                className={workspaceFull ? "channel-rail-count full" : "channel-rail-count"}
+                title="Channels docked on the Mission Control workspace"
+              >
+                Docked {expanded.length} / {MAX_SAFE_DOCKED_CHANNELS}
+                {workspaceFull && " · full"}
+              </div>
               <div className="kbd-hint">
                 <button
                   className={keyboardOn ? "kbd-toggle on" : "kbd-toggle"}
