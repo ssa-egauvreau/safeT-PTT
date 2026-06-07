@@ -269,21 +269,29 @@ async function startPipeline({ quiet = false } = {}) {
   if (pipelineRunning()) return { ok: true, already: true };
   armed = true;
   let dongleOk = true;
-  let dongleMessage = "Using the dongle attached at login.";
-  if (quiet) {
-    await reattachQuiet();
-  } else {
-    const attach = await attachDongle();
-    dongleOk = attach.ok;
-    dongleMessage = attach.message;
-    onLogLine(`[dongle] ${attach.message}`);
+  let dongleMessage = "Dongle already attached.";
+
+  // Only attach (and trigger UAC) if the dongle isn't already visible in WSL.
+  const seen = await runWsl("lsusb 2>/dev/null | grep -iq '2838\\|2832\\|RTL' && echo yes || echo no");
+  if (seen.stdout.trim() !== "yes") {
+    if (quiet) {
+      await reattachQuiet();
+      dongleMessage = "Attached via login task.";
+    } else {
+      const attach = await attachDongle();
+      dongleOk = attach.ok;
+      dongleMessage = attach.message;
+    }
   }
+  onLogLine(`[dongle] ${dongleMessage}`);
   spawnPipeline();
   return { ok: true, dongle: dongleOk, dongleMessage };
 }
 
-/** Stop everything: clean up the WSL side, then kill the launcher process. */
-async function stopPipeline({ detach = true } = {}) {
+/** Stop everything: clean up the WSL side, then kill the launcher process.
+ * Leaves the dongle attached by default so the next Start needs no UAC prompt
+ * and the signal sweep can use it; only a full Quit detaches it. */
+async function stopPipeline({ detach = false } = {}) {
   armed = false;
   onLogLine("[stop] shutting down…");
   await runWsl(CLEANUP_CMD, { timeout: 30000 });
@@ -407,6 +415,8 @@ async function listDongles() {
 
 // ---- live status ---------------------------------------------------------
 
+let cfCache = { value: "unknown", at: 0 };
+
 async function getStatus() {
   const status = {
     wsl: false,
@@ -451,11 +461,16 @@ async function getStatus() {
     }
   }
 
-  const cf = await runPowershell(
-    ["-Command", "$s = Get-Service cloudflared -ErrorAction SilentlyContinue; if ($s) { $s.Status.ToString() } else { 'NotInstalled' }"],
-    { timeout: 15000 },
-  );
-  status.cloudflared = cf.stdout.trim() || "unknown";
+  // cloudflared is a Windows service that rarely changes — cache it ~30s so the
+  // frequent status poll doesn't spawn powershell.exe every few seconds.
+  if (Date.now() - cfCache.at > 30000) {
+    const cf = await runPowershell(
+      ["-Command", "$s = Get-Service cloudflared -ErrorAction SilentlyContinue; if ($s) { $s.Status.ToString() } else { 'NotInstalled' }"],
+      { timeout: 15000 },
+    );
+    cfCache = { value: cf.stdout.trim() || "unknown", at: Date.now() };
+  }
+  status.cloudflared = cfCache.value;
 
   return status;
 }
@@ -479,6 +494,13 @@ async function runSweep(startMHz, endMHz, gain) {
   if (!(e > s)) return { ok: false, error: "End frequency must be above start." };
   if (e - s > 30) return { ok: false, error: "Keep the span under 30 MHz." };
   const g = gain !== undefined && gain !== null && gain !== "" ? Number(gain) : 40;
+
+  // The dongle must be attached to WSL for rtl_power to open it.
+  const seen = await runWsl("lsusb 2>/dev/null | grep -iq '2838\\|2832\\|RTL' && echo yes || echo no");
+  if (seen.stdout.trim() !== "yes") {
+    onLogLine("[tuner] attaching dongle for sweep…");
+    await reattachQuiet();
+  }
 
   const cmd = `rm -f /tmp/sweep.csv; timeout 25 rtl_power -f ${s}M:${e}M:25k -g ${g} -i 1 -1 /tmp/sweep.csv 2>/dev/null; cat /tmp/sweep.csv 2>/dev/null`;
   const res = await runWsl(cmd, { timeout: 35000 });
@@ -639,21 +661,23 @@ async function setAutoStart(enabled) {
   app.setLoginItemSettings({ openAtLogin: !!enabled, args: ["--hidden"] });
 
   // 2) Auto-attach the dongle at login via a scheduled task (needs admin once).
+  //    Write the registration to a temp .ps1 and run THAT elevated — far more
+  //    robust than nesting quotes through Start-Process -ArgumentList, which
+  //    breaks on the space in the "SafeT SDR" install path.
   const taskName = "SafeT SDR Dongle Attach";
   const script = path.join(scriptsDir(), "attach-dongle.ps1");
-  let reg;
-  if (enabled) {
-    reg =
-      `$a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ` +
-      `'-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"${script}\" -Action attach'; ` +
-      `$t = New-ScheduledTaskTrigger -AtLogOn; ` +
-      `$s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries; ` +
-      `Register-ScheduledTask -TaskName '${taskName}' -Action $a -Trigger $t -RunLevel Highest -Force | Out-Null`;
-  } else {
-    reg = `Unregister-ScheduledTask -TaskName '${taskName}' -Confirm:$false -ErrorAction SilentlyContinue`;
-  }
-  // Run elevated (one UAC) to (un)register the task.
-  const inner = `Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command',"${reg.replace(/"/g, '\\"')}"`;
+  const body = enabled
+    ? [
+        `$a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "${script}" -Action attach'`,
+        `$t = New-ScheduledTaskTrigger -AtLogOn`,
+        `$s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries`,
+        `Register-ScheduledTask -TaskName '${taskName}' -Action $a -Trigger $t -RunLevel Highest -Force | Out-Null`,
+      ].join("\n")
+    : `Unregister-ScheduledTask -TaskName '${taskName}' -Confirm:$false -ErrorAction SilentlyContinue`;
+
+  const tmp = path.join(os.tmpdir(), "safet-sdr-autostart.ps1");
+  fs.writeFileSync(tmp, body, "utf8");
+  const inner = `Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','${tmp}'`;
   await runPowershell(["-Command", inner], { timeout: 60000 });
   return { ok: true, enabled: !!enabled };
 }

@@ -104,7 +104,7 @@ function register() {
     "config:get": () => orch.readConfig(),
     "config:save": (_e, patch) => orch.writeConfig(patch),
     "pipeline:start": () => orch.startPipeline(),
-    "pipeline:stop": () => orch.stopPipeline({ detach: true }),
+    "pipeline:stop": () => orch.stopPipeline(),
     "pipeline:running": () => orch.pipelineRunning(),
     "dongle:attach": () => orch.attachDongle(),
     "dongle:list": () => orch.listDongles(),
@@ -141,6 +141,8 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", () => showWindow());
 
   app.whenReady().then(() => {
+    // Required on Windows for toast notifications to display (must match appId).
+    app.setAppUserModelId("com.sunsetsafety.safetsdr");
     register();
     createWindow();
     createTray();
