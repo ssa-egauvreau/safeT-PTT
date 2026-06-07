@@ -1,0 +1,30 @@
+appId: com.sunsetsafety.safetsdr
+productName: SafeT SDR
+copyright: Sunset Safety Agency
+
+directories:
+  output: dist
+  buildResources: build
+
+# Bundle the app source and the elevated usbipd helper script.
+files:
+  - src/**/*
+  - package.json
+extraResources:
+  - from: scripts
+    to: scripts
+
+win:
+  target:
+    - nsis
+  # Drop a build/icon.ico in to brand it; electron-builder uses a default otherwise.
+  # icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: SafeT SDR
+  artifactName: ${productName} Setup ${version}.${ext}
