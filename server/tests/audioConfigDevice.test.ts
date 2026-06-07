@@ -179,11 +179,11 @@ test("deriveDeviceAudioConfig: coerces truthy/falsy non-boolean inputs via Boole
     // @ts-expect-error — intentional bad input to exercise coercion
     agcEnabled: 1,
     agcMaxGain: 12,
-    // @ts-expect-error
+    // @ts-expect-error — numeric truthy/falsy in place of boolean, on purpose
     windGateEnabled: 0,
-    // @ts-expect-error
+    // @ts-expect-error — numeric truthy/falsy in place of boolean, on purpose
     windHpfEnabled: 1,
-    // @ts-expect-error
+    // @ts-expect-error — numeric truthy/falsy in place of boolean, on purpose
     bypassMicProcessing: 0,
   });
   assert.equal(out.agcEnabled, true);

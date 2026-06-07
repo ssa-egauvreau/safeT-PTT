@@ -18,7 +18,6 @@ import { isWebSearchConfigured, webSearchAnswer } from "./webSearch.js";
 import {
   cadLookupFailedLine,
   cadSystemDownLine,
-  genericInfoLookupFailedLine,
   webSearchFailureLine,
   webSearchNotConfiguredLine,
 } from "./lookupSpeech.js";

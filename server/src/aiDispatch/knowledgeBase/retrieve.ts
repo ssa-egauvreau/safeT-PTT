@@ -105,8 +105,7 @@ function startRetrievalEmbed(query: string, signal: AbortSignal): Promise<number
     return null;
   }
 
-  let trackedPromise: Promise<number[][] | null>;
-  trackedPromise = embedTexts([query], { signal }).finally(() => {
+  const trackedPromise: Promise<number[][] | null> = embedTexts([query], { signal }).finally(() => {
     if (retrievalEmbedInFlight === trackedPromise) {
       retrievalEmbedInFlight = null;
     }

@@ -56,7 +56,6 @@ async function playPcmOnChannelUnlocked(opts: {
     let joined = false;
     let done = false;
 
-    let joinTimeout: ReturnType<typeof setTimeout> | undefined;
     const finish = (err?: Error) => {
       if (done) {
         return;
@@ -78,7 +77,7 @@ async function playPcmOnChannelUnlocked(opts: {
     };
     // The loopback must ack our join promptly; otherwise fail fast so a stuck socket can never
     // hold the channel playback lock (and freeze the single-threaded AI engine) forever.
-    joinTimeout = setTimeout(() => {
+    const joinTimeout = setTimeout(() => {
       if (!joined) {
         finish(new Error("loopback join timed out"));
       }
@@ -160,7 +159,6 @@ async function playMarkerBurstOnChannelUnlocked(opts: {
     let joined = false;
     let done = false;
 
-    let joinTimeout: ReturnType<typeof setTimeout> | undefined;
     const finish = (err?: Error) => {
       if (done) {
         return;
@@ -180,7 +178,7 @@ async function playMarkerBurstOnChannelUnlocked(opts: {
         resolve();
       }
     };
-    joinTimeout = setTimeout(() => {
+    const joinTimeout = setTimeout(() => {
       if (!joined) {
         finish(new Error("loopback join timed out"));
       }
