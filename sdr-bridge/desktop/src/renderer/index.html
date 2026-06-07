@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';" />
+    <title>SafeT SDR</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">📡</span>
+        <span>SafeT SDR</span>
+      </div>
+      <nav class="tabs">
+        <button class="tab active" data-tab="dashboard">Dashboard</button>
+        <button class="tab" data-tab="settings">Settings</button>
+        <button class="tab" data-tab="coverage">Coverage</button>
+        <button class="tab" data-tab="logs">Logs</button>
+      </nav>
+    </header>
+
+    <main>
+      <!-- DASHBOARD -->
+      <section id="tab-dashboard" class="tab-panel active">
+        <div class="hero">
+          <div class="power">
+            <button id="startBtn" class="big primary">▶ Start</button>
+            <button id="stopBtn" class="big danger" hidden>■ Stop</button>
+            <div id="runState" class="run-state">Stopped</div>
+          </div>
+          <button id="openSafet" class="link-btn">Open SafeT console ↗</button>
+        </div>
+
+        <div class="cards">
+          <div class="card" id="card-wsl">
+            <div class="dot"></div>
+            <div class="card-body"><h3>System (WSL)</h3><p>Checking…</p></div>
+          </div>
+          <div class="card" id="card-dongle">
+            <div class="dot"></div>
+            <div class="card-body"><h3>SDR Dongle</h3><p>Checking…</p></div>
+          </div>
+          <div class="card" id="card-decoder">
+            <div class="dot"></div>
+            <div class="card-body"><h3>Decoder</h3><p>Checking…</p></div>
+          </div>
+          <div class="card" id="card-icecast">
+            <div class="dot"></div>
+            <div class="card-body"><h3>Streaming</h3><p>Checking…</p></div>
+          </div>
+          <div class="card" id="card-tunnel">
+            <div class="dot"></div>
+            <div class="card-body"><h3>Cloud tunnel</h3><p>Checking…</p></div>
+          </div>
+        </div>
+
+        <div id="dongleHint" class="hint" hidden></div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section id="tab-settings" class="tab-panel">
+        <h2>Radio settings</h2>
+        <div class="grid2">
+          <label>Center frequency (MHz)
+            <input id="centerMHz" type="number" step="0.0001" placeholder="857.75" />
+            <small>The middle of the ~2 MHz slice the dongle listens to. Keep a control channel inside it.</small>
+          </label>
+          <label>Gain (dB)
+            <input id="gain" type="number" step="0.1" placeholder="40" />
+            <small>0 = auto. A fixed value (e.g. 40) is usually steadier.</small>
+          </label>
+          <label>PPM correction
+            <input id="ppm" type="number" step="1" placeholder="0" />
+            <small>Frequency error of your dongle. Leave 0 unless you know it.</small>
+          </label>
+          <label>Sample rate (Hz)
+            <input id="rateHz" type="number" step="1" placeholder="2400000" />
+            <small>2400000 (2.4 MHz) is the safe maximum for an RTL-SDR.</small>
+          </label>
+          <label class="span2">Control channel frequencies (MHz, comma-separated)
+            <input id="controlMHz" type="text" placeholder="856.7125, 857.4625" />
+            <small>From RadioReference. trunk-recorder locks the first one it can.</small>
+          </label>
+          <label>Modulation
+            <select id="modulation">
+              <option value="qpsk">qpsk (CQPSK / simulcast)</option>
+              <option value="fsk4">fsk4 (C4FM)</option>
+            </select>
+            <small>Try the other if the control channel won't lock.</small>
+          </label>
+        </div>
+
+        <details class="advanced" id="tunerBox">
+          <summary>Find the signal (sweep)</summary>
+          <small class="block">Stop streaming first — this needs the dongle to itself. It sweeps the band and lists the strongest frequencies; the top one is usually the control channel. Use it to choose a center.</small>
+          <div class="grid2" style="margin-top: 10px">
+            <label>From (MHz)<input id="sweepFrom" type="number" step="0.1" value="855" /></label>
+            <label>To (MHz)<input id="sweepTo" type="number" step="0.1" value="861" /></label>
+          </div>
+          <div class="save-row">
+            <button id="sweepBtn" type="button" class="primary">Run sweep</button>
+            <span id="sweepMsg" class="save-msg"></span>
+          </div>
+          <div id="sweepResult" class="sweep-result"></div>
+        </details>
+
+        <h2>Second dongle (optional)</h2>
+        <div class="scan-row">
+          <button id="scanDongles" type="button" class="link-btn">🔍 Scan for connected dongles</button>
+          <span id="scanResult" class="scan-result"></span>
+        </div>
+        <label class="toggle">
+          <input id="dongle2on" type="checkbox" />
+          <span>I have a second RTL-SDR (wider coverage, or a UHF/VHF band)</span>
+        </label>
+        <small class="block">Both dongles run together — each covers its own ~2 MHz window, so you can span a wider band than one dongle alone (e.g. the full OC&nbsp;CCCS spread), or sit the second one on another band.</small>
+        <div id="dongle2fields" class="grid2" hidden>
+          <label>Center frequency (MHz)
+            <input id="d2center" type="number" step="0.0001" placeholder="859.8" />
+          </label>
+          <label>Gain (dB)
+            <input id="d2gain" type="number" step="0.1" placeholder="40" />
+          </label>
+          <label>PPM correction
+            <input id="d2ppm" type="number" step="1" placeholder="0" />
+          </label>
+          <label>Device index
+            <input id="d2device" type="number" step="1" placeholder="1" />
+            <small>0 = first dongle, 1 = second. Leave 1 unless Windows orders them oddly.</small>
+          </label>
+        </div>
+
+        <h2>Streaming passwords (Icecast)</h2>
+        <div class="grid2">
+          <label>Source password
+            <input id="icecastSource" type="text" placeholder="set a password" />
+          </label>
+          <label>Admin password
+            <input id="icecastAdmin" type="text" placeholder="set a password" />
+          </label>
+        </div>
+
+        <h2>SafeT login</h2>
+        <div class="grid2">
+          <label class="span2">SafeT server URL (ends in /v1)
+            <input id="safetUrl" type="text" placeholder="https://your-safet.example.com/v1" />
+          </label>
+          <label>Username
+            <input id="safetUser" type="text" placeholder="admin" />
+          </label>
+          <label>Password
+            <input id="safetPass" type="text" placeholder="•••••••" />
+          </label>
+        </div>
+
+        <h2>Startup</h2>
+        <label class="toggle">
+          <input id="autostart" type="checkbox" />
+          <span>Start automatically when I log in (recommended)</span>
+        </label>
+        <small class="block">Attaches the dongle and starts streaming on every boot. Asks for admin once to set this up.</small>
+        <label class="toggle" style="margin-top: 12px">
+          <input id="notifications" type="checkbox" />
+          <span>Show desktop alerts (lost lock, dongle dropped, auto-recovery)</span>
+        </label>
+
+        <details class="advanced">
+          <summary>Advanced</summary>
+          <div class="grid2">
+            <label>WSL distro
+              <input id="distro" type="text" placeholder="Ubuntu" />
+            </label>
+            <label>Project folder (in WSL)
+              <input id="projectDir" type="text" placeholder="~/safeT-PTT/sdr-bridge" />
+            </label>
+          </div>
+        </details>
+
+        <div class="save-row">
+          <button id="saveBtn" class="primary">Save settings</button>
+          <span id="saveMsg" class="save-msg"></span>
+        </div>
+      </section>
+
+      <!-- LOGS -->
+      <section id="tab-logs" class="tab-panel">
+        <div class="log-toolbar">
+          <button id="refreshLog">Refresh decoder log</button>
+          <button id="clearLog">Clear</button>
+          <button id="saveDiag">Save diagnostics…</button>
+          <label class="toggle inline"><input id="autoscroll" type="checkbox" checked /><span>Auto-scroll</span></label>
+        </div>
+        <pre id="logView" class="log"></pre>
+      </section>
+
+      <!-- COVERAGE -->
+      <section id="tab-coverage" class="tab-panel">
+        <div class="log-toolbar">
+          <button id="refreshReport">Refresh activity</button>
+          <span class="scan-result" id="reportMsg">Shows which talkgroups had real voice vs encrypted vs out-of-range, from the decoder logs.</span>
+        </div>
+        <table class="report" id="reportTable">
+          <thead>
+            <tr><th>Talkgroup</th><th>TGID</th><th>Voice</th><th>Encrypted</th><th>Out of range</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" hidden></div>
+    <script src="app.js"></script>
+  </body>
+</html>

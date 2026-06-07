@@ -27,6 +27,16 @@
     "modulation": "qpsk"
   },
 
+  "_multiDongle": "OPTIONAL — to use TWO+ dongles (a system wider than one ~2 MHz window, like the full OC CCCS spread) or add another band, replace the single 'sdr' object above with a 'sources' array, and/or the single 'system' object with a 'systems' array. The talkgroups you pick in the SafeT console always attach to the FIRST system. Example:",
+  "_sources_example": [
+    { "device": 0, "centerHz": 857400000, "rateHz": 2400000, "gain": 40, "ppm": 2, "_note": "covers ~856.2-858.6 MHz incl. control channel" },
+    { "device": 1, "centerHz": 859800000, "rateHz": 2400000, "gain": 40, "ppm": 0, "_note": "covers ~858.6-861.0 MHz upper voice" }
+  ],
+  "_systems_example": [
+    { "shortName": "occcs", "type": "p25", "modulation": "qpsk", "controlChannelsHz": [856712500, 857462500] },
+    { "shortName": "uhf", "type": "p25", "modulation": "fsk4", "controlChannelsHz": [453000000], "talkgroups": [101, 102], "_note": "a second P25 system on UHF, decoded by the 2nd dongle" }
+  ],
+
   "safet": {
     "_comment": "An ADMIN account on your SafeT-PTT server. baseUrl ends in /v1. agencySlug only needed for non-owner multi-tenant logins (leave \"\" otherwise).",
     "baseUrl": "http://127.0.0.1:8080/v1",
