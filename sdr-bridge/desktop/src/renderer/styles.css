@@ -95,6 +95,8 @@ small { color: var(--muted); font-size: 11px; }
 small.block { display: block; margin-top: 4px; }
 .toggle { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 14px; cursor: pointer; }
 .toggle.inline { display: inline-flex; }
+.scan-row { display: flex; align-items: center; gap: 12px; margin: 4px 0 12px; flex-wrap: wrap; }
+.scan-result { font-size: 13px; color: var(--muted); }
 .advanced { margin-top: 18px; }
 .advanced summary { cursor: pointer; color: var(--muted); margin-bottom: 10px; }
 

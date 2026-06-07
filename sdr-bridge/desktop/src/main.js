@@ -101,6 +101,7 @@ function register() {
     "pipeline:stop": () => orch.stopPipeline({ detach: true }),
     "pipeline:running": () => orch.pipelineRunning(),
     "dongle:attach": () => orch.attachDongle(),
+    "dongle:list": () => orch.listDongles(),
     "status:get": () => orch.getStatus(),
     "log:recent": (_e, lines) => orch.recentDecoderLog(lines),
     "safet:open": () => orch.openSafeT(),

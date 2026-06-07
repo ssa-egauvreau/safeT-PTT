@@ -262,6 +262,40 @@ async function stopPipeline({ detach = true } = {}) {
   return { ok: true };
 }
 
+// ---- scan for connected dongles ------------------------------------------
+
+/**
+ * Report the RTL-SDRs Windows sees (via usbipd) and, for any attached to WSL,
+ * their index -> serial mapping (via rtl_test) so the user can pick the right
+ * `device` index for a second dongle.
+ */
+async function listDongles() {
+  const result = { windowsCount: 0, windows: [], wsl: [], wslError: null };
+
+  const ps = await runPowershell(["-Command", "usbipd list"], { timeout: 15000 });
+  for (const line of ps.stdout.split(/\r?\n/)) {
+    const b = line.match(/(\d+-\d+)\s+0bda:283[28]/);
+    if (b) {
+      const st = line.match(/(Attached|Shared|Not shared|Not attached)\s*$/);
+      result.windows.push({ busid: b[1], state: st ? st[1] : "?" });
+    }
+  }
+  result.windowsCount = result.windows.length;
+
+  // rtl_test lists every device (index, name, serial) before it tries to open
+  // one, so this works even while trunk-recorder is using the dongles.
+  const rt = await runWsl("timeout 4 rtl_test 2>&1 | head -25 || true", { timeout: 9000 });
+  for (const line of rt.stdout.split(/\r?\n/)) {
+    const m = line.match(/^\s*(\d+):\s+(.+?),\s*SN:\s*(\S+)/);
+    if (m) result.wsl.push({ index: Number(m[1]), name: m[2].trim(), serial: m[3] });
+  }
+  if (result.wsl.length === 0) {
+    if (/No supported devices|usb_open error|No such/i.test(rt.stdout)) result.wslError = "No dongles attached to WSL yet.";
+    else if (!/Found/i.test(rt.stdout)) result.wslError = "Couldn't read dongles in WSL (rtl-sdr tools / none attached).";
+  }
+  return result;
+}
+
 // ---- live status ---------------------------------------------------------
 
 async function getStatus() {
@@ -377,6 +411,7 @@ module.exports = {
   writeConfig,
   attachDongle,
   detachDongle,
+  listDongles,
   startPipeline,
   stopPipeline,
   pipelineRunning,

@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("api", {
   stop: () => ipcRenderer.invoke("pipeline:stop"),
   isRunning: () => ipcRenderer.invoke("pipeline:running"),
   attachDongle: () => ipcRenderer.invoke("dongle:attach"),
+  listDongles: () => ipcRenderer.invoke("dongle:list"),
   getStatus: () => ipcRenderer.invoke("status:get"),
   recentLog: (lines) => ipcRenderer.invoke("log:recent", lines),
   openSafeT: () => ipcRenderer.invoke("safet:open"),

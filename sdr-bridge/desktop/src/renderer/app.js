@@ -144,6 +144,23 @@ $("dongle2on").addEventListener("change", () => {
   $("dongle2fields").hidden = !$("dongle2on").checked;
 });
 
+$("scanDongles").addEventListener("click", async () => {
+  const out = $("scanResult");
+  out.textContent = "Scanning…";
+  try {
+    const r = await window.api.listDongles();
+    let msg = `Windows sees ${r.windowsCount} RTL-SDR${r.windowsCount === 1 ? "" : "s"}.`;
+    if (r.wsl && r.wsl.length) {
+      msg += " WSL: " + r.wsl.map((d) => `device ${d.index} = SN ${d.serial}`).join(", ") + ".";
+    } else if (r.wslError) {
+      msg += " " + r.wslError + " Press Start once to attach, then scan again.";
+    }
+    out.textContent = msg;
+  } catch (e) {
+    out.textContent = "Scan failed: " + (e.message || e);
+  }
+});
+
 // ---- start / stop --------------------------------------------------------
 function setRunState(state) {
   const el = $("runState");
