@@ -57,8 +57,17 @@ if (!envSecret) {
 /** Console/admin/owner token lifetime in seconds (12h). Radio handsets never expire. */
 export const TOKEN_TTL_SECONDS = 12 * 60 * 60;
 
+/**
+ * bcrypt work factor. 12 (~250ms/hash on current hardware) is the modern
+ * baseline for credentials guarding emergency comms; the cost is paid only at
+ * login and password-set, not on the hot request path. bcrypt stores the cost
+ * in the hash, so existing rows hashed at the old factor still verify — they
+ * just rehash at the new cost the next time the password is set.
+ */
+const BCRYPT_COST = 12;
+
 export async function hashPassword(plain: string): Promise<string> {
-  return bcrypt.hash(plain, 10);
+  return bcrypt.hash(plain, BCRYPT_COST);
 }
 
 export async function verifyPassword(plain: string, hash: string): Promise<boolean> {

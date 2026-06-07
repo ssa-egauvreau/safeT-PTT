@@ -9,6 +9,7 @@ import {
   type AuthUser,
   type Role,
 } from "./auth.js";
+import { loginRateLimiter, loginRateLimitKeys } from "./loginRateLimit.js";
 import {
   dropAgencyVoiceConnections,
   dropUserVoiceConnections,
@@ -586,9 +587,35 @@ export function createApiRouter(): Router {
         res.status(400).json({ error: "missing_credentials" });
         return;
       }
+      const ip = clientIp(req);
+      // Throttle by (ip, username) so credential-stuffing one account and
+      // sweeping many accounts from one host both hit a lockout. Checked before
+      // the password compare so a locked attacker never reaches bcrypt.
+      const rateLimitKeys = loginRateLimitKeys(ip, username);
+      const lockedMs = loginRateLimiter.retryAfterMsFor(rateLimitKeys);
+      if (lockedMs > 0) {
+        const retryAfterSeconds = Math.ceil(lockedMs / 1000);
+        await writeAudit({
+          agencyId: null,
+          actorUserId: null,
+          actorName: username,
+          action: "login_rate_limited",
+          ip,
+        });
+        res.setHeader("Retry-After", String(retryAfterSeconds));
+        res.status(429).json({ error: "too_many_attempts", retryAfterSeconds });
+        return;
+      }
       const user = await getUserByUsername(username);
       const blocked = !user || user.disabled || user.agency_disabled === true;
       if (blocked || !(await verifyPassword(password, user!.password_hash))) {
+        // Count only this pre-verification failure toward lockout: a wrong
+        // username or password is the brute-force signal. Failures past this
+        // point (agency mismatch, account disabled mid-login) imply the
+        // password was already correct, so they must not throttle the user.
+        for (const key of rateLimitKeys) {
+          loginRateLimiter.recordFailure(key);
+        }
         await writeAudit({
           agencyId: user?.agency_id ?? null,
           actorUserId: user?.id ?? null,
@@ -692,6 +719,11 @@ export function createApiRouter(): Router {
           detail: { dropped_voice_sockets: evictedSockets, new_ip: clientIp(req) },
           ip: clientIp(req),
         });
+      }
+      // Valid credentials — clear the throttle so a legitimate user who fumbled
+      // a few passwords isn't penalised on their next sign-in.
+      for (const key of rateLimitKeys) {
+        loginRateLimiter.recordSuccess(key);
       }
       res.json({ token: signToken(authUser), user: authUser });
     } catch (error) {
