@@ -53,6 +53,10 @@ jobs:
         working-directory: server/web-console
         run: npm ci --no-audit --no-fund
 
+      - name: Server lint
+        working-directory: server
+        run: npm run lint
+
       - name: Server type-check
         working-directory: server
         run: npx tsc -p tsconfig.json --noEmit
@@ -60,6 +64,10 @@ jobs:
       - name: Server tests
         working-directory: server
         run: npm test
+
+      - name: Web-console lint
+        working-directory: server/web-console
+        run: npm run lint
 
       - name: Web-console type-check
         working-directory: server/web-console

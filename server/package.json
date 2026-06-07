@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json && node scripts/copy-server-assets.mjs && npm --prefix web-console install --no-audit --no-fund --include=dev && npm --prefix web-console run build",
     "build:server": "npm run build",
     "start": "node dist/index.js",
+    "lint": "eslint src tests",
     "test": "node --import tsx --test --test-reporter=spec \"tests/**/*.test.ts\""
   },
   "dependencies": {
@@ -22,13 +23,17 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.10",
     "@types/ws": "^8.5.13",
+    "eslint": "^9.39.4",
+    "globals": "^17.6.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.60.1"
   }
 }

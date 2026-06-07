@@ -188,7 +188,7 @@ export function humanIncidentTypeForRadio(raw: string | null): string {
   if (spoken) {
     return spoken;
   }
-  let plain = t.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
+  const plain = t.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
   const sep = plain.match(/^(.+?)\s+[-–—]\s+(.+)$/);
   if (sep) {
     const left = sep[1]!.trim();
@@ -326,21 +326,6 @@ export function formatCadIncidentLookupRadioLine(inc: Ten8Incident): string {
   }
 
   return line;
-}
-
-function incidentUnits(inc: Ten8Incident): string[] {
-  const units = inc.units;
-  if (!Array.isArray(units)) {
-    return [];
-  }
-  return units
-    .map((u) => {
-      if (!u || typeof u !== "object") {
-        return "";
-      }
-      return str((u as Record<string, unknown>).unit);
-    })
-    .filter(Boolean);
 }
 
 /** Map a live 10-8 Incident object into the shape used by pending/call-detail radio readbacks. */

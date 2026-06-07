@@ -798,7 +798,7 @@ export function dockChannel(
   gridCols = WORKSPACE_GRID_MAX_COLS,
 ): void {
   const cols = Math.max(WORKSPACE_GRID_MIN_COLS, Math.min(WORKSPACE_GRID_MAX_COLS, gridCols));
-  let expanded = [...state.expanded];
+  const expanded = [...state.expanded];
   if (!expanded.includes(id)) {
     expanded.push(id);
   }

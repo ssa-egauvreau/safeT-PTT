@@ -617,7 +617,7 @@ async function processTransmission(transmissionId: number): Promise<void> {
           (plate.lookup.plate || plate.lookup.vin || parsed.plate_request?.plate || parsed.plate_request?.vin)
         ) {
           let plateCallId = newCallIdFromCreate;
-          let trustedFromCreate = !!plateCallId;
+          const trustedFromCreate = !!plateCallId;
           if (!plateCallId) {
             const match = findMatchingOpenIncident(active, parsed, unitId);
             plateCallId = match?.call_id?.trim() || null;

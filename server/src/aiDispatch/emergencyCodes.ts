@@ -1,7 +1,7 @@
 /** Belt-and-suspenders 10-33 / 10-34 detection (matches 10-8 alert dashboard). */
 
-const RE_10_33 = /\b(10[\s\-]?33|ten[\s\-]?thirty[\s\-]?three)\b/i;
-const RE_10_34 = /\b(10[\s\-]?34|ten[\s\-]?thirty[\s\-]?four)\b/i;
+const RE_10_33 = /\b(10[\s-]?33|ten[\s-]?thirty[\s-]?three)\b/i;
+const RE_10_34 = /\b(10[\s-]?34|ten[\s-]?thirty[\s-]?four)\b/i;
 
 export type EmergencyCodeAction = "activate" | "clear";
 
