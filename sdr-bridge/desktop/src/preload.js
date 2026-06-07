@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("api", {
   listDongles: () => ipcRenderer.invoke("dongle:list"),
   sweep: (startMHz, endMHz, gain) => ipcRenderer.invoke("tuner:sweep", { startMHz, endMHz, gain }),
   talkgroupReport: () => ipcRenderer.invoke("report:talkgroups"),
+  saveDiagnostics: () => ipcRenderer.invoke("diag:save"),
   getStatus: () => ipcRenderer.invoke("status:get"),
   recentLog: (lines) => ipcRenderer.invoke("log:recent", lines),
   openSafeT: () => ipcRenderer.invoke("safet:open"),

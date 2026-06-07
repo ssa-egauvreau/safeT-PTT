@@ -327,6 +327,16 @@ $("refreshLog").addEventListener("click", async () => {
   if ($("autoscroll").checked) logView.scrollTop = logView.scrollHeight;
 });
 $("clearLog").addEventListener("click", () => (logView.textContent = ""));
+$("saveDiag").addEventListener("click", async () => {
+  toast("Collecting diagnostics…");
+  try {
+    const r = await window.api.saveDiagnostics();
+    if (r.ok) toast("Saved: " + r.path);
+    else if (!r.canceled) toast("Couldn't save diagnostics.");
+  } catch (e) {
+    toast("Diagnostics failed: " + (e.message || e));
+  }
+});
 
 // ---- boot ----------------------------------------------------------------
 (async function init() {

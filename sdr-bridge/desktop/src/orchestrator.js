@@ -561,6 +561,66 @@ async function talkgroupReport() {
   return { rows, bridgedCount: bridged.size };
 }
 
+// ---- diagnostics bundle --------------------------------------------------
+
+function redactSecrets(obj) {
+  const SECRET = /password|secret|token/i;
+  const walk = (v) => {
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === "object") {
+      const o = {};
+      for (const [k, val] of Object.entries(v)) o[k] = SECRET.test(k) && val ? "***" : walk(val);
+      return o;
+    }
+    return v;
+  };
+  return walk(obj);
+}
+
+/** Gather logs + redacted config + environment into one text blob for support. */
+async function collectDiagnostics() {
+  const { distro, projectDir } = getSettings();
+  const parts = [];
+  const sec = (title, body) => parts.push(`\n===== ${title} =====\n${(body || "").toString().trim() || "(empty)"}\n`);
+
+  parts.push(`SafeT SDR diagnostics — ${new Date().toISOString()}`);
+  try {
+    parts.push(`app ${app.getVersion()} · distro=${distro} · projectDir=${projectDir}`);
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    sec("config/system.json (secrets redacted)", JSON.stringify(redactSecrets(await readConfig()), null, 2));
+  } catch {
+    sec("config/system.json", "(could not read)");
+  }
+
+  const cmds = [
+    ["dongle (lsusb)", "lsusb 2>/dev/null | grep -i 'RTL\\|2838\\|2832' || echo none"],
+    ["rtl devices", "timeout 4 rtl_test 2>&1 | head -8 || true"],
+    ["docker ps", "docker ps -a --format '{{.Names}} | {{.Status}}' 2>/dev/null || echo 'docker not reachable'"],
+    ["icecast status", "curl -s --max-time 2 http://127.0.0.1:8000/status-json.xsl | head -c 1500 || true"],
+    ["icecast log (tail)", "tail -40 /tmp/sdr-icecast.log 2>/dev/null || echo none"],
+    ["streamer log (tail)", "tail -40 /tmp/sdr-streamers.log 2>/dev/null || echo none"],
+    ["decoder log (tail)", "docker logs --tail 150 sdr-bridge-trunk-recorder-1 2>&1 | tail -150 || echo none"],
+  ];
+  for (const [title, cmd] of cmds) {
+    const r = await runWsl(cmd, { timeout: 20000 });
+    sec(title, r.stdout || r.stderr);
+  }
+
+  const usb = await runPowershell(["-Command", "usbipd list 2>$null | Out-String"], { timeout: 15000 });
+  sec("usbipd list (Windows)", usb.stdout);
+  const cf = await runPowershell(
+    ["-Command", "$s = Get-Service cloudflared -ErrorAction SilentlyContinue; if ($s) { $s.Status.ToString() } else { 'NotInstalled' }"],
+    { timeout: 15000 },
+  );
+  sec("cloudflared service", cf.stdout);
+
+  return parts.join("\n");
+}
+
 // ---- open the SafeT console in the browser -------------------------------
 
 async function openSafeT() {
@@ -626,6 +686,7 @@ module.exports = {
   talkgroupReport,
   getStatus,
   recentDecoderLog,
+  collectDiagnostics,
   openSafeT,
   setAutoStart,
   getAutoStart,

@@ -8,8 +8,9 @@
  * defined in preload.js, which forwards to the handlers registered here.
  */
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, Notification } = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, Notification, dialog, shell } = require("electron");
 const path = require("node:path");
+const fs = require("node:fs");
 const orch = require("./orchestrator");
 
 const startedHidden = process.argv.includes("--hidden");
@@ -109,6 +110,19 @@ function register() {
     "dongle:list": () => orch.listDongles(),
     "tuner:sweep": (_e, a) => orch.runSweep(a.startMHz, a.endMHz, a.gain),
     "report:talkgroups": () => orch.talkgroupReport(),
+    "diag:save": async () => {
+      const text = await orch.collectDiagnostics();
+      const ts = new Date().toISOString().replace(/[:.]/g, "-");
+      const def = path.join(app.getPath("desktop"), `safet-sdr-diagnostics-${ts}.txt`);
+      const { canceled, filePath } = await dialog.showSaveDialog(win, {
+        defaultPath: def,
+        filters: [{ name: "Text", extensions: ["txt"] }],
+      });
+      if (canceled || !filePath) return { ok: false, canceled: true };
+      fs.writeFileSync(filePath, text, "utf8");
+      shell.showItemInFolder(filePath);
+      return { ok: true, path: filePath };
+    },
     "status:get": () => orch.getStatus(),
     "log:recent": (_e, lines) => orch.recentDecoderLog(lines),
     "safet:open": () => orch.openSafeT(),
