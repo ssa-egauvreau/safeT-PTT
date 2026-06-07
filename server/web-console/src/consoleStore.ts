@@ -25,7 +25,7 @@ const MAX_DOCKED_CHANNELS = 12;
  * can freeze the tab (black screen) on reload. Kept below the looser dedup ceilings above. Raise
  * cautiously and re-test reload performance with the higher counts.
  */
-const MAX_SAFE_DOCKED_CHANNELS = 8;
+export const MAX_SAFE_DOCKED_CHANNELS = 8;
 const MAX_SAFE_OPEN_CHANNELS = 10;
 const COMMIT_STORM_LIMIT = 24;
 const COMMIT_STORM_WINDOW_MS = 2000;
