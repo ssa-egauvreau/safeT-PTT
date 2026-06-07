@@ -115,6 +115,22 @@ small.block { display: block; margin-top: 4px; }
   font: 12px/1.45 "Cascadia Code", Consolas, monospace; white-space: pre-wrap; color: #c8d3df;
 }
 
+/* sweep results */
+.sweep-result { margin-top: 12px; }
+.sweep-result p { margin: 0 0 8px; }
+.sweep-actions { display: flex; gap: 8px; margin-bottom: 10px; }
+.btn-sm { background: var(--panel2); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.btn-sm:hover { border-color: var(--accent); }
+
+/* report tables */
+table.report { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.report th, table.report td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); }
+table.report th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+table.report.mini { max-width: 360px; }
+table.report tr.dim td { opacity: 0.55; }
+table.report tr.bridged td { font-weight: 500; }
+table.report td.good { color: var(--green); font-weight: 700; }
+
 /* toast */
 .toast {
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);

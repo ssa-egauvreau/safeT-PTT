@@ -15,6 +15,7 @@
       <nav class="tabs">
         <button class="tab active" data-tab="dashboard">Dashboard</button>
         <button class="tab" data-tab="settings">Settings</button>
+        <button class="tab" data-tab="coverage">Coverage</button>
         <button class="tab" data-tab="logs">Logs</button>
       </nav>
     </header>
@@ -90,6 +91,20 @@
           </label>
         </div>
 
+        <details class="advanced" id="tunerBox">
+          <summary>Find the signal (sweep)</summary>
+          <small class="block">Stop streaming first — this needs the dongle to itself. It sweeps the band and lists the strongest frequencies; the top one is usually the control channel. Use it to choose a center.</small>
+          <div class="grid2" style="margin-top: 10px">
+            <label>From (MHz)<input id="sweepFrom" type="number" step="0.1" value="855" /></label>
+            <label>To (MHz)<input id="sweepTo" type="number" step="0.1" value="861" /></label>
+          </div>
+          <div class="save-row">
+            <button id="sweepBtn" type="button" class="primary">Run sweep</button>
+            <span id="sweepMsg" class="save-msg"></span>
+          </div>
+          <div id="sweepResult" class="sweep-result"></div>
+        </details>
+
         <h2>Second dongle (optional)</h2>
         <div class="scan-row">
           <button id="scanDongles" type="button" class="link-btn">🔍 Scan for connected dongles</button>
@@ -145,6 +160,10 @@
           <span>Start automatically when I log in (recommended)</span>
         </label>
         <small class="block">Attaches the dongle and starts streaming on every boot. Asks for admin once to set this up.</small>
+        <label class="toggle" style="margin-top: 12px">
+          <input id="notifications" type="checkbox" />
+          <span>Show desktop alerts (lost lock, dongle dropped, auto-recovery)</span>
+        </label>
 
         <details class="advanced">
           <summary>Advanced</summary>
@@ -172,6 +191,20 @@
           <label class="toggle inline"><input id="autoscroll" type="checkbox" checked /><span>Auto-scroll</span></label>
         </div>
         <pre id="logView" class="log"></pre>
+      </section>
+
+      <!-- COVERAGE -->
+      <section id="tab-coverage" class="tab-panel">
+        <div class="log-toolbar">
+          <button id="refreshReport">Refresh activity</button>
+          <span class="scan-result" id="reportMsg">Shows which talkgroups had real voice vs encrypted vs out-of-range, from the decoder logs.</span>
+        </div>
+        <table class="report" id="reportTable">
+          <thead>
+            <tr><th>Talkgroup</th><th>TGID</th><th>Voice</th><th>Encrypted</th><th>Out of range</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </section>
     </main>
 

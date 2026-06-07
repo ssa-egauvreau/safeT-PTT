@@ -63,6 +63,7 @@ async function loadSettings() {
   $("projectDir").value = s.projectDir || "~/safeT-PTT/sdr-bridge";
 
   $("autostart").checked = await window.api.getAutoStart();
+  $("notifications").checked = s.notifications !== false;
 }
 
 function parseControl(text) {
@@ -122,7 +123,11 @@ async function saveSettings() {
   }
 
   try {
-    await window.api.saveSettings({ distro: $("distro").value || "Ubuntu", projectDir: $("projectDir").value || "~/safeT-PTT/sdr-bridge" });
+    await window.api.saveSettings({
+      distro: $("distro").value || "Ubuntu",
+      projectDir: $("projectDir").value || "~/safeT-PTT/sdr-bridge",
+      notifications: $("notifications").checked,
+    });
     const res = await window.api.saveConfig(patch);
     if (!res || !res.ok) throw new Error((res && res.error) || "write failed");
 
@@ -158,6 +163,75 @@ $("scanDongles").addEventListener("click", async () => {
     out.textContent = msg;
   } catch (e) {
     out.textContent = "Scan failed: " + (e.message || e);
+  }
+});
+
+// ---- signal sweep --------------------------------------------------------
+$("sweepBtn").addEventListener("click", async () => {
+  const msg = $("sweepMsg");
+  const result = $("sweepResult");
+  msg.className = "save-msg";
+  msg.textContent = "Sweeping… (up to ~25s)";
+  result.innerHTML = "";
+  try {
+    const r = await window.api.sweep($("sweepFrom").value, $("sweepTo").value, $("gain").value);
+    if (!r || !r.ok) {
+      msg.className = "save-msg err";
+      msg.textContent = (r && r.error) || "Sweep failed.";
+      return;
+    }
+    msg.textContent = "";
+    const rows = r.top
+      .map((b) => `<tr><td>${b.mhz.toFixed(4)} MHz</td><td>${b.db} dB</td></tr>`)
+      .join("");
+    result.innerHTML =
+      `<p><strong>Strongest:</strong> ${r.peakMHz.toFixed(4)} MHz (${r.peakDb} dB) — likely the control channel.</p>` +
+      `<div class="sweep-actions">` +
+      `<button type="button" class="btn-sm" id="useD1">Use as Dongle 1 center</button>` +
+      `<button type="button" class="btn-sm" id="useD2">Use as Dongle 2 center</button>` +
+      `</div>` +
+      `<table class="report mini"><thead><tr><th>Frequency</th><th>Level</th></tr></thead><tbody>${rows}</tbody></table>`;
+    $("useD1").addEventListener("click", () => {
+      $("centerMHz").value = r.peakMHz.toFixed(4);
+      toast("Set Dongle 1 center — Save to apply.");
+    });
+    $("useD2").addEventListener("click", () => {
+      $("dongle2on").checked = true;
+      $("dongle2fields").hidden = false;
+      $("d2center").value = r.peakMHz.toFixed(4);
+      toast("Set Dongle 2 center — Save to apply.");
+    });
+  } catch (e) {
+    msg.className = "save-msg err";
+    msg.textContent = "Sweep failed: " + (e.message || e);
+  }
+});
+
+// ---- coverage / talkgroup activity ---------------------------------------
+$("refreshReport").addEventListener("click", async () => {
+  const msg = $("reportMsg");
+  const tbody = $("reportTable").querySelector("tbody");
+  msg.textContent = "Reading decoder logs…";
+  tbody.innerHTML = "";
+  try {
+    const r = await window.api.talkgroupReport();
+    if (!r.rows.length) {
+      msg.textContent = "No decoder activity yet (is it running?).";
+      return;
+    }
+    msg.textContent = `${r.rows.length} talkgroups seen · ${r.bridgedCount} bridged.`;
+    tbody.innerHTML = r.rows
+      .map((row) => {
+        const name = row.name || (row.bridged ? "" : "(not bridged)");
+        const star = row.bridged ? "★ " : "";
+        const vcls = row.voice > 0 ? "good" : "";
+        return `<tr class="${row.bridged ? "bridged" : "dim"}">
+          <td>${star}${name}</td><td>${row.tgid}</td>
+          <td class="${vcls}">${row.voice}</td><td>${row.enc}</td><td>${row.nosrc}</td></tr>`;
+      })
+      .join("");
+  } catch (e) {
+    msg.textContent = "Report failed: " + (e.message || e);
   }
 });
 

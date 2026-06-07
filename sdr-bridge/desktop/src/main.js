@@ -8,7 +8,7 @@
  * defined in preload.js, which forwards to the handlers registered here.
  */
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, Notification } = require("electron");
 const path = require("node:path");
 const orch = require("./orchestrator");
 
@@ -49,6 +49,11 @@ function createWindow() {
   // Stream pipeline log lines to the renderer as they arrive.
   orch.setLogSink((line) => {
     if (win && !win.isDestroyed()) win.webContents.send("pipeline-log", line);
+  });
+
+  // Watchdog / status notifications -> native Windows toasts.
+  orch.setNotifier((title, body) => {
+    if (Notification.isSupported()) new Notification({ title, body, icon: ICON_PATH }).show();
   });
 }
 
@@ -102,6 +107,8 @@ function register() {
     "pipeline:running": () => orch.pipelineRunning(),
     "dongle:attach": () => orch.attachDongle(),
     "dongle:list": () => orch.listDongles(),
+    "tuner:sweep": (_e, a) => orch.runSweep(a.startMHz, a.endMHz, a.gain),
+    "report:talkgroups": () => orch.talkgroupReport(),
     "status:get": () => orch.getStatus(),
     "log:recent": (_e, lines) => orch.recentDecoderLog(lines),
     "safet:open": () => orch.openSafeT(),
@@ -123,6 +130,13 @@ if (!app.requestSingleInstanceLock()) {
     register();
     createWindow();
     createTray();
+    orch.startWatchdog();
+
+    // Launched at login (hidden) -> start streaming on its own. The dongle was
+    // already attached by the login scheduled task, so no UAC prompt here.
+    if (startedHidden) {
+      setTimeout(() => orch.startPipeline({ quiet: true }).catch(() => {}), 6000);
+    }
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

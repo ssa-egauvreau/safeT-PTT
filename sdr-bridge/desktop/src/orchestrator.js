@@ -199,56 +199,94 @@ async function detachDongle() {
 
 let pipelineChild = null;
 let onLogLine = () => {};
+let notifyFn = () => {};
+let armed = false; // user wants it running (drives the watchdog)
 
 function setLogSink(fn) {
   onLogLine = typeof fn === "function" ? fn : () => {};
+}
+function setNotifier(fn) {
+  notifyFn = typeof fn === "function" ? fn : () => {};
+}
+function notify(title, body) {
+  if (getSettings().notifications === false) return;
+  try {
+    notifyFn(title, body);
+  } catch {
+    /* ignore */
+  }
 }
 
 function pipelineRunning() {
   return pipelineChild != null && !pipelineChild.killed;
 }
 
-/** Attach the dongle, then run the full stack (Icecast + streamers + decoder). */
-async function startPipeline() {
-  if (pipelineRunning()) return { ok: true, already: true };
+const CLEANUP_CMD =
+  `cd ${getSettings().projectDir} 2>/dev/null; ` +
+  `docker compose down >/dev/null 2>&1; ` +
+  `pkill -9 -f scripts/run-all.sh 2>/dev/null; ` +
+  `pkill -9 -f stream-talkgroups 2>/dev/null; ` +
+  `pkill -9 icecast2 2>/dev/null; ` +
+  `pkill -9 -f 'icecast://source' 2>/dev/null; true`;
 
-  const attach = await attachDongle();
-  onLogLine(`[dongle] ${attach.message}`);
-
+function spawnPipeline() {
   const { distro, projectDir } = getSettings();
   onLogLine("[start] launching decoder + streaming…");
   const child = spawn("wsl.exe", ["-d", distro, "--", "bash", "-lc", `cd ${projectDir} && npm start`], {
     windowsHide: true,
   });
   pipelineChild = child;
-
   const pump = (buf) => {
-    for (const line of buf.toString("utf8").split(/\r?\n/)) {
-      if (line.trim()) onLogLine(line);
-    }
+    for (const line of buf.toString("utf8").split(/\r?\n/)) if (line.trim()) onLogLine(line);
   };
   child.stdout.on("data", pump);
   child.stderr.on("data", pump);
   child.on("close", (code) => {
-    onLogLine(`[stopped] pipeline exited (code ${code ?? 0}).`);
+    onLogLine(`[stopped] pipeline process exited (code ${code ?? 0}).`);
     if (pipelineChild === child) pipelineChild = null;
   });
+}
 
-  return { ok: true, dongle: attach.ok, dongleMessage: attach.message };
+/** Re-attach the dongle without a UAC prompt when possible (uses the login
+ * scheduled task created by auto-start); falls back to the elevated attach. */
+async function reattachQuiet() {
+  const r = await runPowershell(
+    ["-Command", "try { Start-ScheduledTask -TaskName 'SafeT SDR Dongle Attach' -ErrorAction Stop; 'ok' } catch { 'no' }"],
+    { timeout: 20000 },
+  );
+  if (r.stdout.includes("ok")) {
+    await new Promise((res) => setTimeout(res, 2500));
+    return true;
+  }
+  await attachDongle(); // UAC fallback
+  return true;
+}
+
+/** Attach the dongle, then run the full stack (Icecast + streamers + decoder).
+ * `quiet` (used by login auto-start) avoids the UAC prompt by leaning on the
+ * scheduled task that already attached the dongle at boot. */
+async function startPipeline({ quiet = false } = {}) {
+  if (pipelineRunning()) return { ok: true, already: true };
+  armed = true;
+  let dongleOk = true;
+  let dongleMessage = "Using the dongle attached at login.";
+  if (quiet) {
+    await reattachQuiet();
+  } else {
+    const attach = await attachDongle();
+    dongleOk = attach.ok;
+    dongleMessage = attach.message;
+    onLogLine(`[dongle] ${attach.message}`);
+  }
+  spawnPipeline();
+  return { ok: true, dongle: dongleOk, dongleMessage };
 }
 
 /** Stop everything: clean up the WSL side, then kill the launcher process. */
 async function stopPipeline({ detach = true } = {}) {
+  armed = false;
   onLogLine("[stop] shutting down…");
-  await runWsl(
-    `cd ${getSettings().projectDir} 2>/dev/null; ` +
-      `docker compose down >/dev/null 2>&1; ` +
-      `pkill -9 -f scripts/run-all.sh 2>/dev/null; ` +
-      `pkill -9 -f stream-talkgroups 2>/dev/null; ` +
-      `pkill -9 icecast2 2>/dev/null; ` +
-      `pkill -9 -f 'icecast://source' 2>/dev/null; true`,
-    { timeout: 30000 },
-  );
+  await runWsl(CLEANUP_CMD, { timeout: 30000 });
   if (pipelineChild) {
     try {
       pipelineChild.kill();
@@ -260,6 +298,77 @@ async function stopPipeline({ detach = true } = {}) {
   if (detach) await detachDongle();
   onLogLine("[stop] done.");
   return { ok: true };
+}
+
+/** Internal restart used by the watchdog — keeps `armed` true. */
+async function restartPipeline() {
+  await runWsl(CLEANUP_CMD, { timeout: 30000 });
+  if (pipelineChild) {
+    try {
+      pipelineChild.kill();
+    } catch {
+      /* ignore */
+    }
+    pipelineChild = null;
+  }
+  await reattachQuiet();
+  spawnPipeline();
+}
+
+// ---- watchdog: auto-recover dongle drops / decoder crashes ---------------
+
+let watchdogTimer = null;
+let lastRecoverAt = 0;
+let lastLocked = null;
+
+async function watchdogTick() {
+  if (!armed) return;
+  // Cooldown so we don't thrash while a restart settles.
+  if (Date.now() - lastRecoverAt < 45000) return;
+
+  const dongle = await runWsl("lsusb 2>/dev/null | grep -iq '2838\\|2832\\|RTL' && echo yes || echo no", { timeout: 8000 });
+  const st = await runWsl("docker ps -a --format '{{.Names}}|{{.Status}}' 2>/dev/null | grep trunk-recorder || echo none", { timeout: 8000 });
+  const status = st.stdout.trim();
+  const dongleMissing = dongle.stdout.trim() !== "yes";
+  const unhealthy = status === "none" || /Restarting|Exited/i.test(status);
+
+  if (dongleMissing || unhealthy) {
+    lastRecoverAt = Date.now();
+    const reason = dongleMissing ? "SDR dongle dropped" : "decoder crashed";
+    onLogLine(`[watchdog] ${reason} — recovering…`);
+    notify("SafeT SDR — recovering", `${reason}; re-attaching the dongle and restarting.`);
+    try {
+      await restartPipeline();
+      notify("SafeT SDR — recovered", "Streaming restarted.");
+      lastLocked = null;
+    } catch (e) {
+      onLogLine("[watchdog] recovery error: " + (e.message || e));
+    }
+    return;
+  }
+
+  // Healthy → watch the control-channel lock and notify on transitions.
+  const log = await runWsl(
+    "docker logs --tail 80 sdr-bridge-trunk-recorder-1 2>&1 | grep -E 'Control Channel Message Decode Rate' | tail -1",
+    { timeout: 8000 },
+  );
+  const m = log.stdout.match(/Decode Rate:\s*([\d.]+)\/sec/);
+  const locked = m ? Number(m[1]) > 0 : null;
+  if (locked !== null && lastLocked !== null && locked !== lastLocked) {
+    if (locked) notify("SafeT SDR — locked", "Control channel locked; decoding.");
+    else notify("SafeT SDR — lost lock", "Control channel decode dropped to 0/sec.");
+  }
+  if (locked !== null) lastLocked = locked;
+}
+
+function startWatchdog() {
+  if (!watchdogTimer) watchdogTimer = setInterval(() => watchdogTick().catch(() => {}), 15000);
+}
+function stopWatchdog() {
+  if (watchdogTimer) {
+    clearInterval(watchdogTimer);
+    watchdogTimer = null;
+  }
 }
 
 // ---- scan for connected dongles ------------------------------------------
@@ -358,6 +467,100 @@ async function recentDecoderLog(lines = 200) {
   return res.stdout;
 }
 
+// ---- signal tuner (rtl_power sweep) --------------------------------------
+
+/** Sweep a frequency range and report the strongest bins (the peak is usually
+ * the control channel). Needs exclusive use of the dongle, so stop first. */
+async function runSweep(startMHz, endMHz, gain) {
+  if (pipelineRunning()) {
+    return { ok: false, error: "Stop streaming first — the tuner needs exclusive use of the dongle." };
+  }
+  const s = Number(startMHz), e = Number(endMHz);
+  if (!(e > s)) return { ok: false, error: "End frequency must be above start." };
+  if (e - s > 30) return { ok: false, error: "Keep the span under 30 MHz." };
+  const g = gain !== undefined && gain !== null && gain !== "" ? Number(gain) : 40;
+
+  const cmd = `rm -f /tmp/sweep.csv; timeout 25 rtl_power -f ${s}M:${e}M:25k -g ${g} -i 1 -1 /tmp/sweep.csv 2>/dev/null; cat /tmp/sweep.csv 2>/dev/null`;
+  const res = await runWsl(cmd, { timeout: 35000 });
+  if (!res.stdout.trim()) return { ok: false, error: "No sweep data — is the dongle attached and not in use?" };
+
+  const bins = [];
+  for (const line of res.stdout.split(/\r?\n/)) {
+    const parts = line.split(",").map((x) => x.trim());
+    if (parts.length < 7) continue;
+    const low = Number(parts[2]), step = Number(parts[4]);
+    if (!Number.isFinite(low) || !Number.isFinite(step)) continue;
+    const dbs = parts.slice(6).map(Number);
+    for (let i = 0; i < dbs.length; i++) {
+      const f = low + i * step;
+      if (Number.isFinite(f) && Number.isFinite(dbs[i])) bins.push({ hz: f, db: dbs[i] });
+    }
+  }
+  if (!bins.length) return { ok: false, error: "Couldn't parse the sweep output." };
+  bins.sort((a, b) => b.db - a.db);
+  const peak = bins[0];
+  // De-dupe nearby peaks (within 100 kHz) for a cleaner top list.
+  const top = [];
+  for (const b of bins) {
+    if (top.length >= 8) break;
+    if (top.some((t) => Math.abs(t.hz - b.hz) < 100000)) continue;
+    top.push(b);
+  }
+  return {
+    ok: true,
+    peakHz: Math.round(peak.hz),
+    peakMHz: +(peak.hz / 1e6).toFixed(4),
+    peakDb: +peak.db.toFixed(1),
+    suggestedCenterHz: Math.round(peak.hz),
+    top: top.map((b) => ({ mhz: +(b.hz / 1e6).toFixed(4), db: +b.db.toFixed(1) })),
+  };
+}
+
+// ---- talkgroup activity report -------------------------------------------
+
+/** Tally decoder activity per talkgroup: real voice vs encrypted vs out-of-range. */
+async function talkgroupReport() {
+  const { projectDir } = getSettings();
+  const names = {};
+  const bridged = new Set();
+  const csv = await runWsl(`cat ${projectDir}/trunk-recorder/talkgroups.csv 2>/dev/null || true`);
+  for (const line of csv.stdout.split(/\r?\n/).slice(1)) {
+    const c = line.split(",");
+    const id = (c[0] || "").trim();
+    if (/^\d+$/.test(id)) {
+      names[id] = (c[2] || "").trim();
+      bridged.add(Number(id));
+    }
+  }
+
+  const log = await runWsl("docker logs --tail 5000 sdr-bridge-trunk-recorder-1 2>&1 || true", { timeout: 25000 });
+  const stats = {};
+  const get = (t) => (stats[t] || (stats[t] = { voice: 0, enc: 0, nosrc: 0 }));
+  for (const line of log.stdout.split(/\r?\n/)) {
+    const m = line.match(/TG:\s*(\d+)/);
+    if (!m) continue;
+    const t = m[1];
+    if (line.includes("Starting P25 Recorder")) get(t).voice++;
+    else if (line.includes("ENCRYPTED")) get(t).enc++;
+    else if (line.includes("no source covering Freq")) get(t).nosrc++;
+  }
+
+  const rows = Object.entries(stats).map(([tgid, s]) => ({
+    tgid: Number(tgid),
+    name: names[tgid] || "",
+    bridged: bridged.has(Number(tgid)),
+    ...s,
+  }));
+  // Bridged first, then by most voice, then by most activity.
+  rows.sort(
+    (a, b) =>
+      Number(b.bridged) - Number(a.bridged) ||
+      b.voice - a.voice ||
+      b.enc + b.nosrc - (a.enc + a.nosrc),
+  );
+  return { rows, bridgedCount: bridged.size };
+}
+
 // ---- open the SafeT console in the browser -------------------------------
 
 async function openSafeT() {
@@ -416,6 +619,11 @@ module.exports = {
   stopPipeline,
   pipelineRunning,
   setLogSink,
+  setNotifier,
+  startWatchdog,
+  stopWatchdog,
+  runSweep,
+  talkgroupReport,
   getStatus,
   recentDecoderLog,
   openSafeT,
