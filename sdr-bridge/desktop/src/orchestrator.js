@@ -334,13 +334,20 @@ let watchdogTimer = null;
 let lastRecoverAt = 0;
 let lastLocked = null;
 
+/** Strip ANSI color codes — trunk-recorder colorizes its logs, which otherwise
+ * breaks regexes that expect e.g. a number right after "TG:". */
+function stripAnsi(s) {
+  return String(s).replace(/\x1b\[[0-9;]*m/g, "");
+}
+
 /** Is the decoder actually locked onto the control channel? trunk-recorder
  * STOPS printing the "Decode Rate" line once it's healthy, so we can't rely on
  * that — instead we look for live trunking activity (following grants, decoding
  * the system) and treat a run of "Decode Rate: 0/sec" errors as lost lock. */
 function logShowsLock(text) {
-  const zeroRate = (text.match(/Decode Rate:\s*0\/sec/g) || []).length;
-  const activity = /Decoding System ID|RFSS:|Starting P25 Recorder|\bTG:\s*\d/.test(text);
+  const clean = stripAnsi(text);
+  const zeroRate = (clean.match(/Decode Rate:\s*0\/sec/g) || []).length;
+  const activity = /Decoding System ID|RFSS:|Starting P25 Recorder|\bTG:\s*\d/.test(clean);
   return activity && zeroRate < 5;
 }
 
@@ -450,7 +457,7 @@ async function getStatus() {
 
   if (status.decoder.running) {
     const log = await runWsl("docker logs --tail 200 sdr-bridge-trunk-recorder-1 2>&1 | tail -200");
-    const text = log.stdout;
+    const text = stripAnsi(log.stdout);
     // Control-channel frequency: the last one it locked / retuned to.
     const ccs = [...text.matchAll(/Control Channel:\s*(\d{3}\.\d+)\s*MHz/g)];
     if (ccs.length) status.decoder.controlChannel = ccs[ccs.length - 1][1] + " MHz";
@@ -570,7 +577,9 @@ async function talkgroupReport() {
   const log = await runWsl("docker logs --tail 5000 sdr-bridge-trunk-recorder-1 2>&1 || true", { timeout: 25000 });
   const stats = {};
   const get = (t) => (stats[t] || (stats[t] = { voice: 0, enc: 0, nosrc: 0 }));
-  for (const line of log.stdout.split(/\r?\n/)) {
+  // trunk-recorder colorizes its output; strip ANSI codes so "TG: <n>" parses
+  // (the escape sequence sits between "TG:" and the number).
+  for (const line of stripAnsi(log.stdout).split(/\r?\n/)) {
     const m = line.match(/TG:\s*(\d+)/);
     if (!m) continue;
     const t = m[1];
