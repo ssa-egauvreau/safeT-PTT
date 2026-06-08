@@ -329,6 +329,16 @@ let watchdogTimer = null;
 let lastRecoverAt = 0;
 let lastLocked = null;
 
+/** Is the decoder actually locked onto the control channel? trunk-recorder
+ * STOPS printing the "Decode Rate" line once it's healthy, so we can't rely on
+ * that — instead we look for live trunking activity (following grants, decoding
+ * the system) and treat a run of "Decode Rate: 0/sec" errors as lost lock. */
+function logShowsLock(text) {
+  const zeroRate = (text.match(/Decode Rate:\s*0\/sec/g) || []).length;
+  const activity = /Decoding System ID|RFSS:|Starting P25 Recorder|\bTG:\s*\d/.test(text);
+  return activity && zeroRate < 5;
+}
+
 async function watchdogTick() {
   if (!armed) return;
   // Cooldown so we don't thrash while a restart settles.
@@ -356,17 +366,13 @@ async function watchdogTick() {
   }
 
   // Healthy → watch the control-channel lock and notify on transitions.
-  const log = await runWsl(
-    "docker logs --tail 80 sdr-bridge-trunk-recorder-1 2>&1 | grep -E 'Control Channel Message Decode Rate' | tail -1",
-    { timeout: 8000 },
-  );
-  const m = log.stdout.match(/Decode Rate:\s*([\d.]+)\/sec/);
-  const locked = m ? Number(m[1]) > 0 : null;
-  if (locked !== null && lastLocked !== null && locked !== lastLocked) {
+  const log = await runWsl("docker logs --tail 150 sdr-bridge-trunk-recorder-1 2>&1 | tail -150", { timeout: 8000 });
+  const locked = logShowsLock(log.stdout);
+  if (lastLocked !== null && locked !== lastLocked) {
     if (locked) notify("SafeT SDR — locked", "Control channel locked; decoding.");
-    else notify("SafeT SDR — lost lock", "Control channel decode dropped to 0/sec.");
+    else notify("SafeT SDR — lost lock", "Control channel decode dropped.");
   }
-  if (locked !== null) lastLocked = locked;
+  lastLocked = locked;
 }
 
 function startWatchdog() {
@@ -422,7 +428,7 @@ async function getStatus() {
     wsl: false,
     dongle: false,
     pipelineRunning: pipelineRunning(),
-    decoder: { running: false, controlChannel: null, decodeRate: null },
+    decoder: { running: false, locked: false, controlChannel: null, decodeRate: null },
     icecast: { up: false, mounts: 0, names: [] },
     cloudflared: "unknown",
   };
@@ -438,13 +444,14 @@ async function getStatus() {
   status.decoder.running = ps.stdout.trim().length > 0;
 
   if (status.decoder.running) {
-    const log = await runWsl(
-      "docker logs --tail 250 sdr-bridge-trunk-recorder-1 2>&1 | grep -E 'Control Channel Message Decode Rate|Started with Control Channel' | tail -1",
-    );
-    const m = log.stdout.match(/Decode Rate:\s*([\d.]+)\/sec/);
-    if (m) status.decoder.decodeRate = Number(m[1]);
-    const cc = log.stdout.match(/(\d{3}\.\d+)\s*MHz/);
-    if (cc) status.decoder.controlChannel = cc[1] + " MHz";
+    const log = await runWsl("docker logs --tail 200 sdr-bridge-trunk-recorder-1 2>&1 | tail -200");
+    const text = log.stdout;
+    // Control-channel frequency: the last one it locked / retuned to.
+    const ccs = [...text.matchAll(/Control Channel:\s*(\d{3}\.\d+)\s*MHz/g)];
+    if (ccs.length) status.decoder.controlChannel = ccs[ccs.length - 1][1] + " MHz";
+    const rates = [...text.matchAll(/Decode Rate:\s*([\d.]+)\/sec/g)];
+    if (rates.length) status.decoder.decodeRate = Number(rates[rates.length - 1][1]);
+    status.decoder.locked = logShowsLock(text);
   }
 
   const ice = await runWsl("curl -s --max-time 2 http://127.0.0.1:8000/status-json.xsl || true");
