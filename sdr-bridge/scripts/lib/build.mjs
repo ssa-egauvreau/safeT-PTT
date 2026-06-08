@@ -184,8 +184,8 @@ STREAMER_PIDS+=($!)`;
 # the listener stuck on silence — which is why /monitor worked but /tgNNNN didn't.
 ( while :; do
   ffmpeg -hide_banner -loglevel error \\
-    -f lavfi -i "anullsrc=channel_layout=mono:sample_rate=8000" \\
-    -f s16le -ar 8000 -ac 1 -fflags nobuffer \\
+    -thread_queue_size 1024 -f lavfi -i "anullsrc=channel_layout=mono:sample_rate=8000" \\
+    -thread_queue_size 1024 -f s16le -ar 8000 -ac 1 \\
     -i "udp://127.0.0.1:${p.udpPort}?fifo_size=1000000&overrun_nonfatal=1" \\
     -filter_complex "[1:a]volume=1.6,alimiter=limit=0.95[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]" \\
     -map "[a]" -c:a libmp3lame -b:a 32k -ar 8000 -ac 1 \\
