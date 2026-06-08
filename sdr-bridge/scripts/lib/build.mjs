@@ -176,21 +176,20 @@ STREAMER_PIDS+=($!)`;
   const stanzas = plan
     .map(
       (p) => `# ${p.channel}  (TGID ${p.tgid})  ->  mount /${p.mount}
-# Persistent source: an always-on silence floor (input 0) keeps the mount LIVE,
-# with the decoder's UDP voice (input 1) mixed in during calls. A persistent
-# source is what lets a remote listener (the SafeT server) always receive audio.
-# Relying on Icecast fallback-override to move an already-connected listener
-# onto a late-arriving per-call source is unreliable (Icecast 2.5) and leaves
-# the listener stuck on silence — which is why /monitor worked but /tgNNNN didn't.
+# Persistent source so the SafeT server (a remote listener) always receives
+# audio. udp-pcm.py turns the decoder's bursty, call-only UDP into a CONTINUOUS
+# PCM stream (silence in the gaps), which ffmpeg publishes as an always-live
+# mount. Feeding ffmpeg the UDP directly does NOT work — with no packets between
+# calls it stalls and never publishes, so the mount stays dark and a remote
+# listener is stranded on silence.
 ( while :; do
-  ffmpeg -hide_banner -loglevel error \\
-    -thread_queue_size 1024 -f lavfi -i "anullsrc=channel_layout=mono:sample_rate=8000" \\
-    -thread_queue_size 1024 -f s16le -ar 8000 -ac 1 \\
-    -i "udp://127.0.0.1:${p.udpPort}?fifo_size=1000000&overrun_nonfatal=1" \\
-    -filter_complex "[1:a]volume=1.6,alimiter=limit=0.95[v];[0:a][v]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]" \\
-    -map "[a]" -c:a libmp3lame -b:a 32k -ar 8000 -ac 1 \\
-    -content_type audio/mpeg -f mp3 \\
-    "icecast://source:${srcPass}@${iceHost}:${icePort}/${p.mount}" 2>/dev/null
+  python3 scripts/udp-pcm.py ${p.udpPort} 2>/dev/null \\
+  | ffmpeg -hide_banner -loglevel error \\
+      -f s16le -ar 8000 -ac 1 -i - \\
+      -af "volume=1.6,alimiter=limit=0.95" \\
+      -c:a libmp3lame -b:a 32k -ar 8000 -ac 1 \\
+      -content_type audio/mpeg -f mp3 \\
+      "icecast://source:${srcPass}@${iceHost}:${icePort}/${p.mount}" 2>/dev/null
   sleep 1
 done ) &
 STREAMER_PIDS+=($!)`,
@@ -228,8 +227,10 @@ cleanup() {
   trap '' EXIT INT TERM
   echo "stopping streamers..."
   for pid in "\${STREAMER_PIDS[@]:-}"; do kill "\$pid" 2>/dev/null || true; done
-  # Reap the ffmpeg children the loops spawned (they all carry the icecast URL).
+  # Reap the children the loops spawned: the ffmpegs (carry the icecast URL) and
+  # the udp-pcm.py feeders.
   pkill -9 -f "icecast://source" 2>/dev/null || true
+  pkill -9 -f "udp-pcm.py" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 

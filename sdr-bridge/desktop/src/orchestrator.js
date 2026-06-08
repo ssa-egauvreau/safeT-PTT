@@ -226,6 +226,7 @@ const CLEANUP_CMD =
   `docker compose down >/dev/null 2>&1; ` +
   `pkill -9 -f scripts/run-all.sh 2>/dev/null; ` +
   `pkill -9 -f stream-talkgroups 2>/dev/null; ` +
+  `pkill -9 -f udp-pcm.py 2>/dev/null; ` +
   `pkill -9 icecast2 2>/dev/null; ` +
   `pkill -9 -f 'icecast://source' 2>/dev/null; true`;
 
