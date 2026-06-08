@@ -230,9 +230,14 @@ const CLEANUP_CMD =
   `pkill -9 -f 'icecast://source' 2>/dev/null; true`;
 
 function spawnPipeline() {
-  const { distro, projectDir } = getSettings();
+  const { distro, projectDir, streamBase } = getSettings();
+  // If a public stream URL is set (cloud SafeT), pass it so the sync step
+  // repoints every bridge to <streamBase>/tg<NNN> — the address the SafeT
+  // server can actually reach. Blank = SafeT runs on this PC (localhost).
+  const env = streamBase ? `SDR_STREAM_BASE='${streamBase}' ` : "";
+  if (streamBase) onLogLine(`[start] SafeT will pull audio from ${streamBase}`);
   onLogLine("[start] launching decoder + streaming…");
-  const child = spawn("wsl.exe", ["-d", distro, "--", "bash", "-lc", `cd ${projectDir} && npm start`], {
+  const child = spawn("wsl.exe", ["-d", distro, "--", "bash", "-lc", `cd ${projectDir} && ${env}npm start`], {
     windowsHide: true,
   });
   pipelineChild = child;

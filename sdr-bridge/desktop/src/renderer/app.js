@@ -61,6 +61,7 @@ async function loadSettings() {
   const s = (await window.api.getSettings()) || {};
   $("distro").value = s.distro || "Ubuntu";
   $("projectDir").value = s.projectDir || "~/safeT-PTT/sdr-bridge";
+  $("streamBase").value = s.streamBase || "";
 
   $("autostart").checked = await window.api.getAutoStart();
   $("notifications").checked = s.notifications !== false;
@@ -123,9 +124,12 @@ async function saveSettings() {
   }
 
   try {
+    let streamBase = $("streamBase").value.trim();
+    if (streamBase && !/^https?:\/\//i.test(streamBase)) streamBase = "https://" + streamBase;
     await window.api.saveSettings({
       distro: $("distro").value || "Ubuntu",
       projectDir: $("projectDir").value || "~/safeT-PTT/sdr-bridge",
+      streamBase,
       notifications: $("notifications").checked,
     });
     const res = await window.api.saveConfig(patch);
