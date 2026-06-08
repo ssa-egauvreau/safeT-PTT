@@ -61,6 +61,7 @@ async function loadSettings() {
   const s = (await window.api.getSettings()) || {};
   $("distro").value = s.distro || "Ubuntu";
   $("projectDir").value = s.projectDir || "~/safeT-PTT/sdr-bridge";
+  $("streamBase").value = s.streamBase || "";
 
   $("autostart").checked = await window.api.getAutoStart();
   $("notifications").checked = s.notifications !== false;
@@ -123,9 +124,12 @@ async function saveSettings() {
   }
 
   try {
+    let streamBase = $("streamBase").value.trim();
+    if (streamBase && !/^https?:\/\//i.test(streamBase)) streamBase = "https://" + streamBase;
     await window.api.saveSettings({
       distro: $("distro").value || "Ubuntu",
       projectDir: $("projectDir").value || "~/safeT-PTT/sdr-bridge",
+      streamBase,
       notifications: $("notifications").checked,
     });
     const res = await window.api.saveConfig(patch);
@@ -293,9 +297,12 @@ async function poll() {
   setCard("card-dongle", s.dongle ? "ok" : "bad", s.dongle ? "Attached" : "Not attached");
 
   if (!s.decoder.running) setCard("card-decoder", "bad", "Stopped");
-  else if (s.decoder.decodeRate && s.decoder.decodeRate > 0)
-    setCard("card-decoder", "ok", `Locked ${s.decoder.controlChannel || ""} · ${s.decoder.decodeRate}/s`.trim());
-  else setCard("card-decoder", "warn", "Running, acquiring lock…");
+  else if (s.decoder.locked) {
+    let txt = "Locked";
+    if (s.decoder.controlChannel) txt += " " + s.decoder.controlChannel;
+    if (s.decoder.decodeRate) txt += ` · ${s.decoder.decodeRate}/s`;
+    setCard("card-decoder", "ok", txt);
+  } else setCard("card-decoder", "warn", "Running, acquiring lock…");
 
   if (!s.icecast.up) setCard("card-icecast", "bad", "Down");
   else if (s.icecast.mounts > 0) setCard("card-icecast", "ok", `${s.icecast.mounts} mounts live`);
