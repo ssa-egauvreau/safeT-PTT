@@ -32,7 +32,10 @@ function mhz(hz) {
 async function loadSettings() {
   const cfg = (await window.api.getConfig()) || {};
   const sources = Array.isArray(cfg.sources) && cfg.sources.length ? cfg.sources : [cfg.sdr || {}];
-  const d1 = sources[0] || {};
+  // The first dongle inherits any unset RF field from the `sdr` shorthand block,
+  // so a half-filled `sources[0]` doesn't blank out good center/gain/ppm values
+  // (and mirrors how build.mjs generates the trunk-recorder config).
+  const d1 = { ...(cfg.sdr || {}), ...(sources[0] || {}) };
   const d2 = sources[1] || null;
   const sys = (Array.isArray(cfg.systems) && cfg.systems[0]) || cfg.system || {};
   const ice = cfg.icecast || {};
@@ -86,9 +89,27 @@ async function saveSettings() {
   const num = (id) => ($(id).value !== "" ? Number($(id).value) : undefined);
   const mhzToHz = (id) => ($(id).value ? Math.round(Number($(id).value) * MHZ) : undefined);
 
+  // Center frequency and control channel are the two silent killers: with no
+  // center the dongle tunes to the wrong place, and with no control channel a
+  // P25 system can't be followed — either way the decoder produces nothing and
+  // the bridge looks "stopped" for no obvious reason. Refuse to save that.
+  const fail = (text) => {
+    msg.className = "save-msg err";
+    msg.textContent = text;
+    btn.disabled = false;
+  };
+  const centerHz = mhzToHz("centerMHz");
+  const controlChannelsHz = parseControl($("controlMHz").value);
+  if (!centerHz)
+    return fail("Enter a center frequency first — without it the decoder tunes to the wrong place and the bridge stays silent.");
+  if (!controlChannelsHz.length)
+    return fail("Enter at least one control channel frequency first — a P25 system can't be followed without it.");
+  if ($("dongle2on").checked && !mhzToHz("d2center"))
+    return fail("Enter a center frequency for the second dongle, or turn it off.");
+
   // Dongle 1 (always present) + optional dongle 2 -> a `sources` array.
   const sources = [
-    { device: 0, centerHz: mhzToHz("centerMHz"), gain: num("gain"), ppm: num("ppm"), rateHz: num("rateHz") },
+    { device: 0, centerHz, gain: num("gain"), ppm: num("ppm"), rateHz: num("rateHz") },
   ];
   if ($("dongle2on").checked) {
     sources.push({
@@ -103,7 +124,7 @@ async function saveSettings() {
   const patch = {
     sources,
     system: {
-      controlChannelsHz: parseControl($("controlMHz").value),
+      controlChannelsHz,
       modulation: $("modulation").value,
     },
     icecast: {

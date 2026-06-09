@@ -31,8 +31,15 @@ function buildTrunkConfig(cfg, plan) {
   // `sources` / `systems` arrays are present they win. Each source (dongle)
   // covers its own ~2 MHz window, so two dongles span a wider band — or a
   // second one can sit on a different band entirely (UHF/VHF) for a 2nd system.
-  const sourcesCfg =
-    Array.isArray(cfg.sources) && cfg.sources.length ? cfg.sources : [cfg.sdr ?? {}];
+  // `sdr` is the single-dongle shorthand for `sources[0]`. When BOTH are present
+  // (the desktop app writes `sources`; the example ships `sdr`), treat `sdr` as
+  // defaults for the first dongle so a half-filled `sources[0]` — e.g.
+  // `{ device, rateHz }` with no centerHz/gain/ppm — inherits those instead of
+  // silently snapping to the 854 MHz / gain-0 fallbacks (which tunes the dongle
+  // to the wrong place and leaves the bridge quiet with no obvious cause).
+  const sdrShorthand = cfg.sdr ?? {};
+  const rawSources =
+    Array.isArray(cfg.sources) && cfg.sources.length ? cfg.sources : [sdrShorthand];
   const systemsCfg =
     Array.isArray(cfg.systems) && cfg.systems.length ? cfg.systems : [cfg.system ?? {}];
 
@@ -40,17 +47,21 @@ function buildTrunkConfig(cfg, plan) {
   // simplestream tags its UDP streams with that system's shortName.
   const primaryShort = systemsCfg[0]?.shortName ?? "occcs";
 
-  const sources = sourcesCfg.map((s, i) => ({
-    center: s.centerHz ?? 854000000,
-    rate: s.rateHz ?? 2400000,
-    gain: s.gain ?? 0,
-    ppm: s.ppm ?? 0,
-    digitalRecorders: Math.max(4, plan.length),
-    driver: "osmosdr",
-    // Default each dongle to its array index (rtl=0, rtl=1, …). Set `device`
-    // to a serial (e.g. "00000101") if Windows enumerates them inconsistently.
-    device: `rtl=${s.device ?? i}`,
-  }));
+  const sources = rawSources.map((raw, i) => {
+    // First dongle inherits any unset RF field from the `sdr` shorthand.
+    const s = i === 0 ? { ...sdrShorthand, ...raw } : raw;
+    return {
+      center: s.centerHz ?? 854000000,
+      rate: s.rateHz ?? 2400000,
+      gain: s.gain ?? 0,
+      ppm: s.ppm ?? 0,
+      digitalRecorders: Math.max(4, plan.length),
+      driver: "osmosdr",
+      // Default each dongle to its array index (rtl=0, rtl=1, …). Set `device`
+      // to a serial (e.g. "00000101") if Windows enumerates them inconsistently.
+      device: `rtl=${s.device ?? i}`,
+    };
+  });
 
   const systems = systemsCfg.map((s, i) => {
     const isPrimary = i === 0;
@@ -66,6 +77,16 @@ function buildTrunkConfig(cfg, plan) {
       sys.channels = s.channelsHz;
     } else {
       sys.control_channels = s.controlChannelsHz ?? [];
+    }
+    // A trunked system with no control channel (or a conventional one with no
+    // channels) gives trunk-recorder nothing to tune: it dies on boot and the
+    // whole bridge silently goes dark. Fail loudly here, pointing at the fix.
+    if (!sys.channels?.length && !sys.control_channels?.length) {
+      throw new Error(
+        `system "${sys.shortName}" has no frequencies to tune. Set "controlChannelsHz" ` +
+          `(trunked, e.g. [856712500, 857462500]) or "channelsHz" (conventional) in ` +
+          `config/system.json — without one the decoder can't lock and no audio reaches SafeT.`,
+      );
     }
     // Primary system records the SafeT talkgroups; extra systems use whatever
     // talkgroup ids you list for them in config.
