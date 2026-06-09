@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, describeError, fetchTransmissionAudio, type Transmission, type UserChannel } from "../api";
 import { useUnitAliasResolver } from "../unitAliases";
+import { formatUnitSpeakerLabel } from "./consoleShared";
 import { imbeRoundtripPcm16k, pcm16ToWavBlob } from "../voice/imbeRoundtrip";
 import { pcm16kFromTransmissionWav } from "../voice/wavPcm";
 
@@ -570,7 +571,7 @@ export function TransmissionLog() {
           )}
           {pageItems.map((tx) => {
           const transcript = transcriptOf(tx);
-          const speaker = tx.display_name || aliasFor(tx.unit_id) || "Unknown";
+          const speaker = formatUnitSpeakerLabel(tx.unit_id, tx.display_name, aliasFor);
           return (
             <div className={selected.has(tx.id) ? "tx-card selected" : "tx-card"} key={tx.id}>
               <div className="tx-card-head">
@@ -585,7 +586,6 @@ export function TransmissionLog() {
               </div>
               <div className="tx-card-sub">
                 {formatTime(tx.started_at)} · {formatDuration(tx.duration_ms)}
-                {tx.display_name && tx.unit_id ? ` · ${aliasFor(tx.unit_id)}` : ""}
               </div>
               <div className={transcript.muted ? "tx-transcript muted" : "tx-transcript"}>
                 <TranscriptText text={transcript.text} query={transcript.muted ? "" : search} />

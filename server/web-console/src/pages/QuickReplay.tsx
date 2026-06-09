@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, describeError, fetchTransmissionAudio, type Transmission } from "../api";
 import { useUnitAliasResolver } from "../unitAliases";
 import { formatDuration, formatTime, transcriptOf } from "./TransmissionLog";
+import { formatUnitSpeakerLabel } from "./consoleShared";
 import { IconWaveform } from "../icons";
 
 /** One latest transmission — full history is in the transcript log. */
@@ -114,7 +115,7 @@ export function QuickReplay() {
           )}
           {items.map((tx) => {
             const transcript = transcriptOf(tx);
-            const speaker = tx.display_name || aliasFor(tx.unit_id) || "Unknown";
+            const speaker = formatUnitSpeakerLabel(tx.unit_id, tx.display_name, aliasFor);
             return (
               <div className="quick-replay-card" key={tx.id}>
                 <div className="quick-replay-card-head">
