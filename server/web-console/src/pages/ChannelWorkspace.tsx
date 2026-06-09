@@ -24,6 +24,7 @@ import {
   applyWorkspaceRglLayout,
   cycleWorkspaceTileSize,
   getWorkspaceTile,
+  setWorkspaceViewportCols,
   syncWorkspaceTilesForViewport,
   useConsoleState,
   workspaceFootprintForSize,
@@ -107,7 +108,10 @@ export function ChannelWorkspace({
     const inner = Math.max(0, el.clientWidth - padL - padR);
     const c = workspaceGridColsForWidth(inner);
     setGridCols(c);
-    if (gridColsRef.current > 0 && gridColsRef.current !== c) {
+    setWorkspaceViewportCols(c);
+    // Re-pack on the first measure too (no-op when every tile already fits) so a
+    // layout saved on a wider window flows into the columns this window has.
+    if (gridColsRef.current !== c) {
       syncWorkspaceTilesForViewport(c);
     }
     gridColsRef.current = c;
@@ -222,7 +226,7 @@ export function ChannelWorkspace({
             <>
               <p>Tap a channel in the list to open it here — or drag it in.</p>
               <p className="muted">
-                S = 2×2 · M = 4×4 · L = 4×8. Drag the colored name bar to move.
+                S = 2×2 · M = 4×4 · L = 4×7. Drag the colored name bar to move.
               </p>
             </>
           }
