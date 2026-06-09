@@ -5,7 +5,7 @@ import { sounds } from "../sounds";
 import { TransmissionLog } from "./TransmissionLog";
 import { SimulcastManager } from "./SimulcastManager";
 import { type SectionProps } from "./PopOutSection";
-import { keyLabel } from "./consoleShared";
+import { keyLabel, loadChannelRailCollapsed, saveChannelRailCollapsed } from "./consoleShared";
 import {
   dockChannel,
   MAX_SAFE_DOCKED_CHANNELS,
@@ -40,7 +40,16 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
   const [simulcastOpen, setSimulcastOpen] = useState(false);
   const [rebindingPtt, setRebindingPtt] = useState(false);
   const [dockNotice, setDockNotice] = useState<string | null>(null);
+  const [railCollapsed, setRailCollapsed] = useState(loadChannelRailCollapsed);
   const canSimulcast = user?.role === "admin" || user?.role === "dispatcher";
+
+  function toggleRailCollapsed() {
+    setRailCollapsed((collapsed) => {
+      const next = !collapsed;
+      saveChannelRailCollapsed(next);
+      return next;
+    });
+  }
 
   const dockedChannels = expanded
     .map((id) => channels.find((c) => c.id === id))
@@ -184,8 +193,34 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
         <div className="empty">No channels assigned to this account.</div>
       )}
 
-      <div className="channel-workspace-layout">
-        <aside className="channel-rail" aria-label="Channel list">
+      <div className={`channel-workspace-layout${railCollapsed ? " rail-collapsed" : ""}`}>
+        {railCollapsed ? (
+          <button
+            type="button"
+            className="channel-rail-expand-tab"
+            onClick={toggleRailCollapsed}
+            title="Show channel list and settings"
+            aria-label="Show channel list"
+          >
+            <span className="channel-rail-expand-caret" aria-hidden="true">
+              ▸
+            </span>
+            <span className="channel-rail-expand-label">Channels</span>
+          </button>
+        ) : (
+          <aside className="channel-rail" aria-label="Channel list">
+            <div className="channel-rail-head">
+              <span className="channel-rail-head-title">Channels</span>
+              <button
+                type="button"
+                className="channel-rail-collapse-btn"
+                onClick={toggleRailCollapsed}
+                title="Hide channel list to show more channel tiles"
+                aria-label="Hide channel list"
+              >
+                ◂
+              </button>
+            </div>
           {channels.map((channel, index) => {
             const showZone = !!channel.zone && channel.zone !== (channels[index - 1]?.zone ?? null);
             return (
@@ -277,30 +312,33 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
               </button>
             </div>
           )}
-        </aside>
-
-        {loading ? (
-          <section
-            className="channel-workspace-rows channel-workspace-grid"
-            aria-label="Channel workspace"
-          >
-            <div className="channel-workspace-empty">
-              <p>Loading channels…</p>
-            </div>
-          </section>
-        ) : (
-          <ChannelWorkspace
-            dockedChannels={dockedChannels}
-            open={open}
-            primary={primary}
-            pttCode={pttCode}
-            keyboardOn={keyboardOn}
-            onToggleMonitor={(id) => setChannelMonitoring(id, !open.includes(id))}
-            onUndock={undockChannel}
-            onMakePrimary={setPrimaryChannel}
-            onDockFromRail={dockFromRail}
-          />
+          </aside>
         )}
+
+        <div className="channel-workspace-main">
+          {loading ? (
+            <section
+              className="channel-workspace-rows channel-workspace-grid"
+              aria-label="Channel workspace"
+            >
+              <div className="channel-workspace-empty">
+                <p>Loading channels…</p>
+              </div>
+            </section>
+          ) : (
+            <ChannelWorkspace
+              dockedChannels={dockedChannels}
+              open={open}
+              primary={primary}
+              pttCode={pttCode}
+              keyboardOn={keyboardOn}
+              onToggleMonitor={(id) => setChannelMonitoring(id, !open.includes(id))}
+              onUndock={undockChannel}
+              onMakePrimary={setPrimaryChannel}
+              onDockFromRail={dockFromRail}
+            />
+          )}
+        </div>
       </div>
 
       <LiveControlPanel />

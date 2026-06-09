@@ -881,9 +881,90 @@ code.mono {
   max-width: 100%;
   box-sizing: border-box;
 }
+.channel-workspace-layout.rail-collapsed {
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 4px;
+}
 .channel-workspace-layout > .channel-rail,
+.channel-workspace-layout > .channel-workspace-main,
 .channel-workspace-layout > .channel-workspace-rows {
   min-width: 0;
+}
+.channel-workspace-main {
+  min-width: 0;
+}
+.channel-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 2px;
+  flex-shrink: 0;
+}
+.channel-rail-head-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+.channel-rail-collapse-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-input) 80%, transparent);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+}
+.channel-rail-collapse-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-2);
+  background: var(--bg-input);
+}
+.channel-rail-expand-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: 30px;
+  min-height: 88px;
+  padding: 10px 4px;
+  border: 1px solid var(--border);
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--bg-raised) 92%, var(--bg-input));
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  align-self: start;
+  position: sticky;
+  top: 8px;
+}
+.channel-rail-expand-tab:hover {
+  color: var(--text);
+  border-color: var(--accent-2);
+  background: var(--bg-input);
+}
+.channel-rail-expand-caret {
+  font-size: 11px;
+  line-height: 1;
+}
+.channel-rail-expand-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
 }
 .channel-rail {
   display: flex;
@@ -5341,6 +5422,24 @@ button.ch-kbd-chip:hover {
   }
   .channel-workspace-layout {
     grid-template-columns: 1fr;
+  }
+  .channel-workspace-layout.rail-collapsed {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .channel-rail-expand-tab {
+    width: 100%;
+    min-height: 0;
+    flex-direction: row;
+    justify-content: center;
+    border-radius: 6px;
+    position: static;
+    padding: 8px 12px;
+  }
+  .channel-rail-expand-label {
+    writing-mode: horizontal-tb;
+    transform: none;
+    font-size: 11px;
   }
   /* The workspace stacks under the rail on phones — size it to its docked tiles instead of the
      desktop 72vh, so an empty workspace isn't a giant drop-zone box filling the screen. */
