@@ -10,6 +10,9 @@ echo.
 
 for /f "delims=" %%u in ('wsl -d Ubuntu -- bash -lc "echo $USER"') do set "WUSER=%%u"
 
+echo [0/3] Getting the latest SafeT SDR code...
+wsl -d Ubuntu -- bash -lc "cd ~/safeT-PTT && git checkout -q main 2>/dev/null; git pull --ff-only || echo '(could not update - building the code already on this PC)'"
+
 echo [1/3] Installing build tools in Ubuntu...
 wsl -d Ubuntu -u root -- bash -lc "command -v wine64 >/dev/null 2>&1 || command -v wine >/dev/null 2>&1 || (apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y wine64 || DEBIAN_FRONTEND=noninteractive apt-get install -y wine)"
 

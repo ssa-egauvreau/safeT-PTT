@@ -292,6 +292,18 @@ async function startPipeline({ quiet = false } = {}) {
     }
   }
   onLogLine(`[dongle] ${dongleMessage}`);
+
+  // Self-update: the pipeline scripts run straight out of the WSL repo, so a
+  // pull here means every Start runs the latest code with no rebuild (only UI
+  // changes to this app need a rebuild). Offline or a dirty tree just logs.
+  const { projectDir } = getSettings();
+  const pull = await runWsl(
+    `cd ${projectDir} && git checkout -q main 2>/dev/null; git pull --ff-only 2>&1 | tail -1`,
+    { timeout: 45000 },
+  );
+  const pulled = (pull.stdout || pull.stderr).trim();
+  onLogLine(`[update] ${pulled || "(could not check for updates — using existing code)"}`);
+
   spawnPipeline();
   return { ok: true, dongle: dongleOk, dongleMessage };
 }

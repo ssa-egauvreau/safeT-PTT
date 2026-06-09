@@ -6,6 +6,10 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."   # -> sdr-bridge/
 
+# One-shot RF profile fixes (e.g. the OC CCCS high control channels) — before
+# the sync so the regenerated decoder config picks them up.
+node scripts/migrate-config.mjs || true
+
 # Pull the latest talkgroups from the bridges you created in the SafeT console
 # (Bridges -> Import from RadioReference) and regenerate the runtime files. Set
 # SDR_SKIP_SYNC=1 to use a hand-built config (npm run generate) instead.
