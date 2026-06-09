@@ -494,6 +494,15 @@ async function getStatus() {
   const [run, n] = br.stdout.trim().split(/\s+/);
   status.bridge = { running: run === "RUN", channels: Number(n) || 0 };
 
+  // When the bridge is down, surface WHY on the dashboard card instead of a
+  // bare "Stopped" (the cause lives in /tmp/sdr-bridge.log, which nobody reads).
+  if (!status.bridge.running) {
+    const t = await runWsl(
+      "grep -v '^\\s*$' /tmp/sdr-bridge.log 2>/dev/null | tail -1 | cut -c1-140",
+    );
+    status.bridge.lastLog = t.stdout.trim();
+  }
+
   // Per-channel detail (state + last transmission pushed to SafeT), written by
   // local-bridge.mjs once a second. Only meaningful while the bridge runs.
   status.channels = [];
