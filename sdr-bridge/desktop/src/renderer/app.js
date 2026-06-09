@@ -312,11 +312,52 @@ async function poll() {
   else if (b.running) setCard("card-bridge", "warn", "Connecting…");
   else setCard("card-bridge", "bad", "Stopped");
 
+  renderChannels(s.channels || []);
+
   const running = s.decoder.running || s.pipelineRunning;
   if (running && $("runState").textContent !== "Starting…") setRunState("on");
   else if (!running && $("runState").textContent === "Running") setRunState("off");
 
   if (s.dongle) $("dongleHint").hidden = true;
+}
+
+// ---- per-channel status (live "is audio reaching SafeT" view) -------------
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+function fmtClock(ms) {
+  return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+}
+function fmtDur(ms) {
+  return ms >= 59500 ? Math.round(ms / 60000) + "m " + Math.round((ms % 60000) / 1000) + "s" : (ms / 1000).toFixed(1) + "s";
+}
+
+function renderChannels(chans) {
+  $("channelsPanel").hidden = chans.length === 0;
+  if (!chans.length) return;
+  const rows = [...chans].sort((a, b) => Number(a.scan) - Number(b.scan) || String(a.channel).localeCompare(String(b.channel)));
+  $("channelsTable").querySelector("tbody").innerHTML = rows
+    .map((c) => {
+      let dot = "bad";
+      if (c.transmitting) dot = "tx";
+      else if (c.state === "on air") dot = "ok";
+      else if (c.state === "connecting" || c.state === "reconnecting") dot = "warn";
+
+      let last = "<span class='dim'>nothing yet</span>";
+      if (c.transmitting) {
+        last = `<strong>● transmitting now</strong>${c.scan && c.via ? " — " + esc(c.via) : ""}`;
+      } else if (c.lastTxStartMs) {
+        last = `${fmtClock(c.lastTxStartMs)} · ${fmtDur(c.lastTxDurMs ?? 0)}${c.scan && c.via ? " — " + esc(c.via) : ""}`;
+      }
+
+      return `<tr class="${c.transmitting ? "live" : ""}">
+        <td><span class="chandot ${dot}"></span></td>
+        <td>${esc(c.channel)}${c.scan ? ' <span class="tag">scan</span>' : ""}</td>
+        <td>${c.tgid ?? "—"}</td>
+        <td>${esc(c.state)}</td>
+        <td>${last}</td>
+        <td>${c.txCount || 0}</td></tr>`;
+    })
+    .join("");
 }
 
 // ---- logs ----------------------------------------------------------------

@@ -137,3 +137,16 @@ table.report td.good { color: var(--green); font-weight: 700; }
   background: var(--panel2); border: 1px solid var(--border); color: var(--text);
   padding: 12px 18px; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,0.4);
 }
+
+/* ---- per-channel status panel (dashboard) ---- */
+.channels { margin-top: 26px; }
+.channels h2 { font-size: 15px; margin: 0 0 10px; }
+.chandot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.chandot.ok { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.chandot.warn { background: var(--amber); }
+.chandot.bad { background: var(--red); }
+.chandot.tx { background: var(--red); animation: txpulse 0.9s ease-in-out infinite; }
+@keyframes txpulse { 0%, 100% { box-shadow: 0 0 2px var(--red); } 50% { box-shadow: 0 0 12px var(--red); } }
+table.report tr.live td { background: rgba(239, 68, 68, 0.08); }
+table.report td .dim { opacity: 0.5; }
+table.report .tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--accent); color: #fff; margin-left: 6px; vertical-align: middle; }

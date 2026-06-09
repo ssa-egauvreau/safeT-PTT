@@ -292,6 +292,18 @@ async function startPipeline({ quiet = false } = {}) {
     }
   }
   onLogLine(`[dongle] ${dongleMessage}`);
+
+  // Self-update: the pipeline scripts run straight out of the WSL repo, so a
+  // pull here means every Start runs the latest code with no rebuild (only UI
+  // changes to this app need a rebuild). Offline or a dirty tree just logs.
+  const { projectDir } = getSettings();
+  const pull = await runWsl(
+    `cd ${projectDir} && git checkout -q main 2>/dev/null; git pull --ff-only 2>&1 | tail -1`,
+    { timeout: 45000 },
+  );
+  const pulled = (pull.stdout || pull.stderr).trim();
+  onLogLine(`[update] ${pulled || "(could not check for updates — using existing code)"}`);
+
   spawnPipeline();
   return { ok: true, dongle: dongleOk, dongleMessage };
 }
@@ -477,6 +489,22 @@ async function getStatus() {
   const [run, n] = br.stdout.trim().split(/\s+/);
   status.bridge = { running: run === "RUN", channels: Number(n) || 0 };
 
+  // Per-channel detail (state + last transmission pushed to SafeT), written by
+  // local-bridge.mjs once a second. Only meaningful while the bridge runs.
+  status.channels = [];
+  if (status.bridge.running) {
+    const stj = await runWsl("cat /tmp/sdr-bridge-status.json 2>/dev/null || echo '{}'");
+    try {
+      const detail = JSON.parse(stj.stdout);
+      if (Array.isArray(detail.bridges)) {
+        status.channels = detail.bridges;
+        status.bridge.channels = detail.bridges.filter((c) => c.state === "on air").length;
+      }
+    } catch {
+      /* partial write — next poll gets it */
+    }
+  }
+
   // cloudflared is a Windows service that rarely changes — cache it ~30s so the
   // frequent status poll doesn't spawn powershell.exe every few seconds.
   if (Date.now() - cfCache.at > 30000) {
@@ -640,9 +668,11 @@ async function collectDiagnostics() {
     ["dongle (lsusb)", "lsusb 2>/dev/null | grep -i 'RTL\\|2838\\|2832' || echo none"],
     ["rtl devices", "timeout 4 rtl_test 2>&1 | head -8 || true"],
     ["docker ps", "docker ps -a --format '{{.Names}} | {{.Status}}' 2>/dev/null || echo 'docker not reachable'"],
+    ["bridged talkgroups (talkgroups.csv)", `cat ${projectDir}/trunk-recorder/talkgroups.csv 2>/dev/null || echo none`],
     ["icecast status", "curl -s --max-time 2 http://127.0.0.1:8000/status-json.xsl | head -c 1500 || true"],
     ["icecast log (tail)", "tail -40 /tmp/sdr-icecast.log 2>/dev/null || echo none"],
     ["streamer log (tail)", "tail -40 /tmp/sdr-streamers.log 2>/dev/null || echo none"],
+    ["safet bridge log (tail)", "tail -60 /tmp/sdr-bridge.log 2>/dev/null || echo none"],
     ["decoder log (tail)", "docker logs --tail 150 sdr-bridge-trunk-recorder-1 2>&1 | tail -150 || echo none"],
   ];
   for (const [title, cmd] of cmds) {
