@@ -10,12 +10,14 @@
  *   The site rotates its control channel across FOUR cc-capable frequencies
  *   (856.7125 / 857.4625 / 860.2125 / 860.4625 MHz) and spans 855.7125–860.9625
  *   MHz. Field logs show the site parks mostly on the HIGH pair — and that
- *   3.2 Msps (the v1 profile) drops samples over USB→WSL and decodes nothing.
- *   v2: a proven-stable 2.56 Msps window centered 859.8 MHz — covers BOTH high
- *   control channels with wide margins plus the upper nine voice frequencies.
- *   Deaf only while the site rests on a low CC (rare per the field logs).
- *   Two+ dongles: only the control-channel list is corrected; the per-dongle
- *   centers are left to the user/config.
+ *   3.2 Msps (the v1 profile) decodes nothing and 2.56 Msps (v2) crash-loops:
+ *   trunk-recorder hard-requires the sample rate to be a MULTIPLE OF 24000
+ *   (the P25 symbol rate) — 3.2e6 and 2.56e6 both aren't; 2.4e6 (the only rate
+ *   that ever worked here) is exactly 100x. v3: 2,544,000 (106 x 24000), the
+ *   closest valid rate, centered 859.8 MHz — covers BOTH high control channels
+ *   with wide margins plus the upper voice frequencies. Deaf only while the
+ *   site rests on a low CC (rare per the field logs). Two+ dongles: only the
+ *   control-channel list is corrected; per-dongle centers stay user-set.
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -24,10 +26,10 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG = join(ROOT, "config", "system.json");
 
-const PROFILE = "occcs-countywide-v2";
+const PROFILE = "occcs-countywide-v3";
 const OCCCS_CCS = [860212500, 860462500, 857462500, 856712500];
 const ONE_DONGLE_CENTER = 859800000;
-const ONE_DONGLE_RATE = 2560000;
+const ONE_DONGLE_RATE = 2544000; // must be a multiple of 24000 (P25 symbol rate)
 
 if (!existsSync(CONFIG)) process.exit(0); // nothing to migrate yet
 
@@ -61,7 +63,7 @@ if (!multiDongle) {
   };
   retune(cfg.sdr);
   if (Array.isArray(cfg.sources) && cfg.sources.length === 1) retune(cfg.sources[0]);
-  changes.push("single dongle -> stable 2.56 MHz window centered 859.8 MHz (both HIGH control channels, where the site usually sits)");
+  changes.push("single dongle -> 2.544 MHz window (valid 106x24000 rate) centered 859.8 MHz (both HIGH control channels, where the site usually sits)");
 }
 
 cfg._rfProfile = PROFILE;

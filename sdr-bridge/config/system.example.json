@@ -11,10 +11,10 @@
   },
 
   "sdr": {
-    "_comment": "One Nooelec v5 (RTL-SDR, R820T2). Stay at or below 2.56 MHz: 2.88+ Msps drops samples over USB/usbipd/WSL and the P25 decoder gets pure noise (decode rate 0/sec on every control channel — observed in the field at 3.2M). 'gain' 0 = auto AGC; set a fixed dB (e.g. 36-49) once you tune. 'ppm' from your dongle's frequency error. The OC CCCS Countywide site spans 855.7125-860.9625 MHz (5.25 MHz) — wider than ANY single dongle. Field logs show the site parks mostly on the HIGH control-channel pair, so center 859.8 @ 2.56 MHz covers both (860.2125c, 860.4625c) plus the upper nine voice frequencies; it is deaf only while the site rests on a low CC.",
+    "_comment": "One Nooelec v5 (RTL-SDR, R820T2). Stay at or below 2.56 MHz: 2.88+ Msps drops samples over USB/usbipd/WSL and the P25 decoder gets pure noise (decode rate 0/sec on every control channel — observed in the field at 3.2M). 'gain' 0 = auto AGC; set a fixed dB (e.g. 36-49) once you tune. 'ppm' from your dongle's frequency error. The OC CCCS Countywide site spans 855.7125-860.9625 MHz (5.25 MHz) — wider than ANY single dongle. Field logs show the site parks mostly on the HIGH control-channel pair, so center 859.8 @ 2.544 MHz (rates MUST be multiples of 24000 — the P25 symbol rate — or trunk-recorder aborts on boot; 2.4M=100x and 2.544M=106x are valid, 2.56M and 3.2M are NOT) covers both (860.2125c, 860.4625c) plus the upper nine voice frequencies; it is deaf only while the site rests on a low CC.",
     "device": 0,
     "centerHz": 859800000,
-    "rateHz": 2560000,
+    "rateHz": 2544000,
     "gain": 40,
     "ppm": 0
   },
@@ -29,8 +29,8 @@
 
   "_multiDongle": "RECOMMENDED for OC CCCS — two dongles cover all FOUR control channels (no dead periods) and 20 of the site's 22 frequencies at the safe 2.56 Msps rate. Replace the single 'sdr' object with this 'sources' array. The talkgroups you pick in the SafeT console always attach to the FIRST system.",
   "_sources_example": [
-    { "device": 0, "centerHz": 857100000, "rateHz": 2560000, "gain": 40, "ppm": 0, "_note": "covers ~855.87-858.33 MHz: low voice + CCs 856.7125c, 857.4625c" },
-    { "device": 1, "centerHz": 859800000, "rateHz": 2560000, "gain": 40, "ppm": 0, "_note": "covers ~858.57-861.03 MHz: high voice + CCs 860.2125c, 860.4625c" }
+    { "device": 0, "centerHz": 857100000, "rateHz": 2544000, "gain": 40, "ppm": 0, "_note": "covers ~855.87-858.33 MHz: low voice + CCs 856.7125c, 857.4625c" },
+    { "device": 1, "centerHz": 859800000, "rateHz": 2544000, "gain": 40, "ppm": 0, "_note": "covers ~858.57-861.03 MHz: high voice + CCs 860.2125c, 860.4625c" }
   ],
   "_systems_example": [
     { "shortName": "occcs", "type": "p25", "modulation": "qpsk", "controlChannelsHz": [856712500, 857462500] },
