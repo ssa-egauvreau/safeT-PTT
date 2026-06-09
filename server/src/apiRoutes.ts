@@ -116,8 +116,14 @@ import {
   resolveAgencyByKey,
   setAgencyLogo,
   setAgencySound,
+  applyUserPermissionTemplate,
+  createUserPermissionTemplate,
+  deleteUserPermissionTemplate,
+  getUserPermissionTemplate,
+  listUserPermissionTemplates,
   removeMembership,
   setMembership,
+  updateUserPermissionTemplate,
   setUnitAlias,
   uniqueAgencySlug,
   updateAgency,
@@ -2367,6 +2373,172 @@ export function createApiRouter(): Router {
       });
       res.json({ ok });
     } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // --- admin: user permission templates ----------------------------------
+
+  function parseTemplateMembershipBody(raw: unknown): { channel_id: number; permission: Permission }[] {
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    const out: { channel_id: number; permission: Permission }[] = [];
+    for (const row of raw) {
+      if (!row || typeof row !== "object") {
+        continue;
+      }
+      const channelId = Number((row as { channelId?: unknown; channel_id?: unknown }).channelId
+        ?? (row as { channel_id?: unknown }).channel_id);
+      const permission = asPermission((row as { permission?: unknown }).permission);
+      if (!Number.isFinite(channelId) || !permission) {
+        continue;
+      }
+      out.push({ channel_id: channelId, permission });
+    }
+    return out;
+  }
+
+  router.get("/admin/user-templates", requireAdmin, async (req, res) => {
+    try {
+      res.json({ templates: await listUserPermissionTemplates(req.authUser!.agencyId!) });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.post("/admin/user-templates", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const name = String(req.body?.name ?? "").trim();
+      const memberships = parseTemplateMembershipBody(req.body?.memberships);
+      if (!name) {
+        res.status(400).json({ error: "missing_fields" });
+        return;
+      }
+      const template = await createUserPermissionTemplate(agencyId, name, memberships);
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "user_template_create",
+        target: name,
+        detail: { templateId: template.id, channels: memberships.length },
+        ip: clientIp(req),
+      });
+      res.status(201).json({ template });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("duplicate key")) {
+        res.status(409).json({ error: "template_name_taken" });
+        return;
+      }
+      fail(res, error);
+    }
+  });
+
+  router.patch("/admin/user-templates/:id", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) {
+        res.status(400).json({ error: "missing_fields" });
+        return;
+      }
+      const patch: { name?: string; memberships?: { channel_id: number; permission: Permission }[] } = {};
+      if (req.body?.name !== undefined) {
+        const name = String(req.body.name).trim();
+        if (!name) {
+          res.status(400).json({ error: "missing_fields" });
+          return;
+        }
+        patch.name = name;
+      }
+      if (req.body?.memberships !== undefined) {
+        patch.memberships = parseTemplateMembershipBody(req.body.memberships);
+      }
+      const template = await updateUserPermissionTemplate(id, agencyId, patch);
+      if (!template) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "user_template_update",
+        target: template.name,
+        detail: { templateId: template.id },
+        ip: clientIp(req),
+      });
+      res.json({ template });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("duplicate key")) {
+        res.status(409).json({ error: "template_name_taken" });
+        return;
+      }
+      fail(res, error);
+    }
+  });
+
+  router.delete("/admin/user-templates/:id", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) {
+        res.status(400).json({ error: "missing_fields" });
+        return;
+      }
+      const existing = await getUserPermissionTemplate(id, agencyId);
+      if (!existing) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      await deleteUserPermissionTemplate(id, agencyId);
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "user_template_delete",
+        target: existing.name,
+        detail: { templateId: id },
+        ip: clientIp(req),
+      });
+      res.json({ ok: true });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.post("/admin/user-templates/:id/apply", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const templateId = Number(req.params.id);
+      const userId = Number(req.body?.userId);
+      if (!Number.isFinite(templateId) || !Number.isFinite(userId)) {
+        res.status(400).json({ error: "missing_fields" });
+        return;
+      }
+      const template = await getUserPermissionTemplate(templateId, agencyId);
+      if (!template) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      const result = await applyUserPermissionTemplate(templateId, userId, agencyId);
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "user_template_apply",
+        target: `user:${userId}`,
+        detail: { templateId, templateName: template.name, ...result },
+        ip: clientIp(req),
+      });
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      if (error instanceof Error && error.message === "not_found") {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
       fail(res, error);
     }
   });

@@ -173,6 +173,19 @@ export async function ensureSchema(): Promise<void> {
     );
   `);
 
+  // Reusable channel-permission presets admins apply when creating or updating users.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS user_permission_templates (
+      id SERIAL PRIMARY KEY,
+      agency_id INT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      memberships JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (agency_id, name)
+    );
+  `);
+
   await p.query(`
     CREATE TABLE IF NOT EXISTS audit_log (
       id SERIAL PRIMARY KEY,
