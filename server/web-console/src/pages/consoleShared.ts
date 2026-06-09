@@ -30,6 +30,29 @@ export function loadChannelRailCollapsed(): boolean {
   return localStorage.getItem(CHANNEL_RAIL_COLLAPSED_KEY) === "1";
 }
 
+/**
+ * Console label for a radio unit: "{unit_id} {name}" when an ID exists,
+ * otherwise just the name. Falls back to aliasFor(unit_id) when display_name is blank.
+ */
+export function formatUnitSpeakerLabel(
+  unitId: string | null | undefined,
+  displayName: string | null | undefined,
+  aliasFor?: (id: string) => string,
+): string {
+  const id = unitId?.trim() ?? "";
+  const name =
+    displayName?.trim() ||
+    (id && aliasFor ? aliasFor(id).trim() : "") ||
+    "";
+  if (!id) {
+    return name || "Unknown";
+  }
+  if (!name) {
+    return id;
+  }
+  return `${id} ${name}`;
+}
+
 export function saveChannelRailCollapsed(collapsed: boolean): void {
   localStorage.setItem(CHANNEL_RAIL_COLLAPSED_KEY, collapsed ? "1" : "0");
 }

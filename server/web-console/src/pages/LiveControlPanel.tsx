@@ -3,6 +3,7 @@ import { api, ApiError, type ChannelMember } from "../api";
 import { useAuth } from "../auth";
 import { useUnitAliasResolver } from "../unitAliases";
 import { IconCar, IconClose, IconMobile, IconRadio, IconRecord } from "../icons";
+import { formatUnitSpeakerLabel } from "./consoleShared";
 
 /** Names produced by the emergency-channel endpoint always start with EMERGENCY. */
 function isEmergencyChannelName(name: string): boolean {
@@ -352,7 +353,9 @@ export function LiveControlPanel() {
                       }
                     >
                       {unitDeviceIcon(m.device_type)}
-                      <span className="lcc-unit-name">{m.display_name || aliasFor(m.unit_id)}</span>
+                      <span className="lcc-unit-name">
+                        {formatUnitSpeakerLabel(m.unit_id, m.display_name, aliasFor)}
+                      </span>
                     </div>
                   ))
                 )}

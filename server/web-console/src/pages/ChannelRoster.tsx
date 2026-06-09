@@ -3,6 +3,7 @@ import { ClientPlatformBadge, PresenceStatusBadge } from "../components/RosterBa
 import { useChannelRoster } from "../hooks/useChannelRoster";
 import { useUnitAliasResolver } from "../unitAliases";
 import { IconUser } from "../icons";
+import { formatUnitSpeakerLabel } from "./consoleShared";
 
 function formatConnected(ms: number): string {
   const minutes = Math.floor(ms / 60000);
@@ -80,14 +81,15 @@ export function ChannelRoster({
           {members.map((member, index) => {
             const status = (member.status ?? "idle") as PresenceStatus;
             const device = deviceShort(member);
+            const label = formatUnitSpeakerLabel(member.unit_id, member.display_name, aliasFor);
             return (
               <li className="roster-row" key={`${member.unit_id}-${index}`}>
                 <span
                   className={`roster-dot ${tier(member.connected_ms)}`}
                   title={`Connected ${formatConnected(member.connected_ms)}`}
                 />
-                <span className="roster-name" title={member.display_name || aliasFor(member.unit_id)}>
-                  {member.display_name || aliasFor(member.unit_id)}
+                <span className="roster-name" title={label}>
+                  {label}
                 </span>
                 {device && (
                   <span className="roster-device" title={device.full}>

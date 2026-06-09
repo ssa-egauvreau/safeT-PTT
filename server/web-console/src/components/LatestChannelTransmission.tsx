@@ -4,6 +4,7 @@ import type { WorkspaceWidgetSize } from "../consoleStore";
 import { useChannelLiveRx } from "../hooks/useChannelLiveRx";
 import { useUnitAliasResolver } from "../unitAliases";
 import { formatDuration, formatTime, transcriptOf } from "../pages/TransmissionLog";
+import { formatUnitSpeakerLabel } from "../pages/consoleShared";
 import { IconPause, IconPlay, IconWaveform } from "../icons";
 
 export type LatestChannelTransmissionProps = {
@@ -115,7 +116,7 @@ export function LatestChannelTransmission({
 
   const transcript = latestTx ? transcriptOf(latestTx) : null;
   const recordedSpeaker = latestTx
-    ? latestTx.display_name || aliasFor(latestTx.unit_id) || "Unknown"
+    ? formatUnitSpeakerLabel(latestTx.unit_id, latestTx.display_name, aliasFor)
     : null;
   const isPlaying = latestTx != null && playingId === latestTx.id;
   const isBusy = latestTx != null && busyId === latestTx.id;
