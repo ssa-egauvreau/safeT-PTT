@@ -54,6 +54,8 @@ pkill -9 icecast2 2>/dev/null || true
 pkill -9 -f "icecast://source" 2>/dev/null || true
 # Also free the per-talkgroup UDP ports the local bridge needs — leftover
 # streamers/bridges from a previous run hold them ("bind: address in use").
+# Kill the stream-talkgroups respawn loop FIRST, or it just re-launches udp-pcm.
+pkill -9 -f stream-talkgroups 2>/dev/null || true
 pkill -9 -f udp-pcm.py 2>/dev/null || true
 pkill -9 -f local-bridge.mjs 2>/dev/null || true
 pkill -9 -f "udp://127.0.0.1:9" 2>/dev/null || true
