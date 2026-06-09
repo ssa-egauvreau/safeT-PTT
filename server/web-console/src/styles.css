@@ -3540,18 +3540,7 @@ button.ch-kbd-chip:hover {
   border-radius: 8px;
 }
 .users-assignments-table {
-  min-width: max-content;
-}
-.users-assignments-table .sticky-actions {
-  position: sticky;
-  left: 0;
-  z-index: 2;
-  background: var(--bg-raised);
-  box-shadow: 2px 0 6px color-mix(in srgb, #000 12%, transparent);
-}
-.users-assignments-table td.sticky-actions,
-.users-assignments-table th.sticky-actions {
-  min-width: 200px;
+  width: 100%;
 }
 .users-assignments-table .channel-col-head {
   font-size: 10px;
@@ -3649,6 +3638,73 @@ button.ch-kbd-chip:hover {
   padding: 18px 22px;
   width: 100%;
   max-width: 560px;
+}
+.channel-permissions-modal {
+  max-width: 680px;
+}
+.channel-permissions-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+.channel-permissions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: min(62vh, 520px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.channel-permissions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.channel-permissions-row:last-child {
+  border-bottom: none;
+}
+.channel-permissions-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.channel-perm-btn-group {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+}
+.channel-perm-btn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.channel-perm-btn:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-raised));
+}
+.channel-perm-btn.active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 24%, var(--bg-raised));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .sim-channels {
   display: flex;
