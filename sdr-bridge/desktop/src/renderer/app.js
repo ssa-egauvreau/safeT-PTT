@@ -11,6 +11,10 @@ document.querySelectorAll(".tab").forEach((btn) => {
     document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
     btn.classList.add("active");
     $("tab-" + btn.dataset.tab).classList.add("active");
+    // The pipeline can rewrite config/system.json behind the UI (the RF profile
+    // migration runs on every Start) — re-read on open so the form never shows
+    // stale values that a Save would then write back.
+    if (btn.dataset.tab === "settings") loadSettings().catch(() => {});
   });
 });
 
@@ -281,6 +285,9 @@ $("startBtn").addEventListener("click", async () => {
       hint.textContent = "⚠ " + (res.dongleMessage || "The SDR dongle isn't attached.");
     }
     setRunState("on");
+    // The startup migration may rewrite the RF config — refresh the Settings
+    // form once it has had time to run.
+    setTimeout(() => loadSettings().catch(() => {}), 10000);
   } catch (e) {
     toast("Start failed: " + (e.message || e));
     setRunState("off");

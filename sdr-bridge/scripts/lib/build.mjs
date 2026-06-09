@@ -47,17 +47,27 @@ function buildTrunkConfig(cfg, plan) {
   // simplestream tags its UDP streams with that system's shortName.
   const primaryShort = systemsCfg[0]?.shortName ?? "occcs";
 
-  const sources = sourcesCfg.map((s, i) => ({
-    center: s.centerHz ?? 854000000,
-    rate: s.rateHz ?? 2400000,
-    gain: s.gain ?? 0,
-    ppm: s.ppm ?? 0,
-    digitalRecorders: Math.max(4, plan.length),
-    driver: "osmosdr",
-    // Default each dongle to its array index (rtl=0, rtl=1, …). Set `device`
-    // to a serial (e.g. "00000101") if Windows enumerates them inconsistently.
-    device: `rtl=${s.device ?? i}`,
-  }));
+  const sources = sourcesCfg.map((s, i) => {
+    // trunk-recorder hard-requires the sample rate to be a multiple of 24000
+    // (the P25 symbol rate) — anything else aborts on boot ("OsmoSDR must have
+    // a sample rate that is a multiple of 24000"). Snap to the nearest valid
+    // rate instead of emitting a config that crash-loops the decoder.
+    const askedRate = s.rateHz ?? 2400000;
+    const rate = Math.max(24000, Math.round(askedRate / 24000) * 24000);
+    if (rate !== askedRate)
+      console.warn(`  ! dongle ${i}: sample rate ${askedRate} isn't a multiple of 24000 — using ${rate} instead.`);
+    return {
+      center: s.centerHz ?? 854000000,
+      rate,
+      gain: s.gain ?? 0,
+      ppm: s.ppm ?? 0,
+      digitalRecorders: Math.max(4, plan.length),
+      driver: "osmosdr",
+      // Default each dongle to its array index (rtl=0, rtl=1, …). Set `device`
+      // to a serial (e.g. "00000101") if Windows enumerates them inconsistently.
+      device: `rtl=${s.device ?? i}`,
+    };
+  });
 
   const systems = systemsCfg.map((s, i) => {
     const isPrimary = i === 0;
