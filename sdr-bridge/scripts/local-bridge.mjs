@@ -267,6 +267,10 @@ function runBridge(bridge, udpPort) {
             const now = Date.now();
             if (frameRms(frame) >= voxThreshold) lastActive = now;
             const open = lastActive !== 0 && now - lastActive < voxHang;
+            // Log the gate edges only (not every 20 ms frame): a "▶ keying" line
+            // is proof the bridge is forwarding a REAL decoded call to SafeT — so
+            // a quiet-but-working bridge is distinguishable from a broken one.
+            if (open && !gateWas) console.log(`[bridge] ▶ ${bridge.name}: keying — pushing audio to "${bridge.target_channel}"`);
             if (open && ws.readyState === 1) {
               try {
                 ws.send(frame);
@@ -276,6 +280,7 @@ function runBridge(bridge, udpPort) {
               // Also feed the Scan-All channels if we currently hold the feed.
               if (monitor.claim(bridge.name)) monitor.send(frame);
             } else if (gateWas && !open && ws.readyState === 1) {
+              console.log(`[bridge] ■ ${bridge.name}: released "${bridge.target_channel}"`);
               try {
                 ws.send(JSON.stringify({ type: "release_air" }));
               } catch {
