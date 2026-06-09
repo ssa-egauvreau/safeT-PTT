@@ -113,9 +113,16 @@ function relogin() {
 // talkgroup is currently keyed — a scanner that plays one call at a time. The
 // first talkgroup to key "holds" the scan feed until it releases, so frames from
 // different talkgroups never interleave into garble.
+//
+// The hold must expire on its own: the decoder simply STOPS sending UDP when a
+// call ends, so the owning bridge never sees another frame and its VOX gate
+// never closes — without the expiry the first talkgroup to key would hold the
+// scan feed forever and every other talkgroup would be locked out.
+const MONITOR_HOLD_EXPIRE_MS = 1500;
 const monitor = {
   sockets: [],
   holder: null,
+  lastFrameMs: 0,
   add(ws) {
     this.sockets.push(ws);
   },
@@ -123,8 +130,12 @@ const monitor = {
     this.sockets = this.sockets.filter((s) => s !== ws);
   },
   claim(name) {
+    const now = Date.now();
+    if (this.holder !== null && now - this.lastFrameMs > MONITOR_HOLD_EXPIRE_MS) this.holder = null;
     if (this.holder === null) this.holder = name;
-    return this.holder === name;
+    if (this.holder !== name) return false;
+    this.lastFrameMs = now;
+    return true;
   },
   send(frame) {
     for (const ws of this.sockets) if (ws.readyState === 1) try { ws.send(frame); } catch { /* drop */ }
@@ -136,6 +147,14 @@ const monitor = {
       if (ws.readyState === 1) try { ws.send(JSON.stringify({ type: "release_air" })); } catch { /* drop */ }
   },
 };
+
+// Un-key the scan channels promptly when the holding call ends (no frame will
+// arrive to trigger the gate-close release).
+setInterval(() => {
+  if (monitor.holder !== null && Date.now() - monitor.lastFrameMs > MONITOR_HOLD_EXPIRE_MS) {
+    monitor.release(monitor.holder);
+  }
+}, 500).unref();
 
 /** A monitor/Scan-All bridge: no ingest of its own — it joins its channel and
  * is fed by the talkgroup ingests via the `monitor` hub. */
@@ -368,10 +387,29 @@ async function main() {
   }
 
   const bridges = (await api("GET", "/admin/bridges", { token: tokenRef.value })).bridges ?? [];
+
+  // A bridge whose target is a SIMULCAST group transmits onto EVERY member
+  // channel at once — almost never what you want for a scanner feed. Warn
+  // loudly so a Scan All bridge pointed at an "all channels" group is obvious.
+  let simulcastNames = new Set();
+  try {
+    const r = await api("GET", "/simulcast", { token: tokenRef.value });
+    simulcastNames = new Set((r.simulcasts ?? []).map((s) => String(s.name).toLowerCase()));
+  } catch {
+    /* older server or non-operator account — skip the check */
+  }
+
   const runnable = [];
   const monitors = [];
   for (const b of bridges) {
     if (b.source_type !== "stream_url" || !b.enabled) continue;
+    if (simulcastNames.has(String(b.target_channel ?? "").toLowerCase())) {
+      console.warn(
+        `    ! WARNING: "${b.name}" targets the SIMULCAST group "${b.target_channel}" — ` +
+          `its audio will key EVERY member channel at once. Point it at a single ` +
+          `channel (e.g. a dedicated "Scanner" channel) instead.`,
+      );
+    }
     if (/\/monitor\/?$/i.test(String(b.source_url))) {
       monitors.push(b); // Scan All / All CCCS — fed by every talkgroup
       continue;
