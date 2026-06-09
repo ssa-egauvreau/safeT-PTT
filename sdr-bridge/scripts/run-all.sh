@@ -39,6 +39,9 @@ cleanup() {
   echo "stopping..."
   $COMPOSE down >/dev/null 2>&1 || true
   for pid in "${PIDS[@]:-}"; do kill "$pid" 2>/dev/null || true; done
+  # Reap the local bridge + its UDP-reading ffmpegs (children may outlive the subshell).
+  pkill -9 -f local-bridge.mjs 2>/dev/null || true
+  pkill -9 -f "i udp://127.0.0.1:9" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -60,22 +63,18 @@ if ! ss -ltn 2>/dev/null | grep -q ':8000 '; then
   echo "  ✗ Icecast failed to bind :8000 (see /tmp/sdr-icecast.log)." >&2
 fi
 
-echo "[2/3] talkgroup streamers (ffmpeg)..."
-bash generated/stream-talkgroups.sh >/tmp/sdr-streamers.log 2>&1 &
-PIDS+=($!)
-sleep 1
-
 # Push audio to SafeT from THIS PC. The cloud server can't pull the streams
 # through the Cloudflare tunnel (it buffers continuous audio and returns 5XX),
-# so we read each mount over localhost and push voice onto its channel over the
-# SafeT voice relay. Logs: /tmp/sdr-bridge.log
-echo "[2.5] local SafeT bridge (pushing audio to your channels)..."
+# so the bridge reads the decoder's per-talkgroup UDP directly and pushes voice
+# onto each channel over the SafeT voice relay. We do NOT run the Icecast
+# talkgroup streamers anymore — they'd bind the same UDP ports and fight the
+# bridge. (Icecast itself stays up, just idle.) Logs: /tmp/sdr-bridge.log
+echo "[2/3] local SafeT bridge (pushing audio to your channels)..."
 ( sleep 5; node scripts/local-bridge.mjs ) >/tmp/sdr-bridge.log 2>&1 &
 PIDS+=($!)
 
 echo "[3/3] trunk-recorder — decoding the system (Ctrl-C to stop everything)"
 echo "      Icecast log:   /tmp/sdr-icecast.log"
-echo "      Streamer log:  /tmp/sdr-streamers.log"
 echo "      SafeT bridge:  /tmp/sdr-bridge.log"
 echo
 # Foreground so you see the decoder lock the control channel and log calls.

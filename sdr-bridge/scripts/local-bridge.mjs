@@ -109,9 +109,11 @@ function relogin() {
   return reloginInFlight;
 }
 
-function runBridge(bridge) {
-  const mount = mountFromUrl(bridge.source_url);
-  const inUrl = `http://${iceHost}:${icePort}/${mount}`;
+function runBridge(bridge, udpPort) {
+  // Read the decoder's per-talkgroup UDP directly (raw s16le mono 8 kHz) — no
+  // Icecast in the path, so nothing flaky to depend on. ffmpeg simply blocks
+  // between calls (no packets) and resumes when the next call's audio arrives.
+  const inUrl = `udp://127.0.0.1:${udpPort}?fifo_size=1000000&overrun_nonfatal=1`;
   const voxThreshold = Number(bridge.vox_threshold ?? 0.02);
   const voxHang = Number(bridge.vox_hang_ms ?? 1500);
   let stopped = false;
@@ -148,7 +150,7 @@ function runBridge(bridge) {
         if (stopped) return finish();
         child = spawn("ffmpeg", [
           "-hide_banner", "-loglevel", "error", "-nostdin",
-          "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
+          "-f", "s16le", "-ar", "8000", "-ac", "1",
           "-i", inUrl,
           "-ac", "1", "-ar", String(SAMPLE_RATE), "-f", "s16le", "-",
         ]);
@@ -241,18 +243,41 @@ async function main() {
   }
   tokenRef.value = await login();
 
-  const bridges = (await api("GET", "/admin/bridges", { token: tokenRef.value })).bridges ?? [];
-  const streams = bridges.filter(
-    (b) => b.source_type === "stream_url" && b.enabled && mountFromUrl(b.source_url),
-  );
-  if (!streams.length) {
-    console.error("local-bridge: no enabled stream bridges found in SafeT.");
+  // Map talkgroup id -> UDP port from the decoder config the sync just wrote.
+  const tgPort = new Map();
+  try {
+    const tr = JSON.parse(readFileSync(join(ROOT, "trunk-recorder", "config.json"), "utf8"));
+    const streams = (tr.plugins ?? []).find((p) => p.name === "simplestream")?.streams ?? [];
+    for (const s of streams) tgPort.set(Number(s.TGID), Number(s.port));
+  } catch (e) {
+    console.error("local-bridge: could not read trunk-recorder/config.json —", e.message);
     process.exit(1);
   }
-  console.log(`[bridge] pushing ${streams.length} bridge(s) to SafeT (${wsBase()}) from localhost Icecast:`);
-  for (const b of streams) {
-    console.log(`    • ${b.name}  ->  channel "${b.target_channel}"  (mount /${mountFromUrl(b.source_url)})`);
-    runBridge(b);
+
+  const bridges = (await api("GET", "/admin/bridges", { token: tokenRef.value })).bridges ?? [];
+  const runnable = [];
+  for (const b of bridges) {
+    if (b.source_type !== "stream_url" || !b.enabled) continue;
+    const m = String(b.source_url).match(/\/tg(\d+)\/?$/i);
+    if (!m) {
+      console.log(`    • skip "${b.name}" (not a single talkgroup — e.g. /monitor)`);
+      continue;
+    }
+    const port = tgPort.get(Number(m[1]));
+    if (!port) {
+      console.log(`    • skip "${b.name}" (TG ${m[1]} isn't in the decoder config)`);
+      continue;
+    }
+    runnable.push({ bridge: b, port });
+  }
+  if (!runnable.length) {
+    console.error("local-bridge: no runnable talkgroup bridges (check the bridges exist + sync ran).");
+    process.exit(1);
+  }
+  console.log(`[bridge] pushing ${runnable.length} bridge(s) to SafeT (${wsBase()}) straight from the decoder's UDP:`);
+  for (const { bridge: b, port } of runnable) {
+    console.log(`    • ${b.name}  ->  channel "${b.target_channel}"  (udp ${port})`);
+    runBridge(b, port);
   }
 }
 
