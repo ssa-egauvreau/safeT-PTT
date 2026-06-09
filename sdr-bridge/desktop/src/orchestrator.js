@@ -226,6 +226,9 @@ const CLEANUP_CMD =
   `docker compose down >/dev/null 2>&1; ` +
   `pkill -9 -f scripts/run-all.sh 2>/dev/null; ` +
   `pkill -9 -f stream-talkgroups 2>/dev/null; ` +
+  `pkill -9 -f udp-pcm.py 2>/dev/null; ` +
+  `pkill -9 -f local-bridge.mjs 2>/dev/null; ` +
+  `pkill -9 -f 'i udp://127.0.0.1:9' 2>/dev/null; ` +
   `pkill -9 icecast2 2>/dev/null; ` +
   `pkill -9 -f 'icecast://source' 2>/dev/null; true`;
 
@@ -334,13 +337,20 @@ let watchdogTimer = null;
 let lastRecoverAt = 0;
 let lastLocked = null;
 
+/** Strip ANSI color codes — trunk-recorder colorizes its logs, which otherwise
+ * breaks regexes that expect e.g. a number right after "TG:". */
+function stripAnsi(s) {
+  return String(s).replace(/\x1b\[[0-9;]*m/g, "");
+}
+
 /** Is the decoder actually locked onto the control channel? trunk-recorder
  * STOPS printing the "Decode Rate" line once it's healthy, so we can't rely on
  * that — instead we look for live trunking activity (following grants, decoding
  * the system) and treat a run of "Decode Rate: 0/sec" errors as lost lock. */
 function logShowsLock(text) {
-  const zeroRate = (text.match(/Decode Rate:\s*0\/sec/g) || []).length;
-  const activity = /Decoding System ID|RFSS:|Starting P25 Recorder|\bTG:\s*\d/.test(text);
+  const clean = stripAnsi(text);
+  const zeroRate = (clean.match(/Decode Rate:\s*0\/sec/g) || []).length;
+  const activity = /Decoding System ID|RFSS:|Starting P25 Recorder|\bTG:\s*\d/.test(clean);
   return activity && zeroRate < 5;
 }
 
@@ -434,7 +444,7 @@ async function getStatus() {
     dongle: false,
     pipelineRunning: pipelineRunning(),
     decoder: { running: false, locked: false, controlChannel: null, decodeRate: null },
-    icecast: { up: false, mounts: 0, names: [] },
+    bridge: { running: false, channels: 0 },
     cloudflared: "unknown",
   };
 
@@ -450,7 +460,7 @@ async function getStatus() {
 
   if (status.decoder.running) {
     const log = await runWsl("docker logs --tail 200 sdr-bridge-trunk-recorder-1 2>&1 | tail -200");
-    const text = log.stdout;
+    const text = stripAnsi(log.stdout);
     // Control-channel frequency: the last one it locked / retuned to.
     const ccs = [...text.matchAll(/Control Channel:\s*(\d{3}\.\d+)\s*MHz/g)];
     if (ccs.length) status.decoder.controlChannel = ccs[ccs.length - 1][1] + " MHz";
@@ -459,19 +469,13 @@ async function getStatus() {
     status.decoder.locked = logShowsLock(text);
   }
 
-  const ice = await runWsl("curl -s --max-time 2 http://127.0.0.1:8000/status-json.xsl || true");
-  if (ice.stdout.includes("icestats")) {
-    status.icecast.up = true;
-    try {
-      const data = JSON.parse(ice.stdout).icestats;
-      let src = data.source || [];
-      if (!Array.isArray(src)) src = [src];
-      status.icecast.names = src.map((s) => String(s.listenurl || "").split("/").pop()).filter(Boolean);
-      status.icecast.mounts = status.icecast.names.length;
-    } catch {
-      /* leave defaults */
-    }
-  }
+  // Local SafeT bridge: is it running, and how many channels did it put on air?
+  const br = await runWsl(
+    "r=$(pgrep -f local-bridge.mjs >/dev/null 2>&1 && echo RUN || echo STOP); " +
+      "n=$(grep -oE '> [^:]+: on air' /tmp/sdr-bridge.log 2>/dev/null | sort -u | wc -l); echo \"$r $n\"",
+  );
+  const [run, n] = br.stdout.trim().split(/\s+/);
+  status.bridge = { running: run === "RUN", channels: Number(n) || 0 };
 
   // cloudflared is a Windows service that rarely changes — cache it ~30s so the
   // frequent status poll doesn't spawn powershell.exe every few seconds.
@@ -570,7 +574,9 @@ async function talkgroupReport() {
   const log = await runWsl("docker logs --tail 5000 sdr-bridge-trunk-recorder-1 2>&1 || true", { timeout: 25000 });
   const stats = {};
   const get = (t) => (stats[t] || (stats[t] = { voice: 0, enc: 0, nosrc: 0 }));
-  for (const line of log.stdout.split(/\r?\n/)) {
+  // trunk-recorder colorizes its output; strip ANSI codes so "TG: <n>" parses
+  // (the escape sequence sits between "TG:" and the number).
+  for (const line of stripAnsi(log.stdout).split(/\r?\n/)) {
     const m = line.match(/TG:\s*(\d+)/);
     if (!m) continue;
     const t = m[1];
