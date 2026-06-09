@@ -6,7 +6,14 @@
 
 import { Api, describeApiError, isAuthError } from "./api";
 import { host } from "./host";
-import { BridgeRunnerClient, type BridgeRunState } from "./bridgeRunner";
+import {
+  BridgeRunnerClient,
+  type BridgeLogEvent,
+  type BridgeRunnerCallbacks,
+  type BridgeRunState,
+  type BridgeRunStats,
+} from "./bridgeRunner";
+import { fmtBytes, fmtClock, fmtDur } from "./format";
 import type { Bridge, BridgeConfig, BridgeSettings, SessionUser, StoredCredentials } from "./types";
 
 /**
@@ -305,6 +312,12 @@ function renderBridges(): void {
       ]),
     ]),
     h("div", { class: "row" }, [
+      ...(bridges.length > 1
+        ? [
+            h("button", { class: "btn ghost", onclick: (() => void setAllCollapsed(true)) as EventListener }, ["Collapse all"]),
+            h("button", { class: "btn ghost", onclick: (() => void setAllCollapsed(false)) as EventListener }, ["Expand all"]),
+          ]
+        : []),
       h("button", { class: "btn ghost", onclick: (() => void showBridges()) as EventListener }, ["Refresh"]),
       h("button", { class: "btn ghost", onclick: (() => void signOut()) as EventListener }, ["Sign out"]),
     ]),
@@ -338,6 +351,15 @@ function autoResume(): void {
   }
 }
 
+/** Collapses/expands every card at once and persists the choice per bridge. */
+async function setAllCollapsed(collapsed: boolean): Promise<void> {
+  for (const [id, card] of cards) {
+    card.setCollapsed(collapsed, false);
+    config.bridges[String(id)] = { ...settingsFor(id), collapsed };
+  }
+  await persistConfig();
+}
+
 // --- per-bridge card ----------------------------------------------------------
 class BridgeCard {
   readonly bridge: Bridge;
@@ -346,27 +368,43 @@ class BridgeCard {
 
   private statusPill!: HTMLElement;
   private detailEl!: HTMLElement;
+  private quickLine!: HTMLElement;
   private meterFill!: HTMLElement;
   private meterMark!: HTMLElement;
   private keyedLamp!: HTMLElement;
   private rxLamp!: HTMLElement;
   private startBtn!: HTMLButtonElement;
+  private chevEl!: HTMLElement;
   private inputSel!: HTMLSelectElement;
   private outputSel!: HTMLSelectElement | null;
   private gainOut!: HTMLElement;
   private voxOut!: HTMLElement;
   private hangOut!: HTMLElement;
+  private statConn!: HTMLElement;
+  private statTotal!: HTMLElement;
+  private statDrops!: HTMLElement;
+  private statTx!: HTMLElement;
+  private statRx!: HTMLElement;
+  private logEl!: HTMLElement;
+
+  private collapsed = false;
+  private tickTimer: number | null = null;
+  /** Frozen telemetry from the last run, shown after the bridge is stopped. */
+  private lastStats: BridgeRunStats | null = null;
 
   constructor(bridge: Bridge) {
     this.bridge = bridge;
     this.bidirectional = bridge.direction === "bidirectional";
     this.el = this.build();
+    this.setCollapsed(settingsFor(bridge.id).collapsed ?? false, false);
+    this.renderStats();
   }
 
   private build(): HTMLElement {
     const b = this.bridge;
     this.statusPill = h("span", { class: "pill off" }, ["Idle"]);
-    this.detailEl = h("span", { class: "muted detail" }, []);
+    this.detailEl = h("div", { class: "muted detail" }, []);
+    this.quickLine = h("div", { class: "summary-line" }, []);
 
     // Device pickers
     this.inputSel = h("select", {
@@ -441,7 +479,7 @@ class BridgeCard {
       this.applyAudioParams();
     });
 
-    // Meter
+    // Meter + lamps (lamps live in the always-visible header)
     this.meterFill = h("div", { class: "meter-fill" }, []);
     this.meterMark = h("div", { class: "meter-mark" }, []);
     this.meterMark.style.left = `${Math.min(vox / 0.2, 1) * 100}%`;
@@ -449,8 +487,6 @@ class BridgeCard {
     this.rxLamp = h("span", { class: "lamp" }, ["RX"]);
     const meter = h("div", { class: "meter-row" }, [
       h("div", { class: "meter" }, [this.meterFill, this.meterMark]),
-      this.keyedLamp,
-      ...(this.bidirectional ? [this.rxLamp] : []),
     ]);
 
     this.startBtn = h("button", {
@@ -468,12 +504,60 @@ class BridgeCard {
       this.bidirectional ? "Bidirectional" : "Inbound only",
     ]);
 
-    return h("section", { class: "card bridge" }, [
-      h("div", { class: "panel-head" }, [
+    // Header — always visible; clicking it (outside the controls) collapses or
+    // expands the settings/diagnostics body so many bridges fit on one screen.
+    this.chevEl = h("span", { class: "chev" }, ["▾"]);
+    const head = h("div", {
+      class: "bridge-head",
+      onclick: ((e: Event) => {
+        if ((e.target as HTMLElement).closest("button, select, input")) return;
+        this.setCollapsed(!this.collapsed);
+      }) as EventListener,
+    }, [
+      h("div", { class: "bridge-title" }, [
+        this.chevEl,
         h("h3", {}, [b.name]),
-        this.statusPill,
+        h("span", { class: "bridge-chan" }, [`→ ${b.target_channel}`]),
       ]),
-      h("p", { class: "muted" }, [
+      h("div", { class: "bridge-head-right" }, [
+        this.statusPill,
+        this.keyedLamp,
+        ...(this.bidirectional ? [this.rxLamp] : []),
+        this.startBtn,
+      ]),
+    ]);
+
+    // Summary — also always visible: live meter, status sentence, compact stats.
+    const summary = h("div", { class: "bridge-summary" }, [
+      meter,
+      this.quickLine,
+      this.detailEl,
+    ]);
+
+    // Stats panel (in the collapsible body) — proof-of-life details.
+    this.statConn = h("div", { class: "stat-value" }, ["—"]);
+    this.statTotal = h("div", { class: "stat-value" }, ["—"]);
+    this.statDrops = h("div", { class: "stat-value" }, ["—"]);
+    this.statTx = h("div", { class: "stat-value" }, ["—"]);
+    this.statRx = h("div", { class: "stat-value" }, ["—"]);
+    const statsPanel = h("div", { class: "stats-grid" }, [
+      statBlock("Connected since", this.statConn),
+      statBlock("Total connected", this.statTotal),
+      statBlock("Connection drops", this.statDrops),
+      statBlock("Last line-in audio (TX)", this.statTx),
+      ...(this.bidirectional ? [statBlock("Last channel audio (RX)", this.statRx)] : []),
+    ]);
+
+    this.logEl = h("div", { class: "log" }, [
+      h("div", { class: "log-empty muted" }, ["No activity yet."]),
+    ]);
+    const logField = h("div", { class: "field" }, [
+      h("label", {}, ["Activity & diagnostics"]),
+      this.logEl,
+    ]);
+
+    const body = h("div", { class: "bridge-body" }, [
+      h("p", { class: "muted bridge-desc" }, [
         "Keys ",
         h("strong", {}, [b.target_channel]),
         " · ",
@@ -488,9 +572,20 @@ class BridgeCard {
         sliderField("VOX sensitivity (threshold)", voxSlider, this.voxOut),
         sliderField("VOX hang (tail)", hangSlider, this.hangOut),
       ]),
-      meter,
-      h("div", { class: "actions" }, [this.startBtn, reset, this.detailEl]),
+      statsPanel,
+      logField,
+      h("div", { class: "actions" }, [reset]),
     ]);
+
+    return h("section", { class: "card bridge" }, [head, summary, body]);
+  }
+
+  /** Collapse/expand the settings + diagnostics body (header stays live). */
+  setCollapsed(collapsed: boolean, persist = true): void {
+    this.collapsed = collapsed;
+    this.el.classList.toggle("collapsed", collapsed);
+    this.chevEl.textContent = collapsed ? "▸" : "▾";
+    if (persist) void updateBridgeSettings(this.bridge.id, { collapsed });
   }
 
   private fillInputOptions(): void {
@@ -548,10 +643,13 @@ class BridgeCard {
     const fresh = new BridgeCard(this.bridge);
     cards.set(this.bridge.id, fresh);
     this.el.replaceWith(fresh.el);
-    // If running, keep it running and push the reset params into the live runner.
-    if (runners.has(this.bridge.id)) {
-      fresh.syncRunningUi();
-      runners.get(this.bridge.id)?.updateAudioParams({
+    this.stopTick();
+    // If running, keep it running: re-point the live runner's events at the new
+    // card (so lamps/meter/log stay live) and push the reset params into it.
+    const runner = runners.get(this.bridge.id);
+    if (runner) {
+      fresh.attachRunner(runner);
+      runner.updateAudioParams({
         gain: effGain(this.bridge),
         voxThreshold: effVoxThreshold(this.bridge),
         voxHangMs: effVoxHang(this.bridge),
@@ -565,6 +663,17 @@ class BridgeCard {
     } else {
       this.start();
     }
+  }
+
+  private runnerCallbacks(): BridgeRunnerCallbacks {
+    return {
+      onState: (state, detail) => this.onState(state, detail),
+      onKeyed: (keyed) => this.keyedLamp.classList.toggle("on", keyed),
+      onReceiving: (rx) => this.rxLamp.classList.toggle("on", rx),
+      onLevel: (level) => this.onLevel(level),
+      onAuthError: () => void triggerReauth(),
+      onLog: (event) => this.appendLog(event),
+    };
   }
 
   start(): void {
@@ -586,27 +695,39 @@ class BridgeCard {
         inputDeviceId: inputId,
         outputDeviceId: this.bidirectional ? effOutput(this.bridge) || null : null,
       },
-      {
-        onState: (state, detail) => this.onState(state, detail),
-        onKeyed: (keyed) => this.keyedLamp.classList.toggle("on", keyed),
-        onReceiving: (rx) => this.rxLamp.classList.toggle("on", rx),
-        onLevel: (level) => this.onLevel(level),
-        onAuthError: () => void triggerReauth(),
-      },
+      this.runnerCallbacks(),
     );
     runners.set(this.bridge.id, runner);
     void updateBridgeSettings(this.bridge.id, { wantRunning: true });
+    this.clearLog();
     this.syncRunningUi();
+    this.startTick();
     void runner.start();
+    this.renderStats();
+  }
+
+  /** Re-points a live runner's events at this (rebuilt) card and syncs its UI. */
+  attachRunner(runner: BridgeRunnerClient): void {
+    runner.rebindCallbacks(this.runnerCallbacks());
+    this.syncRunningUi();
+    this.onState(runner.currentState, runner.currentDetail);
+    this.clearLog();
+    for (const event of runner.getLog()) this.appendLog(event);
+    this.renderStats();
+    this.startTick();
   }
 
   async stop(): Promise<void> {
     const runner = runners.get(this.bridge.id);
     runner?.stop();
+    // Keep the final telemetry around so the card still shows what happened.
+    if (runner) this.lastStats = runner.getStats();
     runners.delete(this.bridge.id);
     await updateBridgeSettings(this.bridge.id, { wantRunning: false });
     this.onLevel(0);
     this.syncStoppedUi();
+    this.renderStats();
+    this.stopTick();
   }
 
   private onState(state: BridgeRunState, detail?: string): void {
@@ -625,8 +746,12 @@ class BridgeCard {
       label = "Error";
       cls = "pill off";
       // A terminal local fault dropped the runner — reflect that in the buttons.
+      const runner = runners.get(this.bridge.id);
+      if (runner) this.lastStats = runner.getStats();
       runners.delete(this.bridge.id);
       this.syncStoppedUi();
+      this.renderStats();
+      this.stopTick();
     } else if (state === "stopped") {
       label = "Stopped";
       cls = "pill off";
@@ -634,6 +759,7 @@ class BridgeCard {
     this.statusPill.textContent = label;
     this.statusPill.className = cls;
     this.setDetail(detail ?? "");
+    this.renderStats();
   }
 
   private onLevel(level: number): void {
@@ -642,6 +768,129 @@ class BridgeCard {
 
   private setDetail(text: string): void {
     this.detailEl.textContent = text;
+  }
+
+  // --- telemetry rendering ------------------------------------------------
+  private startTick(): void {
+    if (this.tickTimer !== null) return;
+    this.tickTimer = window.setInterval(() => this.renderStats(), 1000);
+  }
+
+  private stopTick(): void {
+    if (this.tickTimer !== null) {
+      window.clearInterval(this.tickTimer);
+      this.tickTimer = null;
+    }
+  }
+
+  private clearLog(): void {
+    clear(this.logEl);
+    this.logEl.append(h("div", { class: "log-empty muted" }, ["No activity yet."]));
+  }
+
+  /** Newest entries on top; capped so a weeks-long run can't grow the DOM. */
+  private appendLog(event: BridgeLogEvent): void {
+    this.logEl.querySelector(".log-empty")?.remove();
+    const row = h("div", { class: `log-row ${event.kind}` }, [
+      h("span", { class: "log-time" }, [fmtClock(event.atMs)]),
+      h("span", { class: "log-text" }, [event.text]),
+    ]);
+    this.logEl.prepend(row);
+    while (this.logEl.childElementCount > 75) {
+      this.logEl.lastElementChild?.remove();
+    }
+  }
+
+  /** Refreshes the compact summary line + the detailed stat cells. */
+  private renderStats(): void {
+    if (this.tickTimer !== null && !this.el.isConnected) {
+      // The card was replaced/removed from the page — stop ticking for it.
+      this.stopTick();
+      return;
+    }
+    const runner = runners.get(this.bridge.id);
+    const stats = runner ? runner.getStats() : this.lastStats;
+    if (!stats || stats.startedAtMs === 0) {
+      this.quickLine.textContent = "Not running.";
+      this.statConn.textContent = "—";
+      this.statTotal.textContent = "—";
+      this.statDrops.textContent = "—";
+      this.statTx.textContent = "—";
+      this.statRx.textContent = "—";
+      return;
+    }
+    const now = Date.now();
+    const connected = stats.connectedSinceMs > 0;
+    const currentStretch = connected ? now - stats.connectedSinceMs : 0;
+    const total = stats.totalConnectedMs + currentStretch;
+    const session = Math.max(now - stats.startedAtMs, 1);
+    const uptimePct = Math.min((total / session) * 100, 100);
+
+    // Compact always-visible line.
+    const parts: string[] = [];
+    if (connected) {
+      parts.push(`Connected ${fmtDur(currentStretch)}`);
+    } else if (runner) {
+      parts.push(
+        stats.lastDisconnect ? `Down ${fmtDur(now - stats.lastDisconnect.atMs)}` : "Connecting…",
+      );
+    } else {
+      parts.push(`Stopped · was on ${fmtDur(total)}`);
+    }
+    if (stats.disconnects > 0) {
+      parts.push(`${stats.disconnects} drop${stats.disconnects === 1 ? "" : "s"}`);
+    }
+    parts.push(
+      stats.tx.active
+        ? "TX now"
+        : stats.tx.count > 0
+          ? `TX ${stats.tx.count} (last ${fmtDur(now - stats.tx.lastAtMs)} ago)`
+          : "TX none",
+    );
+    if (this.bidirectional) {
+      parts.push(
+        stats.rx.active
+          ? "RX now"
+          : stats.rx.count > 0
+            ? `RX ${stats.rx.count} (last ${fmtDur(now - stats.rx.lastAtMs)} ago)`
+            : "RX none",
+      );
+    }
+    this.quickLine.textContent = parts.join("  ·  ");
+
+    // Detailed stat cells.
+    if (connected) {
+      this.statConn.textContent = `${fmtClock(stats.connectedSinceMs)} — up ${fmtDur(currentStretch)}`;
+    } else if (runner) {
+      this.statConn.textContent = stats.lastDisconnect
+        ? `not connected — down for ${fmtDur(now - stats.lastDisconnect.atMs)}`
+        : "not connected yet";
+    } else {
+      this.statConn.textContent = "stopped";
+    }
+    this.statTotal.textContent = `${fmtDur(total)} (${uptimePct >= 99.95 ? "100" : uptimePct.toFixed(1)}% of ${fmtDur(session)} running)`;
+    if (stats.disconnects === 0) {
+      this.statDrops.textContent = "none";
+    } else {
+      const last = stats.lastDisconnect;
+      this.statDrops.textContent = last
+        ? `${stats.disconnects} · last ${fmtClock(last.atMs)} — ${last.diagnosis}`
+        : String(stats.disconnects);
+    }
+    const tx = stats.tx;
+    this.statTx.textContent = tx.active
+      ? `keying now — started ${fmtClock(tx.lastAtMs)} (${fmtDur(now - tx.lastAtMs)} so far)`
+      : tx.count > 0
+        ? `${fmtClock(tx.lastAtMs)} · ${fmtDur(tx.lastDurationMs)} long · ${fmtDur(now - tx.lastAtMs)} ago · ${tx.count} total`
+        : "none yet";
+    if (this.bidirectional) {
+      const rx = stats.rx;
+      this.statRx.textContent = rx.active
+        ? `receiving now — started ${fmtClock(rx.lastAtMs)} (${fmtDur(now - rx.lastAtMs)} so far)`
+        : rx.count > 0
+          ? `${fmtClock(rx.lastAtMs)} · ${fmtDur(rx.lastDurationMs)} · ${fmtBytes(rx.lastBytes)} · ${fmtDur(now - rx.lastAtMs)} ago · ${rx.count} total`
+          : "none yet";
+    }
   }
 
   /** Reflect the running state in the controls (used on start + re-render). */
@@ -667,6 +916,10 @@ function sliderField(label: string, slider: HTMLElement, valueOut: HTMLElement):
     h("label", {}, [label, valueOut]),
     slider,
   ]);
+}
+
+function statBlock(label: string, valueEl: HTMLElement): HTMLElement {
+  return h("div", { class: "stat" }, [h("div", { class: "stat-label" }, [label]), valueEl]);
 }
 
 function formatGain(g: number): string {

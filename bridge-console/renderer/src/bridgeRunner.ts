@@ -14,6 +14,7 @@
 
 import { imbeDecode, initImbe } from "./imbeVocoder";
 import { wsOrigin } from "./api";
+import { fmtDur } from "./format";
 
 export type BridgeRunState =
   | "idle"
@@ -22,6 +23,63 @@ export type BridgeRunState =
   | "reconnecting"
   | "error"
   | "stopped";
+
+/** One timestamped line in a bridge's activity/diagnostics log. */
+export interface BridgeLogEvent {
+  atMs: number;
+  kind: "info" | "good" | "warn" | "bad";
+  text: string;
+}
+
+/** One direction's audio-burst telemetry (a burst = one keyed/received stretch). */
+export interface BridgeBurstStats {
+  /** Completed bursts since the bridge was started. */
+  count: number;
+  /** Wall-clock ms when the last (or current) burst began; 0 = never. */
+  lastAtMs: number;
+  /** Duration of the last completed burst. */
+  lastDurationMs: number;
+  /** Bytes carried by the last completed burst (RX only; 0 for TX). */
+  lastBytes: number;
+  /** True while a burst is in progress right now. */
+  active: boolean;
+}
+
+export interface BridgeDisconnect {
+  atMs: number;
+  reason: string;
+  /** Best-effort cause: was this box offline, or did the server stop answering? */
+  diagnosis: string;
+}
+
+/** Connection + audio telemetry for one bridge run (reset on each start()). */
+export interface BridgeRunStats {
+  /** Wall-clock ms when start() was called; 0 = never started. */
+  startedAtMs: number;
+  /** Wall-clock ms when the current relay connection was joined; 0 while down. */
+  connectedSinceMs: number;
+  /** Total ms on the channel across past connections (excludes the current one). */
+  totalConnectedMs: number;
+  /** Connection drops since start (does not count the operator stopping it). */
+  disconnects: number;
+  lastDisconnect: BridgeDisconnect | null;
+  /** Line-in audio keyed onto the channel (VOX bursts). */
+  tx: BridgeBurstStats;
+  /** Channel audio played back out (bidirectional bridges only). */
+  rx: BridgeBurstStats;
+}
+
+function emptyStats(): BridgeRunStats {
+  return {
+    startedAtMs: 0,
+    connectedSinceMs: 0,
+    totalConnectedMs: 0,
+    disconnects: 0,
+    lastDisconnect: null,
+    tx: { count: 0, lastAtMs: 0, lastDurationMs: 0, lastBytes: 0, active: false },
+    rx: { count: 0, lastAtMs: 0, lastDurationMs: 0, lastBytes: 0, active: false },
+  };
+}
 
 export interface BridgeRunnerCallbacks {
   onState: (state: BridgeRunState, detail?: string) => void;
@@ -33,6 +91,8 @@ export interface BridgeRunnerCallbacks {
   onLevel?: (level: number) => void;
   /** Fired when the relay rejects with an auth-style code so the app can re-login. */
   onAuthError?: () => void;
+  /** A new activity/diagnostics log line (also buffered — see getLog()). */
+  onLog?: (event: BridgeLogEvent) => void;
 }
 
 export interface BridgeRunnerConfig {
@@ -63,6 +123,8 @@ const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 20000;
 /** How often the watchdog verifies the socket is actually alive. */
 const WATCHDOG_MS = 5000;
+/** Activity log ring-buffer size — enough history without growing forever. */
+const LOG_LIMIT = 75;
 
 /** Resolves the capture worklet URL against the loaded document (works under file://). */
 function captureWorkletUrl(): string {
@@ -100,10 +162,11 @@ interface SinkAudioContext extends AudioContext {
 
 export class BridgeRunnerClient {
   private readonly config: BridgeRunnerConfig;
-  private readonly callbacks: BridgeRunnerCallbacks;
+  private callbacks: BridgeRunnerCallbacks;
 
   private ws: WebSocket | null = null;
   private state: BridgeRunState = "idle";
+  private stateDetail = "";
 
   private inputStream: MediaStream | null = null;
   private capCtx: AudioContext | null = null;
@@ -128,6 +191,29 @@ export class BridgeRunnerClient {
   /** True once the socket has reached "running" at least once this session. */
   private everConnected = false;
 
+  private stats: BridgeRunStats = emptyStats();
+  private logBuffer: BridgeLogEvent[] = [];
+  private txStartMs = 0;
+  private rxStartMs = 0;
+  private rxBurstBytes = 0;
+
+  // The OS knowing the network is down/up is the cheapest, most reliable
+  // diagnostic we have: log it, and reconnect immediately on restore instead of
+  // waiting out the backoff timer.
+  private readonly handleOffline = (): void => {
+    if (!this.wantRunning) return;
+    this.addLog("warn", "This computer went offline — internet connection lost.");
+  };
+  private readonly handleOnline = (): void => {
+    if (!this.wantRunning) return;
+    this.addLog("info", "Internet connection restored — reconnecting now.");
+    this.attempts = 0;
+    this.clearReconnectTimer();
+    if (!this.ws || this.ws.readyState > WebSocket.OPEN) {
+      this.connect();
+    }
+  };
+
   constructor(config: BridgeRunnerConfig, callbacks: BridgeRunnerCallbacks) {
     this.config = config;
     this.callbacks = callbacks;
@@ -135,6 +221,43 @@ export class BridgeRunnerClient {
 
   get currentState(): BridgeRunState {
     return this.state;
+  }
+
+  get currentDetail(): string {
+    return this.stateDetail;
+  }
+
+  /**
+   * Points the runner's events at a new set of callbacks. Used when the card UI
+   * is rebuilt (e.g. "Reset audio settings") while the bridge keeps running, so
+   * lamps/meter/log don't keep writing into orphaned DOM.
+   */
+  rebindCallbacks(callbacks: BridgeRunnerCallbacks): void {
+    this.callbacks = callbacks;
+  }
+
+  /** Snapshot of connection + audio telemetry for this run. */
+  getStats(): BridgeRunStats {
+    return {
+      ...this.stats,
+      lastDisconnect: this.stats.lastDisconnect ? { ...this.stats.lastDisconnect } : null,
+      tx: { ...this.stats.tx },
+      rx: { ...this.stats.rx },
+    };
+  }
+
+  /** The buffered activity log, oldest first (capped at LOG_LIMIT entries). */
+  getLog(): BridgeLogEvent[] {
+    return this.logBuffer.slice();
+  }
+
+  private addLog(kind: BridgeLogEvent["kind"], text: string): void {
+    const event: BridgeLogEvent = { atMs: Date.now(), kind, text };
+    this.logBuffer.push(event);
+    if (this.logBuffer.length > LOG_LIMIT) {
+      this.logBuffer.splice(0, this.logBuffer.length - LOG_LIMIT);
+    }
+    this.callbacks.onLog?.(event);
   }
 
   /** Hot-update gain/VOX without tearing the bridge down. */
@@ -146,6 +269,7 @@ export class BridgeRunnerClient {
 
   private setState(state: BridgeRunState, detail?: string): void {
     this.state = state;
+    this.stateDetail = detail ?? "";
     this.callbacks.onState(state, detail);
   }
 
@@ -155,6 +279,12 @@ export class BridgeRunnerClient {
     this.wantRunning = true;
     this.attempts = 0;
     this.everConnected = false;
+    this.stats = emptyStats();
+    this.stats.startedAtMs = Date.now();
+    this.logBuffer = [];
+    this.addLog("info", "Bridge started.");
+    window.addEventListener("online", this.handleOnline);
+    window.addEventListener("offline", this.handleOffline);
     this.setState("connecting", "Starting…");
     // The P25 vocoder is only needed to decode inbound channel audio, so load it
     // lazily and only for bidirectional bridges (best-effort).
@@ -170,9 +300,12 @@ export class BridgeRunnerClient {
         await this.startPlayback();
       }
     } catch {
+      this.addLog("bad", "Could not start audio capture/playback — check the input/output device.");
       this.setState("error", "Could not start audio capture/playback. Check the device.");
       this.teardownAudio();
       this.wantRunning = false;
+      window.removeEventListener("online", this.handleOnline);
+      window.removeEventListener("offline", this.handleOffline);
       return;
     }
 
@@ -190,6 +323,12 @@ export class BridgeRunnerClient {
         return;
       }
       this.teardownSocket();
+    }
+
+    // Reaching here with the connected clock still running means the link died
+    // without an onclose (half-open socket found by the watchdog) — account it.
+    if (this.stats.connectedSinceMs > 0) {
+      this.registerDisconnect("connection check found the link dead");
     }
 
     this.setState(this.everConnected ? "reconnecting" : "connecting", this.connectDetail());
@@ -244,16 +383,37 @@ export class BridgeRunnerClient {
       return;
     }
     if (msg.type === "joined") {
+      const now = Date.now();
+      const wasReconnect = this.everConnected;
+      const attemptsTaken = this.attempts;
       this.everConnected = true;
       this.attempts = 0;
       this.keyed = false;
       this.receiving = false;
+      if (this.stats.connectedSinceMs === 0) {
+        this.stats.connectedSinceMs = now;
+        if (wasReconnect) {
+          const downFor = this.stats.lastDisconnect ? now - this.stats.lastDisconnect.atMs : 0;
+          const tries = `${attemptsTaken} attempt${attemptsTaken === 1 ? "" : "s"}`;
+          this.addLog(
+            "good",
+            downFor > 0
+              ? `Reconnected — back on the channel after ${fmtDur(downFor)} down (${tries}).`
+              : `Reconnected — back on the channel (${tries}).`,
+          );
+        } else {
+          this.addLog("good", "Connected — on the channel.");
+        }
+      }
       this.setState("running", "On the channel.");
     } else if (msg.type === "error") {
       // A relay rejection is treated as retryable (a redeploy can briefly reject
       // a join). Auth-style codes additionally ask the app to re-login.
       if (isAuthRelayCode(msg.code)) {
+        this.addLog("warn", `Relay rejected the connection (${msg.code ?? "unknown"}) — refreshing sign-in.`);
         this.callbacks.onAuthError?.();
+      } else {
+        this.addLog("warn", `Relay rejected the connection (${msg.code ?? "unknown"}).`);
       }
       this.scheduleReconnect(`Relay rejected: ${msg.code ?? "unknown"}`);
     }
@@ -265,9 +425,29 @@ export class BridgeRunnerClient {
     return this.attempts > 0 ? `Reconnecting… (attempt ${this.attempts})` : "Reconnecting…";
   }
 
+  /** Folds the ending connection stretch into the stats and logs a diagnosis. */
+  private registerDisconnect(reason: string): void {
+    const now = Date.now();
+    this.endTxBurst(now);
+    this.endRxBurst(now);
+    this.stats.totalConnectedMs += now - this.stats.connectedSinceMs;
+    this.stats.connectedSinceMs = 0;
+    this.stats.disconnects += 1;
+    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+    const diagnosis = offline
+      ? "this computer's internet connection appears to be down"
+      : "internet looks OK; the safeT server is not responding (it may be restarting or redeploying)";
+    this.stats.lastDisconnect = { atMs: now, reason, diagnosis };
+    this.addLog("bad", `Connection lost (${reason}) — ${diagnosis}.`);
+  }
+
   /** Drops the current socket and arms a backoff timer to reconnect. */
   private scheduleReconnect(reason: string): void {
     this.teardownSocket();
+    const wasConnected = this.stats.connectedSinceMs > 0;
+    if (wasConnected) {
+      this.registerDisconnect(reason);
+    }
     this.keyed = false;
     this.callbacks.onKeyed(false);
     this.receiving = false;
@@ -279,6 +459,15 @@ export class BridgeRunnerClient {
       return; // a reconnect is already pending
     }
     this.attempts += 1;
+    // Log the first failure of a retry streak (further attempts only update the
+    // status line, so an outage doesn't flood the log).
+    if (!wasConnected && this.attempts === 1) {
+      const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+      this.addLog(
+        "warn",
+        `Could not connect (${reason})${offline ? " — this computer appears to be offline" : ""}; retrying until it succeeds.`,
+      );
+    }
     const capped = Math.min(RECONNECT_BASE_MS * 2 ** (this.attempts - 1), RECONNECT_MAX_MS);
     const jittered = Math.round(capped * (0.8 + Math.random() * 0.4));
     this.setState("reconnecting", `${reason} — retrying in ${Math.round(jittered / 1000)}s…`);
@@ -294,8 +483,24 @@ export class BridgeRunnerClient {
     this.attempts = 0;
     this.clearReconnectTimer();
     if (!this.ws || this.ws.readyState > WebSocket.OPEN) {
+      this.addLog("info", "Sign-in refreshed — reconnecting with the new session.");
       this.connect();
     }
+  }
+
+  private endTxBurst(endMs: number): void {
+    if (!this.stats.tx.active) return;
+    this.stats.tx.active = false;
+    this.stats.tx.lastDurationMs = Math.max(endMs - this.txStartMs, 0);
+    this.stats.tx.count += 1;
+  }
+
+  private endRxBurst(endMs: number): void {
+    if (!this.stats.rx.active) return;
+    this.stats.rx.active = false;
+    this.stats.rx.lastDurationMs = Math.max(endMs - this.rxStartMs, 0);
+    this.stats.rx.lastBytes = this.rxBurstBytes;
+    this.stats.rx.count += 1;
   }
 
   private clearReconnectTimer(): void {
@@ -388,6 +593,13 @@ export class BridgeRunnerClient {
     const open = this.lastVoxMs !== 0 && now - this.lastVoxMs < this.config.voxHangMs;
     if (open !== this.keyed) {
       this.keyed = open;
+      if (open) {
+        this.txStartMs = now;
+        this.stats.tx.active = true;
+        this.stats.tx.lastAtMs = now;
+      } else {
+        this.endTxBurst(now);
+      }
       this.callbacks.onKeyed(open);
     }
     const ws = this.ws;
@@ -415,6 +627,7 @@ export class BridgeRunnerClient {
     this.rxWatchdog = window.setInterval(() => {
       if (this.receiving && Date.now() - this.lastInboundMs > RX_GAP_MS) {
         this.receiving = false;
+        this.endRxBurst(this.lastInboundMs);
         this.callbacks.onReceiving(false);
       }
     }, 200);
@@ -422,11 +635,17 @@ export class BridgeRunnerClient {
 
   private handleAudio(buffer: ArrayBuffer): void {
     if (buffer.byteLength < 2) return;
-    this.lastInboundMs = Date.now();
+    const now = Date.now();
+    this.lastInboundMs = now;
     if (!this.receiving) {
       this.receiving = true;
+      this.rxStartMs = now;
+      this.rxBurstBytes = 0;
+      this.stats.rx.active = true;
+      this.stats.rx.lastAtMs = now;
       this.callbacks.onReceiving(true);
     }
+    this.rxBurstBytes += buffer.byteLength;
     const bytes = new Uint8Array(buffer);
     if (bytes.byteLength === 13 && bytes[0] === IMBE_MAGIC_0 && bytes[1] === IMBE_MAGIC_1) {
       const pcm8k = imbeDecode(bytes.subarray(2));
@@ -502,15 +721,30 @@ export class BridgeRunnerClient {
 
   /** Tears everything down; the runner cannot be reused afterward. */
   stop(): void {
+    const wasRunning = this.wantRunning;
     this.wantRunning = false;
+    window.removeEventListener("online", this.handleOnline);
+    window.removeEventListener("offline", this.handleOffline);
     this.clearReconnectTimer();
     this.stopWatchdog();
     this.teardownSocket();
     this.teardownAudio();
+    // Close the books: finish any open bursts and fold the current connected
+    // stretch into the total — an operator stop is not a "drop".
+    const now = Date.now();
+    this.endTxBurst(now);
+    this.endRxBurst(now);
+    if (this.stats.connectedSinceMs > 0) {
+      this.stats.totalConnectedMs += now - this.stats.connectedSinceMs;
+      this.stats.connectedSinceMs = 0;
+    }
     this.keyed = false;
     this.receiving = false;
     this.meterLevel = 0;
     this.callbacks.onLevel?.(0);
+    if (wasRunning) {
+      this.addLog("info", "Bridge stopped.");
+    }
     if (this.state !== "error") {
       this.setState("stopped", "Stopped.");
     }
