@@ -11,10 +11,10 @@
   },
 
   "sdr": {
-    "_comment": "One Nooelec v5 (RTL-SDR, R820T2). 2.4 MHz capture is the reliable default; 3.2 MHz is the chip's max (occasional dropped samples, worth it to cover more of the site). 'gain' 0 = auto AGC; set a fixed dB (e.g. 36-49) once you tune. 'ppm' from your dongle's frequency error. The OC CCCS Countywide site spans 855.7125-860.9625 MHz (5.25 MHz) — wider than ANY single dongle — so one dongle always misses part of it; center 858.98 @ 3.2 MHz covers 3 of the site's 4 control channels (857.4625, 860.2125, 860.4625) and 13 of 22 frequencies, going deaf only while the site rests on 856.7125c.",
+    "_comment": "One Nooelec v5 (RTL-SDR, R820T2). Stay at or below 2.56 MHz: 2.88+ Msps drops samples over USB/usbipd/WSL and the P25 decoder gets pure noise (decode rate 0/sec on every control channel — observed in the field at 3.2M). 'gain' 0 = auto AGC; set a fixed dB (e.g. 36-49) once you tune. 'ppm' from your dongle's frequency error. The OC CCCS Countywide site spans 855.7125-860.9625 MHz (5.25 MHz) — wider than ANY single dongle. Field logs show the site parks mostly on the HIGH control-channel pair, so center 859.8 @ 2.56 MHz covers both (860.2125c, 860.4625c) plus the upper nine voice frequencies; it is deaf only while the site rests on a low CC.",
     "device": 0,
-    "centerHz": 858980000,
-    "rateHz": 3200000,
+    "centerHz": 859800000,
+    "rateHz": 2560000,
     "gain": 40,
     "ppm": 0
   },
@@ -27,10 +27,10 @@
     "modulation": "qpsk"
   },
 
-  "_multiDongle": "RECOMMENDED for OC CCCS — the site's 5.25 MHz spread needs two dongles for full coverage (all 22 frequencies + all 4 control channels, no dead periods). Replace the single 'sdr' object with this 'sources' array. The talkgroups you pick in the SafeT console always attach to the FIRST system.",
+  "_multiDongle": "RECOMMENDED for OC CCCS — two dongles cover all FOUR control channels (no dead periods) and 20 of the site's 22 frequencies at the safe 2.56 Msps rate. Replace the single 'sdr' object with this 'sources' array. The talkgroups you pick in the SafeT console always attach to the FIRST system.",
   "_sources_example": [
-    { "device": 0, "centerHz": 857090000, "rateHz": 2880000, "gain": 40, "ppm": 0, "_note": "covers ~855.71-858.47 MHz: low voice + CCs 856.7125c, 857.4625c" },
-    { "device": 1, "centerHz": 859590000, "rateHz": 2880000, "gain": 40, "ppm": 0, "_note": "covers ~858.21-860.97 MHz: high voice + CCs 860.2125c, 860.4625c" }
+    { "device": 0, "centerHz": 857100000, "rateHz": 2560000, "gain": 40, "ppm": 0, "_note": "covers ~855.87-858.33 MHz: low voice + CCs 856.7125c, 857.4625c" },
+    { "device": 1, "centerHz": 859800000, "rateHz": 2560000, "gain": 40, "ppm": 0, "_note": "covers ~858.57-861.03 MHz: high voice + CCs 860.2125c, 860.4625c" }
   ],
   "_systems_example": [
     { "shortName": "occcs", "type": "p25", "modulation": "qpsk", "controlChannelsHz": [856712500, 857462500] },
