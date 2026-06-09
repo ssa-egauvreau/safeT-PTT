@@ -640,9 +640,11 @@ async function collectDiagnostics() {
     ["dongle (lsusb)", "lsusb 2>/dev/null | grep -i 'RTL\\|2838\\|2832' || echo none"],
     ["rtl devices", "timeout 4 rtl_test 2>&1 | head -8 || true"],
     ["docker ps", "docker ps -a --format '{{.Names}} | {{.Status}}' 2>/dev/null || echo 'docker not reachable'"],
+    ["bridged talkgroups (talkgroups.csv)", `cat ${projectDir}/trunk-recorder/talkgroups.csv 2>/dev/null || echo none`],
     ["icecast status", "curl -s --max-time 2 http://127.0.0.1:8000/status-json.xsl | head -c 1500 || true"],
     ["icecast log (tail)", "tail -40 /tmp/sdr-icecast.log 2>/dev/null || echo none"],
     ["streamer log (tail)", "tail -40 /tmp/sdr-streamers.log 2>/dev/null || echo none"],
+    ["safet bridge log (tail)", "tail -60 /tmp/sdr-bridge.log 2>/dev/null || echo none"],
     ["decoder log (tail)", "docker logs --tail 150 sdr-bridge-trunk-recorder-1 2>&1 | tail -150 || echo none"],
   ];
   for (const [title, cmd] of cmds) {
