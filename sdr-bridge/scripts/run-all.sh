@@ -52,6 +52,12 @@ mkdir -p /tmp/icecast-logs
 # can't bind the port, so a leftover instance would crash this start.
 pkill -9 icecast2 2>/dev/null || true
 pkill -9 -f "icecast://source" 2>/dev/null || true
+# Also free the per-talkgroup UDP ports the local bridge needs — leftover
+# streamers/bridges from a previous run hold them ("bind: address in use").
+pkill -9 -f udp-pcm.py 2>/dev/null || true
+pkill -9 -f local-bridge.mjs 2>/dev/null || true
+pkill -9 -f "udp://127.0.0.1:9" 2>/dev/null || true
+sleep 1
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   ss -ltn 2>/dev/null | grep -q ':8000 ' || break
   sleep 1
