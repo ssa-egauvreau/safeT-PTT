@@ -3706,6 +3706,54 @@ button.ch-kbd-chip:hover {
   background: color-mix(in srgb, var(--accent) 24%, var(--bg-raised));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
+.panel-desc.compact {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.user-templates-card {
+  margin-bottom: 16px;
+}
+.user-templates-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.user-template-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+}
+.user-template-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+.user-template-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.user-template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.apply-template-select {
+  font-size: 11px;
+  max-width: 132px;
+}
 .sim-channels {
   display: flex;
   flex-wrap: wrap;

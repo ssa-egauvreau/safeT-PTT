@@ -902,6 +902,210 @@ export async function getMembership(userId: number, channelId: number): Promise<
   return res.rows[0]?.permission ?? null;
 }
 
+// --- user permission templates -------------------------------------------
+
+export interface TemplateMembershipEntry {
+  channel_id: number;
+  permission: Permission;
+}
+
+export interface UserPermissionTemplateRow {
+  id: number;
+  agency_id: number;
+  name: string;
+  memberships: TemplateMembershipEntry[];
+  created_at: string;
+  updated_at: string;
+}
+
+function parseTemplateMemberships(raw: unknown): TemplateMembershipEntry[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const out: TemplateMembershipEntry[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object") {
+      continue;
+    }
+    const channelId = Number((row as { channel_id?: unknown }).channel_id);
+    const permission = (row as { permission?: unknown }).permission;
+    if (!Number.isFinite(channelId) || !PERMISSIONS.includes(permission as Permission)) {
+      continue;
+    }
+    out.push({ channel_id: channelId, permission: permission as Permission });
+  }
+  return out;
+}
+
+export async function listUserPermissionTemplates(agencyId: number): Promise<UserPermissionTemplateRow[]> {
+  const res = await requirePool().query<{
+    id: number;
+    agency_id: number;
+    name: string;
+    memberships: unknown;
+    created_at: Date;
+    updated_at: Date;
+  }>(
+    `SELECT id, agency_id, name, memberships, created_at, updated_at
+     FROM user_permission_templates
+     WHERE agency_id = $1
+     ORDER BY name ASC;`,
+    [agencyId],
+  );
+  return res.rows.map((row) => ({
+    id: row.id,
+    agency_id: row.agency_id,
+    name: row.name,
+    memberships: parseTemplateMemberships(row.memberships),
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
+  }));
+}
+
+export async function getUserPermissionTemplate(
+  id: number,
+  agencyId: number,
+): Promise<UserPermissionTemplateRow | null> {
+  const res = await requirePool().query<{
+    id: number;
+    agency_id: number;
+    name: string;
+    memberships: unknown;
+    created_at: Date;
+    updated_at: Date;
+  }>(
+    `SELECT id, agency_id, name, memberships, created_at, updated_at
+     FROM user_permission_templates
+     WHERE id = $1 AND agency_id = $2;`,
+    [id, agencyId],
+  );
+  const row = res.rows[0];
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    agency_id: row.agency_id,
+    name: row.name,
+    memberships: parseTemplateMemberships(row.memberships),
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
+  };
+}
+
+export async function createUserPermissionTemplate(
+  agencyId: number,
+  name: string,
+  memberships: TemplateMembershipEntry[],
+): Promise<UserPermissionTemplateRow> {
+  const res = await requirePool().query<{
+    id: number;
+    agency_id: number;
+    name: string;
+    memberships: unknown;
+    created_at: Date;
+    updated_at: Date;
+  }>(
+    `INSERT INTO user_permission_templates (agency_id, name, memberships)
+     VALUES ($1, $2, $3::jsonb)
+     RETURNING id, agency_id, name, memberships, created_at, updated_at;`,
+    [agencyId, name, JSON.stringify(memberships)],
+  );
+  const row = res.rows[0]!;
+  return {
+    id: row.id,
+    agency_id: row.agency_id,
+    name: row.name,
+    memberships: parseTemplateMemberships(row.memberships),
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
+  };
+}
+
+export async function updateUserPermissionTemplate(
+  id: number,
+  agencyId: number,
+  patch: { name?: string; memberships?: TemplateMembershipEntry[] },
+): Promise<UserPermissionTemplateRow | null> {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  let i = 1;
+  if (patch.name !== undefined) {
+    sets.push(`name = $${i++}`);
+    vals.push(patch.name);
+  }
+  if (patch.memberships !== undefined) {
+    sets.push(`memberships = $${i++}::jsonb`);
+    vals.push(JSON.stringify(patch.memberships));
+  }
+  if (sets.length === 0) {
+    return getUserPermissionTemplate(id, agencyId);
+  }
+  sets.push(`updated_at = now()`);
+  vals.push(id, agencyId);
+  const res = await requirePool().query<{
+    id: number;
+    agency_id: number;
+    name: string;
+    memberships: unknown;
+    created_at: Date;
+    updated_at: Date;
+  }>(
+    `UPDATE user_permission_templates
+     SET ${sets.join(", ")}
+     WHERE id = $${i++} AND agency_id = $${i}
+     RETURNING id, agency_id, name, memberships, created_at, updated_at;`,
+    vals,
+  );
+  const row = res.rows[0];
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    agency_id: row.agency_id,
+    name: row.name,
+    memberships: parseTemplateMemberships(row.memberships),
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
+  };
+}
+
+export async function deleteUserPermissionTemplate(id: number, agencyId: number): Promise<boolean> {
+  const res = await requirePool().query(
+    `DELETE FROM user_permission_templates WHERE id = $1 AND agency_id = $2;`,
+    [id, agencyId],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+/** Applies a template's channel permissions to one user (skips channels that no longer exist). */
+export async function applyUserPermissionTemplate(
+  templateId: number,
+  userId: number,
+  agencyId: number,
+): Promise<{ applied: number; skipped: number }> {
+  const [template, user] = await Promise.all([
+    getUserPermissionTemplate(templateId, agencyId),
+    getUserById(userId, agencyId),
+  ]);
+  if (!template || !user) {
+    throw new Error("not_found");
+  }
+  let applied = 0;
+  let skipped = 0;
+  for (const entry of template.memberships) {
+    const channel = await getChannelById(entry.channel_id, agencyId);
+    if (!channel) {
+      skipped++;
+      continue;
+    }
+    await setMembership(userId, entry.channel_id, entry.permission);
+    applied++;
+  }
+  return { applied, skipped };
+}
+
 // --- audit ---------------------------------------------------------------
 
 export async function writeAudit(entry: {

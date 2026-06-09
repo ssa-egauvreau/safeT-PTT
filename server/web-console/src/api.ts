@@ -98,6 +98,20 @@ export interface Membership {
   permission: Permission;
 }
 
+export interface TemplateMembership {
+  channel_id: number;
+  permission: Permission;
+}
+
+export interface UserPermissionTemplate {
+  id: number;
+  agency_id: number;
+  name: string;
+  memberships: TemplateMembership[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface UserChannel {
   id: number;
   name: string;
@@ -832,6 +846,23 @@ export const api = {
     request<{ ok: boolean }>("PUT", "/v1/admin/memberships", { userId, channelId, permission }),
   removeMembership: (userId: number, channelId: number) =>
     request<{ ok: boolean }>("DELETE", `/v1/admin/memberships?userId=${userId}&channelId=${channelId}`),
+
+  listUserTemplates: () =>
+    request<{ templates: UserPermissionTemplate[] }>("GET", "/v1/admin/user-templates"),
+  createUserTemplate: (input: { name: string; memberships: { channelId: number; permission: Permission }[] }) =>
+    request<{ template: UserPermissionTemplate }>("POST", "/v1/admin/user-templates", input),
+  updateUserTemplate: (
+    id: number,
+    patch: { name?: string; memberships?: { channelId: number; permission: Permission }[] },
+  ) => request<{ template: UserPermissionTemplate }>("PATCH", `/v1/admin/user-templates/${id}`, patch),
+  deleteUserTemplate: (id: number) =>
+    request<{ ok: boolean }>("DELETE", `/v1/admin/user-templates/${id}`),
+  applyUserTemplate: (id: number, userId: number) =>
+    request<{ ok: boolean; applied: number; skipped: number }>(
+      "POST",
+      `/v1/admin/user-templates/${id}/apply`,
+      { userId },
+    ),
 
   listAudit: (limit = 200) => request<{ entries: AuditEntry[] }>("GET", `/v1/admin/audit?limit=${limit}`),
 
