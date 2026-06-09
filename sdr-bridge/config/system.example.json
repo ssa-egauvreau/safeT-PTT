@@ -11,26 +11,26 @@
   },
 
   "sdr": {
-    "_comment": "One Nooelec v5 (RTL-SDR, R820T2). ~2.4 MHz max capture; ~2.0 MHz reliable. 'gain' 0 = auto AGC; set a fixed dB (e.g. 36-49) once you tune. 'ppm' from your dongle's frequency error.",
+    "_comment": "One Nooelec v5 (RTL-SDR, R820T2). 2.4 MHz capture is the reliable default; 3.2 MHz is the chip's max (occasional dropped samples, worth it to cover more of the site). 'gain' 0 = auto AGC; set a fixed dB (e.g. 36-49) once you tune. 'ppm' from your dongle's frequency error. The OC CCCS Countywide site spans 855.7125-860.9625 MHz (5.25 MHz) — wider than ANY single dongle — so one dongle always misses part of it; center 858.98 @ 3.2 MHz covers 3 of the site's 4 control channels (857.4625, 860.2125, 860.4625) and 13 of 22 frequencies, going deaf only while the site rests on 856.7125c.",
     "device": 0,
-    "centerHz": 854000000,
-    "rateHz": 2400000,
-    "gain": 0,
+    "centerHz": 858980000,
+    "rateHz": 3200000,
+    "gain": 40,
     "ppm": 0
   },
 
   "system": {
-    "_comment": "From RadioReference. 'type' is p25 — trunk-recorder auto-detects Phase I vs Phase II (TDMA) per call, so there is NO phase flag to set. 'modulation' is the CONTROL-CHANNEL modulation and is the knob that matters: 'qpsk' for CQPSK/LSM simulcast (most P25 Phase II county systems), 'fsk4' for C4FM. If the control channel won't lock on one, try the other. List the control-channel frequency(ies) in Hz; trunk-recorder uses the first that locks.",
+    "_comment": "From RadioReference. 'type' is p25 — trunk-recorder auto-detects Phase I vs Phase II (TDMA) per call, so there is NO phase flag to set. 'modulation' is the CONTROL-CHANNEL modulation and is the knob that matters: 'qpsk' for CQPSK/LSM simulcast (most P25 Phase II county systems), 'fsk4' for C4FM. List EVERY control-channel-capable frequency the site has (RadioReference marks them 'c') — the site ROTATES its control channel among them, and trunk-recorder can only follow to ones inside a dongle's window; any it can't reach is a dead period. OC CCCS Countywide (site 021): 856.7125c, 857.4625c, 860.2125c, 860.4625c.",
     "shortName": "occcs",
     "type": "p25",
-    "controlChannelsHz": [855737500, 856237500],
+    "controlChannelsHz": [857462500, 860212500, 860462500, 856712500],
     "modulation": "qpsk"
   },
 
-  "_multiDongle": "OPTIONAL — to use TWO+ dongles (a system wider than one ~2 MHz window, like the full OC CCCS spread) or add another band, replace the single 'sdr' object above with a 'sources' array, and/or the single 'system' object with a 'systems' array. The talkgroups you pick in the SafeT console always attach to the FIRST system. Example:",
+  "_multiDongle": "RECOMMENDED for OC CCCS — the site's 5.25 MHz spread needs two dongles for full coverage (all 22 frequencies + all 4 control channels, no dead periods). Replace the single 'sdr' object with this 'sources' array. The talkgroups you pick in the SafeT console always attach to the FIRST system.",
   "_sources_example": [
-    { "device": 0, "centerHz": 857400000, "rateHz": 2400000, "gain": 40, "ppm": 2, "_note": "covers ~856.2-858.6 MHz incl. control channel" },
-    { "device": 1, "centerHz": 859800000, "rateHz": 2400000, "gain": 40, "ppm": 0, "_note": "covers ~858.6-861.0 MHz upper voice" }
+    { "device": 0, "centerHz": 857090000, "rateHz": 2880000, "gain": 40, "ppm": 0, "_note": "covers ~855.71-858.47 MHz: low voice + CCs 856.7125c, 857.4625c" },
+    { "device": 1, "centerHz": 859590000, "rateHz": 2880000, "gain": 40, "ppm": 0, "_note": "covers ~858.21-860.97 MHz: high voice + CCs 860.2125c, 860.4625c" }
   ],
   "_systems_example": [
     { "shortName": "occcs", "type": "p25", "modulation": "qpsk", "controlChannelsHz": [856712500, 857462500] },
