@@ -11,9 +11,9 @@
   },
 
   "sdr": {
-    "_comment": "One Nooelec v5 (RTL-SDR, R820T2). Stay at or below 2.56 MHz: 2.88+ Msps drops samples over USB/usbipd/WSL and the P25 decoder gets pure noise (decode rate 0/sec on every control channel — observed in the field at 3.2M). 'gain' 0 = auto AGC; set a fixed dB (e.g. 36-49) once you tune. 'ppm' from your dongle's frequency error. The OC CCCS Countywide site spans 855.7125-860.9625 MHz (5.25 MHz) — wider than ANY single dongle. Field logs show the site parks mostly on the HIGH control-channel pair, so center 859.8 @ 2.544 MHz (rates MUST be multiples of 24000 — the P25 symbol rate — or trunk-recorder aborts on boot; 2.4M=100x and 2.544M=106x are valid, 2.56M and 3.2M are NOT) covers both (860.2125c, 860.4625c) plus the upper nine voice frequencies; it is deaf only while the site rests on a low CC.",
+    "_comment": "One Nooelec v5 (RTL-SDR, R820T2). Stay at or below 2.56 MHz: 2.88+ Msps drops samples over USB/usbipd/WSL and the P25 decoder gets pure noise (decode rate 0/sec on every control channel — observed in the field at 3.2M). 'gain' 0 = auto AGC; set a fixed dB (e.g. 36-49) once you tune. 'ppm' from your dongle's frequency error. The OC CCCS Countywide site spans 855.7125-860.9625 MHz (5.25 MHz) — wider than ANY single dongle. Only ONE cc-capable frequency is the live control channel at a time and the low/high pairs are 3.75 MHz apart — no single dongle spans both, so there WILL be deaf periods when the county rotates to the pair you are not watching (the 2nd dongle fixes that). Field logs show decoding on the LOW pair, so center 857.35 @ 2.544 MHz (rates MUST be multiples of 24000 — the P25 symbol rate — or trunk-recorder aborts on boot; 2.4M=100x and 2.544M=106x are valid, 2.56M and 3.2M are NOT) covers both low CCs (856.7125c, 857.4625c) plus ten voice frequencies.",
     "device": 0,
-    "centerHz": 859800000,
+    "centerHz": 857350000,
     "rateHz": 2544000,
     "gain": 40,
     "ppm": 0
