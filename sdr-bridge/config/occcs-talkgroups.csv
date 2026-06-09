@@ -1,0 +1,426 @@
+Decimal,Hex,Alpha Tag,Mode,Description,Tag,Category
+1400,578,DUKECALL,DE,OCSD ACCESS,Interop,OC CCCS
+3600,e10,YELLOW-1,DE,North Dispatch,Law Dispatch,OC CCCS
+3602,e12,YELLOW-2,DE,Southwest Dispatch,Law Dispatch,OC CCCS
+3604,e14,YELLOW-3,DE,Southeast Dispatch,Law Dispatch,OC CCCS
+3606,e16,YELLOW-4,DE,South Coast Dispatch,Law Dispatch,OC CCCS
+3608,e18,YELLOW-5,DE,Special,Law Tac,OC CCCS
+3610,e1a,YELLOW-6,DE,Harbor Patrol Dispatch,Law Dispatch,OC CCCS
+3612,e1c,YELLOW-7,DE,John Wayne Airport Dispatch,Law Dispatch,OC CCCS
+3650,e42,YELLOW-8,DE,Special,Law Tac,OC CCCS
+3614,e1e,YTAC-C1,DE,Countywide Tactical 1,Law Tac,OC CCCS
+3616,e20,YTAC-C2,DE,Countywide Tactical 2,Law Tac,OC CCCS
+3652,e44,YTAC-C3,DE,Countywide Tactical 3,Law Tac,OC CCCS
+3618,e22,YTAC-N1,DE,North Tactical 1,Law Tac,OC CCCS
+3620,e24,YTAC-N2,DE,North Tactical 2,Law Tac,OC CCCS
+3622,e26,YTAC-S1,DE,South Tactical 1,Law Tac,OC CCCS
+3624,e28,YTAC-S2,DE,South Tactical 2,Law Tac,OC CCCS
+3626,e2a,YTAC-A1,DE,Airport Tactical,Law Tac,OC CCCS
+3628,e2c,SHERIFF CMJ,DE,Mens Central Jail,Corrections,OC CCCS
+3630,e2e,SHERIFF CWJ,DE,Womens Central Jail,Corrections,OC CCCS
+3632,e30,SHERIFF IRC,DE,Jail Intake/Release Center,Corrections,OC CCCS
+3634,e32,SHERIFF TLF,DE,Theo Lacy Facility,Corrections,OC CCCS
+3636,e34,SHERIFF JMF,DE,James Musick Facility,Corrections,OC CCCS
+3680,e60,SHERIFF COC,DE,Central Justice Center,Corrections,OC CCCS
+3682,e62,SHERIFF HOC,DE,Harbor Justice Center Newport,Corrections,OC CCCS
+3684,e64,SHERIFF LJC,DE,Lamoreaux Justice Center,Corrections,OC CCCS
+3686,e66,SHERIFF NOC,DE,North Justice Center,Corrections,OC CCCS
+3688,e68,SHERIFF SAC,DE,Harbor Justice Center Laguna Hills,Corrections,OC CCCS
+3690,e6a,SHERIFF SOC,DE,Harbor Justice Center Laguna Niguel,Corrections,OC CCCS
+3692,e6c,SHERIFF WOC,DE,West Justice Center,Corrections,OC CCCS
+2580,a14,SO Transit 1,D,Transit Primary,Law Tac,OC CCCS
+2582,a16,SO Transit 2,DE,Transit Secondary,Law Tac,OC CCCS
+2584,a18,OCSD TRANS N,D,OCSD Transit North Cell,Law Tac,OC CCCS
+3640,e38,DA GRN 1,DE,District Attorney Countywide,Law Talk,OC CCCS
+3642,e3a,DA GRN N,DE,District Attorney North,Law Talk,OC CCCS
+3644,e3c,DA GRN S,DE,District Attorney South,Law Talk,OC CCCS
+3646,e3e,DA GRN C,DE,District Attorney Central,Law Talk,OC CCCS
+91,5b,1A LAB-OPS,DE,1A Laguna Beach Ops,Fire-Tac,OC CCCS
+135,87,1C STA-OPS,DE,1C Santa Ana Ops,Fire-Tac,OC CCCS
+45,2d,3A COS-DSP,DE,3A Costa Mesa Dispatch,Fire Dispatch,OC CCCS
+47,2f,3B COS-TAC,DE,3B Costa Mesa Tac,Fire-Tac,OC CCCS
+141,8d,3D STA-TAC,DE,3D Santa Ana Tac,Fire-Tac,OC CCCS
+143,8f,3E STA-TAC,DE,3E Santa Ana Tac,Fire-Tac,OC CCCS
+193,c1,3F CEN-DSP,DE,3F Dispatch FVY/HTB/NPB,Fire Dispatch,OC CCCS
+55,37,3G FVY-TAC,DE,3G Fountain Valley Tac,Fire-Tac,OC CCCS
+85,55,3H HTB-TAC,DE,3H Huntington Beach Tac,Fire-Tac,OC CCCS
+115,73,3I NPB-TAC,DE,3I Newport Beach Tac,Fire-Tac,OC CCCS
+233,e9,3J COS-TAC,DE,3J Costa Mesa Tac,Fire-Tac,OC CCCS
+235,eb,3K STA-TAC,DE,3K Santa Ana Tac,Fire-Tac,OC CCCS
+237,ed,3L CEN-A/TAC,DE,3L Central Alternate Tac,Fire-Tac,OC CCCS
+239,ef,3M CEN-A/TAC,DE,3M Central Alternate Tac,Fire-Tac,OC CCCS
+241,f1,3N CEN-A/TAC,DE,3N Central Alternate Tac,Fire-Tac,OC CCCS
+243,f3,3O CEN-A/TAC,DE,3O Central Alternate Tac,Fire-Tac,OC CCCS
+107,6b,5H LAB-DSP,DE,5H Laguna Beach Tac,Fire-Tac,OC CCCS
+139,8b,ORCO DSP,DE,ORCO Dispatch Santa Ana Fire,Fire Dispatch,OC CCCS
+35,23,2A BRE-TAC,DE,2A Brea Tactical,Fire-Tac,OC CCCS
+37,25,2B BRE-TAC,DE,2B Brea Tactical,Fire-Tac,OC CCCS
+95,5f,2C MET-TAC,DE,2C MetroNet Tactical,Fire-Tac,OC CCCS
+97,61,2D MET-TAC,DE,2D MetroNet Tactical,Fire-Tac,OC CCCS
+191,bf,2E NOR-DSP,DE,2E Dispatch ANA/BRE/FUL/GGV/ORG,Fire Dispatch,OC CCCS
+25,19,2F ANA-TAC,DE,2F Anaheim Tactical,Fire-Tac,OC CCCS
+65,41,2G FUL-TAC,DE,2G Fullerton Tactical,Fire-Tac,OC CCCS
+75,4b,2H PLA-TAC,DE,2H Placentia Tactical,Fire-Tac,OC CCCS
+125,7d,2I ORG-TAC,DE,2I Orange Tactical,Fire-Tac,OC CCCS
+221,dd,2J BRE TAC,DE,2J Brea Alternate Tactical,Fire-Tac,OC CCCS
+223,df,2K LHB TAC,DE,2K La Habra,Fire-Tac,OC CCCS
+225,e1,2L TAC,DE,2L North Alternate Tactical,Fire-Tac,OC CCCS
+227,e3,2M NOR TAC,DE,2M MetroNet North Alternate Tactical,Fire-Tac,OC CCCS
+229,e5,2N NOR TAC,DE,2N MetroNet North Alternate Tactical,Fire-Tac,OC CCCS
+231,e7,2O TAC,DE,2O North Alternate Tactical,Fire-Tac,OC CCCS
+308,134,2P PLA-DSP,DE,2P Placentia Dispatch,Fire Dispatch,OC CCCS
+131,83,1H SOUTH,DE,1H South OCFA,Fire-Tac,OC CCCS
+133,85,1I NORTH,DE,1I North OCFA,Fire-Tac,OC CCCS
+137,89,1K CW-2,DE,1K Countywide-2,Fire-Tac,OC CCCS
+151,97,1A ECC,DE,1A ECC Access,Fire-Tac,OC CCCS
+153,99,1B RAWS,DE,1B Weather Automated,Fire-Talk,OC CCCS
+155,9b,1C CREWS,DE,1C Hand Crews,Fire-Tac,OC CCCS
+157,9d,1D INV,DE,1D Investigations,Fire-Tac,OC CCCS
+159,9f,1E PREV,DE,1E Fire Prevention,Fire-Tac,OC CCCS
+161,a1,1F COMM,DE,1F Communication Service,Fire-Tac,OC CCCS
+163,a3,1G EDU,DE,1G Education,Fire-Tac,OC CCCS
+165,a5,4A JWA,DE,4A John Wayne Airport Fire,Fire-Tac,OC CCCS
+167,a7,4B 5B ORC-DSP,DE,4B/5B Orange County Fire Dispatch,Fire Dispatch,OC CCCS
+169,a9,4C CMD 1-4,DE,4C Division 1/4 Command,Fire-Tac,OC CCCS
+171,ab,4D DIV-1,DE,4D Division 1 Primary Tactical,Fire-Tac,OC CCCS
+173,ad,4E DIV-4,DE,4E Division 4 Primary Tactical,Fire-Tac,OC CCCS
+175,af,4F SEA 1-4,DE,4F Division 1/4 Seasonal Tactical,Fire-Tac,OC CCCS
+177,b1,5A ORC A/G,DE,5A Air-to-Ground,Fire-Tac,OC CCCS
+181,b5,5C CMD 2-3,DE,5C Division 2/3/5 Command,Fire-Tac,OC CCCS
+183,b7,5D DIV-2,DE,5D Division 2/5 Primary Tactical,Fire-Tac,OC CCCS
+185,b9,5E DIV-3,DE,5E Division 3 Primary Tactical,Fire-Tac,OC CCCS
+187,bb,5F SEA 2-3,DE,5F Division 2/3/5 Seasonal Tactical,Fire-Tac,OC CCCS
+247,f7,4H H-TAC,DE,4H Tactical,Fire-Tac,OC CCCS
+249,f9,4I I-TAC,DE,4I Tactical,Fire-Tac,OC CCCS
+251,fb,4J J-TAC,DE,4J Tactical,Fire-Tac,OC CCCS
+253,fd,4K K-TAC,DE,4K Tactical,Fire-Tac,OC CCCS
+255,ff,4L L-TAC,DE,4L Tactical,Fire-Tac,OC CCCS
+257,101,4M M-TAC,DE,4M Tactical,Fire-Tac,OC CCCS
+259,103,4N N-TAC,DE,4N Tactical,Fire-Tac,OC CCCS
+261,105,4O O-TAC,DE,4O Tactical,Fire-Tac,OC CCCS
+263,107,5I I-TAC,DE,5I Tactical,Fire-Tac,OC CCCS
+265,109,5J J-TAC,DE,5J Tactical,Fire-Tac,OC CCCS
+269,10d,5L L-TAC,DE,5L Alternate Tactical,Fire-Tac,OC CCCS
+271,10f,5M M-TAC,DE,5M Alternate Tactical,Fire-Tac,OC CCCS
+273,111,5N N-TAC,DE,5N Alternate Tactical,Fire-Tac,OC CCCS
+275,113,5O O-TAC,DE,5O Alternate Tactical,Fire-Tac,OC CCCS
+277,115,4P SIL TAC,DE,4P Silverado Canyon Tactical,Fire-Tac,OC CCCS
+281,119,5P TRAVEL,DE,5P Travel Net,Fire-Tac,OC CCCS
+425,1a9,11A EOC,DE,11A EOC to EOC Ops,Interop,OC CCCS
+1310,51e,13O ARSON,DE,13O Arson Investigators,Fire-Tac,OC CCCS
+3670,e56,OCP GRN1,DE,Probation Department 1,Law Tac,OC CCCS
+3672,e58,OCP GRN2,DE,Probation Department 2,Law Tac,OC CCCS
+3674,e5a,OCP GRN3,DE,Probation Department 3,Law Tac,OC CCCS
+3480,d98,SLB/LOS PD GRN1,DE,Seal Beach / Los Alamitos Police Dispatch,Law Dispatch,OC CCCS
+3340,d0c,CYP PD GRN2,DE,Cypress Police Dispatch,Law Dispatch,OC CCCS
+3434,d6a,LOS PD GRN3,DE,Los Alamitos Police,Law Tac,OC CCCS
+3342,d0e,CYP PD GRN4,DE,Cypress Police Green 4,Law Tac,OC CCCS
+3344,d10,CYP PD GRN5,DE,Cypress Police Green 5,Law Tac,OC CCCS
+3482,d9a,SLB PD GRN6,DE,Seal Beach Police Green 6,Law Tac,OC CCCS
+3484,d9c,SLB PD GRN7,DE,Seal Beach Police Green 7,Law Tac,OC CCCS
+2610,a32,AVJ PW SIL1,D,Aliso Viejo Public Works,Public Works,OC CCCS
+3300,ce4,ANA PD GRN1,DE,Anaheim Police Dispatch,Law Dispatch,OC CCCS
+3302,ce6,ANA PD GRN2,DE,Anaheim Police Green 2,Law Tac,OC CCCS
+3304,ce8,ANA PD GRN3,DE,Anaheim Police Green 3,Law Tac,OC CCCS
+3306,cea,ANA PD GRN4,DE,Anaheim Police Green 4,Law Tac,OC CCCS
+3308,cec,ANA PD GRN5,DE,Anaheim Police Green 5,Law Tac,OC CCCS
+1926,786,ANA PD GRN6,DE,Anaheim Police Green 6,Law Tac,OC CCCS
+1932,78c,ANA PD GRN7,DE,Anaheim Police Green 7,Law Tac,OC CCCS
+1940,794,ANA PD GRN8,DE,Anaheim Police Green 8,Law Tac,OC CCCS
+21,15,ANA A-TAC,D,1A Anaheim Ops,Fire-Tac,OC CCCS
+23,17,ANA B-TAC,D,1B Anaheim Ops,Fire-Tac,OC CCCS
+2400,960,ANA PW SIL1,D,Anaheim Public Works 1,Public Works,OC CCCS
+2402,962,ANA PW SIL2,D,Anaheim Public Works 2,Public Works,OC CCCS
+2404,964,ANA PW SIL3,D,Anaheim Code Enforcement,Public Works,OC CCCS
+2406,966,ANA PW SIL4,D,Anaheim Park Rangers,Public Works,OC CCCS
+2408,968,ANA PW SIL5,D,Anaheim Public Works 5,Public Works,OC CCCS
+2410,96a,ANA PW SIL6,D,Anaheim Convention Center Security,Security,OC CCCS
+2412,96c,ANA PW SIL7,D,Anaheim Power Station A,Utilities,OC CCCS
+2414,96e,ANA PW SIL8,D,Anaheim Water Station C,Utilities,OC CCCS
+2416,970,ANA PW SIL9,D,Anaheim Public Works 9,Public Works,OC CCCS
+2418,972,ANA PW SIL10,D,Anaheim Public Works 10,Public Works,OC CCCS
+2420,974,ANA PW SIL11,D,Anaheim Water Station C 11,Utilities,OC CCCS
+2422,976,ANA PW SIL12,D,Anaheim Public Works 12,Public Works,OC CCCS
+3310,cee,BRE PD GRN1,DE,Brea Police Dispatch,Law Dispatch,OC CCCS
+3312,cf0,BRE PD GRN2,DE,Brea Police Green 2,Law Tac,OC CCCS
+3314,cf2,BRE PD GRN3,DE,Brea Police Green 3,Law Tac,OC CCCS
+31,1f,BRE A-TAC,DE,1A Brea Tactical,Fire-Tac,OC CCCS
+33,21,BRE B-TAC,DE,1B Brea Tactical,Fire-Tac,OC CCCS
+2424,978,BRE PW SIL1,D,Brea Public Works,Public Works,OC CCCS
+3320,cf8,BPK PD GRN1,DE,Buena Park Police Dispatch,Law Dispatch,OC CCCS
+3322,cfa,BPK PD GRN2,DE,Buena Park Police Green 2,Law Tac,OC CCCS
+3324,cfc,BPK PD GRN3,DE,Buena Park Police Green 3,Law Tac,OC CCCS
+2426,97a,BPK PW SIL1,D,Buena Park Public Works,Public Works,OC CCCS
+3330,d02,COS PD GRN1,DE,Costa Mesa Police Dispatch,Law Dispatch,OC CCCS
+3332,d04,COS PD GRN2,DE,Costa Mesa Police Green 2,Law Dispatch,OC CCCS
+3334,d06,COS PD GRN3,DE,Costa Mesa Police Green 3,Law Talk,OC CCCS
+41,29,COS A-TAC,DE,1A Costa Mesa Ops,Fire-Tac,OC CCCS
+43,2b,COS B-TAC,DE,1B Costa Mesa Ops,Fire-Tac,OC CCCS
+2428,97c,COS PW SIL1,D,Costa Mesa Public Works,Public Works,OC CCCS
+2430,97e,CYP PW SIL1,D,Cypress Public Works,Public Works,OC CCCS
+2432,980,DAP PW SIL1,D,Dana Point Public Works,Public Works,OC CCCS
+421,1a5,AIRCALL,DE,Aircraft Dispatching/Hailing,Interop,OC CCCS
+1300,514,PIO-PIO,DE,PIO-PIO,Interop,OC CCCS
+1700,6a4,DSP-DSP,D,Dispatch Center Coordination,Interop,OC CCCS
+3350,d16,FVY PD GRN1,DE,Fountain Valley Police Dispatch,Law Dispatch,OC CCCS
+3352,d18,FVY PD GRN2,DE,Fountain Valley Police Green 2,Law Tac,OC CCCS
+3354,d1a,FVY PD GRN3,DE,Fountain Valley Police Green 3,Law Tac,OC CCCS
+51,33,FVY A-TAC,DE,1A Fountain Valley Ops,Fire-Tac,OC CCCS
+53,35,FVY B-TAC,DE,1B Fountain Valley Ops,Fire-Tac,OC CCCS
+2434,982,FVY PW SIL1,D,Fountain Valley Public Works,Public Works,OC CCCS
+3360,d20,FUL PD GRN1,DE,Fullerton Police Dispatch,Law Dispatch,OC CCCS
+3362,d22,FUL PD GRN2,DE,Fullerton Police Green 2,Law Tac,OC CCCS
+3364,d24,FUL PD GRN3,DE,Fullerton Police Green 3,Law Tac,OC CCCS
+61,3d,FUL A-TAC,DE,1A Fullerton Ops,Fire-Tac,OC CCCS
+63,3f,FUL B-TAC,DE,1B Fullerton Ops,Fire-Tac,OC CCCS
+2436,984,FUL PW SIL1,D,Fullerton Public Works,Public Works,OC CCCS
+3370,d2a,GGV PD GRN1,DE,Garden Grove Police Dispatch,Law Dispatch,OC CCCS
+3372,d2c,GGV PD GRN2,DE,Garden Grove Police Green 2,Law Tac,OC CCCS
+3374,d2e,GGV PD GRN3,DE,Garden Grove Police Green 3,Law Tac,OC CCCS
+2438,986,GGV PW SIL1,D,Garden Grove Public Works,Public Works,OC CCCS
+3380,d34,HTB PD GRN1,DE,Huntington Beach Police Dispatch,Law Dispatch,OC CCCS
+3382,d36,HTB PD GRN2,DE,Huntington Beach Police Green 2,Law Tac,OC CCCS
+3384,d38,HTB PD GRN3,DE,Huntington Beach Police Green 3,Law Tac,OC CCCS
+3386,d3a,HTB PD GRN4,DE,Huntington Beach Police Green 4,Law Tac,OC CCCS
+81,51,HTB A-TAC,D,1A Huntington Beach Ops,Fire-Tac,OC CCCS
+83,53,HTB B-TAC,D,1B Huntington Beach Ops,Fire-Tac,OC CCCS
+2440,988,HTB PW SIL1,D,Huntington Beach Public Works 1,Public Works,OC CCCS
+2442,98a,HTB PW SIL2,D,Huntington Beach Public Works 2,Public Works,OC CCCS
+2444,98c,HTB PW SIL3,D,Huntington Beach Public Works 3,Public Works,OC CCCS
+2950,b86,HTB AQUA-1,D,Huntington Beach Lifeguard Aqua 1,EMS Dispatch,OC CCCS
+3390,d3e,IRV PD GRN1,DE,Irvine Police Dispatch,Law Dispatch,OC CCCS
+3392,d40,IRV PD GRN2,DE,Irvine Police Green 2,Law Tac,OC CCCS
+3394,d42,IRV PD GRN3,DE,Irvine Police Green 3,Law Tac,OC CCCS
+2446,98e,IRV PW SIL1,D,Irvine Public Works 1,Public Works,OC CCCS
+1934,78e,IRV PW SIL2,D,Irvine Public Works 2,Public Works,OC CCCS
+1936,790,IRV PW SIL3,D,Irvine Public Works 3,Public Works,OC CCCS
+3410,d52,LHB PD GRN1,DE,La Habra Police Dispatch,Law Dispatch,OC CCCS
+3412,d54,LHB PD GRN2,DE,La Habra Police Green 2,Law Tac,OC CCCS
+3414,d56,LHB PD GRN3,DE,La Habra Police Green 3,Law Tac,OC CCCS
+2454,996,LHB PW SIL1,D,La Habra Public Works,Public Works,OC CCCS
+3420,d5c,LAP PD GRN1,DE,La Palma Police Dispatch,Law Dispatch,OC CCCS
+3422,d5e,LAP PD GRN2,DE,La Palma Police Green 2,Law Tac,OC CCCS
+3424,d60,LAP PD GRN3,DE,La Palma Police Green 3,Law Tac,OC CCCS
+2456,998,LAP PW SIL1,D,La Palma Public Works,Public Works,OC CCCS
+3400,d48,LAB PD GRN1,DE,Laguna Beach Police Dispatch,Law Dispatch,OC CCCS
+3402,d4a,LAB PD GRN2,DE,Laguna Beach Police Green 2,Law Dispatch,OC CCCS
+3404,d4c,LAB PD GRN3,DE,Laguna Beach Police Green 3,Law Tac,OC CCCS
+2448,990,LAB PW SIL1,D,Laguna Beach Public Works,Public Works,OC CCCS
+2490,9ba,LAB PW SIL 2,D,Laguna Beach Transit and Trolleys,Transportation,OC CCCS
+2952,b88,LAB AQUA 1,D,Laguna Beach Marine Safety,Multi-Dispatch,OC CCCS
+2450,992,LAH PW SIL1,D,Laguna Hills Public Works,Public Works,OC CCCS
+2452,994,LAN PW SIL1,D,Laguna Niguel Public Works,Public Works,OC CCCS
+2306,902,LKF PW SIL1,D,Lake Forest Public Works,Public Works,OC CCCS
+2458,99a,LOS PW SIL1,D,Los Alamitos Public Works,Public Works,OC CCCS
+2460,99c,MVJ PW SIL1,D,Mission Viejo Public Works,Public Works,OC CCCS
+3440,d70,NPB PD GRN1,DE,Newport Beach Police Dispatch,Law Dispatch,OC CCCS
+3442,d72,NPB PD GRN2,DE,Newport Beach Police Green 2,Law Tac,OC CCCS
+3444,d74,NPB PD GRN3,DE,Newport Beach Police Green 3,Law Tac,OC CCCS
+2462,99e,NPB PW SIL1,D,Newport Beach Public Works,Public Works,OC CCCS
+2954,b8a,NPB AQUA-1,D,Newport Beach Lifeguard Aqua 1,Multi-Dispatch,OC CCCS
+3450,d7a,ORG PD GRN1,DE,Orange Police Dispatch,Law Dispatch,OC CCCS
+3452,d7c,ORG PD GRN2,DE,Orange Police Green 2,Law Tac,OC CCCS
+3454,d7e,ORG PD GRN3,DE,Orange Police Green 3,Law Tac,OC CCCS
+121,79,ORG A-TAC,D,1A Orange Ops,Fire-Tac,OC CCCS
+123,7b,ORG B-TAC,D,1B Orange Ops,Fire-Tac,OC CCCS
+2464,9a0,ORG PW SIL1,D,Orange Public Works,Public Works,OC CCCS
+3460,d84,PLA PD GRN1,DE,Placentia Police Dispatch,Law Dispatch,OC CCCS
+3462,d86,PLA PD GRN2,DE,Placentia Police Green 2,Law Tac,OC CCCS
+3464,d88,PLA PD GRN3,DE,Placentia Police Green 3,Law Dispatch,OC CCCS
+2466,9a2,PLA PW SIL1,D,Placentia Public Works,Public Works,OC CCCS
+2468,9a4,SCL PW SIL1,D,San Clemente Park Rangers,Multi-Dispatch,OC CCCS
+2956,b8c,SCL AQUA-1,D,San Clemente Marine Safety Aqua 1,Multi-Dispatch,OC CCCS
+2470,9a6,SJC PW SIL1,D,San Juan Capistrano Public Works,Public Works,OC CCCS
+3470,d8e,STA PD GRN1,DE,Santa Ana Police Dispatch,Law Dispatch,OC CCCS
+3472,d90,STA PD GRN2,DE,Santa Ana Police Green 2,Law Tac,OC CCCS
+3474,d92,STA PD GRN3,DE,Santa Ana Police Green 3,Law Tac,OC CCCS
+3476,d94,STA PD GRN4,DE,Santa Ana Police Green 4,Law Tac,OC CCCS
+2472,9a8,STA PW SIL1,D,Santa Ana Public Works 1,Public Works,OC CCCS
+2474,9aa,STA PW SIL2,D,Santa Ana Public Works 2,Public Works,OC CCCS
+2476,9ac,STA PW SIL3,D,Santa Ana Public Works 3,Public Works,OC CCCS
+3830,ef6,SAU PD GRN1,DE,Santa Ana USD Police Dispatch,Law Dispatch,OC CCCS
+3832,ef8,SAU PD GRN2,DE,Santa Ana USD Police Green 2,Law Tac,OC CCCS
+2478,9ae,SLB PW SIL1,D,Seal Beach Public Works,Public Works,OC CCCS
+2958,b8e,SLB LG AQUA-1,D,Seal Beach Marine Safety Aqua 1,EMS Dispatch,OC CCCS
+2480,9b0,STN PW SIL1,D,Stanton Public Works,Public Works,OC CCCS
+3490,da2,TST PD GRN1,DE,Tustin Police Dispatch,Law Dispatch,OC CCCS
+3492,da4,TST PD GRN2,DE,Tustin Police Green 2,Law Tac,OC CCCS
+3494,da6,TST PD GRN3,DE,Tustin Police Green 3,Law Tac,OC CCCS
+2482,9b2,TST PW SIL1,D,Tustin Public Works,Public Works,OC CCCS
+2488,9b8,VPK PW SIL1,D,Villa Park Public Works,Public Works,OC CCCS
+3500,dac,WST PD GRN1,DE,Westminster Police Dispatch,Law Dispatch,OC CCCS
+3502,dae,WST PD GRN2,DE,Westminster Police Green 2,Law Tac,OC CCCS
+3504,db0,WST PD GRN3,DE,Westminster Police Green 3,Law Tac,OC CCCS
+2484,9b4,WST PW SIL1,D,Westminster Public Works,Public Works,OC CCCS
+2486,9b6,YBL PW SIL1,D,Yorba Linda Public Works,Public Works,OC CCCS
+2612,a34,CSF PD GRN1,DE,Cal State Fullerton Police Dispatch,Law Dispatch,OC CCCS
+2614,a36,CSF PD GRN2,DE,Cal State Fullerton Police Green 2,Law Tac,OC CCCS
+2616,a38,CSF PD GRN3,DE,Cal State Fullerton Police Green 3,Law Tac,OC CCCS
+321,141,PINK ANA,D,Pink Anaheim,Interop,OC CCCS
+323,143,PINK BRE,D,Pink Brea,Interop,OC CCCS
+327,147,PINK COS,D,Pink Costa Mesa,Interop,OC CCCS
+333,14d,PINK FVY,D,Pink Fountain Valley,Interop,OC CCCS
+335,14f,PINK FUL,D,Pink Fullerton,Interop,OC CCCS
+339,153,PINK HTB,D,Pink Huntington Beach,Interop,OC CCCS
+343,157,PINK LHB,D,Pink La Habra,Interop,OC CCCS
+347,15b,PINK LAB,D,Pink Laguna Beach,Interop,OC CCCS
+353,161,PINK NPB,D,Pink Newport Beach,Interop,OC CCCS
+355,163,PINK ORG,D,Pink Orange,Interop,OC CCCS
+361,169,PINK STA,D,Pink Santa Ana,Interop,OC CCCS
+2054,806,PINK BPK,D,Pink Buena Park,Interop,OC CCCS
+2058,80a,PINK CYP,D,Pink Cypress,Interop,OC CCCS
+2060,80c,PINK DAP,D,Pink Dana Point,Interop,OC CCCS
+2070,816,PINK IRV,D,Pink Irvine,Interop,OC CCCS
+2074,81a,PINK LAP,D,Pink La Palma,Interop,OC CCCS
+2078,81e,PINK LAH,D,Pink Laguna Hills,Interop,OC CCCS
+2080,820,PINK LAN,D,Pink Laguna Niguel,Interop,OC CCCS
+2082,822,PINK LOS,D,Pink Los Alamitos,Interop,OC CCCS
+2084,824,PINK MVJ,D,Pink Mission Viejo,Interop,OC CCCS
+2090,82a,PINK PLA,D,Pink Placentia,Interop,OC CCCS
+2092,82c,PINK SCL,D,Pink San Clemente CASA,Interop,OC CCCS
+2094,82e,PINK SJC,D,Pink San Juan Capistrano,Interop,OC CCCS
+2098,832,PINK SLB,D,Pink Seal Beach,Interop,OC CCCS
+2100,834,PINK STN,D,Pink Stanton,Interop,OC CCCS
+2102,836,PINK TST,D,Pink Tustin,Interop,OC CCCS
+2104,838,PINK WST,D,Pink Westminster,Interop,OC CCCS
+2106,83a,PINK YBL,D,Pink Yorba Linda,Interop,OC CCCS
+2108,83c,PINK VPK,D,Pink Villa Park,Interop,OC CCCS
+2110,83e,PINK AVJ,D,Pink Aliso Viejo,Interop,OC CCCS
+2112,840,PINK RSM,D,Pink Rancho Santa Margarita,Interop,OC CCCS
+3812,ee4,CCC PD GRN 1,DE,Coast CCD Police Dispatch,Law Dispatch,OC CCCS
+3814,ee6,CCC PD GRN 2,DE,Coast CCD Police Green 2,Law Tac,OC CCCS
+2500,9c4,ACO SIL 1,D,Animal Control Silver 1,Public Works,OC CCCS
+2502,9c6,ACO SIL N,D,Animal Control North Tactical,Public Works,OC CCCS
+2504,9c8,ACO SIL S,D,Animal Control South Tactical,Public Works,OC CCCS
+2540,9ec,COMMS SIL1,D,County Communications 1,Public Works,OC CCCS
+2542,9ee,COMM SIL2,D,County Communications 2,Public Works,OC CCCS
+2544,9f0,COMM SIL3,D,County Communications 3,Public Works,OC CCCS
+2546,9f2,COMM SIL4,D,County Communications 4 South Cell,Public Works,OC CCCS
+2548,9f4,COMM SIL5,D,County Communications 5 Southwest Cell,Public Works,OC CCCS
+2550,9f6,COMM SIL6,D,County Communications 6,Public Works,OC CCCS
+2552,9f8,COMM SIL8,D,County Communications 8,Public Works,OC CCCS
+2554,9fa,COMM SIL9,D,County Communications 9,Public Works,OC CCCS
+2516,9d4,CHS SIL 1,DE,Correctional Health,Public Works,OC CCCS
+2510,9ce,OCE SIL1,D,Environmental Health,Public Works,OC CCCS
+2518,9d6,HCA SIL 1,D,Health Care Agency,Public Works,OC CCCS
+2512,9d0,EMS SIL 1,D,Health Care Agency EMS 1,Public Works,OC CCCS
+2514,9d2,EMS SIL 2,D,Health Care Agency EMS 2,Public Works,OC CCCS
+2570,a0a,JWA SIL1,D,John Wayne Airport Silver 1,Public Works,OC CCCS
+2572,a0c,JWA SIL2,D,John Wayne Airport Silver 2,Public Works,OC CCCS
+2574,a0e,JWA SIL3,D,John Wayne Airport Silver 3,Public Works,OC CCCS
+2524,9dc,PRK SIL1,D,Park Rangers 1,Public Works,OC CCCS
+2600,a28,PRK SIL2,D,Park Rangers 2,Public Works,OC CCCS
+2602,a2a,PRK SIL3,D,Park Rangers 3,Public Works,OC CCCS
+2520,9d8,OCPW SIL1,D,County Public Works 1,Public Works,OC CCCS
+2522,9da,OCPW SIL2,D,County Public Works 2,Public Works,OC CCCS
+2532,9e4,OCPW SIL3,D,County Public Works 3,Public Works,OC CCCS
+2526,9de,OCPW SIL4,D,County Public Works 4,Public Works,OC CCCS
+2528,9e0,OCPW SIL5,D,County Public Works 5,Public Works,OC CCCS
+2530,9e2,OCPW SIL6,D,County Public Works 6,Public Works,OC CCCS
+1938,792,OTAP,D,Radio Techs,Public Works,OC CCCS
+2534,9e6,ROV SIL1,D,Registrar of Voters 1,Public Works,OC CCCS
+2536,9e8,ROV SIL2,D,Registrar of Voters 2,Public Works,OC CCCS
+2538,9ea,ROV SIL3,D,Registrar of Voters 3,Public Works,OC CCCS
+1320,528,VIOLET-N,DE,Registrar of Voters North,Public Works,OC CCCS
+1322,52a,VIOLET-S,DE,Registrar of Voters South,Public Works,OC CCCS
+2590,a1e,SSA SIL1,D,Social Services,Public Works,OC CCCS
+2560,a00,OCWR SIL1,D,Waste and Recycling,Public Works,OC CCCS
+2302,8fe,WEROC 1,D,Water Emergency Response 1,Public Works,OC CCCS
+2304,900,WEROC 2,D,Water Emergency Response 2,Public Works,OC CCCS
+2266,8da,BLUE 1 EOW,D,East Orange County Water District,Public Works,OC CCCS
+2268,8dc,BLUE 1 OCW,D,Orange County Water District,Public Works,OC CCCS
+2270,8de,BLUE 1 OSW,D,Orange County Sanitation District,Public Works,OC CCCS
+2272,8e0,BLUE 1 SOW,D,South Orange County Water Authority,Public Works,OC CCCS
+2274,8e2,BLUE 1 GSW,D,Golden State Water,Public Works,OC CCCS
+2276,8e4,BLUE 1 SWD,D,Serrano Water District,Public Works,OC CCCS
+2278,8e6,BLUE 1 YLW,D,Yorba Linda Water District,Public Works,OC CCCS
+2280,8e8,BLUE 1 CMW,D,Costa Mesa Sanitary District,Public Works,OC CCCS
+2282,8ea,BLUE 1 ETW,D,El Toro Water District,Public Works,OC CCCS
+2284,8ec,BLUE 1 MWD,D,Mesa Water District,Public Works,OC CCCS
+2286,8ee,BLUE 1 SMW,D,Santa Margarita Water District,Public Works,OC CCCS
+2288,8f0,BLUE 1 TCW,D,Trabuco Canyon Water District,Public Works,OC CCCS
+2290,8f2,BLUE 1 MSW,D,Midway Sanitation District,Public Works,OC CCCS
+2292,8f4,BLUE 1 IVW,D,Irvine Ranch Water District,Public Works,OC CCCS
+2294,8f6,BLUE 1 LBW,D,Laguna Beach County Water District,Public Works,OC CCCS
+2296,8f8,BLUE 1 MNW,D,Moulton Niguel Water District,Public Works,OC CCCS
+2298,8fa,BLUE 1 WRC,D,Municipal Water District of OC WEROC,Public Works,OC CCCS
+2300,8fc,BLUE 1 SCW,D,South Coast Water District,Public Works,OC CCCS
+391,187,TAN-CALL,D,Tan Call Countywide Calling,Interop,OC CCCS
+393,189,TAN-NORTH,D,Tan North Tactical,Interop,OC CCCS
+395,18b,TAN-SOUTH,D,Tan South Tactical,Interop,OC CCCS
+397,18d,TAN-1,D,Tan Countywide Tactical 1,Interop,OC CCCS
+399,18f,TAN-2,D,Tan Countywide Tactical 2,Interop,OC CCCS
+401,191,TAN-3,D,Tan Countywide Tactical 3,Interop,OC CCCS
+403,193,TAN-4,D,Tan Countywide Tactical 4,Interop,OC CCCS
+405,195,TAN-5,D,Tan Countywide Tactical 5,Interop,OC CCCS
+407,197,TAN-6,D,Tan Countywide Tactical 6,Interop,OC CCCS
+1918,77e,TAN-7,DE,Tan Countywide Tactical 7,Interop,OC CCCS
+1920,780,TAN-8,DE,Tan Countywide Tactical 8,Interop,OC CCCS
+245,f5,4G FLD/ER N,DE,4G ALS-No Contact North,Hospital,OC CCCS
+267,10b,5K HOSP S,DE,5K EMS Field to Hospital,Hospital,OC CCCS
+431,1af,6A MED-CALL,DE,6A Assignment OCC,EMS Dispatch,OC CCCS
+433,1b1,6B MED-N1,DE,6B North 1,Hospital,OC CCCS
+435,1b3,6C MED-N2,DE,6C North 2,Hospital,OC CCCS
+437,1b5,6D MED-NW,DE,6D Northwest,Hospital,OC CCCS
+439,1b7,6E MED-S1,DE,6E South 1,Hospital,OC CCCS
+441,1b9,6F MED-S2,DE,6F South 2,Hospital,OC CCCS
+443,1bb,6G MED-SW,DE,6G Southwest,Hospital,OC CCCS
+445,1bd,6H MED-CO1,DE,6H Countywide 1,EMS-Tac,OC CCCS
+447,1bf,6I MED-CO2,DE,6I Countywide 2,EMS-Tac,OC CCCS
+449,1c1,6J MED-CO3,DE,6J Countywide 3,EMS-Tac,OC CCCS
+451,1c3,6K MED-LAB,DE,6K Laguna Beach,EMS-Tac,OC CCCS
+453,1c5,6L HOSP-C,D,6L Hospital Contact,Hospital,OC CCCS
+1710,6ae,OCC ALT,D,Paramedic Coordination Center,EMS-Tac,OC CCCS
+1720,6b8,HOAG,D,Hoag Memorial Hospital,Hospital,OC CCCS
+1730,6c2,HUNT BCH,D,Huntington Beach Hospital,Hospital,OC CCCS
+1740,6cc,MISSION,D,Mission Hospital Regional,Hospital,OC CCCS
+1750,6d6,ST JUDE,D,St Jude Medical Center,Hospital,OC CCCS
+1760,6e0,UCI MC,D,UC Irvine Medical Center,Hospital,OC CCCS
+1770,6ea,OC GLOBAL,D,OC Global Medical Center,Hospital,OC CCCS
+2308,904,CHOC,D,Childrens Hospital of Orange County,Hospital,OC CCCS
+3820,eec,IVC PD GRN1,DE,Irvine Valley College Police Dispatch,Law Dispatch,OC CCCS
+3822,eee,IVC PD GRN2,DE,Irvine Valley College Police Green 2,Law Tac,OC CCCS
+3100,c1c,ORANGE-N,DE,Law Interop North,Interop,OC CCCS
+3102,c1e,ORANGE-S,DE,Law Interop South,Interop,OC CCCS
+3104,c20,ORANGE-1,DE,Law Interop 1,Interop,OC CCCS
+3106,c22,ORANGE-2,DE,Law Interop 2,Interop,OC CCCS
+3108,c24,ORANGE-3,DE,Law Interop 3,Interop,OC CCCS
+3110,c26,ORANGE-4,DE,Law Interop 4,Interop,OC CCCS
+3112,c28,ORANGE-5,DE,Law Interop 5,Interop,OC CCCS
+3114,c2a,ORANGE-6,DE,Law Interop 6,Interop,OC CCCS
+3116,c2c,ORANGE-7,DE,Law Interop 7,Interop,OC CCCS
+3120,c30,PURPLE,DE,Inquiries,Interop,OC CCCS
+3130,c3a,BLACK-N,DE,Detective Surveillance North,Interop,OC CCCS
+3132,c3c,BLACK-S,DE,Detective Surveillance South,Interop,OC CCCS
+3134,c3e,BLACK-1,DE,Detective Surveillance 1,Interop,OC CCCS
+3136,c40,BLACK-2,DE,Detective Surveillance 2,Interop,OC CCCS
+3138,c42,BLACK-3,DE,Detective Surveillance 3,Interop,OC CCCS
+3140,c44,BLACK-4,DE,Detective Surveillance 4,Interop,OC CCCS
+3142,c46,BLACK-5,DE,Detective Surveillance 5,Interop,OC CCCS
+3144,c48,BLACK-6,DE,Detective Surveillance 6,Interop,OC CCCS
+3146,c4a,BLACK-7,DE,Detective Surveillance 7,Interop,OC CCCS
+3150,c4e,GRAY-N,DE,Narcotics Surveillance North,Interop,OC CCCS
+3152,c50,GRAY-S,DE,Narcotics Surveillance South,Interop,OC CCCS
+3154,c52,GRAY-1,DE,Narcotics Surveillance 1,Interop,OC CCCS
+3156,c54,GRAY-2,DE,Narcotics Surveillance 2,Interop,OC CCCS
+3158,c56,GRAY-3,DE,Narcotics Surveillance 3,Interop,OC CCCS
+3160,c58,GRAY-4,DE,Narcotics Surveillance 4,Interop,OC CCCS
+3162,c5a,GRAY-5,DE,Narcotics Surveillance 5,Interop,OC CCCS
+3164,c5c,GRAY-6,DE,Narcotics Surveillance 6,Interop,OC CCCS
+3166,c5e,GRAY-7,DE,Narcotics Surveillance 7,Interop,OC CCCS
+3170,c62,RED,DE,Red Countywide Law Common,Interop,OC CCCS
+2960,b90,AQUA-1,D,Aqua 1 County Ocean Safety,Multi-Dispatch,OC CCCS
+2800,af0,AQUA-2,D,Aqua 2 Lifeguard Common,Multi-Tac,OC CCCS
+2802,af2,AQUA-3,D,Aqua 3 Lifeguard Common,Multi-Tac,OC CCCS
+2250,8ca,BROWN-N,D,Brown North,Public Works,OC CCCS
+2252,8cc,BROWN-S,D,Brown South,Public Works,OC CCCS
+2254,8ce,BROWN-1,D,Brown 1,Public Works,OC CCCS
+2256,8d0,BROWN-2,D,Brown 2,Public Works,OC CCCS
+2258,8d2,BROWN-3,D,Brown 3,Public Works,OC CCCS
+2260,8d4,BROWN-4,D,Brown 4,Public Works,OC CCCS
+2262,8d6,BROWN-5,D,Brown 5,Public Works,OC CCCS
+2264,8d8,BROWN-6,D,Brown 6,Public Works,OC CCCS
+2310,906,RSC PD GRN1,DE,Rancho Santiago CCD Police Dispatch,Law Dispatch,OC CCCS
+2312,908,RSC PD GRN2,DE,Rancho Santiago CCD Police Green 2,Law Tac,OC CCCS
+1922,782,SCP PD GRN1,DE,Saddleback College Police Dispatch,Law Dispatch,OC CCCS
+1924,784,SCP PD GRN2,DE,Saddleback College Police Green 2,Law Tac,OC CCCS

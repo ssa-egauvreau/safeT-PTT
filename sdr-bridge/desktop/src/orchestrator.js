@@ -609,7 +609,9 @@ async function talkgroupReport() {
     const id = (c[0] || "").trim();
     if (/^\d+$/.test(id)) {
       names[id] = (c[2] || "").trim();
-      bridged.add(Number(id));
+      // The generated CSV holds the whole system's talkgroups for labeling;
+      // only Category "SDR" rows are actually bridged to SafeT channels.
+      if ((c[6] || "").trim() === "SDR") bridged.add(Number(id));
     }
   }
 

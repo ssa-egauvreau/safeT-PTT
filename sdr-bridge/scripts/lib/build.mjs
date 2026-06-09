@@ -13,7 +13,7 @@
  * A plan item: { tgid:Number, mount:String, channel:String }.
  */
 
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 /** First UDP port; talkgroup N streams on BASE_UDP_PORT + N. */
@@ -84,7 +84,26 @@ function buildTrunkConfig(cfg, plan) {
     if (channels.length) {
       sys.channels = channels;
     } else {
-      sys.control_channels = control;
+      // trunk-recorder sets the system up on the FIRST control channel listed
+      // and EXITS if no source covers it ("Unable to find a source for this
+      // System") — even when later list entries are covered fine. Order the
+      // covered ones first so the config's list order can never crash it.
+      const covered = (f) => sources.some((src) => Math.abs(f - src.center) <= src.rate * 0.48);
+      const inWindow = control.filter(covered);
+      const outWindow = control.filter((f) => !covered(f));
+      if (control.length && !inWindow.length) {
+        throw new Error(
+          `system "${sys.shortName}": none of its control channels fall inside any dongle's ` +
+            `window — re-center a dongle (Settings → Center frequency) to cover one of: ` +
+            control.map((f) => (f / 1e6).toFixed(4)).join(", ") + " MHz.",
+        );
+      }
+      if (outWindow.length)
+        console.warn(
+          `  ! ${sys.shortName}: control channel(s) ${outWindow.map((f) => (f / 1e6).toFixed(4)).join(", ")} MHz ` +
+            `are outside every dongle window — unreachable until a dongle covers them.`,
+        );
+      sys.control_channels = [...inWindow, ...outWindow];
     }
     // A trunked (P25) system with NO control channel makes trunk-recorder
     // segfault on startup — it has nothing to tune the control decoder to. Fail
@@ -298,10 +317,29 @@ export function writeArtifacts(root, cfg, plan) {
   // Always emit the talkgroups CSV trunk-recorder names calls from, so the file
   // the container mounts is guaranteed to exist (the console path may have no
   // hand-supplied config/talkgroups.csv) and calls get readable labels.
+  // Bridged talkgroups come first with their SafeT channel names (Category
+  // "SDR" — the desktop Coverage tab keys off it); then the full system
+  // reference (config/occcs-talkgroups.csv, from RadioReference) so decoder
+  // logs and Coverage show a NAME for every talkgroup on the system, not a
+  // bare TG id.
+  const bridgedIds = new Set(withPorts.map((p) => String(p.tgid)));
+  let reference = [];
+  try {
+    reference = readFileSync(join(root, "config", "occcs-talkgroups.csv"), "utf8")
+      .split(/\r?\n/)
+      .slice(1) // header
+      .filter((l) => {
+        const id = (l.split(",")[0] ?? "").trim();
+        return /^\d+$/.test(id) && !bridgedIds.has(id);
+      });
+  } catch {
+    /* reference file not shipped — bridged-only labels */
+  }
   const csv =
     "Decimal,Hex,Alpha Tag,Mode,Description,Tag,Category\n" +
     withPorts
       .map((p) => `${p.tgid},${Number(p.tgid).toString(16)},${p.channel},D,${p.channel},,SDR`)
+      .concat(reference)
       .join("\n") +
     "\n";
   writeFileSync(join(root, "trunk-recorder", "talkgroups.csv"), csv);
