@@ -36,6 +36,8 @@ export interface BridgeSettings {
   gain?: number;
   /** True if this bridge should auto-resume on launch (unattended recovery). */
   wantRunning?: boolean;
+  /** True when the card's settings/diagnostics body is collapsed to one row. */
+  collapsed?: boolean;
 }
 
 /** The full persisted config (mirrors electron/main.js DEFAULT_CONFIG). */
