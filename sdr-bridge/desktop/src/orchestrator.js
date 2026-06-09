@@ -444,7 +444,7 @@ async function getStatus() {
     dongle: false,
     pipelineRunning: pipelineRunning(),
     decoder: { running: false, locked: false, controlChannel: null, decodeRate: null },
-    icecast: { up: false, mounts: 0, names: [] },
+    bridge: { running: false, channels: 0 },
     cloudflared: "unknown",
   };
 
@@ -469,19 +469,13 @@ async function getStatus() {
     status.decoder.locked = logShowsLock(text);
   }
 
-  const ice = await runWsl("curl -s --max-time 2 http://127.0.0.1:8000/status-json.xsl || true");
-  if (ice.stdout.includes("icestats")) {
-    status.icecast.up = true;
-    try {
-      const data = JSON.parse(ice.stdout).icestats;
-      let src = data.source || [];
-      if (!Array.isArray(src)) src = [src];
-      status.icecast.names = src.map((s) => String(s.listenurl || "").split("/").pop()).filter(Boolean);
-      status.icecast.mounts = status.icecast.names.length;
-    } catch {
-      /* leave defaults */
-    }
-  }
+  // Local SafeT bridge: is it running, and how many channels did it put on air?
+  const br = await runWsl(
+    "r=$(pgrep -f local-bridge.mjs >/dev/null 2>&1 && echo RUN || echo STOP); " +
+      "n=$(grep -oE '> [^:]+: on air' /tmp/sdr-bridge.log 2>/dev/null | sort -u | wc -l); echo \"$r $n\"",
+  );
+  const [run, n] = br.stdout.trim().split(/\s+/);
+  status.bridge = { running: run === "RUN", channels: Number(n) || 0 };
 
   // cloudflared is a Windows service that rarely changes — cache it ~30s so the
   // frequent status poll doesn't spawn powershell.exe every few seconds.

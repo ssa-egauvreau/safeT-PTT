@@ -304,13 +304,10 @@ async function poll() {
     setCard("card-decoder", "ok", txt);
   } else setCard("card-decoder", "warn", "Running, acquiring lock…");
 
-  if (!s.icecast.up) setCard("card-icecast", "bad", "Down");
-  else if (s.icecast.mounts > 0) setCard("card-icecast", "ok", `${s.icecast.mounts} mounts live`);
-  else setCard("card-icecast", "warn", "Up, no mounts yet");
-
-  if (s.cloudflared === "Running") setCard("card-tunnel", "ok", "Running");
-  else if (s.cloudflared === "NotInstalled") setCard("card-tunnel", "warn", "Not installed");
-  else setCard("card-tunnel", "warn", s.cloudflared || "Unknown");
+  const b = s.bridge || { running: false, channels: 0 };
+  if (b.running && b.channels > 0) setCard("card-bridge", "ok", `${b.channels} channels on air`);
+  else if (b.running) setCard("card-bridge", "warn", "Connecting…");
+  else setCard("card-bridge", "bad", "Stopped");
 
   const running = s.decoder.running || s.pipelineRunning;
   if (running && $("runState").textContent !== "Starting…") setRunState("on");

@@ -78,6 +78,8 @@ fi
 # talkgroup streamers anymore — they'd bind the same UDP ports and fight the
 # bridge. (Icecast itself stays up, just idle.) Logs: /tmp/sdr-bridge.log
 echo "[2/3] local SafeT bridge (pushing audio to your channels)..."
+# Ensure the WebSocket lib is present (no-op once installed; harmless if offline).
+[ -d node_modules/ws ] || npm install ws --no-audit --no-fund >/dev/null 2>&1 || true
 ( sleep 5; node scripts/local-bridge.mjs ) >/tmp/sdr-bridge.log 2>&1 &
 PIDS+=($!)
 

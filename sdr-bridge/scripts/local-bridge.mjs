@@ -109,6 +109,98 @@ function relogin() {
   return reloginInFlight;
 }
 
+// "Scan All" hub: monitor bridges (source /monitor) are fed by whichever
+// talkgroup is currently keyed — a scanner that plays one call at a time. The
+// first talkgroup to key "holds" the scan feed until it releases, so frames from
+// different talkgroups never interleave into garble.
+const monitor = {
+  sockets: [],
+  holder: null,
+  add(ws) {
+    this.sockets.push(ws);
+  },
+  remove(ws) {
+    this.sockets = this.sockets.filter((s) => s !== ws);
+  },
+  claim(name) {
+    if (this.holder === null) this.holder = name;
+    return this.holder === name;
+  },
+  send(frame) {
+    for (const ws of this.sockets) if (ws.readyState === 1) try { ws.send(frame); } catch { /* drop */ }
+  },
+  release(name) {
+    if (this.holder !== name) return;
+    this.holder = null;
+    for (const ws of this.sockets)
+      if (ws.readyState === 1) try { ws.send(JSON.stringify({ type: "release_air" })); } catch { /* drop */ }
+  },
+};
+
+/** A monitor/Scan-All bridge: no ingest of its own — it joins its channel and
+ * is fed by the talkgroup ingests via the `monitor` hub. */
+function runMonitorBridge(bridge) {
+  let stopped = false;
+  let backoff = RECONNECT_MIN;
+  function once() {
+    return new Promise((done) => {
+      const ws = new WS(`${wsBase()}/v1/voice/stream?token=${encodeURIComponent(tokenRef.value)}`);
+      ws.binaryType = "arraybuffer";
+      let registered = false;
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        if (registered) monitor.remove(ws);
+        try { ws.close(); } catch { /* closing */ }
+        done();
+      };
+      ws.onopen = () => {
+        try {
+          ws.send(JSON.stringify({
+            type: "join",
+            channel: bridge.target_channel,
+            unit_id: (bridge.name || "SCAN").slice(0, 12),
+            client: "bridge",
+            caps: [],
+          }));
+        } catch {
+          finish();
+        }
+      };
+      ws.onmessage = (ev) => {
+        if (typeof ev.data !== "string") return;
+        let m;
+        try { m = JSON.parse(ev.data); } catch { return; }
+        if (m.type === "joined") {
+          console.log(`[bridge] ${bridge.name} -> ${bridge.target_channel}: on air (Scan All)`);
+          monitor.add(ws);
+          registered = true;
+        } else if (m.type === "error") {
+          console.warn(`[bridge] ${bridge.name}: relay rejected join (${m.code ?? "error"})`);
+          finish();
+        }
+      };
+      ws.onerror = () => finish();
+      ws.onclose = (e) => {
+        console.warn(`[bridge] ${bridge.name}: ws closed ${e && e.code != null ? e.code : ""}`);
+        finish();
+      };
+    });
+  }
+  (async () => {
+    while (!stopped) {
+      const started = Date.now();
+      try { await once(); } catch (e) { console.warn(`[bridge] ${bridge.name}:`, e.message); }
+      if (stopped) break;
+      if (Date.now() - started > 60000) backoff = RECONNECT_MIN;
+      await new Promise((r) => setTimeout(r, backoff));
+      backoff = Math.min(backoff * 2, RECONNECT_MAX);
+    }
+  })();
+  return { stop: () => (stopped = true) };
+}
+
 function runBridge(bridge, udpPort) {
   // Read the decoder's per-talkgroup UDP directly (raw s16le mono 8 kHz) — no
   // Icecast in the path, so nothing flaky to depend on. ffmpeg simply blocks
@@ -133,6 +225,7 @@ function runBridge(bridge, udpPort) {
       const finish = () => {
         if (finished) return;
         finished = true;
+        monitor.release(bridge.name); // don't strand the Scan-All feed if we held it
         try {
           child && child.kill("SIGKILL");
         } catch {
@@ -180,12 +273,15 @@ function runBridge(bridge, udpPort) {
               } catch {
                 /* drop */
               }
+              // Also feed the Scan-All channels if we currently hold the feed.
+              if (monitor.claim(bridge.name)) monitor.send(frame);
             } else if (gateWas && !open && ws.readyState === 1) {
               try {
                 ws.send(JSON.stringify({ type: "release_air" }));
               } catch {
                 /* drop */
               }
+              monitor.release(bridge.name);
             }
             gateWas = open;
           }
@@ -273,11 +369,16 @@ async function main() {
 
   const bridges = (await api("GET", "/admin/bridges", { token: tokenRef.value })).bridges ?? [];
   const runnable = [];
+  const monitors = [];
   for (const b of bridges) {
     if (b.source_type !== "stream_url" || !b.enabled) continue;
+    if (/\/monitor\/?$/i.test(String(b.source_url))) {
+      monitors.push(b); // Scan All / All CCCS — fed by every talkgroup
+      continue;
+    }
     const m = String(b.source_url).match(/\/tg(\d+)\/?$/i);
     if (!m) {
-      console.log(`    • skip "${b.name}" (not a single talkgroup — e.g. /monitor)`);
+      console.log(`    • skip "${b.name}" (unrecognized source ${b.source_url})`);
       continue;
     }
     const port = tgPort.get(Number(m[1]));
@@ -287,11 +388,15 @@ async function main() {
     }
     runnable.push({ bridge: b, port });
   }
-  if (!runnable.length) {
-    console.error("local-bridge: no runnable talkgroup bridges (check the bridges exist + sync ran).");
+  if (!runnable.length && !monitors.length) {
+    console.error("local-bridge: no runnable bridges (check the bridges exist + sync ran).");
     process.exit(1);
   }
-  console.log(`[bridge] pushing ${runnable.length} bridge(s) to SafeT (${wsBase()}) straight from the decoder's UDP:`);
+  console.log(`[bridge] pushing ${runnable.length} talkgroup + ${monitors.length} scan bridge(s) to SafeT (${wsBase()}):`);
+  for (const b of monitors) {
+    console.log(`    • ${b.name}  ->  channel "${b.target_channel}"  (Scan All — every talkgroup)`);
+    runMonitorBridge(b);
+  }
   for (const { bridge: b, port } of runnable) {
     console.log(`    • ${b.name}  ->  channel "${b.target_channel}"  (udp ${port})`);
     runBridge(b, port);
