@@ -98,6 +98,7 @@ function showWindow() {
 
 function register() {
   const handlers = {
+    "app:version": () => app.getVersion(),
     "env:detect": () => orch.detectEnvironment(),
     "settings:get": () => orch.getSettings(),
     "settings:save": (_e, patch) => orch.saveSettings(patch),

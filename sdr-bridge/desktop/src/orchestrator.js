@@ -276,6 +276,11 @@ async function reattachQuiet() {
 async function startPipeline({ quiet = false } = {}) {
   if (pipelineRunning()) return { ok: true, already: true };
   armed = true;
+  try {
+    onLogLine(`[app] SafeT SDR v${app.getVersion()}`);
+  } catch {
+    /* dev run without packaging */
+  }
   let dongleOk = true;
   let dongleMessage = "Dongle already attached.";
 
