@@ -328,7 +328,7 @@ async function poll() {
   const b = s.bridge || { running: false, channels: 0 };
   if (b.running && b.channels > 0) setCard("card-bridge", "ok", `${b.channels} channels on air`);
   else if (b.running) setCard("card-bridge", "warn", "Connecting…");
-  else setCard("card-bridge", "bad", "Stopped");
+  else setCard("card-bridge", "bad", b.lastLog ? `Stopped — ${b.lastLog}` : "Stopped");
 
   renderChannels(s.channels || []);
 

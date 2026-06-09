@@ -84,7 +84,13 @@ fi
 echo "[2/3] local SafeT bridge (pushing audio to your channels)..."
 # Ensure the WebSocket lib is present (no-op once installed; harmless if offline).
 [ -d node_modules/ws ] || npm install ws --no-audit --no-fund >/dev/null 2>&1 || true
-( sleep 5; node scripts/local-bridge.mjs ) >/tmp/sdr-bridge.log 2>&1 &
+# Respawn loop: a hard exit (SafeT briefly unreachable at boot, login hiccup,
+# crash) must not leave the bridge dead until the next manual restart.
+( sleep 5; while :; do
+    node scripts/local-bridge.mjs
+    echo "[bridge] process exited — retrying in 10s"
+    sleep 10
+  done ) >/tmp/sdr-bridge.log 2>&1 &
 PIDS+=($!)
 
 echo "[3/3] trunk-recorder — decoding the system (Ctrl-C to stop everything)"
