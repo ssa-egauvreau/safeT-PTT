@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   api,
   describeError,
@@ -9,17 +9,11 @@ import {
   type Permission,
   type Role,
 } from "../../api";
+import { ChannelPermissionsModal } from "./ChannelPermissionsModal";
 
 const ROLES: Role[] = ["admin", "dispatcher", "radio"];
 
 type CellValue = Permission | "none";
-
-const PERM_OPTIONS: { value: CellValue; label: string }[] = [
-  { value: "none", label: "Disabled" },
-  { value: "listen_only", label: "Listen only" },
-  { value: "talk", label: "Normal" },
-  { value: "talk_priority", label: "Talk priority" },
-];
 
 type SortDir = "asc" | "desc";
 
@@ -49,27 +43,6 @@ function sortActiveSuffix(key: UserSortKey, dir: SortDir): string {
     default:
       return dir === "asc" ? " A→Z" : " Z→A";
   }
-}
-
-function channelHeaderStyle(color: string | null): CSSProperties | undefined {
-  if (!color) {
-    return undefined;
-  }
-  return {
-    background: color,
-    color: "#fff",
-    borderBottomColor: color,
-  };
-}
-
-function channelCellStyle(color: string | null): CSSProperties | undefined {
-  if (!color) {
-    return undefined;
-  }
-  return {
-    borderLeft: `3px solid ${color}`,
-    background: `color-mix(in srgb, ${color} 20%, var(--bg-raised))`,
-  };
 }
 
 function SortableTh({
@@ -113,7 +86,7 @@ export function UsersAndAssignmentsPanel() {
 
   const [userSortKey, setUserSortKey] = useState<UserSortKey>("username");
   const [userSortDir, setUserSortDir] = useState<SortDir>("asc");
-  const [channelSortDir, setChannelSortDir] = useState<SortDir>("asc");
+  const [permissionsUser, setPermissionsUser] = useState<AdminUser | null>(null);
 
   async function reload() {
     try {
@@ -136,10 +109,6 @@ export function UsersAndAssignmentsPanel() {
   useEffect(() => {
     void reload();
   }, []);
-
-  const sortedChannels = useMemo(() => {
-    return [...channels].sort((a, b) => compareText(a.name, b.name, channelSortDir));
-  }, [channels, channelSortDir]);
 
   const sortedUsers = useMemo(() => {
     const keyFn = (u: AdminUser): string => {
@@ -258,16 +227,10 @@ export function UsersAndAssignmentsPanel() {
         <span className="count">
           {users.length} users · {channels.length} channels
         </span>
-        <button
-          type="button"
-          className="btn sm"
-          onClick={() => setChannelSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-        >
-          Channel columns {channelSortDir === "asc" ? "A→Z" : "Z→A"}
-        </button>
       </div>
       <p className="panel-desc">
-        One row per account: edit login details, unit, device, and channel permissions together.
+        One row per account: edit login details, unit, and device here. Use{" "}
+        <strong>Channel permissions</strong> on each row to assign access without scrolling sideways.
         Click a column heading to sort (username and unit ID use A→Z; role, device, and status sort by
         that field).
       </p>
@@ -370,17 +333,7 @@ export function UsersAndAssignmentsPanel() {
                   dir={userSortDir}
                   onClick={() => toggleUserSort("status")}
                 />
-                <th className="sticky-actions">Actions</th>
-                {sortedChannels.map((channel) => (
-                  <th
-                    key={channel.id}
-                    className={`channel-col-head${channel.color ? " has-channel-color" : ""}`}
-                    title={channel.name}
-                    style={channelHeaderStyle(channel.color)}
-                  >
-                    {channel.name}
-                  </th>
-                ))}
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -456,8 +409,15 @@ export function UsersAndAssignmentsPanel() {
                       {user.disabled ? "Disabled" : "Active"}
                     </span>
                   </td>
-                  <td className="sticky-actions">
+                  <td>
                     <div className="cell-actions compact">
+                      <button
+                        type="button"
+                        className="btn sm"
+                        onClick={() => setPermissionsUser(user)}
+                      >
+                        Channel permissions
+                      </button>
                       <button
                         className="btn sm"
                         onClick={() => patch(user, { disabled: !user.disabled })}
@@ -480,35 +440,21 @@ export function UsersAndAssignmentsPanel() {
                       </button>
                     </div>
                   </td>
-                  {sortedChannels.map((channel) => {
-                    const value: CellValue = grid.get(membershipKey(user.id, channel.id)) ?? "none";
-                    return (
-                      <td
-                        key={channel.id}
-                        className={`channel-assign-cell${channel.color ? " has-channel-color" : ""}`}
-                        style={channelCellStyle(channel.color)}
-                      >
-                        <select
-                          value={value}
-                          onChange={(e) =>
-                            changeMembership(user, channel, e.target.value as CellValue)
-                          }
-                          title={`${user.username} on ${channel.name}`}
-                        >
-                          {PERM_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    );
-                  })}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {permissionsUser && (
+        <ChannelPermissionsModal
+          user={permissionsUser}
+          channels={channels}
+          grid={grid}
+          onClose={() => setPermissionsUser(null)}
+          onChange={(channel, value) => changeMembership(permissionsUser, channel, value)}
+        />
       )}
     </div>
   );
