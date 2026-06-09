@@ -388,6 +388,11 @@ $("saveDiag").addEventListener("click", async () => {
 
 // ---- boot ----------------------------------------------------------------
 (async function init() {
+  try {
+    $("appVersion").textContent = "v" + (await window.api.getVersion());
+  } catch {
+    /* older main process without the handler */
+  }
   await loadSettings();
   const env = await window.api.detectEnv();
   if (!env.wsl) toast("WSL isn't reachable — run the one-time Setup first.");

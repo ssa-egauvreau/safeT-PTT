@@ -21,6 +21,13 @@ commands the `sdr-bridge` pipeline already uses.
 
 If you haven't run Setup yet, run `windows/Setup SafeT SDR.cmd` first.
 
+## Versioning
+
+Bump `version` in `package.json` with **every** change to this app, and the UI
+shows it next to the logo. That's how an operator tells whether a rebuild
+actually picked up new code — the installer filename (`SafeT SDR Setup
+<version>.exe`) and the top bar must both move.
+
 ## Build the app (one time)
 
 The app source lives in WSL with the rest of the repo. Building produces a normal

@@ -8,6 +8,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("api", {
+  getVersion: () => ipcRenderer.invoke("app:version"),
   detectEnv: () => ipcRenderer.invoke("env:detect"),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   saveSettings: (patch) => ipcRenderer.invoke("settings:save", patch),
