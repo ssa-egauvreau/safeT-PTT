@@ -300,6 +300,7 @@ a {
   font-size: 13px;
   color: var(--text-dim);
   text-decoration: none;
+  white-space: nowrap;
 }
 .nav-tab:hover {
   color: var(--text);
@@ -329,6 +330,48 @@ a {
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--accent);
+}
+/* Medium desktop windows: the full tab labels + agency name + user controls no
+   longer fit on one 52px row, and the nav and user cluster paint over each
+   other. Condense in two steps (the ≤880px phone layout keeps full labels
+   inside its hamburger menu, so these stay scoped to ≥881px):
+   1. ≤1500px — nav tabs go icon-only (tooltips carry the names; the active
+      tab keeps its label so the current page stays obvious);
+   2. ≤1240px — drop the redundant brand section label, the display name, and
+      the theme / sign-out button text, and cap the agency name width. */
+@media (min-width: 881px) and (max-width: 1500px) {
+  .topnav {
+    gap: 2px;
+  }
+  .topnav .nav-tab {
+    padding: 7px 9px;
+  }
+  .topnav .nav-tab .nav-tab-label {
+    display: none;
+  }
+  .topnav .nav-tab.active .nav-tab-label {
+    display: inline;
+  }
+}
+@media (min-width: 881px) and (max-width: 1240px) {
+  .topbar {
+    gap: 12px;
+  }
+  .brand-section {
+    display: none;
+  }
+  .who {
+    gap: 8px;
+  }
+  .who-name {
+    display: none;
+  }
+  .topbar .agency-id {
+    max-width: 150px;
+  }
+  .topbar .icon-btn .topbar-btn-label {
+    display: none;
+  }
 }
 
 /* --- admin layout --- */
