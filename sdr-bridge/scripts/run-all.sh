@@ -65,9 +65,18 @@ bash generated/stream-talkgroups.sh >/tmp/sdr-streamers.log 2>&1 &
 PIDS+=($!)
 sleep 1
 
+# Push audio to SafeT from THIS PC. The cloud server can't pull the streams
+# through the Cloudflare tunnel (it buffers continuous audio and returns 5XX),
+# so we read each mount over localhost and push voice onto its channel over the
+# SafeT voice relay. Logs: /tmp/sdr-bridge.log
+echo "[2.5] local SafeT bridge (pushing audio to your channels)..."
+( sleep 5; node scripts/local-bridge.mjs ) >/tmp/sdr-bridge.log 2>&1 &
+PIDS+=($!)
+
 echo "[3/3] trunk-recorder — decoding the system (Ctrl-C to stop everything)"
 echo "      Icecast log:   /tmp/sdr-icecast.log"
 echo "      Streamer log:  /tmp/sdr-streamers.log"
+echo "      SafeT bridge:  /tmp/sdr-bridge.log"
 echo
 # Foreground so you see the decoder lock the control channel and log calls.
 $COMPOSE up
