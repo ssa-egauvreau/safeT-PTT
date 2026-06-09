@@ -32,9 +32,9 @@ function mhz(hz) {
 async function loadSettings() {
   const cfg = (await window.api.getConfig()) || {};
   const sources = Array.isArray(cfg.sources) && cfg.sources.length ? cfg.sources : [cfg.sdr || {}];
-  // The first dongle inherits any unset RF field from the `sdr` shorthand block,
-  // so a half-filled `sources[0]` doesn't blank out good center/gain/ppm values
-  // (and mirrors how build.mjs generates the trunk-recorder config).
+  // The first source inherits any field it omits from the friendly `sdr` block —
+  // matches build.mjs, so a partial {device,rateHz} stub doesn't show the UI a
+  // blank Center/Gain (which a Save would then write back, losing the values).
   const d1 = { ...(cfg.sdr || {}), ...(sources[0] || {}) };
   const d2 = sources[1] || null;
   const sys = (Array.isArray(cfg.systems) && cfg.systems[0]) || cfg.system || {};
@@ -325,19 +325,57 @@ async function poll() {
     setCard("card-decoder", "ok", txt);
   } else setCard("card-decoder", "warn", "Running, acquiring lock…");
 
-  if (!s.icecast.up) setCard("card-icecast", "bad", "Down");
-  else if (s.icecast.mounts > 0) setCard("card-icecast", "ok", `${s.icecast.mounts} mounts live`);
-  else setCard("card-icecast", "warn", "Up, no mounts yet");
+  const b = s.bridge || { running: false, channels: 0 };
+  if (b.running && b.channels > 0) setCard("card-bridge", "ok", `${b.channels} channels on air`);
+  else if (b.running) setCard("card-bridge", "warn", "Connecting…");
+  else setCard("card-bridge", "bad", "Stopped");
 
-  if (s.cloudflared === "Running") setCard("card-tunnel", "ok", "Running");
-  else if (s.cloudflared === "NotInstalled") setCard("card-tunnel", "warn", "Not installed");
-  else setCard("card-tunnel", "warn", s.cloudflared || "Unknown");
+  renderChannels(s.channels || []);
 
   const running = s.decoder.running || s.pipelineRunning;
   if (running && $("runState").textContent !== "Starting…") setRunState("on");
   else if (!running && $("runState").textContent === "Running") setRunState("off");
 
   if (s.dongle) $("dongleHint").hidden = true;
+}
+
+// ---- per-channel status (live "is audio reaching SafeT" view) -------------
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+function fmtClock(ms) {
+  return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+}
+function fmtDur(ms) {
+  return ms >= 59500 ? Math.round(ms / 60000) + "m " + Math.round((ms % 60000) / 1000) + "s" : (ms / 1000).toFixed(1) + "s";
+}
+
+function renderChannels(chans) {
+  $("channelsPanel").hidden = chans.length === 0;
+  if (!chans.length) return;
+  const rows = [...chans].sort((a, b) => Number(a.scan) - Number(b.scan) || String(a.channel).localeCompare(String(b.channel)));
+  $("channelsTable").querySelector("tbody").innerHTML = rows
+    .map((c) => {
+      let dot = "bad";
+      if (c.transmitting) dot = "tx";
+      else if (c.state === "on air") dot = "ok";
+      else if (c.state === "connecting" || c.state === "reconnecting") dot = "warn";
+
+      let last = "<span class='dim'>nothing yet</span>";
+      if (c.transmitting) {
+        last = `<strong>● transmitting now</strong>${c.scan && c.via ? " — " + esc(c.via) : ""}`;
+      } else if (c.lastTxStartMs) {
+        last = `${fmtClock(c.lastTxStartMs)} · ${fmtDur(c.lastTxDurMs ?? 0)}${c.scan && c.via ? " — " + esc(c.via) : ""}`;
+      }
+
+      return `<tr class="${c.transmitting ? "live" : ""}">
+        <td><span class="chandot ${dot}"></span></td>
+        <td>${esc(c.channel)}${c.scan ? ' <span class="tag">scan</span>' : ""}</td>
+        <td>${c.tgid ?? "—"}</td>
+        <td>${esc(c.state)}</td>
+        <td>${last}</td>
+        <td>${c.txCount || 0}</td></tr>`;
+    })
+    .join("");
 }
 
 // ---- logs ----------------------------------------------------------------

@@ -31,15 +31,15 @@ function buildTrunkConfig(cfg, plan) {
   // `sources` / `systems` arrays are present they win. Each source (dongle)
   // covers its own ~2 MHz window, so two dongles span a wider band — or a
   // second one can sit on a different band entirely (UHF/VHF) for a 2nd system.
-  // `sdr` is the single-dongle shorthand for `sources[0]`. When BOTH are present
-  // (the desktop app writes `sources`; the example ships `sdr`), treat `sdr` as
-  // defaults for the first dongle so a half-filled `sources[0]` — e.g.
-  // `{ device, rateHz }` with no centerHz/gain/ppm — inherits those instead of
-  // silently snapping to the 854 MHz / gain-0 fallbacks (which tunes the dongle
-  // to the wrong place and leaves the bridge quiet with no obvious cause).
-  const sdrShorthand = cfg.sdr ?? {};
-  const rawSources =
-    Array.isArray(cfg.sources) && cfg.sources.length ? cfg.sources : [sdrShorthand];
+  // The friendly single-dongle `sdr` block seeds defaults. A `sources` array (the
+  // desktop app's multi-dongle form) wins, but its FIRST entry inherits any field
+  // it omits from `sdr` — so a partial stub like {device,rateHz} can't silently
+  // erase your centerHz/gain and leave the dongle tuned to 854 MHz at gain 0.
+  const sdrDefaults = cfg.sdr ?? {};
+  const sourcesCfg =
+    Array.isArray(cfg.sources) && cfg.sources.length
+      ? cfg.sources.map((s, i) => (i === 0 ? { ...sdrDefaults, ...s } : s))
+      : [sdrDefaults];
   const systemsCfg =
     Array.isArray(cfg.systems) && cfg.systems.length ? cfg.systems : [cfg.system ?? {}];
 
@@ -47,21 +47,17 @@ function buildTrunkConfig(cfg, plan) {
   // simplestream tags its UDP streams with that system's shortName.
   const primaryShort = systemsCfg[0]?.shortName ?? "occcs";
 
-  const sources = rawSources.map((raw, i) => {
-    // First dongle inherits any unset RF field from the `sdr` shorthand.
-    const s = i === 0 ? { ...sdrShorthand, ...raw } : raw;
-    return {
-      center: s.centerHz ?? 854000000,
-      rate: s.rateHz ?? 2400000,
-      gain: s.gain ?? 0,
-      ppm: s.ppm ?? 0,
-      digitalRecorders: Math.max(4, plan.length),
-      driver: "osmosdr",
-      // Default each dongle to its array index (rtl=0, rtl=1, …). Set `device`
-      // to a serial (e.g. "00000101") if Windows enumerates them inconsistently.
-      device: `rtl=${s.device ?? i}`,
-    };
-  });
+  const sources = sourcesCfg.map((s, i) => ({
+    center: s.centerHz ?? 854000000,
+    rate: s.rateHz ?? 2400000,
+    gain: s.gain ?? 0,
+    ppm: s.ppm ?? 0,
+    digitalRecorders: Math.max(4, plan.length),
+    driver: "osmosdr",
+    // Default each dongle to its array index (rtl=0, rtl=1, …). Set `device`
+    // to a serial (e.g. "00000101") if Windows enumerates them inconsistently.
+    device: `rtl=${s.device ?? i}`,
+  }));
 
   const systems = systemsCfg.map((s, i) => {
     const isPrimary = i === 0;
@@ -73,19 +69,22 @@ function buildTrunkConfig(cfg, plan) {
     };
     // Trunked systems lock a control channel; conventional (often the simplest
     // way to do a VHF/UHF system) lists its channels directly.
-    if (Array.isArray(s.channelsHz) && s.channelsHz.length) {
-      sys.channels = s.channelsHz;
+    const channels = Array.isArray(s.channelsHz) ? s.channelsHz.filter(Boolean) : [];
+    const control = Array.isArray(s.controlChannelsHz) ? s.controlChannelsHz.filter(Boolean) : [];
+    if (channels.length) {
+      sys.channels = channels;
     } else {
-      sys.control_channels = s.controlChannelsHz ?? [];
+      sys.control_channels = control;
     }
-    // A trunked system with no control channel (or a conventional one with no
-    // channels) gives trunk-recorder nothing to tune: it dies on boot and the
-    // whole bridge silently goes dark. Fail loudly here, pointing at the fix.
-    if (!sys.channels?.length && !sys.control_channels?.length) {
+    // A trunked (P25) system with NO control channel makes trunk-recorder
+    // segfault on startup — it has nothing to tune the control decoder to. Fail
+    // here with a clear message instead of handing it a config that core-dumps
+    // in a restart loop. (A conventional system listing `channels` is exempt.)
+    if (!channels.length && !control.length) {
       throw new Error(
-        `system "${sys.shortName}" has no frequencies to tune. Set "controlChannelsHz" ` +
-          `(trunked, e.g. [856712500, 857462500]) or "channelsHz" (conventional) in ` +
-          `config/system.json — without one the decoder can't lock and no audio reaches SafeT.`,
+        `system "${sys.shortName}" has no control channel — set the control channel ` +
+          `frequency in the desktop app (Settings → Control channel frequencies) or ` +
+          `config/system.json (system.controlChannelsHz). Without it trunk-recorder crashes on start.`,
       );
     }
     // Primary system records the SafeT talkgroups; extra systems use whatever
@@ -93,6 +92,12 @@ function buildTrunkConfig(cfg, plan) {
     sys.talkgroups = isPrimary ? plan.map((p) => Number(p.tgid)) : s.talkgroups ?? [];
     return sys;
   });
+
+  // Zero gain rarely decodes — warn loudly but don't block (some setups feed an
+  // amplified front-end). The desktop app's Gain field maps to source.gain.
+  for (const [i, s] of sources.entries()) {
+    if (!s.gain) console.warn(`  ! dongle ${i} has gain 0 — set a gain (e.g. 40) or it likely won't decode.`);
+  }
 
   return {
     ver: 2,
@@ -131,7 +136,7 @@ function buildIcecastXml(cfg, plan) {
   const fallbackMount = (name) => `  <mount type="normal">
     <mount-name>/${name}</mount-name>
     <fallback-mount>/silence</fallback-mount>
-    <fallback-override>1</fallback-override>
+    <fallback-override>all</fallback-override>
     <fallback-when-full>1</fallback-when-full>
   </mount>`;
   const mounts = plan.map((p) => fallbackMount(p.mount)).join("\n");
@@ -197,15 +202,21 @@ STREAMER_PIDS+=($!)`;
   const stanzas = plan
     .map(
       (p) => `# ${p.channel}  (TGID ${p.tgid})  ->  mount /${p.mount}
+# Persistent source so the SafeT server (a remote listener) always receives
+# audio. udp-pcm.py turns the decoder's bursty, call-only UDP into a CONTINUOUS
+# PCM stream (silence in the gaps), which ffmpeg publishes as an always-live
+# mount. Feeding ffmpeg the UDP directly does NOT work — with no packets between
+# calls it stalls and never publishes, so the mount stays dark and a remote
+# listener is stranded on silence.
 ( while :; do
-  ffmpeg -hide_banner -loglevel error -rw_timeout 2000000 \\
-    -f s16le -ar 8000 -ac 1 -fflags nobuffer \\
-    -i "udp://127.0.0.1:${p.udpPort}?fifo_size=1000000&overrun_nonfatal=1" \\
-    -af "volume=1.6,alimiter=limit=0.95" \\
-    -c:a libmp3lame -b:a 32k -ar 8000 -ac 1 \\
-    -content_type audio/mpeg -f mp3 \\
-    "icecast://source:${srcPass}@${iceHost}:${icePort}/${p.mount}" 2>/dev/null
-  sleep 0.2
+  python3 scripts/udp-pcm.py ${p.udpPort} 2>/dev/null \\
+  | ffmpeg -hide_banner -loglevel error \\
+      -f s16le -ar 8000 -ac 1 -i - \\
+      -af "volume=1.6,alimiter=limit=0.95" \\
+      -c:a libmp3lame -b:a 32k -ar 8000 -ac 1 \\
+      -content_type audio/mpeg -f mp3 \\
+      "icecast://source:${srcPass}@${iceHost}:${icePort}/${p.mount}" 2>/dev/null
+  sleep 1
 done ) &
 STREAMER_PIDS+=($!)`,
     )
@@ -232,16 +243,20 @@ STREAMER_PIDS+=($!)` : "";
 
   return `#!/usr/bin/env bash
 # Generated by sdr-bridge — do not edit by hand.
-# Always-on /silence source + one UDP->Icecast streamer per talkgroup, with
-# every mount falling back to /silence so SafeT always has audio.
+# One PERSISTENT UDP->Icecast streamer per talkgroup (an always-on silence floor
+# with the decoder's voice mixed in), so every mount is continuously live and a
+# remote listener (the SafeT server) always receives audio. Plus /silence and
+# /monitor. This is what makes audio actually reach SafeT, not just Icecast.
 
 STREAMER_PIDS=()
 cleanup() {
   trap '' EXIT INT TERM
   echo "stopping streamers..."
   for pid in "\${STREAMER_PIDS[@]:-}"; do kill "\$pid" 2>/dev/null || true; done
-  # Reap the ffmpeg children the loops spawned (they all carry the icecast URL).
+  # Reap the children the loops spawned: the ffmpegs (carry the icecast URL) and
+  # the udp-pcm.py feeders.
   pkill -9 -f "icecast://source" 2>/dev/null || true
+  pkill -9 -f "udp-pcm.py" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 

@@ -8,8 +8,12 @@
   "scripts": {
     "sync": "node scripts/sync-from-safet.mjs",
     "start": "bash scripts/run-all.sh",
+    "bridge": "node scripts/local-bridge.mjs",
     "generate": "node scripts/generate.mjs",
     "import-bridges": "node scripts/import-bridges.mjs",
     "setup": "node scripts/generate.mjs && node scripts/import-bridges.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
   }
 }

@@ -45,17 +45,23 @@
             <div class="dot"></div>
             <div class="card-body"><h3>Decoder</h3><p>Checking…</p></div>
           </div>
-          <div class="card" id="card-icecast">
+          <div class="card" id="card-bridge">
             <div class="dot"></div>
-            <div class="card-body"><h3>Streaming</h3><p>Checking…</p></div>
-          </div>
-          <div class="card" id="card-tunnel">
-            <div class="dot"></div>
-            <div class="card-body"><h3>Cloud tunnel</h3><p>Checking…</p></div>
+            <div class="card-body"><h3>SafeT bridge</h3><p>Checking…</p></div>
           </div>
         </div>
 
         <div id="dongleHint" class="hint" hidden></div>
+
+        <div id="channelsPanel" class="channels" hidden>
+          <h2>Channels</h2>
+          <table class="report" id="channelsTable">
+            <thead>
+              <tr><th></th><th>Channel</th><th>TGID</th><th>Status</th><th>Last sent to SafeT</th><th>Sent</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </section>
 
       <!-- SETTINGS -->

@@ -6,6 +6,10 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."   # -> sdr-bridge/
 
+# One-shot RF profile fixes (e.g. the OC CCCS high control channels) — before
+# the sync so the regenerated decoder config picks them up.
+node scripts/migrate-config.mjs || true
+
 # Pull the latest talkgroups from the bridges you created in the SafeT console
 # (Bridges -> Import from RadioReference) and regenerate the runtime files. Set
 # SDR_SKIP_SYNC=1 to use a hand-built config (npm run generate) instead.
@@ -39,6 +43,9 @@ cleanup() {
   echo "stopping..."
   $COMPOSE down >/dev/null 2>&1 || true
   for pid in "${PIDS[@]:-}"; do kill "$pid" 2>/dev/null || true; done
+  # Reap the local bridge + its UDP-reading ffmpegs (children may outlive the subshell).
+  pkill -9 -f local-bridge.mjs 2>/dev/null || true
+  pkill -9 -f "i udp://127.0.0.1:9" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -49,6 +56,14 @@ mkdir -p /tmp/icecast-logs
 # can't bind the port, so a leftover instance would crash this start.
 pkill -9 icecast2 2>/dev/null || true
 pkill -9 -f "icecast://source" 2>/dev/null || true
+# Also free the per-talkgroup UDP ports the local bridge needs — leftover
+# streamers/bridges from a previous run hold them ("bind: address in use").
+# Kill the stream-talkgroups respawn loop FIRST, or it just re-launches udp-pcm.
+pkill -9 -f stream-talkgroups 2>/dev/null || true
+pkill -9 -f udp-pcm.py 2>/dev/null || true
+pkill -9 -f local-bridge.mjs 2>/dev/null || true
+pkill -9 -f "udp://127.0.0.1:9" 2>/dev/null || true
+sleep 1
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   ss -ltn 2>/dev/null | grep -q ':8000 ' || break
   sleep 1
@@ -60,14 +75,21 @@ if ! ss -ltn 2>/dev/null | grep -q ':8000 '; then
   echo "  ✗ Icecast failed to bind :8000 (see /tmp/sdr-icecast.log)." >&2
 fi
 
-echo "[2/3] talkgroup streamers (ffmpeg)..."
-bash generated/stream-talkgroups.sh >/tmp/sdr-streamers.log 2>&1 &
+# Push audio to SafeT from THIS PC. The cloud server can't pull the streams
+# through the Cloudflare tunnel (it buffers continuous audio and returns 5XX),
+# so the bridge reads the decoder's per-talkgroup UDP directly and pushes voice
+# onto each channel over the SafeT voice relay. We do NOT run the Icecast
+# talkgroup streamers anymore — they'd bind the same UDP ports and fight the
+# bridge. (Icecast itself stays up, just idle.) Logs: /tmp/sdr-bridge.log
+echo "[2/3] local SafeT bridge (pushing audio to your channels)..."
+# Ensure the WebSocket lib is present (no-op once installed; harmless if offline).
+[ -d node_modules/ws ] || npm install ws --no-audit --no-fund >/dev/null 2>&1 || true
+( sleep 5; node scripts/local-bridge.mjs ) >/tmp/sdr-bridge.log 2>&1 &
 PIDS+=($!)
-sleep 1
 
 echo "[3/3] trunk-recorder — decoding the system (Ctrl-C to stop everything)"
 echo "      Icecast log:   /tmp/sdr-icecast.log"
-echo "      Streamer log:  /tmp/sdr-streamers.log"
+echo "      SafeT bridge:  /tmp/sdr-bridge.log"
 echo
 # Foreground so you see the decoder lock the control channel and log calls.
 $COMPOSE up
