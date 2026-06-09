@@ -25,6 +25,7 @@ import {
 import { ChannelRailTile } from "./ChannelRailTile";
 import { ChannelWorkspace } from "./ChannelWorkspace";
 import { LiveControlPanel } from "./LiveControlPanel";
+import { IconBoard, IconHeadphones } from "../icons";
 
 /**
  * The "Channels" section — every channel the account may use, each as a
@@ -200,11 +201,7 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
                   docked={dockedIdSet.has(channel.id)}
                   onDock={() => dockFromRail(channel.id)}
                   onToggleMonitor={() => toggleMonitorFromRail(channel.id)}
-                  onUndock={
-                    dockedIdSet.has(channel.id)
-                      ? () => undockChannel(channel.id)
-                      : undefined
-                  }
+                  onUndock={() => undockChannel(channel.id)}
                 />
               </Fragment>
             );
@@ -212,6 +209,14 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
 
           {channels.length > 0 && (
             <div className="channel-rail-footer">
+              <div className="channel-rail-legend" title="Each channel row: board button = shown on the workspace; headphones = audio on">
+                <span className="channel-rail-legend-item">
+                  <IconBoard size={10} /> on board
+                </span>
+                <span className="channel-rail-legend-item">
+                  <IconHeadphones size={10} /> audio on
+                </span>
+              </div>
               <div
                 className={workspaceFull ? "channel-rail-count full" : "channel-rail-count"}
                 title="Channels docked on the Mission Control workspace"

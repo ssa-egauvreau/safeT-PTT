@@ -229,6 +229,28 @@ export function IconCheck(props: IconProps) {
   );
 }
 
+/** Keyboard — the keyboard push-to-talk binding. */
+export function IconKeyboard(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <rect x="2.5" y="6" width="19" height="12" rx="2" />
+      <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6" />
+    </StrokeIcon>
+  );
+}
+
+/** Four tiles — a channel docked on the Mission Control board. */
+export function IconBoard(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.4" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.4" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.4" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.4" />
+    </StrokeIcon>
+  );
+}
+
 /** Arrow pointing right — call-to-action affordance. */
 export function IconArrowRight(props: IconProps) {
   return (

@@ -914,10 +914,35 @@ code.mono {
 }
 .channel-rail-tile.docked {
   border-color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-raised));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 .channel-rail-tile.monitoring .channel-rail-label {
   color: var(--green);
+}
+/* Audio-on cue beside the name — pairs with the green headphones button. */
+.channel-rail-live-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 25%, transparent);
+  animation: rail-live-pulse 2s ease-in-out infinite;
+}
+@keyframes rail-live-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 25%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 12%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .channel-rail-live-dot {
+    animation: none;
+  }
 }
 .channel-rail-tile-main {
   flex: 1 1 auto;
@@ -935,27 +960,34 @@ code.mono {
   text-align: left;
   padding: 3px 0;
 }
-.channel-rail-close {
+/* Board toggle — always visible so "is this on the workspace?" is never a
+   guess: outline = off the board, filled accent = on the board. */
+.channel-rail-board {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 5px;
   background: color-mix(in srgb, var(--bg-input) 80%, transparent);
-  color: var(--text-muted);
+  color: var(--text-dim);
   cursor: pointer;
   touch-action: manipulation;
 }
-.channel-rail-close:hover {
+.channel-rail-board:hover {
   color: var(--text);
-  border-color: var(--text-dim);
+  border-color: var(--accent-2);
   background: var(--bg-input);
 }
-.channel-rail-close:focus-visible {
+.channel-rail-board.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-input));
+  color: var(--accent-2);
+}
+.channel-rail-board:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -981,13 +1013,41 @@ code.mono {
   white-space: nowrap;
 }
 .channel-rail-tile .ch-power {
-  padding: 4px 7px;
+  padding: 4px 5px;
   font-size: 10px;
-  min-width: 28px;
-  min-height: 28px;
+  min-width: 24px;
+  min-height: 24px;
+  justify-content: center;
+}
+.channel-rail-tile .ch-power.active {
+  background: color-mix(in srgb, var(--green) 16%, var(--bg-input));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 30%, transparent);
+}
+/* Legend under the list — decodes the two state buttons at a glance. */
+.channel-rail-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-bottom: 6px;
+  font-size: 9px;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+}
+.channel-rail-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.channel-rail-legend-item svg {
+  flex: 0 0 auto;
+  color: var(--text-dim);
 }
 
-/* --- Mission Control: react-grid-layout widget board (2–10 cols; S 2×2 · M 4×4 · L 4×8) --- */
+/* --- Mission Control: react-grid-layout widget board --- */
+/* Columns snap to multiples of 4 (2 on phones, then 4 / 8 / 12 / 16) so M/L tiles
+   (4 wide) always fill the row — 1, 2, 3, or 4 panels across with no dead strip
+   on the right. Sizes: S 2×2 · M 4×4 · L 4×7. */
 .channel-workspace-rgl-wrap {
   min-height: 200px;
   min-width: 0;
@@ -1593,30 +1653,23 @@ code.mono {
   padding: 4px 6px 6px;
   gap: 5px;
 }
-.channel-card.workspace[data-widget-size="small"] .volume-row,
-.channel-card.workspace[data-widget-size="small"] .ch-card-head .volume-row {
+.channel-card.workspace[data-widget-size="small"] .ch-toolbar-volume.volume-row {
   margin: 0;
-  gap: 4px;
-  padding: 2px 6px 0;
+  gap: 3px;
+  padding: 0;
 }
 .channel-card.workspace[data-widget-size="small"] .vol-slider {
   min-width: 0;
   flex: 1 1 auto;
-}
-.channel-card.workspace[data-widget-size="small"] .vol-pct {
-  font-size: 9px;
-  min-width: 2.5em;
 }
 .channel-card.workspace[data-widget-size="small"] .ch-card-head.workspace-head {
   padding: 0;
 }
 .channel-card.workspace[data-widget-size="small"] .ch-card-toolbar {
   gap: 3px;
-  justify-content: stretch;
 }
 .channel-card.workspace[data-widget-size="small"] .ch-card-toolbar .ch-power,
 .channel-card.workspace[data-widget-size="small"] .ch-card-toolbar .ch-quick-ptt {
-  flex: 1 1 0;
   min-width: 0;
   justify-content: center;
   min-height: 20px;
@@ -1663,10 +1716,6 @@ code.mono {
 }
 .channel-workspace-tile.widget-small .ch-card-body.workspace-dense {
   padding: 3px 5px 4px;
-}
-.channel-workspace-tile.widget-small .ch-card-body.workspace-dense > .volume-row {
-  margin: 0;
-  padding: 0;
 }
 .channel-workspace-tile.widget-small .ch-card-body.workspace-dense > .live-tx-console {
   flex: 0 1 auto;
@@ -1825,7 +1874,9 @@ code.mono {
   opacity: 0.45;
   cursor: not-allowed;
 }
-/* Workspace toolbar: volume + monitor ON (transmit is the body XMIT pad). */
+/* Workspace toolbar: volume + keyboard PTT + monitor ON share one strip
+   (transmit is the body XMIT pad). */
+.ch-card-toolbar.workspace-toolbar--small,
 .ch-card-toolbar.workspace-toolbar--medium,
 .ch-card-toolbar.workspace-toolbar--large {
   display: grid;
@@ -1837,18 +1888,8 @@ code.mono {
   background: color-mix(in srgb, var(--bg-input) 55%, transparent);
 }
 .ch-card-toolbar.workspace-toolbar--small {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  padding: 4px 6px 5px;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-input) 55%, transparent);
-}
-.ch-card-toolbar.workspace-toolbar--small .ch-toolbar-transport {
-  flex: 0 0 auto;
-  margin-left: auto;
+  gap: 4px 6px;
+  padding: 3px 6px 4px;
 }
 .ch-toolbar-volume.volume-row {
   grid-column: 1;
@@ -1937,25 +1978,104 @@ code.mono {
   display: block;
   margin: 0 auto;
 }
-.ch-ws-meta-row {
+/* Keyboard-PTT chip in the workspace toolbar — replaces the old standalone
+   "Set keyboard PTT" row. Accent when this channel owns the key. */
+.ch-kbd-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-input) 80%, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+button.ch-kbd-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-input));
+}
+.ch-kbd-chip.on {
+  cursor: default;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, var(--bg-input));
+  color: var(--accent);
+}
+.ch-kbd-chip svg {
+  flex: 0 0 auto;
+}
+.ch-kbd-chip-key {
+  max-width: 7em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* L tiles: permission + audio output share one row. */
+.ch-ws-io-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 4px 6px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-input) 70%, transparent);
+  gap: 6px;
+  min-width: 0;
 }
-.ch-ws-meta-row .cp-ptt-assign {
-  margin: 0;
+.ch-ws-io-row .audio-out-row {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .ch-ws-permission {
-  font-size: 10px;
-  font-weight: 600;
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 700;
   color: var(--text-muted);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-input) 55%, transparent);
+  white-space: nowrap;
+}
+
+/* Quick controls — AI dispatch, TX mode, 10-33, Stop all on one row. */
+.ch-quick-controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  min-width: 0;
+}
+.ch-qc-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ch-qc-value svg {
+  flex: 0 0 auto;
+}
+.channel-workspace-tile .channel-card.workspace .ch-qc-ai.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-input));
+  color: var(--text);
+}
+.channel-workspace-tile .channel-card.workspace .ch-qc-ai.active strong {
+  color: var(--accent-2);
+}
+.channel-workspace-tile .channel-card.workspace .ch-qc-stop:not(:disabled):hover {
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--red) 12%, var(--bg-input));
+  color: var(--danger-text);
 }
 .ch-ws-section {
   min-width: 0;
@@ -1981,98 +2101,6 @@ code.mono {
   min-height: 0;
   margin-top: 0;
 }
-.ws-ai-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-input);
-}
-.ws-ai-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: var(--text-dim);
-  text-transform: uppercase;
-}
-.ws-ai-controls {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.ws-ai-state {
-  min-width: 2.9em;
-  padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-align: center;
-  text-transform: uppercase;
-}
-.ws-ai-state.on {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.ws-toggle {
-  position: relative;
-  flex: 0 0 auto;
-  width: 34px;
-  height: 18px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg-raised);
-  cursor: pointer;
-  padding: 0;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
-}
-.ws-toggle::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px color-mix(in srgb, #000 25%, transparent);
-  transition: transform 0.15s ease;
-}
-.ws-toggle.on {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-.ws-toggle.on::after {
-  transform: translateX(16px);
-}
-.ws-toggle:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.ws-toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.stopall-btn--workspace-top {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin: 0;
-  padding: 6px 10px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  border-radius: 6px;
-}
 .roster--compact {
   flex: 1 1 auto;
   min-height: 0;
@@ -2097,23 +2125,27 @@ code.mono {
   list-style: none;
 }
 .roster--compact .roster-row {
-  padding: 3px 0;
+  padding: 2px 0;
   font-size: 10px;
-  gap: 5px;
+  gap: 4px;
 }
 .roster--compact .roster-name {
   font-size: 10px;
 }
-.roster--compact .roster-status-icon {
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-}
+/* Compact rows: bare icons (no boxes) so the name keeps the width. */
+.roster--compact .roster-status-icon,
 .roster--compact .roster-client-icon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+}
+.roster--compact .roster-status-icon.emergency {
+  background: var(--red);
 }
 .roster--compact .roster-tag,
+.roster--compact .roster-device,
 .roster--compact .roster-time {
   font-size: 8px;
 }
@@ -2135,21 +2167,12 @@ code.mono {
   max-height: 3.6em;
   font-size: 10px;
 }
-.channel-workspace-tile.widget-medium .toneout.workspace-tones-compact .toneout-btn {
-  padding: 2px 3px;
-  font-size: 8px;
-}
-.channel-workspace-tile.widget-medium .toneout.workspace-tones-compact .stopall-btn {
-  padding: 2px 5px;
-  font-size: 8px;
-  margin-top: 2px;
-}
 .channel-workspace-tile.widget-large .channel-card.workspace {
   font-size: 10px;
 }
 .channel-workspace-tile.widget-large .channel-card.workspace .ch-card-body.workspace-dense {
-  gap: 7px;
-  padding: 6px 8px 8px;
+  gap: 5px;
+  padding: 5px 7px 7px;
 }
 .channel-workspace-tile.widget-large .channel-card.workspace .live-tx-console {
   flex-shrink: 0;
@@ -2299,11 +2322,6 @@ code.mono {
   align-items: center;
   justify-content: center;
 }
-.channel-workspace-tile .toneout.workspace-tones-compact .toneout-btn {
-  flex-direction: row;
-  gap: 3px;
-  letter-spacing: 0;
-}
 .channel-workspace-tile .ch-action-cell strong,
 .channel-workspace-tile .txmode-btn.ch-action-cell strong {
   font-size: 9px;
@@ -2395,23 +2413,6 @@ code.mono {
 .channel-workspace-tile.widget-large .roster-row {
   font-size: 9px;
   padding: 2px 0;
-}
-.toneout.workspace-tones-compact .ch-tone-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-}
-.toneout.workspace-tones-compact .toneout-btn {
-  padding: 2px 4px;
-  font-size: 8px;
-  gap: 2px;
-}
-.toneout.workspace-tones-compact .toneout-btn .toneout-label {
-  display: none;
-}
-.toneout.workspace-tones-compact .stopall-btn {
-  margin-top: 2px;
-  padding: 2px 6px;
-  font-size: 8px;
 }
 .channel-off-overlay {
   position: absolute;
@@ -2732,17 +2733,6 @@ code.mono {
       color-mix(in srgb, var(--bg-input) 86%, #000 14%)
     );
 }
-.channel-workspace-tile.widget-medium .channel-card.workspace .workspace-control-row {
-  padding: 3px 5px;
-}
-.channel-workspace-tile.widget-medium .channel-card.workspace .workspace-control-row .cp-ptt-assign {
-  flex: 1 1 auto;
-}
-.channel-workspace-tile.widget-medium .channel-card.workspace .workspace-control-row .ch-setprimary,
-.channel-workspace-tile.widget-medium .channel-card.workspace .workspace-control-row .cp-primary {
-  width: 100%;
-  justify-content: center;
-}
 .channel-workspace-tile.widget-large .channel-card.workspace .tx-button-integrated {
   flex: 0 0 auto;
 }
@@ -3005,35 +2995,6 @@ code.mono {
 .channel-card.workspace .ch-card-toolbar .state-chip {
   margin-right: auto;
 }
-.channel-card.workspace .workspace-control-row {
-  margin: 0;
-  padding: 4px 6px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--bg-input) 80%, transparent);
-}
-.channel-card.workspace .workspace-control-row .live-meta {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 9px;
-}
-.channel-card.workspace .workspace-control-row .cp-ptt-assign {
-  flex: 0 1 auto;
-}
-.channel-card.workspace .workspace-control-row .ch-setprimary,
-.channel-card.workspace .workspace-control-row .cp-primary {
-  max-width: 100%;
-  min-height: 18px;
-  padding: 1px 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 8px;
-}
-
 /* Workspace grid: more panels per row on wider monitors */
 @media (min-width: 1180px) {
   .channel-dock {
@@ -4831,15 +4792,31 @@ code.mono {
   font-size: 12px;
   color: var(--text-muted);
 }
+/* Fixed columns (dot · name · device · status+platform · time) so rows line
+   up like a table and scan fast. */
 .roster-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 5px 0;
   font-size: 12.5px;
 }
 .roster-row + .roster-row {
   border-top: 1px solid var(--border);
+}
+.roster-device {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.roster-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .roster-status-icon {
   display: inline-flex;
@@ -4917,6 +4894,8 @@ code.mono {
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   flex: none;
+  text-align: right;
+  white-space: nowrap;
 }
 .roster-status {
   font-size: 9px;
@@ -5198,7 +5177,8 @@ code.mono {
   .channel-workspace-tile {
     overflow: hidden;
   }
-  .channel-workspace-tile .cp-ptt-assign {
+  .channel-workspace-tile .cp-ptt-assign,
+  .channel-workspace-tile .ch-kbd-chip {
     display: none;
   }
   .channel-workspace-tile .live-meta {
@@ -7240,11 +7220,6 @@ code.mono {
   }
 }
 
-/* The .workspace-control-row container (added in JSX) already wraps
- * "Permission" + "Set keyboard PTT" / "Keyboard PTT" with a soft
- * pill background and rounded child chips. Nothing further to add
- * here — let the base rules drive the chip look. */
-
 /* Audio-out row inside a workspace tile — compact, inline, clearly a
  * settings widget rather than form copy. */
 .channel-workspace-tile .channel-card.workspace .audio-out-row {
@@ -7273,27 +7248,6 @@ code.mono {
 }
 .channel-workspace-tile .channel-card.workspace .audio-out-select:hover {
   border-color: var(--accent-2);
-}
-
-/* AI dispatch toggle row — flatter, integrates with the surrounding
- * controls instead of jumping out as a separate panel. */
-.channel-workspace-tile .channel-card.workspace .ws-ai-row {
-  padding: 4px 8px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-input) 55%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-}
-.channel-workspace-tile .channel-card.workspace .ws-ai-label {
-  font-size: 10px;
-  letter-spacing: 0.06em;
-}
-.channel-workspace-tile .channel-card.workspace .ws-toggle {
-  width: 32px;
-  height: 18px;
-  background: color-mix(in srgb, var(--bg-input) 90%, var(--bg));
-}
-.channel-workspace-tile .channel-card.workspace .ws-toggle.on {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
 /* The big XMIT pad — softer corners, a vertical gradient that reads as
@@ -7398,10 +7352,10 @@ code.mono {
   color: var(--amber);
 }
 
-/* Tone-outs — keep the 3-up grid but unify the pill look with the
- * action grid above so the whole bottom of the box reads as one set
- * of buttons. */
+/* Tone-outs — one wrapping grid (standard + custom tones together) that
+ * matches the pill look of the quick-controls row above. */
 .channel-workspace-tile .channel-card.workspace .ch-tone-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
 }
 .channel-workspace-tile .channel-card.workspace .toneout-btn.ch-action-cell {
@@ -7444,25 +7398,6 @@ code.mono {
   .channel-workspace-tile .channel-card.workspace .toneout-btn.custom.ch-action-cell.looping {
     animation: none;
   }
-}
-
-/* "Stop all sounds" — toned down to a small utility button instead of a
- * full-width red alarm so it doesn't dominate the box visually. */
-.channel-workspace-tile .channel-card.workspace .stopall-btn--workspace-top {
-  width: max-content;
-  align-self: center;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  background: color-mix(in srgb, var(--danger-bg) 70%, transparent);
-  border-color: color-mix(in srgb, var(--danger-border) 80%, transparent);
-  color: var(--danger-text);
-  box-shadow: none;
-}
-.channel-workspace-tile .channel-card.workspace .stopall-btn--workspace-top:hover {
-  background: var(--danger-bg);
-  border-color: var(--red);
 }
 
 /* Roster ("ON THIS CHANNEL") — tighter rows, clearer separators, and a
