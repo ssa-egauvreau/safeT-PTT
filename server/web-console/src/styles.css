@@ -920,6 +920,10 @@ code.mono {
   margin-top: 6px;
   width: 100%;
 }
+.channel-rail-popout {
+  width: 100%;
+  margin-bottom: 8px;
+}
 .channel-rail > .zone-header {
   margin-top: 4px;
 }

@@ -2,10 +2,9 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { api, describeError, type UserChannel } from "../api";
 import { useAuth } from "../auth";
 import { sounds } from "../sounds";
-import { QuickReplay } from "./QuickReplay";
 import { TransmissionLog } from "./TransmissionLog";
 import { SimulcastManager } from "./SimulcastManager";
-import { SectionHeader, type SectionProps } from "./PopOutSection";
+import { type SectionProps } from "./PopOutSection";
 import { keyLabel } from "./consoleShared";
 import {
   dockChannel,
@@ -178,9 +177,6 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
 
   return (
     <div className={variant === "window" ? "section-panel windowed" : "section-panel"}>
-      <SectionHeader title="Mission Control — Channels" onPopOut={onPopOut} />
-      <QuickReplay />
-
       {loading && <div className="empty">Loading…</div>}
       {listError && <div className="banner error">{listError}</div>}
       {dockNotice && <div className="banner warn compact">{dockNotice}</div>}
@@ -209,6 +205,16 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
 
           {channels.length > 0 && (
             <div className="channel-rail-footer">
+              {onPopOut && (
+                <button
+                  type="button"
+                  className="btn sm channel-rail-popout"
+                  onClick={onPopOut}
+                  title="Open channels in a separate window"
+                >
+                  Pop out
+                </button>
+              )}
               <div className="channel-rail-legend" title="Each channel row: board button = shown on the workspace; headphones = audio on">
                 <span className="channel-rail-legend-item">
                   <IconBoard size={10} /> on board
