@@ -154,9 +154,18 @@ function runBridge(bridge, udpPort) {
           "-i", inUrl,
           "-ac", "1", "-ar", String(SAMPLE_RATE), "-f", "s16le", "-",
         ]);
-        child.on("error", finish);
-        child.on("exit", finish);
-        child.stderr.on("data", () => {});
+        child.on("error", (e) => {
+          console.warn(`[bridge] ${bridge.name} ffmpeg error: ${e.message}`);
+          finish();
+        });
+        child.on("exit", (code) => {
+          console.warn(`[bridge] ${bridge.name} ffmpeg exited (code ${code})`);
+          finish();
+        });
+        child.stderr.on("data", (d) => {
+          const s = d.toString().trim().split("\n")[0];
+          if (s) console.warn(`[bridge] ${bridge.name} ffmpeg: ${s}`);
+        });
         child.stdout.on("data", (chunk) => {
           carry = carry.length ? Buffer.concat([carry, chunk]) : chunk;
           while (carry.length >= FRAME_BYTES) {
@@ -213,8 +222,16 @@ function runBridge(bridge, udpPort) {
           finish();
         }
       };
-      ws.onerror = () => finish();
-      ws.onclose = () => finish();
+      ws.onerror = () => {
+        console.warn(`[bridge] ${bridge.name}: ws error`);
+        finish();
+      };
+      ws.onclose = (e) => {
+        const code = e && e.code != null ? e.code : "";
+        const reason = e && e.reason ? ` ${e.reason}` : "";
+        console.warn(`[bridge] ${bridge.name}: ws closed ${code}${reason}`);
+        finish();
+      };
     });
   }
 
