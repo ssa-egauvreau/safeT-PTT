@@ -489,6 +489,22 @@ async function getStatus() {
   const [run, n] = br.stdout.trim().split(/\s+/);
   status.bridge = { running: run === "RUN", channels: Number(n) || 0 };
 
+  // Per-channel detail (state + last transmission pushed to SafeT), written by
+  // local-bridge.mjs once a second. Only meaningful while the bridge runs.
+  status.channels = [];
+  if (status.bridge.running) {
+    const stj = await runWsl("cat /tmp/sdr-bridge-status.json 2>/dev/null || echo '{}'");
+    try {
+      const detail = JSON.parse(stj.stdout);
+      if (Array.isArray(detail.bridges)) {
+        status.channels = detail.bridges;
+        status.bridge.channels = detail.bridges.filter((c) => c.state === "on air").length;
+      }
+    } catch {
+      /* partial write — next poll gets it */
+    }
+  }
+
   // cloudflared is a Windows service that rarely changes — cache it ~30s so the
   // frequent status poll doesn't spawn powershell.exe every few seconds.
   if (Date.now() - cfCache.at > 30000) {
