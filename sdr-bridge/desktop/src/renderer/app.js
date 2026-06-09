@@ -32,7 +32,10 @@ function mhz(hz) {
 async function loadSettings() {
   const cfg = (await window.api.getConfig()) || {};
   const sources = Array.isArray(cfg.sources) && cfg.sources.length ? cfg.sources : [cfg.sdr || {}];
-  const d1 = sources[0] || {};
+  // The first source inherits any field it omits from the friendly `sdr` block —
+  // matches build.mjs, so a partial {device,rateHz} stub doesn't show the UI a
+  // blank Center/Gain (which a Save would then write back, losing the values).
+  const d1 = { ...(cfg.sdr || {}), ...(sources[0] || {}) };
   const d2 = sources[1] || null;
   const sys = (Array.isArray(cfg.systems) && cfg.systems[0]) || cfg.system || {};
   const ice = cfg.icecast || {};

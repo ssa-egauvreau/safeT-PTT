@@ -31,8 +31,15 @@ function buildTrunkConfig(cfg, plan) {
   // `sources` / `systems` arrays are present they win. Each source (dongle)
   // covers its own ~2 MHz window, so two dongles span a wider band — or a
   // second one can sit on a different band entirely (UHF/VHF) for a 2nd system.
+  // The friendly single-dongle `sdr` block seeds defaults. A `sources` array (the
+  // desktop app's multi-dongle form) wins, but its FIRST entry inherits any field
+  // it omits from `sdr` — so a partial stub like {device,rateHz} can't silently
+  // erase your centerHz/gain and leave the dongle tuned to 854 MHz at gain 0.
+  const sdrDefaults = cfg.sdr ?? {};
   const sourcesCfg =
-    Array.isArray(cfg.sources) && cfg.sources.length ? cfg.sources : [cfg.sdr ?? {}];
+    Array.isArray(cfg.sources) && cfg.sources.length
+      ? cfg.sources.map((s, i) => (i === 0 ? { ...sdrDefaults, ...s } : s))
+      : [sdrDefaults];
   const systemsCfg =
     Array.isArray(cfg.systems) && cfg.systems.length ? cfg.systems : [cfg.system ?? {}];
 
