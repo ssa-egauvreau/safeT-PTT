@@ -62,16 +62,35 @@ function buildTrunkConfig(cfg, plan) {
     };
     // Trunked systems lock a control channel; conventional (often the simplest
     // way to do a VHF/UHF system) lists its channels directly.
-    if (Array.isArray(s.channelsHz) && s.channelsHz.length) {
-      sys.channels = s.channelsHz;
+    const channels = Array.isArray(s.channelsHz) ? s.channelsHz.filter(Boolean) : [];
+    const control = Array.isArray(s.controlChannelsHz) ? s.controlChannelsHz.filter(Boolean) : [];
+    if (channels.length) {
+      sys.channels = channels;
     } else {
-      sys.control_channels = s.controlChannelsHz ?? [];
+      sys.control_channels = control;
+    }
+    // A trunked (P25) system with NO control channel makes trunk-recorder
+    // segfault on startup — it has nothing to tune the control decoder to. Fail
+    // here with a clear message instead of handing it a config that core-dumps
+    // in a restart loop. (A conventional system listing `channels` is exempt.)
+    if (!channels.length && !control.length) {
+      throw new Error(
+        `system "${sys.shortName}" has no control channel — set the control channel ` +
+          `frequency in the desktop app (Settings → Control channel frequencies) or ` +
+          `config/system.json (system.controlChannelsHz). Without it trunk-recorder crashes on start.`,
+      );
     }
     // Primary system records the SafeT talkgroups; extra systems use whatever
     // talkgroup ids you list for them in config.
     sys.talkgroups = isPrimary ? plan.map((p) => Number(p.tgid)) : s.talkgroups ?? [];
     return sys;
   });
+
+  // Zero gain rarely decodes — warn loudly but don't block (some setups feed an
+  // amplified front-end). The desktop app's Gain field maps to source.gain.
+  for (const [i, s] of sources.entries()) {
+    if (!s.gain) console.warn(`  ! dongle ${i} has gain 0 — set a gain (e.g. 40) or it likely won't decode.`);
+  }
 
   return {
     ver: 2,
