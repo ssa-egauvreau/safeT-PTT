@@ -10,6 +10,7 @@ import {
   type EmergencyTransitionError,
 } from "./emergencyLifecycle.js";
 import { coerceVoiceCodec, type VoiceCodec } from "./voiceCodecs.js";
+import type { PlanTier, SubscriptionStatus } from "./billing/types.js";
 
 export type Permission = "talk_priority" | "talk" | "listen_only";
 
@@ -55,6 +56,17 @@ export interface AgencyRow {
    *  channels keep whatever codec they were set to — the default only
    *  kicks in on POST /admin/channels and on agency seed. */
   default_codec: VoiceCodec;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  subscription_status: SubscriptionStatus;
+  plan_tier: PlanTier;
+  trial_ends_at: string | null;
+  /** Days to retain transmissions; null = unlimited. */
+  transmission_retention_days: number | null;
+  logs_unlimited: boolean;
+  billing_email: string | null;
+  signup_completed_at: string | null;
+  trial_email_used: boolean;
 }
 
 export interface AgencySummary extends AgencyRow {
@@ -62,12 +74,34 @@ export interface AgencySummary extends AgencyRow {
   channel_count: number;
 }
 
-const AGENCY_COLS = "id, name, slug, radio_key, disabled, created_at, default_codec";
+const AGENCY_COLS =
+  "id, name, slug, radio_key, disabled, created_at, default_codec, stripe_customer_id, stripe_subscription_id, subscription_status, plan_tier, trial_ends_at, transmission_retention_days, logs_unlimited, billing_email, signup_completed_at, trial_email_used";
 
-type AgencyRowRaw = Omit<AgencyRow, "default_codec"> & { default_codec: string };
+type AgencyRowRaw = Omit<AgencyRow, "default_codec" | "subscription_status" | "plan_tier"> & {
+  default_codec: string;
+  subscription_status: string;
+  plan_tier: string;
+};
+
+function asSubscriptionStatus(raw: string): SubscriptionStatus {
+  const v = raw as SubscriptionStatus;
+  if (v === "trialing" || v === "active" || v === "past_due" || v === "canceled" || v === "comped") {
+    return v;
+  }
+  return "comped";
+}
+
+function asPlanTier(raw: string): PlanTier {
+  return raw === "basic" ? "basic" : "pro";
+}
 
 function asAgencyRow(raw: AgencyRowRaw): AgencyRow {
-  return { ...raw, default_codec: coerceVoiceCodec(raw.default_codec) };
+  return {
+    ...raw,
+    default_codec: coerceVoiceCodec(raw.default_codec),
+    subscription_status: asSubscriptionStatus(raw.subscription_status),
+    plan_tier: asPlanTier(raw.plan_tier),
+  };
 }
 
 /** A URL-safe shared key handsets present to bind to their agency. */
@@ -108,14 +142,21 @@ export async function uniqueAgencySlug(name: string): Promise<string> {
 
 export async function listAgencies(): Promise<AgencySummary[]> {
   type Raw = Omit<AgencySummary, "default_codec"> & { default_codec: string };
-  const res = await requirePool().query<Raw>(
+  const res = await requirePool().query<Raw & AgencyRowRaw>(
     `SELECT a.id, a.name, a.slug, a.radio_key, a.disabled, a.created_at, a.default_codec,
+            a.stripe_customer_id, a.stripe_subscription_id, a.subscription_status, a.plan_tier,
+            a.trial_ends_at, a.transmission_retention_days, a.logs_unlimited, a.billing_email,
+            a.signup_completed_at, a.trial_email_used,
             (SELECT COUNT(*)::int FROM users u WHERE u.agency_id = a.id) AS user_count,
             (SELECT COUNT(*)::int FROM radio_channels c WHERE c.agency_id = a.id) AS channel_count
        FROM agencies a
       ORDER BY a.name ASC;`,
   );
-  return res.rows.map((r) => ({ ...r, default_codec: coerceVoiceCodec(r.default_codec) }));
+  return res.rows.map((r) => ({
+    ...asAgencyRow(r),
+    user_count: r.user_count,
+    channel_count: r.channel_count,
+  }));
 }
 
 export async function getAgencyById(id: number): Promise<AgencyRow | null> {
@@ -180,16 +221,48 @@ export async function createAgencyWithAdmin(input: {
   adminUsername: string;
   adminDisplayName: string;
   adminPassword: string;
+  billing?: {
+    email: string;
+    planTier: PlanTier;
+    subscriptionStatus: SubscriptionStatus;
+    trialEndsAt: string | null;
+    transmissionRetentionDays: number | null;
+    logsUnlimited: boolean;
+    trialEmailUsed: boolean;
+    signupCompletedAt: string;
+  };
 }): Promise<{ agency: AgencyRow; admin: UserRow }> {
   const passwordHash = await hashPassword(input.adminPassword);
   const client = await requirePool().connect();
   try {
     await client.query("BEGIN");
-    const agencyRes = await client.query<AgencyRow>(
-      `INSERT INTO agencies (name, slug, radio_key) VALUES ($1, $2, $3) RETURNING ${AGENCY_COLS};`,
-      [input.name.trim(), input.slug, input.radioKey],
+    const b = input.billing;
+    const agencyRes = await client.query<AgencyRowRaw>(
+      b
+        ? `INSERT INTO agencies (
+             name, slug, radio_key, billing_email, plan_tier, subscription_status,
+             trial_ends_at, transmission_retention_days, logs_unlimited,
+             trial_email_used, signup_completed_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           RETURNING ${AGENCY_COLS};`
+        : `INSERT INTO agencies (name, slug, radio_key) VALUES ($1, $2, $3) RETURNING ${AGENCY_COLS};`,
+      b
+        ? [
+            input.name.trim(),
+            input.slug,
+            input.radioKey,
+            b.email,
+            b.planTier,
+            b.subscriptionStatus,
+            b.trialEndsAt,
+            b.transmissionRetentionDays,
+            b.logsUnlimited,
+            b.trialEmailUsed,
+            b.signupCompletedAt,
+          ]
+        : [input.name.trim(), input.slug, input.radioKey],
     );
-    const agency = agencyRes.rows[0]!;
+    const agency = asAgencyRow(agencyRes.rows[0]!);
     await client.query(
       `INSERT INTO radio_channels (agency_id, sort_order, name) VALUES
          ($1, 1, 'Green 1'),
@@ -211,6 +284,93 @@ export async function createAgencyWithAdmin(input: {
   } finally {
     client.release();
   }
+}
+
+export async function getAgencyBillingById(id: number): Promise<AgencyRow | null> {
+  return getAgencyById(id);
+}
+
+export async function countBillableRadioUsers(agencyId: number): Promise<number> {
+  const res = await requirePool().query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM users WHERE agency_id = $1 AND role = 'radio' AND disabled = FALSE;`,
+    [agencyId],
+  );
+  return Number(res.rows[0]?.n ?? "0");
+}
+
+export async function updateAgencyBilling(
+  id: number,
+  patch: {
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string | null;
+    subscriptionStatus?: SubscriptionStatus;
+    planTier?: PlanTier;
+    trialEndsAt?: string | null;
+    transmissionRetentionDays?: number | null;
+    logsUnlimited?: boolean;
+    billingEmail?: string;
+    disabled?: boolean;
+  },
+): Promise<AgencyRow | null> {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  let i = 1;
+  if (patch.stripeCustomerId !== undefined) {
+    sets.push(`stripe_customer_id = $${i++}`);
+    vals.push(patch.stripeCustomerId);
+  }
+  if (patch.stripeSubscriptionId !== undefined) {
+    sets.push(`stripe_subscription_id = $${i++}`);
+    vals.push(patch.stripeSubscriptionId);
+  }
+  if (patch.subscriptionStatus !== undefined) {
+    sets.push(`subscription_status = $${i++}`);
+    vals.push(patch.subscriptionStatus);
+  }
+  if (patch.planTier !== undefined) {
+    sets.push(`plan_tier = $${i++}`);
+    vals.push(patch.planTier);
+  }
+  if (patch.trialEndsAt !== undefined) {
+    sets.push(`trial_ends_at = $${i++}`);
+    vals.push(patch.trialEndsAt);
+  }
+  if (patch.transmissionRetentionDays !== undefined) {
+    sets.push(`transmission_retention_days = $${i++}`);
+    vals.push(patch.transmissionRetentionDays);
+  }
+  if (patch.logsUnlimited !== undefined) {
+    sets.push(`logs_unlimited = $${i++}`);
+    vals.push(patch.logsUnlimited);
+  }
+  if (patch.billingEmail !== undefined) {
+    sets.push(`billing_email = $${i++}`);
+    vals.push(patch.billingEmail);
+  }
+  if (patch.disabled !== undefined) {
+    sets.push(`disabled = $${i++}`);
+    vals.push(patch.disabled);
+  }
+  if (sets.length === 0) {
+    return getAgencyById(id);
+  }
+  vals.push(id);
+  const res = await requirePool().query<AgencyRowRaw>(
+    `UPDATE agencies SET ${sets.join(", ")} WHERE id = $${i} RETURNING ${AGENCY_COLS};`,
+    vals,
+  );
+  return res.rows[0] ? asAgencyRow(res.rows[0]) : null;
+}
+
+export async function agencyAllowsAiDispatch(agencyId: number): Promise<boolean> {
+  const agency = await getAgencyById(agencyId);
+  if (!agency) {
+    return false;
+  }
+  if (agency.subscription_status === "comped") {
+    return true;
+  }
+  return agency.plan_tier === "pro";
 }
 
 export async function updateAgency(
@@ -1248,6 +1408,7 @@ export async function insertTransmission(input: {
  * Only runs when `TRANSMISSION_RETENTION_DAYS` is set on the host — see
  * `runDataRetentionSweeps` in `dataRetention.ts`.
  */
+/** Global fallback when TRANSMISSION_RETENTION_DAYS env is set. */
 export async function sweepTransmissions(retentionMs: number): Promise<number> {
   const p = getPool();
   if (!p) {
@@ -1256,6 +1417,28 @@ export async function sweepTransmissions(retentionMs: number): Promise<number> {
   const cutoff = new Date(Date.now() - retentionMs).toISOString();
   const res = await p.query(`DELETE FROM transmissions WHERE started_at < $1;`, [cutoff]);
   return res.rowCount ?? 0;
+}
+
+/** Per-agency retention sweep for subscription tiers (3-day default, unlimited = skip). */
+export async function sweepTransmissionsPerAgency(): Promise<number> {
+  const p = getPool();
+  if (!p) {
+    return 0;
+  }
+  const agencies = await p.query<{ id: number; transmission_retention_days: number }>(
+    `SELECT id, transmission_retention_days FROM agencies
+      WHERE transmission_retention_days IS NOT NULL AND transmission_retention_days > 0;`,
+  );
+  let total = 0;
+  for (const row of agencies.rows) {
+    const cutoff = new Date(Date.now() - row.transmission_retention_days * 24 * 60 * 60 * 1000).toISOString();
+    const res = await p.query(
+      `DELETE FROM transmissions WHERE agency_id = $1 AND started_at < $2;`,
+      [row.id, cutoff],
+    );
+    total += res.rowCount ?? 0;
+  }
+  return total;
 }
 
 export type TransmissionSort = "newest" | "oldest" | "longest" | "shortest" | "speaker";

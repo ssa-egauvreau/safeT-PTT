@@ -1,0 +1,77 @@
+[
+  {
+    "category": "Getting started",
+    "q": "How do I start a free trial?",
+    "a": "Go to the signup page, verify your email, and create your agency. You get 7 days of full access with no credit card required."
+  },
+  {
+    "category": "Getting started",
+    "q": "What happens when my trial ends?",
+    "a": "If you have not added a payment method, your agency is suspended until billing is set up. Add a card in safeT Control → Billing to restore service immediately."
+  },
+  {
+    "category": "Getting started",
+    "q": "How long does setup take?",
+    "a": "Most agencies are on the air within an hour: create your agency, add radio users in Control, install the Android app, and sign in."
+  },
+  {
+    "category": "Pricing",
+    "q": "What counts as a billable user?",
+    "a": "Radio/handset accounts (field units) are billed per seat. Dispatcher and admin accounts are included at no extra charge."
+  },
+  {
+    "category": "Pricing",
+    "q": "What is included in Basic vs Pro?",
+    "a": "Basic ($6.50/radio/mo) includes push-to-talk, the dispatch console, and admin panel. Pro ($8.50/radio/mo) adds AI dispatch on channels you enable."
+  },
+  {
+    "category": "Pricing",
+    "q": "How do transmission logs work?",
+    "a": "Every plan includes 3 days of recorded transmissions with auto-transcription. Add unlimited log retention for $20/month per agency."
+  },
+  {
+    "category": "Pricing",
+    "q": "Can I cancel anytime?",
+    "a": "Yes. Manage your subscription from the Billing page in safeT Control or the Stripe customer portal. Cancellation takes effect at the end of the current billing period."
+  },
+  {
+    "category": "Hardware",
+    "q": "What phones and radios are supported?",
+    "a": "safeT Mobile runs on Android phones (Android 5.0+) and rugged Inrico IRC590 and TM7 handsets with hardware PTT keys."
+  },
+  {
+    "category": "Hardware",
+    "q": "Do dispatchers need a special app?",
+    "a": "No. Dispatchers and admins use safeT Command and Control in any modern web browser. Radio-role users can also use a browser-based soft radio."
+  },
+  {
+    "category": "Security",
+    "q": "Is voice encrypted?",
+    "a": "Yes. Every transmission is carried over an authenticated, encrypted relay. Accounts sign in individually — the newest sign-in wins so a lost device cannot keep listening."
+  },
+  {
+    "category": "Security",
+    "q": "Is my agency data isolated from others?",
+    "a": "Yes. safeT PTT is multi-tenant: every account, channel, recording, and transmission belongs to your agency only."
+  },
+  {
+    "category": "Troubleshooting",
+    "q": "Handsets cannot connect — what should I check?",
+    "a": "Confirm the agency slug and username/password on the login screen, and verify the radio key in Control matches what is configured on the device."
+  },
+  {
+    "category": "Troubleshooting",
+    "q": "I see 'agency suspended' when signing in",
+    "a": "Your free trial ended or a payment failed. An agency admin should open safeT Control → Billing and add or update the payment method."
+  },
+  {
+    "category": "Troubleshooting",
+    "q": "No audio on transmit or receive",
+    "a": "Check microphone permissions on the handset, confirm the unit is on an assigned channel, and verify no other user holds talk-priority on that channel."
+  },
+  {
+    "category": "AI dispatch",
+    "q": "What is AI dispatch?",
+    "a": "On Pro plans, you can enable AI dispatch per channel. The AI listens to radio traffic, parses intents, can look up plates, and integrate with CAD systems like Ten-8."
+  }
+]

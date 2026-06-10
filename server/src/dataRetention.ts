@@ -1,7 +1,7 @@
 import { sweepAiDispatchLog } from "./aiDispatch/activityLog.js";
 import { getPool } from "./db.js";
 import { isPostgresDiskFullError } from "./postgresErrors.js";
-import { sweepTransmissions } from "./store.js";
+import { sweepTransmissions, sweepTransmissionsPerAgency } from "./store.js";
 import { sweepTen8WebhookLog } from "./ten8/store.js";
 import { sweepVoiceLinkTelemetry } from "./voiceLinkTelemetryStore.js";
 
@@ -46,10 +46,14 @@ export async function runDataRetentionSweeps(): Promise<void> {
       run: () => sweepAiDispatchLog(AI_DISPATCH_LOG_RETENTION_MS),
     },
   ];
+  sweeps.push({
+    name: "transmissions_per_agency",
+    run: () => sweepTransmissionsPerAgency(),
+  });
   const txDays = parseTransmissionRetentionDays();
   if (txDays != null) {
     sweeps.push({
-      name: "transmissions",
+      name: "transmissions_global",
       run: () => sweepTransmissions(txDays * DAY_MS),
     });
   }

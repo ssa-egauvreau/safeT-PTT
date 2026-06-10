@@ -33,6 +33,36 @@ const LegalPage = lazy(() =>
 const UpdatesPage = lazy(() =>
   import("./pages/UpdatesPage").then((m) => ({ default: m.UpdatesPage })),
 );
+const SignupPage = lazy(() =>
+  import("./pages/SignupPage").then((m) => ({ default: m.SignupPage })),
+);
+const PricingPage = lazy(() =>
+  import("./pages/marketing/PricingPage").then((m) => ({ default: m.PricingPage })),
+);
+const FaqPage = lazy(() =>
+  import("./pages/marketing/FaqPage").then((m) => ({ default: m.FaqPage })),
+);
+const SetupPage = lazy(() =>
+  import("./pages/marketing/SetupPage").then((m) => ({ default: m.SetupPage })),
+);
+const SupportPage = lazy(() =>
+  import("./pages/marketing/SupportPage").then((m) => ({ default: m.SupportPage })),
+);
+const SecurityPage = lazy(() =>
+  import("./pages/marketing/SecurityPage").then((m) => ({ default: m.SecurityPage })),
+);
+const MobilePage = lazy(() =>
+  import("./pages/marketing/MobilePage").then((m) => ({ default: m.MobilePage })),
+);
+const CommandPage = lazy(() =>
+  import("./pages/marketing/CommandPage").then((m) => ({ default: m.CommandPage })),
+);
+const ControlPage = lazy(() =>
+  import("./pages/marketing/ControlPage").then((m) => ({ default: m.ControlPage })),
+);
+const NotFoundPage = lazy(() =>
+  import("./pages/marketing/NotFoundPage").then((m) => ({ default: m.NotFoundPage })),
+);
 const AiActivityPage = lazy(() =>
   import("./pages/AiActivityPage").then((m) => ({ default: m.AiActivityPage })),
 );
@@ -67,6 +97,15 @@ export function App() {
     <Suspense fallback={<div className="boot">Loading…</div>}>
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/signup" element={user ? <Navigate to={home} replace /> : <SignupPage />} />
+      <Route path="/pricing" element={<PricingPage />} />
+      <Route path="/faq" element={<FaqPage />} />
+      <Route path="/setup" element={<SetupPage />} />
+      <Route path="/support" element={<SupportPage />} />
+      <Route path="/security" element={<SecurityPage />} />
+      <Route path="/mobile" element={<MobilePage />} />
+      <Route path="/command" element={<CommandPage />} />
+      <Route path="/control" element={<ControlPage />} />
       <Route path="/login" element={user ? <Navigate to={home} replace /> : <LoginPage />} />
       <Route
         path="/console"
@@ -236,7 +275,7 @@ export function App() {
       <Route path="/legal/terms" element={<LegalPage doc="terms" />} />
       <Route path="/legal/privacy" element={<LegalPage doc="privacy" />} />
       <Route path="/legal/eula" element={<LegalPage doc="eula" />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
     </Suspense>
   );

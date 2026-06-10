@@ -127,6 +127,39 @@ export async function ensureSchema(): Promise<void> {
   // rows backfill to 'imbe' so behaviour stays identical to pre-multi-codec.
   await p.query(`ALTER TABLE agencies ADD COLUMN IF NOT EXISTS default_codec TEXT NOT NULL DEFAULT 'imbe';`);
 
+  // --- billing / subscriptions -----------------------------------------------
+  await p.query(`ALTER TABLE agencies ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT UNIQUE;`);
+  await p.query(`ALTER TABLE agencies ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;`);
+  await p.query(
+    `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS subscription_status TEXT NOT NULL DEFAULT 'comped';`,
+  );
+  await p.query(`ALTER TABLE agencies ADD COLUMN IF NOT EXISTS plan_tier TEXT NOT NULL DEFAULT 'pro';`);
+  await p.query(`ALTER TABLE agencies ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ;`);
+  await p.query(
+    `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS transmission_retention_days INT;`,
+  );
+  await p.query(
+    `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS logs_unlimited BOOLEAN NOT NULL DEFAULT TRUE;`,
+  );
+  await p.query(`ALTER TABLE agencies ADD COLUMN IF NOT EXISTS billing_email TEXT;`);
+  await p.query(`ALTER TABLE agencies ADD COLUMN IF NOT EXISTS signup_completed_at TIMESTAMPTZ;`);
+  await p.query(
+    `ALTER TABLE agencies ADD COLUMN IF NOT EXISTS trial_email_used BOOLEAN NOT NULL DEFAULT FALSE;`,
+  );
+  // Grandfather existing tenants created before self-service billing.
+  await p.query(
+    `UPDATE agencies SET subscription_status = 'comped', plan_tier = 'pro', logs_unlimited = TRUE, transmission_retention_days = NULL
+      WHERE signup_completed_at IS NULL AND subscription_status = 'comped';`,
+  );
+
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS signup_verifications (
+      email TEXT PRIMARY KEY,
+      code_hash TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL
+    );
+  `);
+
   await p.query(`
     CREATE TABLE IF NOT EXISTS radio_channels (
       id SERIAL PRIMARY KEY,

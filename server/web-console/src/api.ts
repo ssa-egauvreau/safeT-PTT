@@ -42,6 +42,9 @@ export function deviceTypeLabel(value: string | null): string {
 /** Window event fired when the agency logo is uploaded or removed, so the top bar can refresh. */
 export const AGENCY_LOGO_CHANGED_EVENT = "safet:agency-logo-changed";
 
+export type SubscriptionStatus = "trialing" | "active" | "past_due" | "canceled" | "comped";
+export type PlanTier = "basic" | "pro";
+
 export interface Agency {
   id: number;
   name: string;
@@ -49,9 +52,28 @@ export interface Agency {
   radio_key: string | null;
   disabled: boolean;
   created_at: string;
+  subscription_status?: SubscriptionStatus;
+  plan_tier?: PlanTier;
+  trial_ends_at?: string | null;
+  logs_unlimited?: boolean;
+  billing_email?: string | null;
+  signup_completed_at?: string | null;
   /** Present on the owner agency listing; omitted on create/update responses. */
   user_count?: number;
   channel_count?: number;
+}
+
+export interface BillingStatus {
+  plan_tier: PlanTier;
+  subscription_status: SubscriptionStatus;
+  trial_ends_at: string | null;
+  trial_days_left: number | null;
+  billable_seats: number;
+  logs_unlimited: boolean;
+  transmission_retention_days: number | null;
+  billing_configured: boolean;
+  portal_available: boolean;
+  agency_disabled: boolean;
 }
 
 /**
@@ -794,6 +816,26 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
+  verifySignupEmail: (email: string) =>
+    request<{ ok: boolean }>("POST", "/v1/signup/verify-email", { email }),
+  signup: (input: {
+    agency_name: string;
+    admin_username: string;
+    admin_display_name: string;
+    admin_password: string;
+    email: string;
+    verification_code: string;
+    plan_tier: PlanTier;
+    accept_terms: boolean;
+  }) =>
+    request<{ ok: boolean; agencySlug: string; adminUsername: string }>("POST", "/v1/signup", input),
+  getBillingStatus: () => request<BillingStatus>("GET", "/v1/billing/status"),
+  startBillingCheckout: (plan_tier: PlanTier, logs_unlimited: boolean) =>
+    request<{ url: string }>("POST", "/v1/billing/checkout", { plan_tier, logs_unlimited }),
+  openBillingPortal: () => request<{ url: string }>("POST", "/v1/billing/portal", {}),
+  updateBillingPlan: (plan_tier: PlanTier, logs_unlimited: boolean) =>
+    request<{ ok: boolean }>("PATCH", "/v1/billing/plan", { plan_tier, logs_unlimited }),
+
   login: (username: string, password: string, agencySlug?: string) =>
     request<{ token: string; user: SessionUser }>("POST", "/v1/auth/login", {
       username,
@@ -1420,6 +1462,13 @@ export function describeError(error: unknown): string {
       database_unavailable: "The database is not configured on the server.",
       bad_role: "Unknown role.",
       agency_disabled: "Your agency has been disabled. Contact your platform owner.",
+      agency_suspended_billing:
+        "Your free trial has ended or payment failed. Add billing in safeT Control to restore service.",
+      ai_dispatch_requires_pro: "AI dispatch requires the Pro plan. Upgrade in Billing.",
+      trial_already_used: "A free trial has already been used with this email address.",
+      invalid_verification_code: "That verification code is invalid or expired.",
+      terms_required: "You must accept the Terms of Service, Privacy Policy, and EULA.",
+      billing_not_configured: "Billing is not configured on this server yet.",
       session_superseded: "Signed in on another device — sign in again here if you want to continue.",
       unit_move_locked:
         "That operator has the dispatch console open on multiple channels and cannot be moved.",

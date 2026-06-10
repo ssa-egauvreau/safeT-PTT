@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import compression from "compression";
-import express from "express";
+import express, { raw } from "express";
 import { DEFAULT_GREEN_CHANNELS } from "./defaultChannels.js";
 import { ensureSchema, getPool, listChannelsFromDb } from "./db.js";
 import { getAgencyById, resolveAgencyByKey, seedInitialAccounts } from "./store.js";
@@ -30,6 +30,8 @@ import { getEmbeddingDiagnostics, warmEmbeddings } from "./aiDispatch/knowledgeB
 import { recoverPendingKbIngests } from "./aiDispatch/knowledgeBase/ingest.js";
 import { startBridgeWorker } from "./bridgeWorker.js";
 import { runDataRetentionSweeps } from "./dataRetention.js";
+import { runTrialBillingSweep } from "./billing/trialSweep.js";
+import { handleStripeWebhook } from "./billing/webhooks.js";
 
 /** How often retention DELETE sweeps run (~10 min). */
 const DATA_RETENTION_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
@@ -68,6 +70,10 @@ if (process.env.NODE_ENV === "production") {
 // and the Vite bundle — both compress ~70-80 %, which is real money on Railway egress + faster
 // page loads. Excludes the voice WebSocket path (handled outside Express).
 app.use(compression());
+// Stripe webhook needs the raw body for signature verification — register before express.json().
+app.post("/v1/billing/webhook", raw({ type: "application/json" }), (req, res) => {
+  void handleStripeWebhook(req, res);
+});
 app.use(express.json({ limit: "2mb" }));
 app.use(authenticate);
 
@@ -327,6 +333,16 @@ async function main(): Promise<void> {
       console.warn("[data-retention] periodic sweep failed", e);
     });
   }, DATA_RETENTION_SWEEP_INTERVAL_MS).unref();
+
+  void runTrialBillingSweep().catch((e) => {
+    console.warn("[billing] initial trial sweep failed", e);
+  });
+  const TRIAL_SWEEP_MS = 60 * 60 * 1000;
+  setInterval(() => {
+    void runTrialBillingSweep().catch((e) => {
+      console.warn("[billing] periodic trial sweep failed", e);
+    });
+  }, TRIAL_SWEEP_MS).unref();
 
   const server = createServer(app);
   // Match an upstream LB / edge proxy's idle timeout (Railway / Cloudflare default ~60 s).

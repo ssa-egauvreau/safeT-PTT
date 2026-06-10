@@ -131,12 +131,25 @@ Customer is responsible for informing its Authorized Users of these limitations.
 
 ## 7. Fees and payment
 
-The Customer will pay the fees stated in the applicable Order. Unless the Order
-states otherwise: fees are stated in [CURRENCY], are due [PAYMENT TERMS], are
-non-refundable except as expressly provided, and are exclusive of taxes, which
-the Customer is responsible for (other than taxes on our income). Late amounts
-may accrue interest at [RATE / the maximum allowed by law]. [Other commercial
-terms — TBD.]
+The Customer will pay the fees stated on the safeT PTT pricing page or in an
+applicable Order. Unless an Order states otherwise:
+
+- **Plans.** Basic is billed at **USD $6.50 per radio/handset account per month**.
+  Pro (including AI dispatch) is billed at **USD $8.50 per radio/handset account
+  per month**. Dispatcher and administrator accounts are not counted as billable
+  radio seats unless stated in an Order.
+- **Add-ons.** Unlimited transmission log retention is available for **USD $20.00
+  per agency per month** (flat fee, not per user).
+- **Trial.** New self-service agencies receive a **7-day free trial**. After the
+  trial, access may be suspended until valid payment information is provided and
+  the first charge succeeds.
+- **Billing.** Subscriptions renew automatically each month until cancelled.
+  Payment is processed by **Stripe, Inc.**; safeT PTT does not store full payment
+  card numbers on its servers.
+- **Taxes.** Fees are exclusive of applicable taxes, which the Customer is
+  responsible for (other than taxes on our income).
+- **Non-payment.** We may suspend or terminate access for non-payment after
+  reasonable notice, in addition to any other remedies.
 
 ## 8. Customer Data and privacy
 
