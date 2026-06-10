@@ -5,10 +5,10 @@
  * Why: the SafeT server can't PULL the audio — the Cloudflare tunnel buffers
  * continuous streams and returns 5XX, so every server-side stream bridge fails.
  * So we bridge locally instead: for each enabled stream bridge, read its
- * talkgroup mount over LOCALHOST Icecast (no tunnel), VOX-gate it, and PUSH the
- * voice to that bridge's SafeT channel over the same voice WebSocket the SafeT
- * apps use. Reuses the server bridge worker's ffmpeg -> PCM -> VOX -> frames
- * approach, but connects as the configured admin account over the public relay.
+ * talkgroup's UDP audio from the decoder (simplestream plugin) with an
+ * in-process socket, pace it on a 20 ms clock with silence gap-fill, and PUSH
+ * the voice to that bridge's SafeT channel over the same voice WebSocket the
+ * SafeT apps use, connected as the configured admin account.
  *
  * Run from sdr-bridge/:  node scripts/local-bridge.mjs   (npm start launches it)
  */
@@ -18,15 +18,18 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// WebSocket: Node 22+ has it built in; otherwise fall back to the `ws` package.
-let WS = globalThis.WebSocket;
+// WebSocket: prefer the `ws` package — it exposes ping()/pong so the keepalive
+// can detect half-open sockets (the built-in undici WebSocket cannot send
+// pings). Fall back to the Node 22+ built-in when ws isn't installed.
+let WS;
+try {
+  WS = (await import("ws")).WebSocket;
+} catch {
+  WS = globalThis.WebSocket;
+}
 if (!WS) {
-  try {
-    WS = (await import("ws")).WebSocket;
-  } catch {
-    console.error("local-bridge: need WebSocket — run `npm install ws` in sdr-bridge (or use Node 22+).");
-    process.exit(1);
-  }
+  console.error("local-bridge: need WebSocket — run `npm install ws` in sdr-bridge (or use Node 22+).");
+  process.exit(1);
 }
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -79,15 +82,34 @@ function mountFromUrl(u) {
   return m ? m[1] : null;
 }
 
-/** Normalized RMS (0–1) of a mono 16-bit LE PCM frame. */
-function frameRms(frame) {
-  let sum = 0;
-  const n = frame.length >> 1;
-  for (let i = 0; i < n; i++) {
-    const s = frame.readInt16LE(i << 1);
-    sum += s * s;
-  }
-  return n ? Math.sqrt(sum / n) / 32768 : 0;
+/** Keepalive for a voice socket. Field logs showed every channel's WS dying
+ * with 1006 in periodic batches — idle sockets reaped by NAT/proxies between
+ * calls, only noticed when the NEXT call's first frames hit the dead socket
+ * (eating the head of the call). Outbound traffic every 20s keeps the idle
+ * timers from firing; with the `ws` package a real ping also detects a
+ * half-open socket after ~60s and terminates it so the reconnect loop runs
+ * BETWEEN calls instead of during one. Returns a cleanup function. */
+function startKeepalive(ws) {
+  let missedPongs = 0;
+  if (typeof ws.on === "function") ws.on("pong", () => { missedPongs = 0; });
+  const timer = setInterval(() => {
+    if (ws.readyState !== 1) return;
+    try {
+      if (typeof ws.ping === "function") {
+        if (++missedPongs >= 3) {
+          (ws.terminate ?? ws.close).call(ws);
+          return;
+        }
+        ws.ping();
+      } else {
+        ws.send('{"type":"ping"}'); // relay ignores unknown control types
+      }
+    } catch {
+      /* send on a dying socket — close handler owns recovery */
+    }
+  }, 20000);
+  timer.unref();
+  return () => clearInterval(timer);
 }
 
 // Shared token + de-bounced re-login. NOTE: a fresh login drops this account's
@@ -195,11 +217,20 @@ const monitor = {
   members: [], // { ws, bridge }
   holder: null,
   lastFrameMs: 0,
+  /** holder name -> "end your silence hang now" (a paced sender's cut()). */
+  cutters: new Map(),
   add(ws, bridge) {
     this.members.push({ ws, bridge });
   },
   remove(ws) {
     this.members = this.members.filter((m) => m.ws !== ws);
+  },
+  /** A REAL frame from `name` found the feed held by someone else. If that
+   * holder is only keeping the feed warm with silence gap-fill, cut its hang
+   * so the live call takes over now instead of after the ~2s tail. (cut() is
+   * a no-op while real audio is still queued, so playback is never clipped.) */
+  contend(name) {
+    if (this.holder && this.holder !== name) this.cutters.get(this.holder)?.();
   },
   claim(name) {
     const now = Date.now();
@@ -209,13 +240,13 @@ const monitor = {
     this.lastFrameMs = now;
     return true;
   },
-  send(frame) {
+  send(frame, silent = false) {
     const now = Date.now();
     for (const m of this.members)
       if (m.ws.readyState === 1)
         try {
           m.ws.send(frame);
-          markTxFrame(m.bridge, now, this.holder);
+          if (!silent) markTxFrame(m.bridge, now, this.holder);
         } catch { /* drop */ }
   },
   release(name) {
@@ -246,27 +277,70 @@ function upsample8to16(pcm) {
   return up;
 }
 
-/** Real-time frame pacing: the decoder flushes audio in bursts, and shoving a
- * burst of 20ms frames at the relay in one go plays back sped-up/garbled.
- * Queue frames and release them on a 20ms clock; cap backlog at ~5s so the
- * feed stays near-live. */
-function makePacedSender(emit) {
+/** Real-time frame pacing + gap fill: the decoder flushes audio in bursts WITH
+ * GAPS where decode failed, and the relay un-keys a channel 900ms after its
+ * last frame — so one gappy radio call lands on SafeT as several sub-second
+ * clips that record as "0s". Release queued frames on a 20ms clock; when the
+ * queue runs dry mid-call, keep the channel keyed with silence frames until
+ * the gap exceeds `hangMs` (call over), then fire `onHangEnd` once so the
+ * owner can un-key crisply.
+ *
+ * `ready` gates the clock: while false (socket reconnecting) frames are HELD,
+ * not dropped — the call resumes complete (a beat late) instead of losing its
+ * head. Backlog capped at ~5s so the feed stays near-live. */
+const SILENCE_FRAME = Buffer.alloc(FRAME_BYTES);
+function makePacedSender(emit, { hangMs = 2000, onHangEnd, ready = () => true } = {}) {
   const queue = [];
   let clock = null;
+  let lastRealMs = null; // wall time real audio last flowed (null = between calls)
   const timer = setInterval(() => {
-    if (!queue.length) {
-      clock = null;
+    const now = Date.now();
+    if (!ready()) {
+      clock = null; // re-anchor pacing when the socket comes back
+      if (queue.length > 250) queue.splice(0, queue.length - 250);
       return;
     }
-    if (clock === null) clock = Date.now();
-    while (queue.length && clock <= Date.now()) {
-      emit(queue.shift());
-      clock += 20;
+    if (queue.length) {
+      if (clock === null) clock = now;
+      while (queue.length && clock <= now) {
+        emit(queue.shift(), false);
+        clock += 20;
+      }
+      lastRealMs = now;
+      if (queue.length > 250) queue.splice(0, queue.length - 250);
+      return;
     }
-    if (queue.length > 250) queue.splice(0, queue.length - 250);
+    if (lastRealMs !== null && now - lastRealMs < hangMs) {
+      // Decode gap mid-call: hold the key with silence so the relay's TTL
+      // can't split the call into blips.
+      if (clock === null) clock = now;
+      while (clock <= now) {
+        emit(SILENCE_FRAME, true);
+        clock += 20;
+      }
+      return;
+    }
+    clock = null;
+    if (lastRealMs !== null) {
+      lastRealMs = null;
+      onHangEnd?.();
+    }
   }, 10);
   timer.unref();
-  return { push: (frame) => queue.push(frame), stop: () => clearInterval(timer) };
+  return {
+    push: (frame) => queue.push(frame),
+    /** Real frames still queued (a call is mid-playback)? */
+    draining: () => queue.length > 0,
+    /** End the silence hang NOW (a different call wants the air). */
+    cut: () => {
+      if (!queue.length && lastRealMs !== null) {
+        lastRealMs = null;
+        clock = null;
+        onHangEnd?.();
+      }
+    },
+    stop: () => clearInterval(timer),
+  };
 }
 
 /**
@@ -279,18 +353,41 @@ function makePacedSender(emit) {
 function runScanAllIngest(port, bridgedTgids, tgNames) {
   const sock = createSocket("udp4");
   let currentTg = null;
+  let currentName = null;
   let carry = Buffer.alloc(0);
-  const paced = makePacedSender((frame) => monitor.send(frame));
+  const paced = makePacedSender(
+    (frame, silent) => {
+      // Claim on every emitted frame — silence fill included — so the hold
+      // survives decode gaps and the call stays ONE transmission on scan.
+      if (currentName && monitor.claim(currentName)) monitor.send(frame, silent);
+    },
+    {
+      onHangEnd: () => {
+        if (currentName) monitor.release(currentName);
+        currentTg = null;
+        currentName = null;
+      },
+    },
+  );
 
   sock.on("message", (msg) => {
     if (msg.length < 6) return;
     const tgid = msg.readUInt32LE(0);
     if (bridgedTgids.has(tgid)) return;
     const name = tgNames.get(tgid) || `TG ${tgid}`;
-    if (!monitor.claim(name)) return; // another call holds the scan feed
+    if (currentTg !== null && tgid !== currentTg) {
+      if (paced.draining()) return; // previous call still playing — one at a time
+      paced.cut(); // only hanging on silence: yield the feed to the new call
+    }
+    if (!monitor.claim(name)) {
+      monitor.contend(name); // holder may just be silence-hanging — cut it
+      return;
+    }
     if (currentTg !== tgid) {
       currentTg = tgid;
+      currentName = name;
       carry = Buffer.alloc(0);
+      monitor.cutters.set(name, () => paced.cut());
     }
     carry = carry.length ? Buffer.concat([carry, upsample8to16(msg.subarray(4))]) : upsample8to16(msg.subarray(4));
     while (carry.length >= FRAME_BYTES) {
@@ -329,11 +426,13 @@ function runMonitorBridge(bridge) {
     return new Promise((done) => {
       const ws = new WS(`${wsBase()}/v1/voice/stream?token=${encodeURIComponent(tokenRef.value)}`);
       ws.binaryType = "arraybuffer";
+      const stopKeepalive = startKeepalive(ws);
       let registered = false;
       let finished = false;
       const finish = () => {
         if (finished) return;
         finished = true;
+        stopKeepalive();
         if (registered) monitor.remove(ws);
         try { ws.close(); } catch { /* closing */ }
         done();
@@ -388,85 +487,98 @@ function runMonitorBridge(bridge) {
 }
 
 function runBridge(bridge, udpPort) {
-  // Read the decoder's per-talkgroup UDP (raw s16le mono 8 kHz) with an
-  // IN-PROCESS socket — the exact mechanism the Scan All ingest uses, which is
-  // field-proven to receive. No external reader process means no orphaned
-  // zombie can ever hold the port, and a blocked port fails LOUDLY
-  // (EADDRINUSE) instead of silently stealing packets.
   let stopped = false;
   let backoff = RECONNECT_MIN;
+  const srow = statusRow(bridge);
 
+  // ---- ingest: lives for the BRIDGE's lifetime, not one connection's ----
+  // The decoder's per-talkgroup UDP (raw s16le mono 8 kHz) is read with an
+  // IN-PROCESS socket bound exactly once: no orphaned reader can ever hold the
+  // port, and audio captured while the voice socket is reconnecting is HELD in
+  // the paced queue, not dropped — a reconnect no longer eats the call's head.
+  let ws = null; // current voice socket, only set while joined ("on air")
+  let carry = Buffer.alloc(0);
+  const onAir = () => ws !== null && ws.readyState === 1;
+  const paced = makePacedSender(
+    (frame, silent) => {
+      if (onAir()) {
+        try {
+          ws.send(frame);
+          if (!silent) markTxFrame(bridge, Date.now());
+        } catch {
+          /* drop — close handler owns recovery */
+        }
+      }
+      // Also feed the Scan-All channels. Silence fill claims too, so the scan
+      // hold survives decode gaps and the call stays one transmission there.
+      if (monitor.claim(bridge.name)) monitor.send(frame, silent);
+      else if (!silent) monitor.contend(bridge.name);
+    },
+    {
+      ready: onAir,
+      onHangEnd: () => {
+        // Un-key crisply instead of letting the relay's TTL time out.
+        if (onAir()) {
+          try { ws.send(JSON.stringify({ type: "release_air" })); } catch { /* closing */ }
+        }
+        monitor.release(bridge.name);
+      },
+    },
+  );
+  monitor.cutters.set(bridge.name, () => paced.cut());
+
+  // NO VOX gate: the decoder only ever sends voice (field data showed the
+  // gate eating entire calls — 60 packets in, 0 frames out).
+  const openIngest = () => {
+    if (stopped) return;
+    const sock = createSocket("udp4");
+    sock.on("error", (e) => {
+      console.warn(`[bridge] ${bridge.name} udp ${udpPort}: ${e.message} — re-binding in 5s`);
+      try { sock.close(); } catch { /* closed */ }
+      setTimeout(openIngest, 5000).unref();
+    });
+    sock.on("message", (msg) => {
+      srow.rxFrames++;
+      srow.rxBytes = (srow.rxBytes || 0) + msg.length;
+      carry = carry.length ? Buffer.concat([carry, upsample8to16(msg)]) : upsample8to16(msg);
+      while (carry.length >= FRAME_BYTES) {
+        paced.push(carry.subarray(0, FRAME_BYTES));
+        carry = carry.subarray(FRAME_BYTES);
+      }
+    });
+    sock.bind(udpPort, "127.0.0.1", () =>
+      console.log(`[bridge] ${bridge.name}: listening on udp ${udpPort}`),
+    );
+  };
+  openIngest();
+
+  // ---- voice socket: reconnect loop swaps `ws` in and out ----
   function once() {
     return new Promise((done) => {
-      const token = tokenRef.value;
-      const ws = new WS(`${wsBase()}/v1/voice/stream?token=${encodeURIComponent(token)}`);
-      ws.binaryType = "arraybuffer";
-      const srow = statusRow(bridge);
-      let sock = null;
-      let paced = null;
-      let carry = Buffer.alloc(0);
+      const w = new WS(`${wsBase()}/v1/voice/stream?token=${encodeURIComponent(tokenRef.value)}`);
+      w.binaryType = "arraybuffer";
+      const stopKeepalive = startKeepalive(w);
       let finished = false;
 
       const finish = () => {
         if (finished) return;
         finished = true;
-        monitor.release(bridge.name); // don't strand the Scan-All feed if we held it
-        try {
-          paced && paced.stop();
-        } catch {
-          /* gone */
+        stopKeepalive();
+        if (ws === w) {
+          ws = null;
+          monitor.release(bridge.name); // don't strand the Scan-All feed
         }
         try {
-          sock && sock.close();
-        } catch {
-          /* closed */
-        }
-        try {
-          ws.close();
+          w.close();
         } catch {
           /* closing */
         }
         done();
       };
 
-      const startIngest = () => {
-        if (stopped) return finish();
-        paced = makePacedSender((frame) => {
-          if (ws.readyState !== 1) return;
-          try {
-            ws.send(frame);
-            markTxFrame(bridge, Date.now());
-          } catch {
-            /* drop */
-          }
-          // Also feed the Scan-All channels if we currently hold the feed.
-          if (monitor.claim(bridge.name)) monitor.send(frame);
-        });
-        sock = createSocket("udp4");
-        sock.on("error", (e) => {
-          console.warn(`[bridge] ${bridge.name} udp ${udpPort}: ${e.message}`);
-          finish();
-        });
-        // NO VOX gate: the decoder only ever sends voice (field data showed the
-        // gate eating entire calls — 60 packets in, 0 frames out). Everything
-        // that arrives goes on air; the relay's own TTL un-keys after the call.
-        sock.on("message", (msg) => {
-          srow.rxFrames++;
-          srow.rxBytes = (srow.rxBytes || 0) + msg.length;
-          carry = carry.length ? Buffer.concat([carry, upsample8to16(msg)]) : upsample8to16(msg);
-          while (carry.length >= FRAME_BYTES) {
-            paced.push(carry.subarray(0, FRAME_BYTES));
-            carry = carry.subarray(FRAME_BYTES);
-          }
-        });
-        sock.bind(udpPort, "127.0.0.1", () =>
-          console.log(`[bridge] ${bridge.name}: listening on udp ${udpPort}`),
-        );
-      };
-
-      ws.onopen = () => {
+      w.onopen = () => {
         try {
-          ws.send(JSON.stringify({
+          w.send(JSON.stringify({
             type: "join",
             channel: bridge.target_channel,
             unit_id: (bridge.name || "SDR").slice(0, 12),
@@ -477,7 +589,7 @@ function runBridge(bridge, udpPort) {
           finish();
         }
       };
-      ws.onmessage = (ev) => {
+      w.onmessage = (ev) => {
         if (typeof ev.data !== "string") return; // inbound channel audio — ignore
         let m;
         try {
@@ -488,7 +600,7 @@ function runBridge(bridge, udpPort) {
         if (m.type === "joined") {
           console.log(`[bridge] ${bridge.name} -> ${bridge.target_channel}: on air`);
           mark(bridge, { state: "on air" });
-          startIngest();
+          ws = w;
         } else if (m.type === "error") {
           console.warn(`[bridge] ${bridge.name}: relay rejected join (${m.code ?? "error"})`);
           mark(bridge, { state: `rejected (${m.code ?? "error"})` });
@@ -496,11 +608,11 @@ function runBridge(bridge, udpPort) {
           finish();
         }
       };
-      ws.onerror = () => {
+      w.onerror = () => {
         console.warn(`[bridge] ${bridge.name}: ws error`);
         finish();
       };
-      ws.onclose = (e) => {
+      w.onclose = (e) => {
         const code = e && e.code != null ? e.code : "";
         const reason = e && e.reason ? ` ${e.reason}` : "";
         console.warn(`[bridge] ${bridge.name}: ws closed ${code}${reason}`);
