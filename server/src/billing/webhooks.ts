@@ -51,25 +51,58 @@ export function agencyIdFromMeta(meta: Stripe.Metadata | null | undefined): numb
   return Number.isFinite(n) ? n : null;
 }
 
-async function applySubscription(sub: Stripe.Subscription): Promise<void> {
+/**
+ * Pure projection of a Stripe subscription onto the `updateAgencyBilling`
+ * patch the webhook handler writes. Exported so the bug fix in
+ * `applySubscription` (always derive `disabled` from
+ * `isStripeSubscriptionActive`, never from the mapped status) can be
+ * pinned by unit tests without standing up Stripe + the DB.
+ *
+ * Returns `null` when the subscription metadata does not carry a usable
+ * `agency_id`; callers MUST short-circuit on `null` rather than
+ * defaulting to id 0.
+ */
+export function subscriptionBillingPatch(sub: Stripe.Subscription): {
+  agencyId: number;
+  patch: {
+    stripeSubscriptionId: string;
+    subscriptionStatus: SubscriptionStatus;
+    planTier: PlanTier;
+    logsUnlimited: boolean;
+    transmissionRetentionDays: number | null;
+    disabled: boolean;
+    trialEndsAt: string | null;
+  };
+} | null {
   const agencyId = agencyIdFromMeta(sub.metadata);
   if (!agencyId) {
-    return;
+    return null;
   }
-  const planTier = (sub.metadata.plan_tier === "pro" ? "pro" : "basic") as PlanTier;
+  const planTier: PlanTier = sub.metadata.plan_tier === "pro" ? "pro" : "basic";
   const logsUnlimited = sub.metadata.logs_unlimited === "true";
   const status = mapStripeStatus(sub.status);
   const active = isStripeSubscriptionActive(sub.status);
 
-  await updateAgencyBilling(agencyId, {
-    stripeSubscriptionId: sub.id,
-    subscriptionStatus: status,
-    planTier,
-    logsUnlimited,
-    transmissionRetentionDays: logsUnlimited ? null : 3,
-    disabled: !active,
-    trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
-  });
+  return {
+    agencyId,
+    patch: {
+      stripeSubscriptionId: sub.id,
+      subscriptionStatus: status,
+      planTier,
+      logsUnlimited,
+      transmissionRetentionDays: logsUnlimited ? null : 3,
+      disabled: !active,
+      trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
+    },
+  };
+}
+
+async function applySubscription(sub: Stripe.Subscription): Promise<void> {
+  const update = subscriptionBillingPatch(sub);
+  if (!update) {
+    return;
+  }
+  await updateAgencyBilling(update.agencyId, update.patch);
 }
 
 export async function handleStripeWebhook(req: Request, res: Response): Promise<void> {
