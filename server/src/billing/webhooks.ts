@@ -5,7 +5,7 @@ import { stripeWebhookSecret } from "./config.js";
 import { updateAgencyBilling, getAgencyById } from "../store.js";
 import type { PlanTier, SubscriptionStatus } from "./types.js";
 
-function mapStripeStatus(status: Stripe.Subscription.Status): SubscriptionStatus {
+export function mapStripeStatus(status: Stripe.Subscription.Status): SubscriptionStatus {
   switch (status) {
     case "active":
       return "active";
@@ -22,7 +22,7 @@ function mapStripeStatus(status: Stripe.Subscription.Status): SubscriptionStatus
   }
 }
 
-function agencyIdFromMeta(meta: Stripe.Metadata | null | undefined): number | null {
+export function agencyIdFromMeta(meta: Stripe.Metadata | null | undefined): number | null {
   const raw = meta?.agency_id;
   if (!raw) {
     return null;
