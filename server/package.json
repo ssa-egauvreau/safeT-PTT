@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json && node scripts/copy-server-assets.mjs && npm --prefix web-console install --no-audit --no-fund --include=dev && npm --prefix web-console run build",
+    "capture-marketing-screenshots": "node scripts/capture-marketing-screenshots.mjs",
     "build:server": "npm run build",
     "start": "node dist/index.js",
     "lint": "eslint src tests",
@@ -20,6 +21,7 @@
     "jsonwebtoken": "^9.0.2",
     "pdfjs-dist": "^4.0.379",
     "pg": "^8.13.1",
+    "stripe": "^22.2.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

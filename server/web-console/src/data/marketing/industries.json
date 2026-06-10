@@ -1,0 +1,160 @@
+{
+  "pages": [
+    {
+      "slug": "law-enforcement",
+      "title": "Law enforcement",
+      "metaDescription": "Encrypted push-to-talk for police and law enforcement — dispatch console, GPS, emergency alerts, audit logs, and Pro tier plate lookup.",
+      "kicker": "Law enforcement",
+      "headline": "Private PTT built for police operations",
+      "intro": "Give patrol, investigations, and special units a encrypted push-to-talk network on Android phones and rugged Inrico handsets — with dispatch oversight, searchable logs, and optional AI-assisted workflows on Pro.",
+      "heroImage": "/marketing/screenshots/command-console.webp",
+      "heroImageVariant": "browser",
+      "useCases": [
+        {
+          "title": "Patrol & field units",
+          "body": "Hardware PTT on Inrico IRC590 and TM-7 Plus, or BYOD Android with on-screen PTT. Live GPS feeds the dispatch map."
+        },
+        {
+          "title": "Dispatch oversight",
+          "body": "safeT Command monitors every talkgroup, tone-outs pages, and logs every transmission with auto-transcription."
+        },
+        {
+          "title": "Emergency response",
+          "body": "Dedicated emergency key clears the channel and alerts dispatch with priority — acknowledge and resolve from the console."
+        },
+        {
+          "title": "Investigations & accountability",
+          "body": "Searchable transmission history supports after-action review. Add unlimited log retention for longer investigations."
+        }
+      ],
+      "features": [
+        "Encrypted per-agency voice network",
+        "Live unit mapping in safeT Command",
+        "Emergency alert workflow with ack/resolve",
+        "Audit log in safeT Control",
+        "Pro: plate lookup & AI dispatch (where enabled)",
+        "Pro: Ten-8 CAD integration",
+        "Session control — newest sign-in wins on lost devices"
+      ],
+      "complianceNote": "Law enforcement agencies should review our Trust Center and request a security packet to evaluate alignment with CJIS and local policy. We do not claim CJIS certification today.",
+      "cta": "Request a law enforcement demo or start a 7-day trial."
+    },
+    {
+      "slug": "fire-ems",
+      "title": "Fire & EMS",
+      "metaDescription": "Push-to-talk for fire, EMS, and emergency medical services — tone-outs, multi-channel dispatch, GPS, and emergency alerts.",
+      "kicker": "Fire & EMS",
+      "headline": "Coordinate fire and EMS on one private network",
+      "intro": "Run battalion, EMS, and command talkgroups on a single encrypted platform. Dispatch tone-outs pages, monitors multiple channels, and sees every unit on the map — from the station, the rig, or the field.",
+      "heroImage": "/marketing/screenshots/mobile-radio-portal.webp",
+      "heroImageVariant": "phone",
+      "useCases": [
+        {
+          "title": "Multi-channel dispatch",
+          "body": "Mission Control lets dispatch monitor fire, EMS, and command channels simultaneously with priority scan."
+        },
+        {
+          "title": "Tone-outs & paging",
+          "body": "Page a channel with routine, priority, or status tones — familiar radio workflow in the browser."
+        },
+        {
+          "title": "Incident comms",
+          "body": "Spin up dedicated talkgroups in Control before major events. Units switch channels from the handset without re-provisioning."
+        },
+        {
+          "title": "After-action & QA",
+          "body": "Recorded transmissions with auto-transcription support EMS QA, training review, and incident documentation."
+        }
+      ],
+      "features": [
+        "Tone-out paging from safeT Command",
+        "Multi-channel Mission Control dashboard",
+        "Emergency button with dispatch notification",
+        "Live GPS for apparatus and field units",
+        "Searchable transmission log with transcripts",
+        "Inrico rugged handsets with hardware PTT",
+        "Unlimited log retention add-on for long-term archive"
+      ],
+      "complianceNote": "EMS agencies handling PHI should evaluate voice log retention and HIPAA requirements with their compliance officer. Business Associate Agreements available on request.",
+      "cta": "Put your fire and EMS units on the air with a free 7-day trial."
+    },
+    {
+      "slug": "healthcare-security",
+      "title": "Healthcare security",
+      "metaDescription": "Push-to-talk for hospital security and healthcare campus safety — encrypted voice, emergency alerts, GPS, and audit-friendly logs.",
+      "kicker": "Healthcare security",
+      "headline": "Hospital and campus security communications",
+      "intro": "Hospital security, behavioral health units, and medical campus officers need instant voice, emergency escalation, and documentation — without consumer walkie-talkie apps on personal phones.",
+      "heroImage": "/marketing/screenshots/mobile-radio-portal.webp",
+      "heroImageVariant": "phone",
+      "useCases": [
+        {
+          "title": "Officer safety",
+          "body": "Hardware emergency button on Inrico handsets or in-app emergency alert — dispatch sees priority notification and unit location."
+        },
+        {
+          "title": "Multi-building campuses",
+          "body": "LTE and Wi-Fi coverage across buildings beats conventional radio dead zones in hospitals and parking structures."
+        },
+        {
+          "title": "Shift coordination",
+          "body": "Separate talkgroups for patrol, ER, parking, and supervisors. Dispatchers included free — no per-dispatcher seat fees."
+        },
+        {
+          "title": "Incident documentation",
+          "body": "Searchable call history supports security incident reports and post-event review. Retention configurable per agency policy."
+        }
+      ],
+      "features": [
+        "Private encrypted agency network — not a public channel app",
+        "Emergency workflow with dispatch ack/resolve",
+        "Live GPS mapping for officer locations",
+        "Per-agency user and channel provisioning",
+        "Audit log for administrative actions",
+        "Unlimited transmission log retention add-on",
+        "Rugged Inrico handsets for hands-busy environments"
+      ],
+      "complianceNote": "Healthcare environments may involve PHI in voice communications. Review retention settings and request a security packet and BAA before deploying in clinical areas.",
+      "cta": "Contact sales for healthcare security deployments or start a trial for evaluation."
+    },
+    {
+      "slug": "search-rescue-cert",
+      "title": "Search & rescue / CERT",
+      "metaDescription": "Push-to-talk for volunteer SAR, CERT, and disaster response teams — rugged handsets, emergency alerts, and fast deployment on LTE.",
+      "kicker": "SAR & CERT",
+      "headline": "Volunteer and disaster response communications",
+      "intro": "Search and rescue teams, CERT units, and disaster volunteers need instant voice that works across jurisdictions on everyday Android phones or rugged Inrico handsets — without consumer walkie-talkie apps on public channels.",
+      "heroImage": "/marketing/screenshots/mobile-radio-portal.webp",
+      "heroImageVariant": "phone",
+      "useCases": [
+        {
+          "title": "Multi-team coordination",
+          "body": "Separate talkgroups for search teams, staging, logistics, and command. Dispatch monitors all channels from safeT Command."
+        },
+        {
+          "title": "Volunteer rapid deploy",
+          "body": "Agency admin creates accounts in Control, shares the APK link, and volunteers sideload safeT Mobile — on the air in under an hour with the Android setup guide."
+        },
+        {
+          "title": "Weak-cell and rural ops",
+          "body": "LTE handsets with Codec2 low-bandwidth mode and hardware PTT on IRC590 radios for field teams spread across terrain."
+        },
+        {
+          "title": "Emergency escalation",
+          "body": "Hardware or in-app emergency button alerts command with priority and GPS — critical when a searcher is overdue or injured."
+        }
+      ],
+      "features": [
+        "Private encrypted agency network",
+        "Inrico IRC590 ultracompact rugged LTE radio",
+        "Hardware PTT and emergency key",
+        "Live GPS on the dispatch map",
+        "Illustrated Android setup guide at /setup/android",
+        "Emergency workflow with ack/resolve",
+        "Optional monitor of legacy radio via stream bridges — see /interoperability"
+      ],
+      "complianceNote": "Volunteer organizations should coordinate with their sponsoring agency on data retention and logging policies. Request a security packet at /trust for grant or mutual-aid agreements.",
+      "cta": "Start a 7-day trial for your SAR or CERT team, or contact sales for multi-team deployments."
+    }
+  ]
+}

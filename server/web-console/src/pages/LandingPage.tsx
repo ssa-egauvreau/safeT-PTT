@@ -1,7 +1,5 @@
 import { Link } from "react-router-dom";
-import { useAuth } from "../auth";
 import {
-  SafetMark,
   IconBolt,
   IconRadio,
   IconShield,
@@ -11,19 +9,48 @@ import {
   IconWaveform,
   IconLock,
   IconHeadphones,
-  IconUser,
   IconCheck,
   IconArrowRight,
   type IconProps,
 } from "../icons";
+import { LOGS_ADDON, PLANS, ANNUAL_BILLING } from "../data/marketing/pricing";
+import trustData from "../data/marketing/trustCenter.json";
+import customerStories from "../data/marketing/customerStories.json";
+import { MarketingLayout } from "./marketing/MarketingLayout";
+import { ScreenshotTabs } from "./marketing/ScreenshotTabs";
 
 const SALES_EMAIL = "sales@safetptt.com";
 const DEMO_MAILTO = `mailto:${SALES_EMAIL}?subject=safeT%20PTT%20—%20Demo%20request`;
+
+const HERO_TABS = [
+  {
+    id: "mobile",
+    label: "Mobile",
+    variant: "phone" as const,
+    src: "/marketing/screenshots/mobile-radio-portal.webp",
+    alt: "Screenshot of safeT radio screen in mobile browser",
+  },
+  {
+    id: "command",
+    label: "Command",
+    variant: "browser" as const,
+    src: "/marketing/screenshots/command-console.webp",
+    alt: "Screenshot of safeT Command dispatch console",
+  },
+  {
+    id: "control",
+    label: "Control",
+    variant: "browser" as const,
+    src: "/marketing/screenshots/control-users.webp",
+    alt: "Screenshot of safeT Control admin panel",
+  },
+];
 
 interface Surface {
   tag: string;
   name: string;
   blurb: string;
+  href: string;
   Icon: (props: IconProps) => JSX.Element;
 }
 
@@ -31,438 +58,301 @@ const SURFACES: Surface[] = [
   {
     tag: "Android handset",
     name: "safeT Mobile",
+    href: "/mobile",
     blurb:
-      "An APX-style radio app for the field, running on the Android phones your team already carries — or on rugged Inrico IRC590 and TM7 handsets with real hardware PTT, side keys, and a dedicated emergency button.",
+      "APX-style PTT for Android phones and rugged Inrico IRC590 / TM7 handsets with hardware PTT and emergency button.",
     Icon: IconRadio,
   },
   {
     tag: "Dispatch console",
     name: "safeT Command",
+    href: "/command",
     blurb:
-      "The web console where dispatch lives: monitor every channel, see units on a live map, tone-out pages, scan with priority, and review the full transmission log with searchable transcripts.",
+      "Monitor channels, live map, tone-outs, scan with priority, and searchable transmission log with transcripts.",
     Icon: IconBeacon,
   },
   {
-    tag: "Admin & Platform",
+    tag: "Admin",
     name: "safeT Control",
-    blurb:
-      "Provision accounts, build channel plans, assign units, and audit every action. Multi-agency parent organizations get the safeT Platform owner portal to stand up and manage tenants from one place.",
+    href: "/control",
+    blurb: "Users, channels, integrations, billing, audit log, and APK downloads for your agency.",
     Icon: IconShield,
   },
 ];
 
-interface Feature {
-  name: string;
-  blurb: string;
-  Icon: (props: IconProps) => JSX.Element;
-}
-
-const FEATURES: Feature[] = [
+const FEATURES = [
   {
     name: "Instant push-to-talk",
-    blurb: "Sub-second voice across your whole agency. Talkgroups work the way radio teams expect, with per-channel talk-priority enforced server-side.",
+    blurb: "Sub-second voice with per-channel talk-priority enforced server-side.",
     Icon: IconBolt,
   },
   {
     name: "Encrypted voice",
-    blurb: "Every transmission is carried over an authenticated, encrypted relay. Per-account sign-in — and the newest sign-in wins, so a lost phone can't keep listening.",
+    blurb: "Authenticated encrypted relay. Newest sign-in wins so a lost phone cannot keep listening.",
     Icon: IconLock,
   },
   {
     name: "Live unit mapping",
-    blurb: "GPS positions stream into the dispatch map so you always know where each unit is before you send help.",
+    blurb: "GPS positions stream into the dispatch map before you send help.",
     Icon: IconMapPin,
   },
   {
     name: "Emergency alerts",
-    blurb: "A dedicated emergency button pushes a priority alert to dispatch, flashes the channel for every radio, and clears the air for the unit in trouble.",
+    blurb: "Priority alert to dispatch, channel flash, and air cleared for the unit in trouble.",
     Icon: IconAlertTriangle,
   },
   {
     name: "Searchable call history",
-    blurb: "Calls are recorded and auto-transcribed. Replay any past message from the handset, and search the full transmission log from the console.",
+    blurb: "Recorded and auto-transcribed. Replay from the handset or search from the console.",
     Icon: IconWaveform,
   },
   {
     name: "Dispatch tone-outs",
-    blurb: "Page a channel with routine, priority, or status tones — the same workflow your dispatchers run on a real console.",
+    blurb: "Page a channel with routine, priority, or status tones.",
     Icon: IconHeadphones,
-  },
-  {
-    name: "Scan with priority",
-    blurb: "Monitor a watch-list of channels at once. Active traffic latches in, priority channels break through, and dispatch can see who's RX-ing in real time.",
-    Icon: IconBeacon,
-  },
-  {
-    name: "Hardware radio handsets",
-    blurb: "Run the same app on Inrico IRC590 (ultracompact) and TM7 / TM7 Plus radios — hardware PTT, side keys, volume knob, and Bluetooth headset all wired in.",
-    Icon: IconRadio,
-  },
-  {
-    name: "Live config & soft radio",
-    blurb: "Update channels, accounts, or talk-priority from the admin panel and the change pushes to every radio live — no reboot. Radio-role members get a browser-based soft radio with no app to install.",
-    Icon: IconShield,
   },
 ];
 
-interface Step {
-  n: string;
-  title: string;
-  blurb: string;
-}
-
-const STEPS: Step[] = [
+const STEPS = [
   {
     n: "01",
-    title: "Request access",
-    blurb: "Tell us about your agency and team size. We set up your private safeT PTT tenant — usually within a business day.",
+    title: "Start your free trial",
+    blurb: "Create your agency in minutes — 7 days free, no credit card required.",
   },
   {
     n: "02",
     title: "Build your channel plan",
-    blurb: "An admin uses safeT Control to create channels, add accounts, and assign units to the people who need them.",
+    blurb: "Use safeT Control to create channels, add accounts, and assign units.",
   },
   {
     n: "03",
     title: "Deploy to the field",
-    blurb: "Sideload the signed safeT Mobile APK onto Android phones or Inrico IRC590 / TM7 handsets. Office staff can sign in on a browser as a soft radio — no app install required.",
+    blurb: "Sideload safeT Mobile on Android or Inrico handsets. Soft radio in any browser.",
   },
   {
     n: "04",
     title: "Go live",
-    blurb: "Dispatch opens safeT Command, units key up, and you're operating. Support stays with you as you scale.",
-  },
-];
-
-interface Plan {
-  name: string;
-  price: string;
-  unit: string;
-  blurb: string;
-  features: string[];
-  cta: string;
-  href: string;
-  highlight?: boolean;
-}
-
-const PLANS: Plan[] = [
-  {
-    name: "Patrol",
-    price: "$18",
-    unit: "per radio / month",
-    blurb: "For small teams and single-site operations getting started with managed push-to-talk.",
-    features: [
-      "Up to 25 radios",
-      "Unlimited talkgroups",
-      "Runs on Android phones or IRC590 / TM7 handsets",
-      "Scan with priority channels",
-      "Emergency button & alerts",
-      "30-day call recording",
-      "Email support",
-    ],
-    cta: "Request access",
-    href: DEMO_MAILTO,
-  },
-  {
-    name: "Department",
-    price: "$29",
-    unit: "per radio / month",
-    blurb: "For agencies running active dispatch that need mapping, history, and faster support.",
-    features: [
-      "Up to 250 radios",
-      "Everything in Patrol",
-      "Live GPS unit mapping",
-      "Auto-transcribed call replay",
-      "1-year searchable call history",
-      "Browser-based soft radio for office staff",
-      "Priority support & onboarding",
-    ],
-    cta: "Request access",
-    href: DEMO_MAILTO,
-    highlight: true,
-  },
-  {
-    name: "Agency",
-    price: "Custom",
-    unit: "volume pricing",
-    blurb: "For multi-site agencies and parent organizations with compliance and tenancy needs.",
-    features: [
-      "Unlimited radios",
-      "Everything in Department",
-      "safeT Platform multi-agency portal",
-      "SSO & dedicated infrastructure",
-      "Audit log exports & retention controls",
-      "Uptime SLA",
-      "Named account manager",
-    ],
-    cta: "Talk to sales",
-    href: DEMO_MAILTO,
+    blurb: "Dispatch opens Command, units key up, and you are operating.",
   },
 ];
 
 export function LandingPage() {
-  const { user } = useAuth();
-
   return (
-    <div className="lp">
-      <header className="lp-nav">
-        <div className="lp-nav-inner">
-          <Link to="/" className="lp-brand" aria-label="safeT PTT home">
-            <SafetMark size={30} />
-            <span className="lp-brand-word">
-              safe<b>T</b>
+    <MarketingLayout>
+      <section className="lp-hero">
+        <div className="lp-hero-inner">
+          <div className="lp-hero-copy">
+            <span className="lp-eyebrow">
+              <IconBolt size={13} /> Push-to-talk for public safety
             </span>
-            <span className="lp-brand-tag">PTT</span>
-          </Link>
-          <nav className="lp-nav-links">
-            <a href="#platform">Platform</a>
-            <a href="#features">Features</a>
-            <a href="#how">How it works</a>
-            <a href="#pricing">Pricing</a>
-            <Link to="/updates">Updates</Link>
-          </nav>
-          <div className="lp-nav-cta">
-            {user ? (
-              <Link to="/console" className="lp-btn lp-btn-primary">
-                Open console <IconArrowRight size={15} />
-              </Link>
-            ) : (
-              <>
-                <Link to="/login" className="lp-btn lp-btn-ghost">
-                  Sign in
-                </Link>
-                <a href="#pricing" className="lp-btn lp-btn-primary">
-                  Get started
-                </a>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
-
-      <main>
-        <section className="lp-hero">
-          <div className="lp-hero-inner">
-            <div className="lp-hero-copy">
-              <span className="lp-eyebrow">
-                <IconBolt size={13} /> Push-to-talk for public safety
-              </span>
-              <h1>
-                Your whole team on one channel — <span className="lp-accent">instantly.</span>
-              </h1>
-              <p className="lp-lede">
-                safeT PTT turns Android phones — or rugged Inrico IRC590 and TM7 handsets — into a
-                private, encrypted radio network. Dispatch monitors every channel, sees units on a
-                live map, and answers emergencies from one console. Office staff jump in from any
-                browser as a soft radio.
-              </p>
-              <div className="lp-hero-actions">
-                <a href="#pricing" className="lp-btn lp-btn-primary lp-btn-lg">
-                  Get started <IconArrowRight size={16} />
-                </a>
-                <a href={DEMO_MAILTO} className="lp-btn lp-btn-ghost lp-btn-lg">
-                  Book a demo
-                </a>
-              </div>
-              <div className="lp-hero-trust">
-                <span>Built for</span>
-                <strong>Police</strong>
-                <i aria-hidden="true">·</i>
-                <strong>Fire &amp; EMS</strong>
-                <i aria-hidden="true">·</i>
-                <strong>Private security</strong>
-                <i aria-hidden="true">·</i>
-                <strong>Campus safety</strong>
-              </div>
-            </div>
-            <div className="lp-hero-art" aria-hidden="true">
-              <div className="lp-handset">
-                <div className="lp-handset-strip">
-                  <span className="lp-dot lp-dot-live" /> GREEN 1
-                  <span className="lp-handset-rssi">
-                    <i /> <i /> <i /> <i />
-                  </span>
-                </div>
-                <div className="lp-handset-display">
-                  <div className="lp-handset-channel">GREEN 1</div>
-                  <div className="lp-handset-sub">Patrol — Citywide</div>
-                  <div className="lp-handset-talker">
-                    <IconUser size={14} /> Unit 412 · transmitting
-                  </div>
-                </div>
-                <div className="lp-handset-keys">
-                  <span>SCAN</span>
-                  <span>ZONE</span>
-                  <span>MENU</span>
-                </div>
-                <div className="lp-handset-ptt">
-                  <IconBolt size={20} /> PUSH TO TALK
-                </div>
-                <div className="lp-handset-emerg">
-                  <IconAlertTriangle size={15} /> EMERGENCY
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="lp-section" id="platform">
-          <div className="lp-section-head">
-            <span className="lp-kicker">The platform</span>
-            <h2>Three surfaces, one radio network</h2>
-            <p>
-              safeT PTT is a private enterprise platform — not a consumer app. The handset, the
-              dispatch console, and the admin panel all run on the same secure backbone.
-            </p>
-          </div>
-          <div className="lp-surface-grid">
-            {SURFACES.map((s) => (
-              <article className="lp-surface-card" key={s.name}>
-                <div className="lp-surface-icon">
-                  <s.Icon size={24} />
-                </div>
-                <span className="lp-surface-tag">{s.tag}</span>
-                <h3>{s.name}</h3>
-                <p>{s.blurb}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="lp-section lp-section-alt" id="features">
-          <div className="lp-section-head">
-            <span className="lp-kicker">Capabilities</span>
-            <h2>Everything dispatch needs to run the air</h2>
-            <p>
-              Radio-grade workflows without radio-grade hardware budgets. Every feature is built for
-              the field and for the console at the same time.
-            </p>
-          </div>
-          <div className="lp-feature-grid">
-            {FEATURES.map((f) => (
-              <article className="lp-feature-card" key={f.name}>
-                <div className="lp-feature-icon">
-                  <f.Icon size={20} />
-                </div>
-                <h3>{f.name}</h3>
-                <p>{f.blurb}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="lp-section" id="how">
-          <div className="lp-section-head">
-            <span className="lp-kicker">Getting started</span>
-            <h2>From request to live in four steps</h2>
-            <p>
-              There's no hardware to procure and no towers to lease. Most agencies are operating on
-              safeT PTT within a week.
-            </p>
-          </div>
-          <ol className="lp-steps">
-            {STEPS.map((step) => (
-              <li className="lp-step" key={step.n}>
-                <span className="lp-step-num">{step.n}</span>
-                <h3>{step.title}</h3>
-                <p>{step.blurb}</p>
-              </li>
-            ))}
-          </ol>
-        </section>
-
-        <section className="lp-section lp-section-alt" id="pricing">
-          <div className="lp-section-head">
-            <span className="lp-kicker">Pricing</span>
-            <h2>Simple per-radio pricing</h2>
-            <p>
-              Pay for the radios you deploy — billed annually. No setup fees, no hardware contracts.
-              Every plan includes the Mobile app, the Command console, and the Control admin panel.
-            </p>
-          </div>
-          <div className="lp-plan-grid">
-            {PLANS.map((plan) => (
-              <article
-                className={plan.highlight ? "lp-plan-card lp-plan-featured" : "lp-plan-card"}
-                key={plan.name}
-              >
-                {plan.highlight && <span className="lp-plan-badge">Most popular</span>}
-                <h3>{plan.name}</h3>
-                <div className="lp-plan-price">
-                  <span className="lp-plan-amount">{plan.price}</span>
-                  <span className="lp-plan-unit">{plan.unit}</span>
-                </div>
-                <p className="lp-plan-blurb">{plan.blurb}</p>
-                <ul className="lp-plan-features">
-                  {plan.features.map((feat) => (
-                    <li key={feat}>
-                      <IconCheck size={15} /> {feat}
-                    </li>
-                  ))}
-                </ul>
-                <a
-                  href={plan.href}
-                  className={
-                    plan.highlight
-                      ? "lp-btn lp-btn-primary lp-btn-block"
-                      : "lp-btn lp-btn-ghost lp-btn-block"
-                  }
-                >
-                  {plan.cta}
-                </a>
-              </article>
-            ))}
-          </div>
-          <p className="lp-pricing-note">
-            Already running safeT PTT?{" "}
-            <Link to="/login">Sign in to your console</Link>.
-          </p>
-        </section>
-
-        <section className="lp-cta">
-          <div className="lp-cta-inner">
-            <h2>Ready to put your team on the air?</h2>
-            <p>
-              Tell us about your agency and we'll stand up a private safeT PTT tenant for you to
-              trial — typically within one business day.
+            <h1>
+              Your whole team on one channel — <span className="lp-accent">instantly.</span>
+            </h1>
+            <p className="lp-lede">
+              safeT PTT turns Android phones and rugged handsets into a private encrypted radio
+              network. Dispatch monitors every channel from one console. Start with a 7-day free
+              trial.
             </p>
             <div className="lp-hero-actions">
-              <a href={DEMO_MAILTO} className="lp-btn lp-btn-primary lp-btn-lg">
-                Request access <IconArrowRight size={16} />
-              </a>
-              <a href={`mailto:${SALES_EMAIL}`} className="lp-btn lp-btn-ghost lp-btn-lg">
-                Contact sales
+              <Link to="/signup" className="lp-btn lp-btn-primary lp-btn-lg">
+                Start free trial <IconArrowRight size={16} />
+              </Link>
+              <a href={DEMO_MAILTO} className="lp-btn lp-btn-ghost lp-btn-lg">
+                Book a demo
               </a>
             </div>
+            <div className="lp-hero-trust">
+              <span>Built for</span>
+              <strong>Police</strong>
+              <i aria-hidden="true">·</i>
+              <strong>Fire &amp; EMS</strong>
+              <i aria-hidden="true">·</i>
+              <strong>Private security</strong>
+              <i aria-hidden="true">·</i>
+              <strong>Campus safety</strong>
+            </div>
           </div>
-        </section>
-      </main>
+          <div className="lp-hero-art">
+            <ScreenshotTabs tabs={HERO_TABS} />
+            <p className="muted marketing-shot-note">
+              Product screenshots from the live console. Mobile tab shows the browser soft radio;
+              the native Android app uses the same talkgroups and PTT flow.
+            </p>
+          </div>
+        </div>
+      </section>
 
-      <footer className="lp-footer">
-        <div className="lp-footer-inner">
-          <div className="lp-footer-brand">
-            <SafetMark size={26} />
-            <span className="lp-brand-word">
-              safe<b>T</b>
-            </span>
+      <section className="lp-section lp-section-alt lp-stats-strip">
+        <div className="trust-stats-grid trust-stats-home">
+          {trustData.reliabilityStats.map((stat) => (
+            <article className="trust-stat-card" key={stat.label}>
+              <div className="trust-stat-value">{stat.value}</div>
+              <p>{stat.label}</p>
+            </article>
+          ))}
+        </div>
+        <p className="lp-stats-footnote">
+          <Link to="/trust">Trust Center</Link> — security packet available for procurement review.
+        </p>
+      </section>
+
+      <section className="lp-section" id="stories">
+        <div className="lp-section-head">
+          <span className="lp-kicker">Agencies on safeT</span>
+          <h2>What teams are saying</h2>
+          <p className="muted">{customerStories.disclaimer}</p>
+        </div>
+        <div className="customer-stories-grid">
+          {customerStories.stories.map((story) => (
+            <blockquote className="customer-story-card" key={story.id}>
+              <p className="customer-story-quote">&ldquo;{story.quote}&rdquo;</p>
+              <footer>
+                <strong>{story.role}</strong>
+                <span>
+                  {story.organization} · {story.vertical}
+                </span>
+                <span className="customer-story-highlight">{story.highlight}</span>
+              </footer>
+            </blockquote>
+          ))}
+        </div>
+      </section>
+
+      <section className="lp-section lp-section-alt" id="platform">
+        <div className="lp-section-head">
+          <span className="lp-kicker">The platform</span>
+          <h2>Three surfaces, one radio network</h2>
+        </div>
+        <div className="lp-surface-grid">
+          {SURFACES.map((s) => (
+            <Link to={s.href} className="lp-surface-card lp-surface-card-link" key={s.name}>
+              <div className="lp-surface-icon">
+                <s.Icon size={24} />
+              </div>
+              <span className="lp-surface-tag">{s.tag}</span>
+              <h3>{s.name}</h3>
+              <p>{s.blurb}</p>
+            </Link>
+          ))}
+        </div>
+        <p className="lp-section-cta">
+          <Link to="/industries/law-enforcement">Law enforcement</Link>
+          {" · "}
+          <Link to="/industries/fire-ems">Fire &amp; EMS</Link>
+          {" · "}
+          <Link to="/industries/healthcare-security">Healthcare security</Link>
+          {" · "}
+          <Link to="/industries/search-rescue-cert">SAR / CERT</Link>
+          {" · "}
+          <Link to="/interoperability">LMR interoperability</Link>
+        </p>
+      </section>
+
+      <section className="lp-section lp-section-alt" id="features">
+        <div className="lp-section-head">
+          <span className="lp-kicker">Capabilities</span>
+          <h2>Everything dispatch needs</h2>
+        </div>
+        <div className="lp-feature-grid">
+          {FEATURES.map((f) => (
+            <article className="lp-feature-card" key={f.name}>
+              <div className="lp-feature-icon">
+                <f.Icon size={20} />
+              </div>
+              <h3>{f.name}</h3>
+              <p>{f.blurb}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="lp-section" id="how">
+        <div className="lp-section-head">
+          <span className="lp-kicker">Getting started</span>
+          <h2>Live in four steps</h2>
+        </div>
+        <ol className="lp-steps">
+          {STEPS.map((step) => (
+            <li className="lp-step" key={step.n}>
+              <span className="lp-step-num">{step.n}</span>
+              <h3>{step.title}</h3>
+              <p>{step.blurb}</p>
+            </li>
+          ))}
+        </ol>
+        <p className="lp-section-cta">
+          <Link to="/setup">Read the full setup guide →</Link>
+        </p>
+        <p className="lp-section-cta">
+          <Link to="/devices">See supported devices &amp; platforms →</Link>
+        </p>
+      </section>
+
+      <section className="lp-section lp-section-alt" id="pricing">
+        <div className="lp-section-head">
+          <span className="lp-kicker">Pricing</span>
+          <h2>Simple per-radio pricing</h2>
+          <p>Monthly billing. Dispatchers and admins included free. 7-day trial, no card required.</p>
+          <p className="pricing-annual-banner pricing-annual-banner-compact">
+            Save {ANNUAL_BILLING.discountPercent}% with annual billing —{" "}
+            <Link to="/pricing">see pricing</Link>
+          </p>
+        </div>
+        <div className="lp-plan-grid">
+          {PLANS.map((plan) => (
+            <article
+              key={plan.id}
+              className={plan.highlight ? "lp-plan-card lp-plan-featured" : "lp-plan-card"}
+            >
+              {plan.highlight && <span className="lp-plan-badge">AI dispatch</span>}
+              <h3>{plan.name}</h3>
+              <div className="lp-plan-price">
+                <span className="lp-plan-amount">{plan.price}</span>
+                <span className="lp-plan-unit">{plan.unit}</span>
+              </div>
+              <p className="lp-plan-blurb">{plan.blurb}</p>
+              <ul className="lp-plan-features">
+                {plan.features.slice(0, 6).map((feat) => (
+                  <li key={feat}>
+                    <IconCheck size={15} /> {feat}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                to={`/signup?plan=${plan.id}`}
+                className={
+                  plan.highlight
+                    ? "lp-btn lp-btn-primary lp-btn-block"
+                    : "lp-btn lp-btn-ghost lp-btn-block"
+                }
+              >
+                Start free trial
+              </Link>
+            </article>
+          ))}
+        </div>
+        <p className="lp-pricing-addon">
+          {LOGS_ADDON.name}: {LOGS_ADDON.price} {LOGS_ADDON.unit} — {LOGS_ADDON.blurb}
+        </p>
+        <p className="lp-pricing-note">
+          <Link to="/pricing">See full pricing</Link> · <Link to="/login">Sign in</Link>
+        </p>
+      </section>
+
+      <section className="lp-cta">
+        <div className="lp-cta-inner">
+          <h2>Ready to put your team on the air?</h2>
+          <p>Start your 7-day free trial today — no credit card required.</p>
+          <div className="lp-hero-actions">
+            <Link to="/signup" className="lp-btn lp-btn-primary lp-btn-lg">
+              Start free trial <IconArrowRight size={16} />
+            </Link>
+            <a href={`mailto:${SALES_EMAIL}`} className="lp-btn lp-btn-ghost lp-btn-lg">
+              Contact sales
+            </a>
           </div>
-          <p className="lp-footer-tag">Talk · Transmit · Together</p>
-          <nav className="lp-footer-links">
-            <a href="#platform">Platform</a>
-            <a href="#features">Features</a>
-            <a href="#pricing">Pricing</a>
-            <Link to="/updates">Updates</Link>
-            <Link to="/legal/terms">Terms</Link>
-            <Link to="/legal/privacy">Privacy</Link>
-            <Link to="/legal/eula">EULA</Link>
-            <Link to="/login">Sign in</Link>
-            <a href={`mailto:${SALES_EMAIL}`}>Contact</a>
-          </nav>
         </div>
-        <div className="lp-footer-fine">
-          © {new Date().getFullYear()} safeT PTT — Private enterprise push-to-talk for public safety.
-        </div>
-      </footer>
-    </div>
+      </section>
+    </MarketingLayout>
   );
 }

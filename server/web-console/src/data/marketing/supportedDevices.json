@@ -1,0 +1,108 @@
+{
+  "hardware": [
+    {
+      "id": "android-phone",
+      "name": "Android smartphones",
+      "vendor": "BYOD",
+      "status": "available",
+      "image": "/marketing/screenshots/mobile-radio-portal.webp",
+      "imageVariant": "phone",
+      "summary": "Run safeT Mobile on the Android phones your team already carries — no dedicated radio purchase required.",
+      "requirements": ["Android 5.0 (API 21) or newer", "Cellular or Wi-Fi data", "Microphone permission"],
+      "features": [
+        "Full push-to-talk, scan, and emergency",
+        "GPS location reporting to dispatch",
+        "On-screen PTT button (no hardware key required)"
+      ]
+    },
+    {
+      "id": "inrico-irc590",
+      "name": "Inrico IRC590",
+      "vendor": "Inrico",
+      "status": "available",
+      "image": "/marketing/screenshots/mobile-radio-portal.webp",
+      "imageVariant": "phone",
+      "summary": "Ultracompact rugged LTE radio with a dedicated hardware PTT button, side keys, and emergency key — the same safeT Mobile app, radio-native ergonomics.",
+      "requirements": ["Android-based Inrico IRC590", "Agency radio key + account login"],
+      "features": [
+        "Hardware push-to-talk",
+        "Programmable side keys",
+        "Dedicated emergency button",
+        "Bluetooth headset support"
+      ]
+    },
+    {
+      "id": "inrico-tm7-plus",
+      "name": "Inrico TM7 / TM7 Plus",
+      "vendor": "Inrico",
+      "status": "available",
+      "image": "/marketing/screenshots/mobile-radio-portal.webp",
+      "imageVariant": "phone",
+      "summary": "Compact touch radio with a larger display, hardware PTT, volume knob, and the full safeT Mobile experience for field supervisors and patrol.",
+      "requirements": ["Inrico TM7 or TM7 Plus handset", "Agency radio key + account login"],
+      "features": [
+        "Hardware PTT and volume knob",
+        "Touch display for channel and zone selection",
+        "Side keys and emergency button",
+        "Ideal for in-vehicle and foot patrol"
+      ]
+    }
+  ],
+  "platforms": [
+    {
+      "id": "android",
+      "name": "Android",
+      "status": "available",
+      "roles": ["Field radio / handset"],
+      "summary": "Primary client. Install the signed safeT Mobile APK from your agency admin (Control → Downloads).",
+      "notes": "Production-ready for phones and Inrico hardware."
+    },
+    {
+      "id": "ios",
+      "name": "iOS (iPhone & iPad)",
+      "status": "beta",
+      "roles": ["Field radio / handset"],
+      "summary": "safeT Mobile for iOS is in active development. Agencies with Apple fleets can request early access.",
+      "notes": "Requires Xcode build or TestFlight distribution from your platform operator today — App Store release planned."
+    },
+    {
+      "id": "web-browser",
+      "name": "Web browser",
+      "status": "available",
+      "roles": ["Dispatch console", "Admin", "Soft radio"],
+      "summary": "Chrome, Edge, Firefox, or Safari — no install required. Dispatchers use safeT Command; admins use Control; radio-role users get a browser soft radio.",
+      "notes": "Recommended: current Chrome or Edge on desktop; modern mobile Safari for lightweight field use."
+    },
+    {
+      "id": "windows",
+      "name": "Windows desktop",
+      "status": "available",
+      "roles": ["Dispatch console"],
+      "summary": "safeT Command desktop shell (Electron) wraps the dispatch console as a native Windows app with microphone access for console PTT.",
+      "notes": "Installer built from the desktop-console package; loads your hosted console URL."
+    },
+    {
+      "id": "macos",
+      "name": "macOS desktop",
+      "status": "available",
+      "roles": ["Dispatch console"],
+      "summary": "Same safeT Command desktop shell for Mac dispatch workstations — .dmg installer with microphone permission prompts handled natively.",
+      "notes": "Built from desktop-console; ideal for comm centers standardizing on Mac minis."
+    },
+    {
+      "id": "linux",
+      "name": "Linux desktop",
+      "status": "available",
+      "roles": ["Dispatch console"],
+      "summary": "AppImage build of the safeT Command desktop shell for Linux dispatch stations.",
+      "notes": "Use when your comm center runs Ubuntu or similar on dispatch PCs."
+    }
+  ],
+  "browserMatrix": [
+    { "browser": "Google Chrome", "command": true, "control": true, "softRadio": true },
+    { "browser": "Microsoft Edge", "command": true, "control": true, "softRadio": true },
+    { "browser": "Mozilla Firefox", "command": true, "control": true, "softRadio": true },
+    { "browser": "Safari (macOS)", "command": true, "control": true, "softRadio": true },
+    { "browser": "Safari (iOS)", "command": true, "control": false, "softRadio": true }
+  ]
+}

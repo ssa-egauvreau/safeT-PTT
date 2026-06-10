@@ -191,6 +191,8 @@ export function OwnerPage() {
                   <th>Agency</th>
                   <th>Slug</th>
                   <th>Radio key</th>
+                  <th>Plan</th>
+                  <th>Billing</th>
                   <th>Users</th>
                   <th>Channels</th>
                   <th>Status</th>
@@ -226,6 +228,15 @@ export function OwnerPage() {
                             <button className="btn sm" onClick={() => setRevealed(agency.id)}>
                               Reveal
                             </button>
+                          </span>
+                        )}
+                      </td>
+                      <td>{agency.plan_tier ?? "—"}</td>
+                      <td>
+                        <span className="pill">{agency.subscription_status ?? "—"}</span>
+                        {agency.trial_ends_at && (
+                          <span className="muted" style={{ display: "block", fontSize: "0.75rem" }}>
+                            trial {new Date(agency.trial_ends_at).toLocaleDateString()}
                           </span>
                         )}
                       </td>

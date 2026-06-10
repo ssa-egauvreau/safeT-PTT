@@ -126,6 +126,7 @@ import {
   updateUserPermissionTemplate,
   setUnitAlias,
   uniqueAgencySlug,
+  agencyAllowsAiDispatch,
   updateAgency,
   updateChannel,
   updateUser,
@@ -177,6 +178,8 @@ import { listAiDispatchLog } from "./aiDispatch/activityLog.js";
 import { enqueueKbIngest } from "./aiDispatch/knowledgeBase/ingest.js";
 import { getEmbeddingModelName } from "./aiDispatch/knowledgeBase/embeddings.js";
 import { handleTen8Webhook, handleTen8WebhookGet } from "./ten8/webhook.js";
+import { createBillingRouter } from "./billing/routes.js";
+import { isAgencyBillingSuspended, syncSeatsForAgency } from "./billing/subscription.js";
 import {
   androidUpdatePublishAuthError,
   handleAndroidUpdateApk,
@@ -542,7 +545,7 @@ export function createApiRouter(): Router {
           return;
         }
         if (cached.agencyDisabled) {
-          res.status(403).json({ error: "agency_disabled" });
+          res.status(403).json({ error: "agency_disabled", billing_suspend: cached.billingSuspend });
           return;
         }
         next();
@@ -560,16 +563,22 @@ export function createApiRouter(): Router {
         return;
       }
       let agencyDisabled = false;
+      let billingSuspend = false;
       if (auth.agencyId != null) {
         const agency = await getAgencyById(auth.agencyId);
         if (!agency || agency.disabled) {
           agencyDisabled = true;
+          billingSuspend = isAgencyBillingSuspended(agency);
           setCachedAuth(auth.id, {
             tokenGeneration: user.token_generation,
             userDisabled: false,
             agencyDisabled: true,
+            billingSuspend,
           });
-          res.status(403).json({ error: "agency_disabled" });
+          res.status(403).json({
+            error: billingSuspend ? "agency_suspended_billing" : "agency_disabled",
+            billing_suspend: billingSuspend,
+          });
           return;
         }
       }
@@ -577,12 +586,18 @@ export function createApiRouter(): Router {
         tokenGeneration: user.token_generation,
         userDisabled: false,
         agencyDisabled,
+        billingSuspend: false,
       });
       next();
     } catch (error) {
       fail(res, error);
     }
   });
+
+  // Billing has both public signup endpoints and admin-only billing actions.
+  // Mounting it here ensures authenticated billing requests still pass through
+  // the token-generation / disabled-account enforcement middleware above.
+  router.use(createBillingRouter());
 
   // --- authentication ----------------------------------------------------
 
@@ -1102,6 +1117,9 @@ export function createApiRouter(): Router {
         return;
       }
       const user = await createUser({ username, displayName, password, role, unitId, agencyId, deviceType });
+      if (role === "radio") {
+        void syncSeatsForAgency(agencyId).catch((e) => console.warn("[billing] seat sync failed", e));
+      }
       await writeAudit({
         agencyId,
         actorUserId: req.authUser!.id,
@@ -1160,6 +1178,9 @@ export function createApiRouter(): Router {
       }
 
       const user = await updateUser(id, patch);
+      if (existing.role === "radio" || patch.role === "radio" || patch.disabled !== undefined) {
+        void syncSeatsForAgency(agencyId).catch((e) => console.warn("[billing] seat sync failed", e));
+      }
       await writeAudit({
         agencyId,
         actorUserId: req.authUser!.id,
@@ -1193,6 +1214,9 @@ export function createApiRouter(): Router {
         return;
       }
       await deleteUser(id);
+      if (existing.role === "radio") {
+        void syncSeatsForAgency(agencyId).catch((e) => console.warn("[billing] seat sync failed", e));
+      }
       await writeAudit({
         agencyId,
         actorUserId: req.authUser!.id,
@@ -2884,6 +2908,10 @@ export function createApiRouter(): Router {
       }
       const enabled = body.enabled === true;
       const agencyId = req.authUser!.agencyId!;
+      if (enabled && !(await agencyAllowsAiDispatch(agencyId))) {
+        res.status(403).json({ error: "ai_dispatch_requires_pro" });
+        return;
+      }
       await setChannelAiDispatch(agencyId, channel, enabled);
       const { notifyChannelAiDispatchListenPcm } = await import("./voiceRelay.js");
       notifyChannelAiDispatchListenPcm(agencyId, channel, enabled);

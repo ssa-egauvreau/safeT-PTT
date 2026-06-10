@@ -1,0 +1,37 @@
+[
+  {
+    "title": "Cannot sign in",
+    "symptoms": "Invalid login or agency not found",
+    "fixes": [
+      "Confirm agency slug exactly matches what is shown in Control (case-insensitive).",
+      "Platform owner accounts sign in without an agency slug from the owner portal.",
+      "If you see 'agency suspended', add billing in Control → Billing."
+    ]
+  },
+  {
+    "title": "Handset shows unauthorized",
+    "symptoms": "Voice or channels fail with unauthorized error",
+    "fixes": [
+      "Verify the radio key on the device matches Control → Agency settings.",
+      "After a key rotation, update every handset with the new key.",
+      "Confirm the agency is not disabled."
+    ]
+  },
+  {
+    "title": "No audio",
+    "symptoms": "Transmit or receive is silent",
+    "fixes": [
+      "Grant microphone permission to safeT Mobile.",
+      "Check the unit is assigned to the channel and has talk permission.",
+      "On the console, confirm the channel is not held by another priority talker."
+    ]
+  },
+  {
+    "title": "AI dispatch will not enable",
+    "symptoms": "Toggle fails or channel stays off",
+    "fixes": [
+      "AI dispatch requires the Pro plan. Upgrade in Billing.",
+      "Only agency admins can enable AI dispatch per channel."
+    ]
+  }
+]

@@ -96,8 +96,12 @@ Information you provide when you contact us for support, including your contact
 details and the contents of your communications.
 
 We do **not** intentionally collect special categories of data beyond what is
-described here, and the Service is not designed to collect payment card data
-from Authorized Users.
+described here. **Payment card data** for subscriptions is collected and
+processed by **Stripe, Inc.** when a Customer administrator completes checkout
+or manages billing through the Stripe customer portal; safeT PTT receives
+billing status and limited payment metadata from Stripe but does not store full
+card numbers on our servers. Authorized Users (field personnel) do not enter
+payment information in the handset app.
 
 ## 4. How we use information
 

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Topbar } from "../../Topbar";
 import { ChannelsPanel } from "./ChannelsPanel";
 import { UsersAndAssignmentsPanel } from "./UsersAndAssignmentsPanel";
@@ -14,8 +15,10 @@ import { AiTestPanel } from "./AiTestPanel";
 import { Ten8ApiTestPanel } from "./Ten8ApiTestPanel";
 import { AudioLabPanel } from "./AudioLabPanel";
 import { VoiceLinkPanel } from "./VoiceLinkPanel";
+import { BillingPanel } from "./BillingPanel";
 
 type TabId =
+  | "billing"
   | "users"
   | "channels"
   | "aliases"
@@ -31,6 +34,7 @@ type TabId =
   | "audit";
 
 const TABS: { id: TabId; label: string }[] = [
+  { id: "billing", label: "Billing" },
   { id: "users", label: "Users" },
   { id: "channels", label: "Channels" },
   { id: "aliases", label: "Unit Aliases" },
@@ -47,7 +51,14 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 export function AdminPage() {
+  const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<TabId>("users");
+
+  useEffect(() => {
+    if (searchParams.get("billing")) {
+      setTab("billing");
+    }
+  }, [searchParams]);
 
   return (
     <div className="app-shell">
@@ -66,6 +77,7 @@ export function AdminPage() {
           ))}
         </aside>
         <main className="panel">
+          {tab === "billing" && <BillingPanel />}
           {tab === "users" && <UsersAndAssignmentsPanel />}
           {tab === "channels" && <ChannelsPanel />}
           {tab === "aliases" && <UnitAliasesPanel />}

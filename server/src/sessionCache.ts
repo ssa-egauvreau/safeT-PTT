@@ -14,6 +14,7 @@ interface CachedAuth {
   tokenGeneration: number;
   userDisabled: boolean;
   agencyDisabled: boolean;
+  billingSuspend?: boolean;
   expiresAt: number;
 }
 

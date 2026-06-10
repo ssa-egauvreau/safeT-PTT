@@ -1,7 +1,7 @@
 import { sweepAiDispatchLog } from "./aiDispatch/activityLog.js";
 import { getPool } from "./db.js";
 import { isPostgresDiskFullError } from "./postgresErrors.js";
-import { sweepTransmissions } from "./store.js";
+import { sweepTransmissions, sweepTransmissionsPerAgency } from "./store.js";
 import { sweepTen8WebhookLog } from "./ten8/store.js";
 import { sweepVoiceLinkTelemetry } from "./voiceLinkTelemetryStore.js";
 
@@ -12,7 +12,13 @@ const TEN8_WEBHOOK_LOG_RETENTION_MS = 30 * DAY_MS;
 /** AI activity log — long enough for weekly triage, short enough to cap growth. */
 const AI_DISPATCH_LOG_RETENTION_MS = 90 * DAY_MS;
 
-function parseTransmissionRetentionDays(): number | null {
+/**
+ * Parses `TRANSMISSION_RETENTION_DAYS` env var into an integer day count, or
+ * `null` to mean "no global sweep". Exported for unit testing — a regression
+ * that returns 0/NaN/negative as a finite number would hand a 0-day cutoff to
+ * `sweepTransmissions` and erase the table on every cron tick.
+ */
+export function parseTransmissionRetentionDays(): number | null {
   const raw = process.env.TRANSMISSION_RETENTION_DAYS?.trim();
   if (!raw) {
     return null;
@@ -46,10 +52,14 @@ export async function runDataRetentionSweeps(): Promise<void> {
       run: () => sweepAiDispatchLog(AI_DISPATCH_LOG_RETENTION_MS),
     },
   ];
+  sweeps.push({
+    name: "transmissions_per_agency",
+    run: () => sweepTransmissionsPerAgency(),
+  });
   const txDays = parseTransmissionRetentionDays();
   if (txDays != null) {
     sweeps.push({
-      name: "transmissions",
+      name: "transmissions_global",
       run: () => sweepTransmissions(txDays * DAY_MS),
     });
   }

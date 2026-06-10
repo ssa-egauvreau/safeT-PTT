@@ -10,7 +10,15 @@ export type Ten8MapIncident = {
   lon: number;
 };
 
-function callLabel(incidentType: string | null, callId: string): string {
+/**
+ * Short pin label for the dispatch map.
+ *
+ * Exported (rather than file-local) so the labeling contract can be pinned
+ * in unit tests — every active 10-8 call rendered on the dispatch map runs
+ * through this helper, and a regression silently changes what every pin
+ * reads on every console.
+ */
+export function callLabel(incidentType: string | null, callId: string): string {
   const t = (incidentType ?? "").trim();
   const sep = t.match(/^(.+?)\s+[-–—]\s+/);
   if (sep?.[1]) {
@@ -22,7 +30,16 @@ function callLabel(incidentType: string | null, callId: string): string {
   return callId;
 }
 
-function coordsFromPayload(payload: unknown): { lat: number; lon: number } | null {
+/**
+ * Pull a lat/lon pair out of a raw 10-8 incident payload (multiple shapes).
+ *
+ * Exported (rather than file-local) so the field-name allow-list and
+ * coordinate-validity bounds can be pinned in unit tests — this helper
+ * decides whether a CAD call shows up on the dispatch map at all, and
+ * an out-of-range coordinate would place the pin in the middle of the
+ * ocean (or skip the call from the map entirely).
+ */
+export function coordsFromPayload(payload: unknown): { lat: number; lon: number } | null {
   if (!payload || typeof payload !== "object") {
     return null;
   }

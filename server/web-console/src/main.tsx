@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { HelmetProvider } from "react-helmet-async";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { AppErrorBoundary } from "./AppErrorBoundary";
@@ -40,11 +41,13 @@ try {
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <AppErrorBoundary>
-        <BrowserRouter>
-          <AuthProvider>
-            <App />
-          </AuthProvider>
-        </BrowserRouter>
+        <HelmetProvider>
+          <BrowserRouter>
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </BrowserRouter>
+        </HelmetProvider>
       </AppErrorBoundary>
     </React.StrictMode>,
   );
