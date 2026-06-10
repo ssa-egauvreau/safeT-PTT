@@ -111,7 +111,8 @@ export async function processStripeEvent(
     }
     case "customer.subscription.updated":
     case "customer.subscription.deleted": {
-      const sub = event.data.object as Stripe.Subscription;
+      const eventSub = event.data.object as Stripe.Subscription;
+      const sub = await stripe.subscriptions.retrieve(eventSub.id);
       await applySubscription(sub, deps);
       const agencyId = agencyIdFromMeta(sub.metadata);
       if (agencyId) {

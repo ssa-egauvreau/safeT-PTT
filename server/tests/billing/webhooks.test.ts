@@ -197,3 +197,52 @@ test("processStripeEvent: checkout completion never force-enables a past-due sub
   assert.equal(updateCalls[0]?.patch.disabled, true);
   assert.ok(!updateCalls.some((call) => call.patch.disabled === false));
 });
+
+test("processStripeEvent: subscription.updated reconciles against live Stripe status", async () => {
+  const updateCalls: Array<{ agencyId: number; patch: Record<string, unknown> }> = [];
+  let retrieveCount = 0;
+  const fakeStripe = {
+    subscriptions: {
+      async retrieve(subscriptionId: string): Promise<Stripe.Subscription> {
+        retrieveCount += 1;
+        assert.equal(subscriptionId, "sub_123");
+        return {
+          id: "sub_123",
+          status: "past_due",
+          metadata: { agency_id: "42", plan_tier: "pro", logs_unlimited: "true" },
+          trial_end: null,
+        } as unknown as Stripe.Subscription;
+      },
+    },
+  };
+
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_123",
+          status: "active",
+          metadata: { agency_id: "42", plan_tier: "pro", logs_unlimited: "true" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe,
+    {
+      async updateAgencyBilling(agencyId, patch) {
+        updateCalls.push({ agencyId, patch: patch as Record<string, unknown> });
+        return null;
+      },
+      async getAgencyById() {
+        return null;
+      },
+    },
+  );
+
+  assert.equal(retrieveCount, 1);
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.agencyId, 42);
+  assert.equal(updateCalls[0]?.patch.subscriptionStatus, "past_due");
+  assert.equal(updateCalls[0]?.patch.disabled, true);
+});
