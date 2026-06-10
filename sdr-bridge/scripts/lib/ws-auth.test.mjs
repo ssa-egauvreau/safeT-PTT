@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isAuthWsFailure, wsFailureText } from "./ws-auth.mjs";
+import { isAuthWsFailure, wsFailureAuthAction, wsFailureText } from "./ws-auth.mjs";
 
 test("wsFailureText reads common ws error shapes", () => {
   assert.equal(wsFailureText(new Error("Unexpected server response: 401")), "Unexpected server response: 401");
@@ -20,4 +20,17 @@ test("isAuthWsFailure ignores non-auth transport failures", () => {
   assert.equal(isAuthWsFailure(new Error("connect ECONNREFUSED 127.0.0.1:8080")), false);
   assert.equal(isAuthWsFailure({ message: "socket hang up" }), false);
   assert.equal(isAuthWsFailure(null), false);
+});
+
+test("wsFailureAuthAction classifies direct auth failures", () => {
+  assert.equal(wsFailureAuthAction(new Error("Unexpected server response: 401")), "relogin");
+  assert.equal(wsFailureAuthAction({ reason: "forbidden" }), "relogin");
+});
+
+test("wsFailureAuthAction probes token for built-in non-101 failures", () => {
+  assert.equal(
+    wsFailureAuthAction(new Error("Received network error or non-101 status code.")),
+    "probe_token",
+  );
+  assert.equal(wsFailureAuthAction({ message: "socket hang up" }), "none");
 });

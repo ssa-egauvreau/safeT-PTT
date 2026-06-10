@@ -17,7 +17,7 @@ import { createSocket } from "node:dgram";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isAuthWsFailure, wsFailureText } from "./lib/ws-auth.mjs";
+import { isAuthWsFailure, wsFailureAuthAction, wsFailureText } from "./lib/ws-auth.mjs";
 
 // WebSocket: prefer the `ws` package — it exposes ping()/pong so the keepalive
 // can detect half-open sockets (the built-in undici WebSocket cannot send
@@ -130,6 +130,31 @@ function relogin() {
       });
   }
   return reloginInFlight;
+}
+
+let tokenProbeInFlight = null;
+function probeTokenAndMaybeRelogin() {
+  if (!tokenProbeInFlight) {
+    tokenProbeInFlight = api("GET", "/auth/me", { token: tokenRef.value })
+      .catch((e) => {
+        // Only re-login when the probe confirms token rejection (401/403).
+        if (isAuthWsFailure(e?.message ?? String(e))) return relogin();
+        return null;
+      })
+      .finally(() => {
+        tokenProbeInFlight = null;
+      });
+  }
+  return tokenProbeInFlight;
+}
+
+function maybeReloginForWsFailure(eventLike) {
+  const action = wsFailureAuthAction(eventLike);
+  if (action === "relogin") {
+    void relogin();
+    return;
+  }
+  if (action === "probe_token") void probeTokenAndMaybeRelogin();
 }
 
 // Live per-channel status for the desktop app's "Channels" panel: connection
@@ -463,18 +488,18 @@ function runMonitorBridge(bridge) {
         } else if (m.type === "error") {
           console.warn(`[bridge] ${bridge.name}: relay rejected join (${m.code ?? "error"})`);
           mark(bridge, { state: `rejected (${m.code ?? "error"})` });
-          if (isAuthWsFailure(m.code)) void relogin();
+          maybeReloginForWsFailure(m.code);
           finish();
         }
       };
       ws.onerror = (err) => {
-        if (isAuthWsFailure(err)) void relogin();
+        maybeReloginForWsFailure(err);
         const why = wsFailureText(err);
         if (why) console.warn(`[bridge] ${bridge.name}: ws error (${why})`);
         finish();
       };
       ws.onclose = (e) => {
-        if (isAuthWsFailure(e)) void relogin();
+        maybeReloginForWsFailure(e);
         console.warn(`[bridge] ${bridge.name}: ws closed ${e && e.code != null ? e.code : ""}`);
         if (statusRow(bridge).state === "on air") mark(bridge, { state: "reconnecting" });
         finish();
@@ -612,18 +637,18 @@ function runBridge(bridge, udpPort) {
         } else if (m.type === "error") {
           console.warn(`[bridge] ${bridge.name}: relay rejected join (${m.code ?? "error"})`);
           mark(bridge, { state: `rejected (${m.code ?? "error"})` });
-          if (isAuthWsFailure(m.code)) void relogin();
+          maybeReloginForWsFailure(m.code);
           finish();
         }
       };
       w.onerror = (err) => {
-        if (isAuthWsFailure(err)) void relogin();
+        maybeReloginForWsFailure(err);
         const why = wsFailureText(err);
         console.warn(`[bridge] ${bridge.name}: ws error${why ? ` (${why})` : ""}`);
         finish();
       };
       w.onclose = (e) => {
-        if (isAuthWsFailure(e)) void relogin();
+        maybeReloginForWsFailure(e);
         const code = e && e.code != null ? e.code : "";
         const reason = e && e.reason ? ` ${e.reason}` : "";
         console.warn(`[bridge] ${bridge.name}: ws closed ${code}${reason}`);

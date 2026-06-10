@@ -42,3 +42,16 @@ export function isAuthWsFailure(eventLike) {
     || /\bauth\b/.test(text)
   );
 }
+
+/**
+ * Node's built-in WebSocket reports both auth rejects and transport failures as
+ * "Received network error or non-101 status code." In this ambiguous case we
+ * need an extra token-validity probe to decide whether to re-login.
+ */
+export function wsFailureAuthAction(eventLike) {
+  if (isAuthWsFailure(eventLike)) return "relogin";
+  const text = wsFailureText(eventLike).toLowerCase();
+  if (!text) return "none";
+  if (text.includes("non-101 status code")) return "probe_token";
+  return "none";
+}
