@@ -245,6 +245,54 @@ async function readDecoder() {
   }
 }
 
+/** Install the generated SafeT talkgroup aliases straight into the user's
+ *  sdrtrunk playlist file (newer sdrtrunk builds have no alias Import button).
+ *  Only runs while sdrtrunk is closed; appends aliases for talkgroups the
+ *  playlist doesn't know yet, re-pointed at the playlist's own alias list,
+ *  after writing a .safet-backup copy. Idempotent — already-present
+ *  talkgroups are skipped. */
+async function installSdrtrunkAliases() {
+  const { mergePlaylist } = require("./sdrtrunk-merge.js");
+  const { projectDir } = getSettings();
+  await runWsl(`cd ${projectDir} && node scripts/sdrtrunk-playlist.mjs 2>&1 | tail -1`, { timeout: 30000 });
+  const gen = await runWsl(`cat ${projectDir}/sdrtrunk/safet-aliases.xml 2>/dev/null`);
+  if (!gen.stdout.includes("<alias")) {
+    onLogLine("[sdrtrunk] no generated aliases yet (sync hasn't run) — will install on a later Start.");
+    return;
+  }
+  const playlistDir = path.join(os.homedir(), "SDRTrunk", "playlist");
+  let files = [];
+  try {
+    files = fs.readdirSync(playlistDir).filter((f) => f.endsWith(".xml"));
+  } catch {
+    /* no sdrtrunk user dir yet */
+  }
+  if (!files.length) {
+    onLogLine("[sdrtrunk] no sdrtrunk playlist found yet — run sdrtrunk once (so it creates one), then press Start again and I'll install the talkgroup aliases.");
+    return;
+  }
+  // The active playlist is the most recently written one.
+  const target = files
+    .map((f) => ({ f, m: fs.statSync(path.join(playlistDir, f)).mtimeMs }))
+    .sort((a, b) => b.m - a.m)[0].f;
+  const file = path.join(playlistDir, target);
+  try {
+    const res = mergePlaylist(fs.readFileSync(file, "utf8"), gen.stdout);
+    if (res.added === 0) {
+      onLogLine(`[sdrtrunk] talkgroup aliases already installed in ${target} (${res.skipped} present).`);
+      return;
+    }
+    fs.copyFileSync(file, file + ".safet-backup");
+    fs.writeFileSync(file, res.xml);
+    onLogLine(
+      `[sdrtrunk] installed ${res.added} talkgroup alias(es) into ${target}` +
+        `${res.list ? ` (alias list "${res.list}")` : ""}, ${res.skipped} already present. Backup: ${target}.safet-backup`,
+    );
+  } catch (e) {
+    onLogLine(`[sdrtrunk] alias install skipped: ${e.message}`);
+  }
+}
+
 /** Launch sdrtrunk on Windows. With sdrtrunk the dongle stays on Windows (it
  *  decodes natively), so we also make sure it is NOT forwarded into WSL. The
  *  install path comes from Settings (sdrtrunkPath -> the bin\\sdr-trunk.bat or
@@ -342,6 +390,10 @@ async function startPipeline({ quiet = false } = {}) {
     const { projectDir } = getSettings();
     const pull = await runWsl(`cd ${projectDir} && git checkout -q main 2>/dev/null; git pull --ff-only 2>&1 | tail -1`, { timeout: 45000 });
     onLogLine(`[update] ${(pull.stdout || pull.stderr).trim() || "(using existing code)"}`);
+    // Aliases are written into the playlist while sdrtrunk is CLOSED (it
+    // would overwrite our edit on its next save otherwise).
+    await stopSdrtrunk().catch(() => {});
+    await installSdrtrunkAliases().catch((e) => onLogLine(`[sdrtrunk] alias install error: ${e.message}`));
     const tr = await launchSdrtrunk();
     onLogLine("[start] running the sdrtrunk -> SafeT call bridge…");
     spawnPipeline();

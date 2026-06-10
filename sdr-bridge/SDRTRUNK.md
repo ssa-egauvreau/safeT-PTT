@@ -41,22 +41,23 @@ sdrtrunk → **Playlist → Streaming → New → RdioScanner**. Set:
 (If WSL isn't using mirrored networking, use the WSL IP from `wsl hostname -I`
 instead of `127.0.0.1`.)
 
-### 3. Tell sdrtrunk which talkgroups to send
+### 3. Talkgroup aliases — automatic
 
-Each talkgroup you want on SafeT needs the **`SafeT` broadcast channel** set on
-its alias. Two ways:
-
-- **Easiest:** import the generated alias list. SafeT SDR writes
-  `sdrtrunk/safet-aliases.xml` inside the project (open
-  `\\wsl.localhost\Ubuntu\home\<you>\safeT-PTT\sdr-bridge\sdrtrunk\` from
-  Windows Explorer). In sdrtrunk → **Playlist → Aliases → Import**, choosing
-  your channel's alias list. It tags every SafeT-mapped OC CCCS talkgroup with
-  the `SafeT` stream and a readable label.
-- **Or by hand:** on each alias you already have, set **Broadcast Channel** =
-  `SafeT`.
+Each talkgroup needs the **`SafeT` broadcast channel** set on its alias for
+sdrtrunk to upload its calls. You don't have to do this by hand (newer sdrtrunk
+builds don't even have an alias Import button): **every time you press Start,
+SafeT SDR installs the full OC CCCS talkgroup list straight into your sdrtrunk
+playlist** — names for every talkgroup, each tagged with the `SafeT` stream,
+re-pointed at whatever alias list your channel already uses. Talkgroups you
+already aliased are left untouched, and a `.safet-backup` copy of the playlist
+is written first.
 
 The bridge routes each uploaded call to its SafeT channel by talkgroup id (from
 your SafeT **Bridges**), and sends every call to the **Scan All** channels.
+
+> Order note: sdrtrunk must have run at least once (so a playlist file exists).
+> If Start logs "no sdrtrunk playlist found yet", open sdrtrunk once, close it,
+> and press Start again.
 
 ### 4. Point SafeT SDR at sdrtrunk
 
