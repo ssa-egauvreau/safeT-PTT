@@ -32,7 +32,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type Stripe from "stripe";
-import { agencyIdFromMeta, mapStripeStatus } from "../../src/billing/webhooks.js";
+import { agencyIdFromMeta, mapStripeStatus, processStripeEvent } from "../../src/billing/webhooks.js";
 
 // ---------------------------------------------------------------------------
 // mapStripeStatus
@@ -109,4 +109,53 @@ test("agencyIdFromMeta: zero is preserved (not coerced to null)", () => {
   // We never expect agency_id=0 in practice, but the helper should not
   // confuse a legitimate 0 with a parse failure.
   assert.equal(agencyIdFromMeta({ agency_id: "0" } as unknown as Stripe.Metadata), 0);
+});
+
+// ---------------------------------------------------------------------------
+// processStripeEvent
+// ---------------------------------------------------------------------------
+
+test("processStripeEvent: checkout completion never force-enables a past-due subscription", async () => {
+  const updateCalls: Array<{ agencyId: number; patch: Record<string, unknown> }> = [];
+  const fakeStripe = {
+    subscriptions: {
+      async retrieve(subscriptionId: string): Promise<Stripe.Subscription> {
+        assert.equal(subscriptionId, "sub_123");
+        return {
+          id: "sub_123",
+          status: "past_due",
+          metadata: { agency_id: "42", plan_tier: "pro", logs_unlimited: "true" },
+          trial_end: null,
+        } as unknown as Stripe.Subscription;
+      },
+    },
+  };
+
+  await processStripeEvent(
+    {
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          metadata: { agency_id: "42" },
+          subscription: "sub_123",
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe,
+    {
+      async updateAgencyBilling(agencyId, patch) {
+        updateCalls.push({ agencyId, patch: patch as Record<string, unknown> });
+        return null;
+      },
+      async getAgencyById() {
+        return null;
+      },
+    },
+  );
+
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.agencyId, 42);
+  assert.equal(updateCalls[0]?.patch.subscriptionStatus, "past_due");
+  assert.equal(updateCalls[0]?.patch.disabled, true);
+  assert.ok(!updateCalls.some((call) => call.patch.disabled === false));
 });
