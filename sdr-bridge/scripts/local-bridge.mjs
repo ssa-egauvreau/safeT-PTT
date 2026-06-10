@@ -184,6 +184,7 @@ function statusRow(b) {
       lastTxStartMs: null,
       lastTxEndMs: null,
       lastTxDurMs: null,
+      lastTxAudioPct: null, // % of the keyed span that had real decoded audio
       txCount: 0,
       via: null, // for scan rows: which talkgroup fed the last clip
     };
@@ -203,6 +204,7 @@ function markTxFrame(b, now, via = null) {
     r.transmitting = true;
     r.lastTxStartMs = now;
     r.txCount++;
+    r._txRx0 = r.rxBytes || 0; // decode-coverage baseline for this transmission
   }
   r.lastFrameMs = now;
   if (via) r.via = via;
@@ -219,6 +221,13 @@ setInterval(() => {
       r.transmitting = false;
       r.lastTxEndMs = r.lastFrameMs;
       r.lastTxDurMs = Math.max(0, r.lastFrameMs - (r.lastTxStartMs ?? r.lastFrameMs));
+      // Decode coverage: what fraction of the keyed span was real decoded
+      // audio (8 kHz s16 = 16000 B/s) vs silence gap-fill. The HEALTH METER
+      // for simulcast decode quality — tune gain/antenna until this climbs.
+      const expected = (r.lastTxDurMs / 1000) * 16000;
+      const got = (r.rxBytes || 0) - (r._txRx0 ?? 0);
+      r.lastTxAudioPct =
+        !r.scan && expected > 300 ? Math.max(0, Math.min(100, Math.round((got / expected) * 100))) : null;
       statusDirty = true;
     }
   }
