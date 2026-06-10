@@ -43,7 +43,21 @@ const EL_CACHE_TTL_MS = 120_000;
 const EL_LOW_RATIO = 0.1;
 const elevenLabsCache = new Map<number, { at: number; health: ProviderHealth }>();
 
-function classifyFailure(httpStatus?: number, body?: string): { status: ProviderStatus; detail: string } {
+/**
+ * Map an outbound provider call's HTTP status + response body to a dashboard
+ * health status.
+ *
+ * Exported (rather than file-local) so the credit/quota detection contract
+ * can be pinned in unit tests — this helper decides whether the admin
+ * Integrations page surfaces an actionable "Out of credits" warning vs a
+ * generic "Provider error". Regressions silently classify a real credit
+ * outage as a transient error (admins never see the alert) or vice versa
+ * (admins are nagged about a one-off 500).
+ */
+export function classifyFailure(
+  httpStatus?: number,
+  body?: string,
+): { status: ProviderStatus; detail: string } {
   const text = (body ?? "").toLowerCase();
   if (
     httpStatus === 402 ||
