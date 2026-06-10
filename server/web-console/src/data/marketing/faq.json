@@ -52,12 +52,17 @@
   {
     "category": "Security",
     "q": "Is voice encrypted?",
-    "a": "Yes. Every transmission is carried over an authenticated, encrypted relay. Accounts sign in individually — the newest sign-in wins so a lost device cannot keep listening."
+    "a": "Yes. Every transmission is carried over an authenticated, encrypted relay. Accounts sign in individually — the newest sign-in wins so a lost device cannot keep listening. Full details at /trust."
   },
   {
     "category": "Security",
     "q": "Is my agency data isolated from others?",
     "a": "Yes. safeT PTT is multi-tenant: every account, channel, recording, and transmission belongs to your agency only."
+  },
+  {
+    "category": "Security",
+    "q": "Do you have SOC 2 or CJIS certification?",
+    "a": "SOC 2 Type II is on our roadmap. We do not claim CJIS certification today. Request our security packet at /trust for procurement review."
   },
   {
     "category": "Troubleshooting",

@@ -1,0 +1,121 @@
+{
+  "pages": [
+    {
+      "slug": "law-enforcement",
+      "title": "Law enforcement",
+      "metaDescription": "Encrypted push-to-talk for police and law enforcement — dispatch console, GPS, emergency alerts, audit logs, and Pro tier plate lookup.",
+      "kicker": "Law enforcement",
+      "headline": "Private PTT built for police operations",
+      "intro": "Give patrol, investigations, and special units a encrypted push-to-talk network on Android phones and rugged Inrico handsets — with dispatch oversight, searchable logs, and optional AI-assisted workflows on Pro.",
+      "heroImage": "/marketing/command-console.svg",
+      "heroImageVariant": "browser",
+      "useCases": [
+        {
+          "title": "Patrol & field units",
+          "body": "Hardware PTT on Inrico IRC590 and TM-7 Plus, or BYOD Android with on-screen PTT. Live GPS feeds the dispatch map."
+        },
+        {
+          "title": "Dispatch oversight",
+          "body": "safeT Command monitors every talkgroup, tone-outs pages, and logs every transmission with auto-transcription."
+        },
+        {
+          "title": "Emergency response",
+          "body": "Dedicated emergency key clears the channel and alerts dispatch with priority — acknowledge and resolve from the console."
+        },
+        {
+          "title": "Investigations & accountability",
+          "body": "Searchable transmission history supports after-action review. Add unlimited log retention for longer investigations."
+        }
+      ],
+      "features": [
+        "Encrypted per-agency voice network",
+        "Live unit mapping in safeT Command",
+        "Emergency alert workflow with ack/resolve",
+        "Audit log in safeT Control",
+        "Pro: plate lookup & AI dispatch (where enabled)",
+        "Pro: Ten-8 CAD integration",
+        "Session control — newest sign-in wins on lost devices"
+      ],
+      "complianceNote": "Law enforcement agencies should review our Trust Center and request a security packet to evaluate alignment with CJIS and local policy. We do not claim CJIS certification today.",
+      "cta": "Request a law enforcement demo or start a 7-day trial."
+    },
+    {
+      "slug": "fire-ems",
+      "title": "Fire & EMS",
+      "metaDescription": "Push-to-talk for fire, EMS, and emergency medical services — tone-outs, multi-channel dispatch, GPS, and emergency alerts.",
+      "kicker": "Fire & EMS",
+      "headline": "Coordinate fire and EMS on one private network",
+      "intro": "Run battalion, EMS, and command talkgroups on a single encrypted platform. Dispatch tone-outs pages, monitors multiple channels, and sees every unit on the map — from the station, the rig, or the field.",
+      "heroImage": "/marketing/mobile-radio.svg",
+      "heroImageVariant": "phone",
+      "useCases": [
+        {
+          "title": "Multi-channel dispatch",
+          "body": "Mission Control lets dispatch monitor fire, EMS, and command channels simultaneously with priority scan."
+        },
+        {
+          "title": "Tone-outs & paging",
+          "body": "Page a channel with routine, priority, or status tones — familiar radio workflow in the browser."
+        },
+        {
+          "title": "Incident comms",
+          "body": "Spin up dedicated talkgroups in Control before major events. Units switch channels from the handset without re-provisioning."
+        },
+        {
+          "title": "After-action & QA",
+          "body": "Recorded transmissions with auto-transcription support EMS QA, training review, and incident documentation."
+        }
+      ],
+      "features": [
+        "Tone-out paging from safeT Command",
+        "Multi-channel Mission Control dashboard",
+        "Emergency button with dispatch notification",
+        "Live GPS for apparatus and field units",
+        "Searchable transmission log with transcripts",
+        "Inrico rugged handsets with hardware PTT",
+        "Unlimited log retention add-on for long-term archive"
+      ],
+      "complianceNote": "EMS agencies handling PHI should evaluate voice log retention and HIPAA requirements with their compliance officer. Business Associate Agreements available on request.",
+      "cta": "Put your fire and EMS units on the air with a free 7-day trial."
+    },
+    {
+      "slug": "healthcare-security",
+      "title": "Healthcare security",
+      "metaDescription": "Push-to-talk for hospital security and healthcare campus safety — encrypted voice, emergency alerts, GPS, and audit-friendly logs.",
+      "kicker": "Healthcare security",
+      "headline": "Hospital and campus security communications",
+      "intro": "Hospital security, behavioral health units, and medical campus officers need instant voice, emergency escalation, and documentation — without consumer walkie-talkie apps on personal phones.",
+      "heroImage": "/marketing/mobile-radio.svg",
+      "heroImageVariant": "phone",
+      "useCases": [
+        {
+          "title": "Officer safety",
+          "body": "Hardware emergency button on Inrico handsets or in-app emergency alert — dispatch sees priority notification and unit location."
+        },
+        {
+          "title": "Multi-building campuses",
+          "body": "LTE and Wi-Fi coverage across buildings beats conventional radio dead zones in hospitals and parking structures."
+        },
+        {
+          "title": "Shift coordination",
+          "body": "Separate talkgroups for patrol, ER, parking, and supervisors. Dispatchers included free — no per-dispatcher seat fees."
+        },
+        {
+          "title": "Incident documentation",
+          "body": "Searchable call history supports security incident reports and post-event review. Retention configurable per agency policy."
+        }
+      ],
+      "features": [
+        "Private encrypted agency network — not a public channel app",
+        "Emergency workflow with dispatch ack/resolve",
+        "Live GPS mapping for officer locations",
+        "Per-agency user and channel provisioning",
+        "Audit log for administrative actions",
+        "Unlimited transmission log retention add-on",
+        "Rugged Inrico handsets for hands-busy environments"
+      ],
+      "complianceNote": "Healthcare environments may involve PHI in voice communications. Review retention settings and request a security packet and BAA before deploying in clinical areas.",
+      "cta": "Contact sales for healthcare security deployments or start a trial for evaluation."
+    }
+  ]
+}

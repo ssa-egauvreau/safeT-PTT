@@ -9015,3 +9015,215 @@ table.vlt-units tbody tr:hover {
 .device-kicker-tm7 {
   color: #5eead4;
 }
+
+/* --- Trust Center & industry pages --- */
+.trust-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 24px 24px;
+}
+.trust-stats-compact,
+.trust-stats-home {
+  margin-bottom: 32px;
+}
+.trust-stat-card {
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(15, 21, 28, 0.45);
+  text-align: center;
+}
+.trust-stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #5eead4;
+  margin-bottom: 8px;
+}
+.trust-stat-card p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.lp-stats-strip {
+  padding-top: 32px;
+  padding-bottom: 32px;
+}
+.lp-stats-footnote {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 0;
+}
+.trust-pillars {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 0 24px 24px;
+}
+.trust-pillar-card {
+  padding: 24px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(15, 21, 28, 0.35);
+}
+.trust-pillar-card h3 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+.trust-pillar-card > p {
+  margin: 0 0 12px;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.trust-pillar-card ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.trust-pillar-card li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.trust-compliance-grid,
+.trust-ops-grid,
+.industry-use-grid,
+.industry-link-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 0 24px 24px;
+}
+.trust-compliance-card,
+.trust-ops-card,
+.industry-use-card {
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(15, 21, 28, 0.35);
+}
+.trust-compliance-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.trust-compliance-head h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.trust-status {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+.trust-status-roadmap {
+  background: rgba(100, 116, 139, 0.25);
+  color: #94a3b8;
+}
+.trust-status-review {
+  background: rgba(234, 179, 8, 0.15);
+  color: #facc15;
+}
+.trust-status-ok {
+  background: rgba(13, 148, 136, 0.2);
+  color: #5eead4;
+}
+.trust-ops-card h3,
+.industry-use-card h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.trust-ops-card p,
+.industry-use-card p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+.customer-stories-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.customer-story-card {
+  margin: 0;
+  padding: 24px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(15, 21, 28, 0.4);
+}
+.customer-story-quote {
+  margin: 0 0 16px;
+  font-size: 15px;
+  line-height: 1.55;
+  font-style: italic;
+}
+.customer-story-card footer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.customer-story-highlight {
+  margin-top: 6px;
+  color: #5eead4;
+  font-size: 12px;
+  font-weight: 600;
+}
+.industry-hero-inner {
+  display: grid;
+  grid-template-columns: 1fr minmax(200px, 320px);
+  gap: 32px;
+  align-items: center;
+}
+.industry-feature-list {
+  list-style: none;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 24px 24px;
+}
+.industry-feature-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  font-size: 15px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+.industry-compliance-note {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 24px;
+  font-size: 15px;
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+.industry-cta-row {
+  justify-content: center;
+  padding: 0 24px 32px;
+}
+@media (max-width: 900px) {
+  .industry-hero-inner {
+    grid-template-columns: 1fr;
+  }
+}

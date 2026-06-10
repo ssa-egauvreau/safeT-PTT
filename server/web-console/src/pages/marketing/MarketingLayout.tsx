@@ -44,6 +44,7 @@ export function MarketingLayout({
             <Link to="/control">Control</Link>
             <Link to="/devices">Devices</Link>
             <Link to="/pricing">Pricing</Link>
+            <Link to="/trust">Trust</Link>
             <Link to="/faq">FAQ</Link>
             <Link to="/setup">Setup</Link>
             <Link to="/support">Support</Link>
@@ -83,6 +84,7 @@ export function MarketingLayout({
             <Link to="/command">Command</Link>
             <Link to="/devices">Devices</Link>
             <Link to="/pricing">Pricing</Link>
+            <Link to="/trust">Trust</Link>
             <Link to="/faq">FAQ</Link>
             <Link to="/setup">Setup</Link>
             <Link to="/support">Support</Link>

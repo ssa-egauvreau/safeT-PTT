@@ -54,6 +54,12 @@ const SupportPage = lazy(() =>
 const SecurityPage = lazy(() =>
   import("./pages/marketing/SecurityPage").then((m) => ({ default: m.SecurityPage })),
 );
+const TrustPage = lazy(() =>
+  import("./pages/marketing/TrustPage").then((m) => ({ default: m.TrustPage })),
+);
+const IndustryPage = lazy(() =>
+  import("./pages/marketing/IndustryPage").then((m) => ({ default: m.IndustryPage })),
+);
 const MobilePage = lazy(() =>
   import("./pages/marketing/MobilePage").then((m) => ({ default: m.MobilePage })),
 );
@@ -110,6 +116,8 @@ export function App() {
       <Route path="/setup/android" element={<AndroidSetupPage />} />
       <Route path="/support" element={<SupportPage />} />
       <Route path="/security" element={<SecurityPage />} />
+      <Route path="/trust" element={<TrustPage />} />
+      <Route path="/industries/:slug" element={<IndustryPage />} />
       <Route path="/mobile" element={<MobilePage />} />
       <Route path="/command" element={<CommandPage />} />
       <Route path="/control" element={<ControlPage />} />
