@@ -5,6 +5,14 @@ import { stripeWebhookSecret } from "./config.js";
 import { updateAgencyBilling, getAgencyById } from "../store.js";
 import type { PlanTier, SubscriptionStatus } from "./types.js";
 
+/**
+ * Maps a Stripe subscription state onto the platform's internal lifecycle
+ * column. Exported so the contract can be pinned by unit tests — every
+ * Stripe state must collapse onto exactly one of our five
+ * `SubscriptionStatus` values, and any unknown future state must
+ * conservatively land in `past_due` (which trips the disabled gate in
+ * `applySubscription`) rather than silently re-enabling the agency.
+ */
 export function mapStripeStatus(status: Stripe.Subscription.Status): SubscriptionStatus {
   switch (status) {
     case "active":
@@ -22,6 +30,13 @@ export function mapStripeStatus(status: Stripe.Subscription.Status): Subscriptio
   }
 }
 
+/**
+ * Pulls the agency id out of Stripe webhook metadata (set on checkout
+ * session + subscription metadata in `stripe.ts`). Exported for unit
+ * testing — a regression that returned `0`/`NaN` instead of `null` would
+ * cause `applySubscription` to update agency id 0 (or throw mid-webhook
+ * and Stripe to retry), so the tripwire matters.
+ */
 export function agencyIdFromMeta(meta: Stripe.Metadata | null | undefined): number | null {
   const raw = meta?.agency_id;
   if (!raw) {
