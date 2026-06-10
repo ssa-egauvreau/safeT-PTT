@@ -197,3 +197,494 @@ test("processStripeEvent: checkout completion never force-enables a past-due sub
   assert.equal(updateCalls[0]?.patch.disabled, true);
   assert.ok(!updateCalls.some((call) => call.patch.disabled === false));
 });
+
+// ---------------------------------------------------------------------------
+// processStripeEvent: customer.subscription.updated / deleted
+//
+// These two events are the single most frequent Stripe webhook in production
+// (every renewal, plan change, payment failure, and cancellation fires one).
+// The handler does TWO writes:
+//  1. `applySubscription` — full state sync (status, plan_tier, logs_unlimited,
+//     transmissionRetentionDays, trial_end ISO, disabled flag).
+//  2. A second pass that re-asserts `disabled` only — and only when the
+//     agency's local status is NOT "comped". That comped-guard is the entire
+//     manual override system the platform owner uses to keep a flaky
+//     customer or partner agency online; a regression that bypassed it would
+//     auto-disable comped agencies the next time Stripe fires any
+//     subscription event.
+// ---------------------------------------------------------------------------
+
+type FakeStore = {
+  updateCalls: Array<{ agencyId: number; patch: Record<string, unknown> }>;
+  agencyLookup: Record<number, { subscription_status: string } | null>;
+};
+
+function fakeDeps(
+  agencyLookup: Record<number, { subscription_status: string } | null> = {},
+): FakeStore & {
+  updateAgencyBilling: (
+    agencyId: number,
+    patch: Record<string, unknown>,
+  ) => Promise<null>;
+  getAgencyById: (id: number) => Promise<unknown>;
+} {
+  const state: FakeStore = { updateCalls: [], agencyLookup };
+  return {
+    ...state,
+    async updateAgencyBilling(agencyId: number, patch: Record<string, unknown>) {
+      state.updateCalls.push({ agencyId, patch });
+      return null;
+    },
+    async getAgencyById(id: number) {
+      return state.agencyLookup[id] ?? null;
+    },
+  };
+}
+
+const stripeNeverRetrieves = {
+  subscriptions: {
+    async retrieve(): Promise<Stripe.Subscription> {
+      throw new Error("subscriptions.retrieve must NOT be called for this event type");
+    },
+  },
+};
+
+test("processStripeEvent: customer.subscription.updated writes plan tier + logs_unlimited + nulls retention", async () => {
+  // The webhook is the only place where logs_unlimited and the matching
+  // transmission_retention_days nullification get applied for an existing
+  // subscription. If applySubscription drifts (e.g. forgets to null
+  // `transmissionRetentionDays` when logs_unlimited is true), the agency
+  // would keep the 3-day cap even though they're paying for unlimited.
+  const deps = fakeDeps({ 42: { subscription_status: "active" } });
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_777",
+          status: "active",
+          metadata: { agency_id: "42", plan_tier: "pro", logs_unlimited: "true" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    stripeNeverRetrieves,
+    deps,
+  );
+
+  // First call from applySubscription, second call from the disabled re-assert.
+  assert.equal(deps.updateCalls.length, 2);
+  const first = deps.updateCalls[0]!.patch;
+  assert.equal(deps.updateCalls[0]!.agencyId, 42);
+  assert.equal(first.stripeSubscriptionId, "sub_777");
+  assert.equal(first.subscriptionStatus, "active");
+  assert.equal(first.planTier, "pro");
+  assert.equal(first.logsUnlimited, true);
+  assert.equal(first.transmissionRetentionDays, null);
+  assert.equal(first.disabled, false);
+  assert.equal(first.trialEndsAt, null);
+
+  // The second write must specifically RE-ENABLE the agency for an
+  // active sub (defends against a stale `disabled: true` left over from
+  // a prior past_due event).
+  assert.equal(deps.updateCalls[1]!.patch.disabled, false);
+});
+
+test("processStripeEvent: subscription.updated with logs_unlimited=false sets transmissionRetentionDays back to 3", async () => {
+  // Mirror image of the test above — when a customer downgrades off
+  // unlimited logs, the 3-day cap must be re-applied. Without this the
+  // basic tenant would silently keep unlimited retention.
+  const deps = fakeDeps({ 42: { subscription_status: "active" } });
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_basic",
+          status: "active",
+          metadata: { agency_id: "42", plan_tier: "basic", logs_unlimited: "false" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    stripeNeverRetrieves,
+    deps,
+  );
+
+  const first = deps.updateCalls[0]!.patch;
+  assert.equal(first.planTier, "basic");
+  assert.equal(first.logsUnlimited, false);
+  assert.equal(first.transmissionRetentionDays, 3);
+});
+
+test("processStripeEvent: subscription.updated converts Stripe trial_end (unix seconds) to ISO timestamp", async () => {
+  // Stripe sends `trial_end` as UNIX seconds (not millis, not ISO). Our
+  // schema stores ISO strings. A regression that wrote the unix number
+  // verbatim would break every render of `trial_days_left` in the admin
+  // billing panel.
+  const deps = fakeDeps({ 42: { subscription_status: "trialing" } });
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_trial",
+          status: "trialing",
+          metadata: { agency_id: "42", plan_tier: "basic", logs_unlimited: "false" },
+          trial_end: 1_700_000_000,
+        },
+      },
+    } as unknown as Stripe.Event,
+    stripeNeverRetrieves,
+    deps,
+  );
+
+  assert.equal(
+    deps.updateCalls[0]!.patch.trialEndsAt,
+    new Date(1_700_000_000 * 1000).toISOString(),
+  );
+});
+
+test("processStripeEvent: unknown plan_tier metadata falls back to 'basic' (never silently upgrades to pro)", async () => {
+  // applySubscription explicitly checks `=== "pro"` — anything else
+  // (typos, future tiers, missing field) must land on basic so a
+  // misconfigured Stripe price can't accidentally unlock AI dispatch.
+  const deps = fakeDeps({ 42: { subscription_status: "active" } });
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_x",
+          status: "active",
+          metadata: { agency_id: "42", plan_tier: "enterprise", logs_unlimited: "false" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    stripeNeverRetrieves,
+    deps,
+  );
+  assert.equal(deps.updateCalls[0]!.patch.planTier, "basic");
+});
+
+test("processStripeEvent: missing plan_tier metadata defaults to 'basic'", async () => {
+  // Defence in depth: a Stripe subscription with no plan_tier metadata
+  // (older sub created before we started writing it) must still be
+  // applied — just on the safe (cheaper) tier.
+  const deps = fakeDeps({ 42: { subscription_status: "active" } });
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_legacy",
+          status: "active",
+          metadata: { agency_id: "42" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    stripeNeverRetrieves,
+    deps,
+  );
+  assert.equal(deps.updateCalls[0]!.patch.planTier, "basic");
+  // No logs_unlimited metadata → must read as false (NOT undefined).
+  assert.equal(deps.updateCalls[0]!.patch.logsUnlimited, false);
+});
+
+test("processStripeEvent: subscription.updated with no agency_id metadata is ignored (no DB writes)", async () => {
+  // applySubscription bails BEFORE writing if agency_id is missing — so
+  // does the second-pass disabled re-assert. Critical: a malformed
+  // event must NOT fall through to `updateAgencyBilling(null, ...)`.
+  const deps = fakeDeps({ 42: { subscription_status: "active" } });
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_orphan",
+          status: "active",
+          metadata: {},
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    stripeNeverRetrieves,
+    deps,
+  );
+  assert.equal(deps.updateCalls.length, 0);
+});
+
+test("processStripeEvent: customer.subscription.deleted disables the agency", async () => {
+  // The cancellation event collapses to `subscriptionStatus: "canceled"`
+  // and `disabled: true` — the agency loses AI dispatch and new-tx
+  // ingestion immediately. Regression risk: deleted subs with status
+  // !== "canceled" (Stripe quirk on some test fixtures) must still
+  // disable, because `isStripeSubscriptionActive` is false for both.
+  const deps = fakeDeps({ 42: { subscription_status: "active" } });
+  await processStripeEvent(
+    {
+      type: "customer.subscription.deleted",
+      data: {
+        object: {
+          id: "sub_dead",
+          status: "canceled",
+          metadata: { agency_id: "42", plan_tier: "pro", logs_unlimited: "true" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    stripeNeverRetrieves,
+    deps,
+  );
+  // applySubscription + the second-pass disabled re-assert.
+  assert.equal(deps.updateCalls.length, 2);
+  assert.equal(deps.updateCalls[0]!.patch.subscriptionStatus, "canceled");
+  assert.equal(deps.updateCalls[0]!.patch.disabled, true);
+  assert.equal(deps.updateCalls[1]!.patch.disabled, true);
+});
+
+test("processStripeEvent: COMPED agency is never re-disabled by a Stripe subscription event", async () => {
+  // The comped-guard is the safety net for the platform owner's
+  // manual "keep this customer on free service" override. A regression
+  // here would let Stripe's automated webhooks override a manual
+  // comp. applySubscription still runs (it syncs plan_tier etc.)
+  // but the SECOND write (the disabled re-assert) must be skipped.
+  const deps = fakeDeps({ 42: { subscription_status: "comped" } });
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_comped",
+          status: "past_due",
+          metadata: { agency_id: "42", plan_tier: "pro", logs_unlimited: "true" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    stripeNeverRetrieves,
+    deps,
+  );
+
+  // applySubscription wrote disabled=true (because Stripe says past_due),
+  // BUT the second-pass disabled re-assert must NOT run for a comped agency.
+  assert.equal(deps.updateCalls.length, 1, "only applySubscription should write; the comped guard blocks the second pass");
+  assert.equal(deps.updateCalls[0]!.patch.subscriptionStatus, "past_due");
+});
+
+test("processStripeEvent: subscription.updated for unknown agency (DB lookup returns null) skips the second-pass disabled write", async () => {
+  // If `getAgencyById` returns null (deleted/migrated agency), the
+  // second-pass `updateAgencyBilling({ disabled })` must be skipped —
+  // calling it would create a no-op UPDATE that errors out and
+  // surfaces as a 500 from the webhook handler, forcing Stripe to retry.
+  const deps = fakeDeps({}); // no agency 42 in lookup
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_gone",
+          status: "active",
+          metadata: { agency_id: "42", plan_tier: "basic", logs_unlimited: "false" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    stripeNeverRetrieves,
+    deps,
+  );
+  // Only the applySubscription write; no second-pass disabled re-assert.
+  assert.equal(deps.updateCalls.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// processStripeEvent: invoice.payment_failed
+//
+// Stripe fires this when a recurring charge fails (expired card, etc.). The
+// handler resolves the subscription id from the (sometimes object, sometimes
+// string) `invoice.parent.subscription_details.subscription` shape, refetches
+// the subscription, and applies it. The whole point is that a payment failure
+// flips `disabled: true` so the agency is paywalled until the next successful
+// renewal updates it back.
+// ---------------------------------------------------------------------------
+
+test("processStripeEvent: invoice.payment_failed (string subscription ref) refetches + applies", async () => {
+  let retrieveCalledWith = "";
+  const fakeStripe = {
+    subscriptions: {
+      async retrieve(id: string): Promise<Stripe.Subscription> {
+        retrieveCalledWith = id;
+        return {
+          id,
+          status: "past_due",
+          metadata: { agency_id: "42", plan_tier: "basic", logs_unlimited: "false" },
+          trial_end: null,
+        } as unknown as Stripe.Subscription;
+      },
+    },
+  };
+  const deps = fakeDeps();
+  await processStripeEvent(
+    {
+      type: "invoice.payment_failed",
+      data: {
+        object: {
+          id: "in_1",
+          parent: {
+            subscription_details: { subscription: "sub_pay_fail" },
+          },
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe,
+    deps,
+  );
+  assert.equal(retrieveCalledWith, "sub_pay_fail");
+  assert.equal(deps.updateCalls.length, 1);
+  assert.equal(deps.updateCalls[0]!.patch.subscriptionStatus, "past_due");
+  assert.equal(deps.updateCalls[0]!.patch.disabled, true);
+});
+
+test("processStripeEvent: invoice.payment_failed (object subscription ref) extracts .id", async () => {
+  // Older Stripe API versions / some fixtures hand back a full
+  // Subscription OBJECT instead of an id string for
+  // `invoice.parent.subscription_details.subscription`. The handler
+  // explicitly tolerates both shapes — pin that contract.
+  let retrieveCalledWith = "";
+  const fakeStripe = {
+    subscriptions: {
+      async retrieve(id: string): Promise<Stripe.Subscription> {
+        retrieveCalledWith = id;
+        return {
+          id,
+          status: "past_due",
+          metadata: { agency_id: "42", plan_tier: "basic", logs_unlimited: "false" },
+          trial_end: null,
+        } as unknown as Stripe.Subscription;
+      },
+    },
+  };
+  const deps = fakeDeps();
+  await processStripeEvent(
+    {
+      type: "invoice.payment_failed",
+      data: {
+        object: {
+          id: "in_2",
+          parent: {
+            subscription_details: { subscription: { id: "sub_obj_form" } },
+          },
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe,
+    deps,
+  );
+  assert.equal(retrieveCalledWith, "sub_obj_form");
+  assert.equal(deps.updateCalls.length, 1);
+});
+
+test("processStripeEvent: invoice.payment_failed with no subscription ref is a no-op", async () => {
+  // One-off invoice (no recurring subscription) — the handler must
+  // NOT try to refetch a missing subscription. Pin the early return.
+  const fakeStripe = {
+    subscriptions: {
+      async retrieve(): Promise<Stripe.Subscription> {
+        throw new Error("must not refetch when there is no subscription ref");
+      },
+    },
+  };
+  const deps = fakeDeps();
+  await processStripeEvent(
+    {
+      type: "invoice.payment_failed",
+      data: { object: { id: "in_3", parent: undefined } },
+    } as unknown as Stripe.Event,
+    fakeStripe,
+    deps,
+  );
+  assert.equal(deps.updateCalls.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// processStripeEvent: unknown event types
+//
+// Stripe fires dozens of event types we don't subscribe to (charge.refunded,
+// customer.updated, etc.). The default case must silently no-op — a regression
+// that threw or wrote anything would cause Stripe to retry indefinitely and
+// could corrupt billing state on unrelated events.
+// ---------------------------------------------------------------------------
+
+test("processStripeEvent: unknown event types are silently ignored", async () => {
+  const deps = fakeDeps();
+  for (const type of [
+    "charge.refunded",
+    "customer.updated",
+    "customer.subscription.created",
+    "invoice.paid",
+    "ping",
+  ]) {
+    await processStripeEvent(
+      { type, data: { object: {} } } as unknown as Stripe.Event,
+      stripeNeverRetrieves,
+      deps,
+    );
+  }
+  assert.equal(deps.updateCalls.length, 0);
+});
+
+test("processStripeEvent: checkout.session.completed with non-string subscription (already expanded) is a no-op", async () => {
+  // The checkout branch only fetches when `session.subscription` is a
+  // string. If Stripe ever sends back an already-expanded Subscription
+  // object on the session, the handler must NOT crash trying to call
+  // `subscriptions.retrieve(obj)` — it just skips, and the followup
+  // `customer.subscription.created/updated` event handles it.
+  const fakeStripe = {
+    subscriptions: {
+      async retrieve(): Promise<Stripe.Subscription> {
+        throw new Error("retrieve must not be called when subscription is an object");
+      },
+    },
+  };
+  const deps = fakeDeps();
+  await processStripeEvent(
+    {
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          metadata: { agency_id: "42" },
+          subscription: { id: "sub_already_expanded" },
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe,
+    deps,
+  );
+  assert.equal(deps.updateCalls.length, 0);
+});
+
+test("processStripeEvent: checkout.session.completed with no agency_id in session metadata skips refetch", async () => {
+  // Pin the early return — without an agency_id we cannot route the
+  // update, so refetching Stripe would burn an API call for nothing.
+  const fakeStripe = {
+    subscriptions: {
+      async retrieve(): Promise<Stripe.Subscription> {
+        throw new Error("retrieve must not be called when agency_id is missing");
+      },
+    },
+  };
+  const deps = fakeDeps();
+  await processStripeEvent(
+    {
+      type: "checkout.session.completed",
+      data: {
+        object: { metadata: {}, subscription: "sub_orphan_session" },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe,
+    deps,
+  );
+  assert.equal(deps.updateCalls.length, 0);
+});
