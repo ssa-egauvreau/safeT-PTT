@@ -6,20 +6,20 @@
  * regenerated decoder config picks the fixes up. Each profile is applied once and
  * recorded in `_rfProfile`, so a user's later manual tuning is never overwritten.
  *
- * occcs-countywide-v2 (Orange County CCCS, site 021 "Countywide"):
+ * occcs-countywide-v6 (Orange County CCCS, site 021 "Countywide"):
  *   The site rotates its control channel across FOUR cc-capable frequencies
  *   (856.7125 / 857.4625 / 860.2125 / 860.4625 MHz) and spans 855.7125–860.9625
- *   MHz. Field logs show the site parks mostly on the HIGH pair — and that
+ *   MHz. Only ONE is the active control channel at a time, and the low/high
+ *   pairs sit 3.75 MHz apart — more than one dongle can span. Field logs show
+ *   the rig decoding on the LOW pair (857.4625), so the single-dongle window
+ *   centers at 857.35 MHz: both low control channels plus ten voice
+ *   frequencies. When the county rotates the control channel to the high pair
+ *   (860.2125/860.4625) a single dongle goes deaf until it rotates back — the
+ *   second dongle (sources[1] on the high pair) removes that gap.
  *   The sample rate must be a MULTIPLE OF 24000 (the P25 symbol rate) or
- *   trunk-recorder aborts on boot — 2,544,000 (106 x 24000) is the closest
- *   valid rate to the chip's reliable ceiling. Only ONE of the site's four
- *   cc-capable frequencies is the active control channel at a time, and the
- *   pairs sit 3.75 MHz apart — more than any single dongle can span. Field
- *   logs show the rig decoding on 857.4625 (low pair), so v4 centers the
- *   window at 857.35 MHz: both LOW control channels plus ten voice
- *   frequencies. When the county rotates the control channel to the high
- *   pair (860.2125/860.4625) a single dongle goes deaf until it rotates
- *   back — the second dongle (sources[1] on the high pair) removes that gap.
+ *   trunk-recorder aborts on boot, AND must stay at or below the RTL2832U's
+ *   ~2.4 Msps continuous ceiling or the chip silently drops samples (see the
+ *   ONE_DONGLE_RATE note below — v5's 2.544 Msps was the audio-snippets bug).
  *   Two+ dongles: only the control-channel list is corrected; per-dongle
  *   centers stay user-set.
  */
@@ -30,10 +30,19 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG = join(ROOT, "config", "system.json");
 
-const PROFILE = "occcs-countywide-v5";
+const PROFILE = "occcs-countywide-v6";
 const OCCCS_CCS = [860212500, 860462500, 857462500, 856712500];
 const ONE_DONGLE_CENTER = 857350000;
-const ONE_DONGLE_RATE = 2544000; // must be a multiple of 24000 (P25 symbol rate)
+// 100 x 24000 (the P25 symbol rate). v5 used 2.544 Msps, but the RTL2832U only
+// sustains ~2.4 Msps continuously — above that it silently DROPS SAMPLES, and
+// usbipd (USB-over-IP into WSL2) makes the sustained transfer more fragile
+// still. Dropped samples break the P25 symbol clock in bursts: field logs
+// showed control-channel decode wobbling 0-24 msg/sec (healthy is 35-45) and
+// voice transmissions decoding a snip then collapsing into errors (469 errors
+// on one 7.7s segment). 2.4 Msps still covers every OC CCCS frequency from
+// 856.2125 to 858.4625 MHz — both low control channels included — so the
+// narrower window loses nothing.
+const ONE_DONGLE_RATE = 2400000;
 
 if (!existsSync(CONFIG)) process.exit(0); // nothing to migrate yet
 
@@ -71,7 +80,7 @@ if (!multiDongle) {
   };
   retune(cfg.sdr);
   if (Array.isArray(cfg.sources) && cfg.sources.length === 1) retune(cfg.sources[0]);
-  changes.push("single dongle -> 857.35 MHz window, ppm 0 (TuningErr showed the +2 correction overshooting by 1-2 kHz)");
+  changes.push("single dongle -> 857.35 MHz window @ 2.4 Msps (2.544 was above the chip's reliable ceiling — dropped samples were shredding decode), ppm 0");
 }
 
 cfg._rfProfile = PROFILE;
