@@ -197,3 +197,483 @@ test("processStripeEvent: checkout completion never force-enables a past-due sub
   assert.equal(updateCalls[0]?.patch.disabled, true);
   assert.ok(!updateCalls.some((call) => call.patch.disabled === false));
 });
+
+// ---------------------------------------------------------------------------
+// processStripeEvent — additional coverage
+//
+// The webhook fan-out is the platform's *only* way to learn about Stripe
+// state changes: a regression in this switch silently keeps a delinquent
+// agency online (or, the inverse, kicks a paying agency offline). The cases
+// below pin every branch the handler can take so a future refactor of the
+// switch loses nothing silently.
+// ---------------------------------------------------------------------------
+
+interface CapturedCall {
+  agencyId: number;
+  patch: Record<string, unknown>;
+}
+
+interface FakeStore {
+  deps: {
+    updateAgencyBilling: (
+      agencyId: number,
+      patch: Record<string, unknown>,
+    ) => Promise<null>;
+    getAgencyById: (id: number) => Promise<unknown>;
+  };
+  updateCalls: CapturedCall[];
+  getAgencyByIdCalls: number[];
+}
+
+function makeFakeStore(opts: { agency?: unknown } = {}): FakeStore {
+  const updateCalls: CapturedCall[] = [];
+  const getAgencyByIdCalls: number[] = [];
+  return {
+    updateCalls,
+    getAgencyByIdCalls,
+    deps: {
+      async updateAgencyBilling(agencyId, patch) {
+        updateCalls.push({ agencyId, patch });
+        return null;
+      },
+      async getAgencyById(id) {
+        getAgencyByIdCalls.push(id);
+        return opts.agency ?? null;
+      },
+    },
+  };
+}
+
+function fakeStripe(opts: {
+  expectedSubId?: string;
+  sub?: Partial<Stripe.Subscription>;
+  onRetrieve?: (subscriptionId: string) => void;
+}) {
+  return {
+    subscriptions: {
+      async retrieve(subscriptionId: string): Promise<Stripe.Subscription> {
+        if (opts.expectedSubId !== undefined) {
+          assert.equal(subscriptionId, opts.expectedSubId);
+        }
+        opts.onRetrieve?.(subscriptionId);
+        return {
+          id: subscriptionId,
+          status: "active",
+          metadata: {},
+          trial_end: null,
+          ...opts.sub,
+        } as unknown as Stripe.Subscription;
+      },
+    },
+  };
+}
+
+test("processStripeEvent: checkout completion with active subscription unsuspends agency", async () => {
+  // Happy path: a fresh signup completing checkout. The fix kept the
+  // disabled state aligned with the *fetched* subscription state — when
+  // Stripe says active, we must clear `disabled` so the new agency can
+  // actually log in.
+  const store = makeFakeStore();
+  await processStripeEvent(
+    {
+      type: "checkout.session.completed",
+      data: { object: { metadata: { agency_id: "7" }, subscription: "sub_ok" } },
+    } as unknown as Stripe.Event,
+    fakeStripe({
+      expectedSubId: "sub_ok",
+      sub: {
+        id: "sub_ok",
+        status: "active",
+        metadata: { agency_id: "7", plan_tier: "pro", logs_unlimited: "true" },
+        trial_end: null,
+      },
+    }),
+    store.deps,
+  );
+
+  assert.equal(store.updateCalls.length, 1);
+  assert.equal(store.updateCalls[0]?.agencyId, 7);
+  assert.equal(store.updateCalls[0]?.patch.subscriptionStatus, "active");
+  assert.equal(store.updateCalls[0]?.patch.disabled, false);
+  assert.equal(store.updateCalls[0]?.patch.planTier, "pro");
+  assert.equal(store.updateCalls[0]?.patch.logsUnlimited, true);
+  assert.equal(store.updateCalls[0]?.patch.transmissionRetentionDays, null);
+  assert.equal(store.updateCalls[0]?.patch.stripeSubscriptionId, "sub_ok");
+});
+
+test("processStripeEvent: checkout completion is a no-op when session metadata has no agency_id", async () => {
+  // Webhooks for sessions we did not initiate (or with truncated metadata)
+  // must NOT write anything — otherwise we'd issue an UPDATE on agency id
+  // 0/NaN and either corrupt the wrong tenant or throw and force Stripe
+  // into an infinite retry loop.
+  const store = makeFakeStore();
+  let retrieveCalled = false;
+  await processStripeEvent(
+    {
+      type: "checkout.session.completed",
+      data: { object: { metadata: {}, subscription: "sub_xyz" } },
+    } as unknown as Stripe.Event,
+    fakeStripe({ onRetrieve: () => (retrieveCalled = true) }),
+    store.deps,
+  );
+
+  assert.equal(retrieveCalled, false, "must not even call Stripe.subscriptions.retrieve");
+  assert.equal(store.updateCalls.length, 0);
+});
+
+test("processStripeEvent: checkout completion is a no-op when session.subscription is not a string", async () => {
+  // One-time checkout sessions (e.g. a non-subscription product) leave
+  // `subscription: null` on the session payload. Stripe's TS types also
+  // permit a hydrated Subscription object. Either way the handler must
+  // bail out — calling `subscriptions.retrieve(null)` would throw and
+  // trip the 500 path.
+  const store = makeFakeStore();
+  let retrieveCalled = false;
+  await processStripeEvent(
+    {
+      type: "checkout.session.completed",
+      data: {
+        object: { metadata: { agency_id: "9" }, subscription: null },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe({ onRetrieve: () => (retrieveCalled = true) }),
+    store.deps,
+  );
+
+  assert.equal(retrieveCalled, false);
+  assert.equal(store.updateCalls.length, 0);
+});
+
+test("processStripeEvent: customer.subscription.updated → active clears the disabled flag", async () => {
+  // Simulates a delinquent agency paying their invoice: Stripe transitions
+  // the subscription back to `active` and we must re-enable the agency.
+  // The handler emits a *second* updateAgencyBilling call dedicated to
+  // toggling `disabled` after `applySubscription` runs — pin both writes.
+  const store = makeFakeStore({
+    agency: { id: 11, subscription_status: "past_due" },
+  });
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_11",
+          status: "active",
+          metadata: { agency_id: "11", plan_tier: "basic", logs_unlimited: "false" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe({}),
+    store.deps,
+  );
+
+  assert.equal(store.getAgencyByIdCalls.length, 1);
+  assert.equal(store.getAgencyByIdCalls[0], 11);
+  // First call is applySubscription's full patch, second is the dedicated
+  // disabled toggle.
+  assert.equal(store.updateCalls.length, 2);
+  assert.equal(store.updateCalls[0]?.patch.subscriptionStatus, "active");
+  assert.equal(store.updateCalls[0]?.patch.disabled, false);
+  assert.equal(store.updateCalls[0]?.patch.planTier, "basic");
+  assert.equal(store.updateCalls[0]?.patch.logsUnlimited, false);
+  assert.equal(store.updateCalls[0]?.patch.transmissionRetentionDays, 3);
+  assert.deepEqual(store.updateCalls[1]?.patch, { disabled: false });
+});
+
+test("processStripeEvent: customer.subscription.updated → past_due disables the agency", async () => {
+  // The other direction: Stripe escalates a delinquent invoice to
+  // `past_due` and we must drop the agency offline.
+  const store = makeFakeStore({
+    agency: { id: 12, subscription_status: "active" },
+  });
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_12",
+          status: "past_due",
+          metadata: { agency_id: "12", plan_tier: "pro", logs_unlimited: "true" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe({}),
+    store.deps,
+  );
+
+  assert.equal(store.updateCalls.length, 2);
+  assert.equal(store.updateCalls[0]?.patch.subscriptionStatus, "past_due");
+  assert.equal(store.updateCalls[0]?.patch.disabled, true);
+  assert.deepEqual(store.updateCalls[1]?.patch, { disabled: true });
+});
+
+test("processStripeEvent: customer.subscription.updated leaves a 'comped' agency's disabled flag alone", async () => {
+  // 'comped' is the platform-only "the owner gave them this for free"
+  // state. Stripe still emits subscription events on a comped agency
+  // (e.g. an old test subscription expiring) and the second
+  // updateAgencyBilling call MUST be skipped — otherwise we'd kick a
+  // comped customer offline because of an unrelated Stripe event.
+  const store = makeFakeStore({
+    agency: { id: 13, subscription_status: "comped" },
+  });
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_13",
+          status: "canceled",
+          metadata: { agency_id: "13", plan_tier: "pro", logs_unlimited: "true" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe({}),
+    store.deps,
+  );
+
+  // Only the applySubscription write — no follow-up disabled toggle.
+  assert.equal(store.updateCalls.length, 1);
+  assert.equal(store.updateCalls[0]?.patch.subscriptionStatus, "canceled");
+  assert.ok(!store.updateCalls.some((c, idx) => idx > 0 && "disabled" in c.patch));
+});
+
+test("processStripeEvent: customer.subscription.updated does not write disabled when agency lookup returns null", async () => {
+  // Defensive: if the agency was deleted between the apply step and the
+  // lookup, the second updateAgencyBilling call must not run. (Today the
+  // null-check guards it; pin that contract so a future "if (!agency)
+  // throw" doesn't escalate a benign event into a 500.)
+  const store = makeFakeStore({ agency: null });
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_14",
+          status: "active",
+          metadata: { agency_id: "14", plan_tier: "basic", logs_unlimited: "false" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe({}),
+    store.deps,
+  );
+
+  assert.equal(store.getAgencyByIdCalls.length, 1);
+  // Only the applySubscription write; no disabled toggle.
+  assert.equal(store.updateCalls.length, 1);
+});
+
+test("processStripeEvent: customer.subscription.deleted disables and writes canceled status", async () => {
+  // A `customer.subscription.deleted` event signals the customer churned.
+  // Both writes must happen: applySubscription maps `canceled` → canceled,
+  // and the follow-up sets disabled=true (since canceled is not
+  // active/trialing).
+  const store = makeFakeStore({
+    agency: { id: 15, subscription_status: "active" },
+  });
+  await processStripeEvent(
+    {
+      type: "customer.subscription.deleted",
+      data: {
+        object: {
+          id: "sub_15",
+          status: "canceled",
+          metadata: { agency_id: "15", plan_tier: "pro", logs_unlimited: "true" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe({}),
+    store.deps,
+  );
+
+  assert.equal(store.updateCalls.length, 2);
+  assert.equal(store.updateCalls[0]?.patch.subscriptionStatus, "canceled");
+  assert.equal(store.updateCalls[0]?.patch.disabled, true);
+  assert.deepEqual(store.updateCalls[1]?.patch, { disabled: true });
+});
+
+test("processStripeEvent: invoice.payment_failed retrieves the referenced subscription and applies it", async () => {
+  // The 2024+ Stripe Invoice API exposes the linked subscription via
+  // `parent.subscription_details.subscription`. The handler must extract
+  // it, fetch the canonical subscription, and run applySubscription —
+  // which will then map past_due → past_due and disable the agency. A
+  // regression here means a failed-payment event silently does nothing.
+  const store = makeFakeStore();
+  let seen = "";
+  await processStripeEvent(
+    {
+      type: "invoice.payment_failed",
+      data: {
+        object: {
+          parent: { subscription_details: { subscription: "sub_failed" } },
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe({
+      onRetrieve: (id) => (seen = id),
+      sub: {
+        id: "sub_failed",
+        status: "past_due",
+        metadata: { agency_id: "20", plan_tier: "pro", logs_unlimited: "true" },
+        trial_end: null,
+      },
+    }),
+    store.deps,
+  );
+
+  assert.equal(seen, "sub_failed");
+  assert.equal(store.updateCalls.length, 1);
+  assert.equal(store.updateCalls[0]?.agencyId, 20);
+  assert.equal(store.updateCalls[0]?.patch.subscriptionStatus, "past_due");
+  assert.equal(store.updateCalls[0]?.patch.disabled, true);
+});
+
+test("processStripeEvent: invoice.payment_failed accepts the hydrated subscription object form", async () => {
+  // Stripe's TS types also allow `subscription_details.subscription` to be
+  // a hydrated Subscription object instead of a string id. The handler
+  // reads `.id` off that object — pin it so a refactor that drops the
+  // object branch doesn't silently start ignoring half of Stripe's
+  // production payloads.
+  const store = makeFakeStore();
+  let seen = "";
+  await processStripeEvent(
+    {
+      type: "invoice.payment_failed",
+      data: {
+        object: {
+          parent: {
+            subscription_details: { subscription: { id: "sub_obj_form" } },
+          },
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe({
+      onRetrieve: (id) => (seen = id),
+      sub: {
+        id: "sub_obj_form",
+        status: "past_due",
+        metadata: { agency_id: "21", plan_tier: "basic", logs_unlimited: "false" },
+        trial_end: null,
+      },
+    }),
+    store.deps,
+  );
+
+  assert.equal(seen, "sub_obj_form");
+  assert.equal(store.updateCalls.length, 1);
+  assert.equal(store.updateCalls[0]?.patch.disabled, true);
+});
+
+test("processStripeEvent: invoice.payment_failed is a no-op when the invoice has no subscription reference", async () => {
+  // One-off invoices (e.g. a manually-created invoice for a setup fee)
+  // have no linked subscription. The handler must skip gracefully — a
+  // regression that called `subscriptions.retrieve(undefined)` would
+  // throw and trip the outer 500 path, forcing infinite Stripe retries.
+  const store = makeFakeStore();
+  let retrieveCalled = false;
+  await processStripeEvent(
+    {
+      type: "invoice.payment_failed",
+      data: { object: { parent: null } },
+    } as unknown as Stripe.Event,
+    fakeStripe({ onRetrieve: () => (retrieveCalled = true) }),
+    store.deps,
+  );
+
+  assert.equal(retrieveCalled, false);
+  assert.equal(store.updateCalls.length, 0);
+});
+
+test("processStripeEvent: unknown event types are silently ignored", async () => {
+  // Stripe sends *many* event types we do not subscribe to (charges,
+  // payment_intents, customer.created, etc.). They must hit the default
+  // branch and no-op. Otherwise any new Stripe webhook starts crashing
+  // our handler.
+  const store = makeFakeStore();
+  let retrieveCalled = false;
+  await processStripeEvent(
+    {
+      type: "customer.created",
+      data: { object: { id: "cus_xyz" } },
+    } as unknown as Stripe.Event,
+    fakeStripe({ onRetrieve: () => (retrieveCalled = true) }),
+    store.deps,
+  );
+
+  assert.equal(retrieveCalled, false);
+  assert.equal(store.updateCalls.length, 0);
+});
+
+test("processStripeEvent: applySubscription serialises trial_end (unix seconds) to ISO timestamp", async () => {
+  // The store column is `trial_ends_at TIMESTAMPTZ` and expects an ISO
+  // string. Stripe ships `trial_end` as a unix-seconds integer. A
+  // regression that forgot the *1000 multiplier would write a 1970 date
+  // and the trial-sweep job would immediately mark every trial expired.
+  const store = makeFakeStore();
+  const trialEndUnix = 1735689600; // 2025-01-01T00:00:00Z
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_trial",
+          status: "trialing",
+          metadata: { agency_id: "22", plan_tier: "pro", logs_unlimited: "true" },
+          trial_end: trialEndUnix,
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe({}),
+    {
+      ...store.deps,
+      // No agency lookup needed for this assertion.
+      async getAgencyById() {
+        return null;
+      },
+    },
+  );
+
+  assert.equal(store.updateCalls.length, 1);
+  assert.equal(
+    store.updateCalls[0]?.patch.trialEndsAt,
+    new Date(trialEndUnix * 1000).toISOString(),
+  );
+  assert.equal(store.updateCalls[0]?.patch.subscriptionStatus, "trialing");
+  // `trialing` must clear the disabled flag.
+  assert.equal(store.updateCalls[0]?.patch.disabled, false);
+});
+
+test("processStripeEvent: applySubscription defaults plan_tier to 'basic' when metadata is missing", async () => {
+  // The metadata.plan_tier key is set by the platform on checkout. Stripe
+  // ships back whatever was sent — but a hand-edited subscription in the
+  // Stripe dashboard can have it missing/malformed. The mapping rule is
+  // "anything not exactly 'pro' is basic" — pin that contract so a
+  // regression doesn't start defaulting to pro and silently grant Pro
+  // features.
+  const store = makeFakeStore();
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_no_tier",
+          status: "active",
+          metadata: { agency_id: "23" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe({}),
+    store.deps,
+  );
+
+  assert.equal(store.updateCalls[0]?.patch.planTier, "basic");
+  // logs_unlimited absent → false → 3 day retention (paywall the long history).
+  assert.equal(store.updateCalls[0]?.patch.logsUnlimited, false);
+  assert.equal(store.updateCalls[0]?.patch.transmissionRetentionDays, 3);
+});
