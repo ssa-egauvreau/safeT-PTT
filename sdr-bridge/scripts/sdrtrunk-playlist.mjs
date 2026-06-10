@@ -98,6 +98,13 @@ async function main() {
 
   const streamName = cfg.sdrtrunk?.streamName || "SafeT";
   const listName = cfg.sdrtrunk?.aliasList || "OCCCS";
+  // EVERY known talkgroup gets the SafeT stream tag — sdrtrunk only uploads
+  // calls whose alias carries the broadcast channel, and Scan All is supposed
+  // to hear every clear call on the system, not just the bridged channels.
+  // The bridge routes bridged talkgroups to their SafeT channel and the rest
+  // to the Scan All channels. (Encrypted talkgroups produce no audio in
+  // sdrtrunk, so tagging them is harmless.)
+  for (const id of ref.keys()) ids.add(id);
   const talkgroups = [...ids].map((id) => ({ tgid: id, ...(ref.get(id) || { label: `TG ${id}`, group: "SDR" }) }));
   const xml = buildAliasList(talkgroups, { listName, streamName });
 
