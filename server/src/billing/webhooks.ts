@@ -22,6 +22,10 @@ export function mapStripeStatus(status: Stripe.Subscription.Status): Subscriptio
   }
 }
 
+export function isStripeSubscriptionActive(status: Stripe.Subscription.Status): boolean {
+  return status === "active" || status === "trialing";
+}
+
 export function agencyIdFromMeta(meta: Stripe.Metadata | null | undefined): number | null {
   const raw = meta?.agency_id;
   if (!raw) {
@@ -39,6 +43,7 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
   const planTier = (sub.metadata.plan_tier === "pro" ? "pro" : "basic") as PlanTier;
   const logsUnlimited = sub.metadata.logs_unlimited === "true";
   const status = mapStripeStatus(sub.status);
+  const active = isStripeSubscriptionActive(sub.status);
 
   await updateAgencyBilling(agencyId, {
     stripeSubscriptionId: sub.id,
@@ -46,7 +51,7 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
     planTier,
     logsUnlimited,
     transmissionRetentionDays: logsUnlimited ? null : 3,
-    disabled: status === "canceled" || status === "past_due",
+    disabled: !active,
     trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
   });
 }
@@ -82,7 +87,6 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
         if (agencyId && typeof session.subscription === "string") {
           const sub = await stripe.subscriptions.retrieve(session.subscription);
           await applySubscription(sub);
-          await updateAgencyBilling(agencyId, { disabled: false });
         }
         break;
       }
@@ -94,7 +98,7 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
         if (agencyId) {
           const agency = await getAgencyById(agencyId);
           if (agency && agency.subscription_status !== "comped") {
-            const active = sub.status === "active" || sub.status === "trialing";
+            const active = isStripeSubscriptionActive(sub.status);
             await updateAgencyBilling(agencyId, { disabled: !active });
           }
         }
