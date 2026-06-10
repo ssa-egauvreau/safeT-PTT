@@ -116,6 +116,45 @@
       ],
       "complianceNote": "Healthcare environments may involve PHI in voice communications. Review retention settings and request a security packet and BAA before deploying in clinical areas.",
       "cta": "Contact sales for healthcare security deployments or start a trial for evaluation."
+    },
+    {
+      "slug": "search-rescue-cert",
+      "title": "Search & rescue / CERT",
+      "metaDescription": "Push-to-talk for volunteer SAR, CERT, and disaster response teams — rugged handsets, emergency alerts, and fast deployment on LTE.",
+      "kicker": "SAR & CERT",
+      "headline": "Volunteer and disaster response communications",
+      "intro": "Search and rescue teams, CERT units, and disaster volunteers need instant voice that works across jurisdictions on everyday Android phones or rugged Inrico handsets — without consumer walkie-talkie apps on public channels.",
+      "heroImage": "/marketing/inrico-irc590.svg",
+      "heroImageVariant": "phone",
+      "useCases": [
+        {
+          "title": "Multi-team coordination",
+          "body": "Separate talkgroups for search teams, staging, logistics, and command. Dispatch monitors all channels from safeT Command."
+        },
+        {
+          "title": "Volunteer rapid deploy",
+          "body": "Agency admin creates accounts in Control, shares the APK link, and volunteers sideload safeT Mobile — on the air in under an hour with the Android setup guide."
+        },
+        {
+          "title": "Weak-cell and rural ops",
+          "body": "LTE handsets with Codec2 low-bandwidth mode and hardware PTT on IRC590 radios for field teams spread across terrain."
+        },
+        {
+          "title": "Emergency escalation",
+          "body": "Hardware or in-app emergency button alerts command with priority and GPS — critical when a searcher is overdue or injured."
+        }
+      ],
+      "features": [
+        "Private encrypted agency network",
+        "Inrico IRC590 ultracompact rugged LTE radio",
+        "Hardware PTT and emergency key",
+        "Live GPS on the dispatch map",
+        "Illustrated Android setup guide at /setup/android",
+        "Emergency workflow with ack/resolve",
+        "Optional monitor of legacy radio via stream bridges — see /interoperability"
+      ],
+      "complianceNote": "Volunteer organizations should coordinate with their sponsoring agency on data retention and logging policies. Request a security packet at /trust for grant or mutual-aid agreements.",
+      "cta": "Start a 7-day trial for your SAR or CERT team, or contact sales for multi-team deployments."
     }
   ]
 }

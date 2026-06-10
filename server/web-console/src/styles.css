@@ -9227,3 +9227,106 @@ table.vlt-units tbody tr:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* --- Interoperability & pricing annual --- */
+.interop-flow {
+  list-style: none;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 0 24px 24px;
+  counter-reset: interop;
+}
+.interop-flow li {
+  position: relative;
+  padding: 14px 14px 14px 48px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(15, 21, 28, 0.4);
+  font-size: 15px;
+  counter-increment: interop;
+}
+.interop-flow li::before {
+  content: counter(interop);
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(13, 148, 136, 0.25);
+  color: #5eead4;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.interop-path-grid,
+.interop-codec-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 0 24px 24px;
+}
+.interop-path-card,
+.interop-codec-card {
+  padding: 22px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(15, 21, 28, 0.35);
+}
+.interop-path-card h3,
+.interop-codec-card h3 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+.interop-path-card > p,
+.interop-codec-card p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+.interop-path-card ul {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+.interop-path-card li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.interop-audience {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.pricing-annual-banner {
+  max-width: 640px;
+  margin: 16px auto 0;
+  padding: 14px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(13, 148, 136, 0.35);
+  background: rgba(13, 148, 136, 0.08);
+  font-size: 14px;
+  text-align: center;
+}
+.pricing-annual-banner-compact {
+  max-width: none;
+  margin-top: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+.pricing-annual-equiv {
+  margin: -4px 0 12px;
+  font-size: 13px;
+  color: #5eead4;
+}
+

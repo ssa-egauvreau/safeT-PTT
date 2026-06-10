@@ -138,6 +138,14 @@ export function TrustPage() {
             <h3>Healthcare security</h3>
             <p>Hospital campus safety, emergency workflow, and retention.</p>
           </Link>
+          <Link to="/industries/search-rescue-cert" className="support-link-card">
+            <h3>Search &amp; rescue / CERT</h3>
+            <p>Volunteer SAR and disaster response on rugged LTE handsets.</p>
+          </Link>
+          <Link to="/interoperability" className="support-link-card">
+            <h3>Interoperability</h3>
+            <p>LMR bridges, P25 ingest, stream feeds, and IMBE codec.</p>
+          </Link>
         </div>
         <p className="lp-section-cta">
           Also see <Link to="/security">Security overview</Link> · <Link to="/faq">FAQ</Link>

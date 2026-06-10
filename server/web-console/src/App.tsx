@@ -60,6 +60,9 @@ const TrustPage = lazy(() =>
 const IndustryPage = lazy(() =>
   import("./pages/marketing/IndustryPage").then((m) => ({ default: m.IndustryPage })),
 );
+const InteroperabilityPage = lazy(() =>
+  import("./pages/marketing/InteroperabilityPage").then((m) => ({ default: m.InteroperabilityPage })),
+);
 const MobilePage = lazy(() =>
   import("./pages/marketing/MobilePage").then((m) => ({ default: m.MobilePage })),
 );
@@ -117,6 +120,7 @@ export function App() {
       <Route path="/support" element={<SupportPage />} />
       <Route path="/security" element={<SecurityPage />} />
       <Route path="/trust" element={<TrustPage />} />
+      <Route path="/interoperability" element={<InteroperabilityPage />} />
       <Route path="/industries/:slug" element={<IndustryPage />} />
       <Route path="/mobile" element={<MobilePage />} />
       <Route path="/command" element={<CommandPage />} />

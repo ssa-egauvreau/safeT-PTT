@@ -13,7 +13,7 @@ import {
   IconArrowRight,
   type IconProps,
 } from "../icons";
-import { LOGS_ADDON, PLANS } from "../data/marketing/pricing";
+import { LOGS_ADDON, PLANS, ANNUAL_BILLING } from "../data/marketing/pricing";
 import trustData from "../data/marketing/trustCenter.json";
 import customerStories from "../data/marketing/customerStories.json";
 import { MarketingLayout } from "./marketing/MarketingLayout";
@@ -237,6 +237,10 @@ export function LandingPage() {
           <Link to="/industries/fire-ems">Fire &amp; EMS</Link>
           {" · "}
           <Link to="/industries/healthcare-security">Healthcare security</Link>
+          {" · "}
+          <Link to="/industries/search-rescue-cert">SAR / CERT</Link>
+          {" · "}
+          <Link to="/interoperability">LMR interoperability</Link>
         </p>
       </section>
 
@@ -285,6 +289,10 @@ export function LandingPage() {
           <span className="lp-kicker">Pricing</span>
           <h2>Simple per-radio pricing</h2>
           <p>Monthly billing. Dispatchers and admins included free. 7-day trial, no card required.</p>
+          <p className="pricing-annual-banner pricing-annual-banner-compact">
+            Save {ANNUAL_BILLING.discountPercent}% with annual billing —{" "}
+            <Link to="/pricing">see pricing</Link>
+          </p>
         </div>
         <div className="lp-plan-grid">
           {PLANS.map((plan) => (
