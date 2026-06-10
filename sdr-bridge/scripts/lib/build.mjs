@@ -91,8 +91,12 @@ function buildTrunkConfig(cfg, plan) {
     } else {
       // trunk-recorder sets the system up on the FIRST control channel listed
       // and EXITS if no source covers it ("Unable to find a source for this
-      // System") — even when later list entries are covered fine. Order the
-      // covered ones first so the config's list order can never crash it.
+      // System") — even when later list entries are covered fine. Worse, every
+      // UNCOVERED entry left in the hunt list costs ~3 deaf seconds per hunt
+      // cycle ("Unable to retune ... freq not covered") during which call
+      // grants are missed and recordings start mid-call ("Call was UPDATE not
+      // GRANT"). So the decoder gets ONLY the covered ones; the others come
+      // back automatically once a dongle covers them.
       const covered = (f) => sources.some((src) => Math.abs(f - src.center) <= src.rate * 0.48);
       const inWindow = control.filter(covered);
       const outWindow = control.filter((f) => !covered(f));
@@ -106,9 +110,11 @@ function buildTrunkConfig(cfg, plan) {
       if (outWindow.length)
         console.warn(
           `  ! ${sys.shortName}: control channel(s) ${outWindow.map((f) => (f / 1e6).toFixed(4)).join(", ")} MHz ` +
-            `are outside every dongle window — unreachable until a dongle covers them.`,
+            `are outside every dongle window — left out of the decoder's hunt list (hunting an ` +
+            `uncovered frequency wastes ~3 deaf seconds per cycle, missing call starts). ` +
+            `They return automatically once a dongle covers them.`,
         );
-      sys.control_channels = [...inWindow, ...outWindow];
+      sys.control_channels = inWindow;
     }
     // A trunked (P25) system with NO control channel makes trunk-recorder
     // segfault on startup — it has nothing to tune the control decoder to. Fail
