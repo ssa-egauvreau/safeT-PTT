@@ -179,7 +179,7 @@ import { enqueueKbIngest } from "./aiDispatch/knowledgeBase/ingest.js";
 import { getEmbeddingModelName } from "./aiDispatch/knowledgeBase/embeddings.js";
 import { handleTen8Webhook, handleTen8WebhookGet } from "./ten8/webhook.js";
 import { createBillingRouter } from "./billing/routes.js";
-import { syncSeatsForAgency } from "./billing/subscription.js";
+import { isAgencyBillingSuspended, syncSeatsForAgency } from "./billing/subscription.js";
 import {
   androidUpdatePublishAuthError,
   handleAndroidUpdateApk,
@@ -568,12 +568,7 @@ export function createApiRouter(): Router {
         const agency = await getAgencyById(auth.agencyId);
         if (!agency || agency.disabled) {
           agencyDisabled = true;
-          billingSuspend =
-            !!agency &&
-            agency.signup_completed_at != null &&
-            agency.subscription_status !== "comped" &&
-            agency.subscription_status !== "active" &&
-            !(agency.subscription_status === "trialing" && agency.trial_ends_at != null && new Date(agency.trial_ends_at) > new Date());
+          billingSuspend = isAgencyBillingSuspended(agency);
           setCachedAuth(auth.id, {
             tokenGeneration: user.token_generation,
             userDisabled: false,
