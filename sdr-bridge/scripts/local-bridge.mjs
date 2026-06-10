@@ -12,7 +12,7 @@
  *
  * Run from sdr-bridge/:  node scripts/local-bridge.mjs   (npm start launches it)
  */
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createSocket } from "node:dgram";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -36,7 +36,6 @@ const baseUrl = String(safet.baseUrl ?? "").replace(/\/+$/, "");
 const iceHost = cfg.icecast?.host ?? "127.0.0.1";
 const icePort = cfg.icecast?.port ?? 8000;
 
-const SAMPLE_RATE = 16000; // relay expects raw PCM mono 16-bit LE @ 16 kHz
 const FRAME_BYTES = 640; // 20 ms
 const RECONNECT_MIN = 2000;
 const RECONNECT_MAX = 30000;
@@ -234,6 +233,41 @@ setInterval(() => {
   }
 }, 500).unref();
 
+/** Raw s16le mono 8 kHz -> 16 kHz by sample doubling (fine for radio voice). */
+function upsample8to16(pcm) {
+  const usable = pcm.length - (pcm.length % 2);
+  const up = Buffer.alloc(usable * 2);
+  for (let i = 0; i < usable; i += 2) {
+    const s = pcm.readInt16LE(i);
+    up.writeInt16LE(s, i * 2);
+    up.writeInt16LE(s, i * 2 + 2);
+  }
+  return up;
+}
+
+/** Real-time frame pacing: the decoder flushes audio in bursts, and shoving a
+ * burst of 20ms frames at the relay in one go plays back sped-up/garbled.
+ * Queue frames and release them on a 20ms clock; cap backlog at ~5s so the
+ * feed stays near-live. */
+function makePacedSender(emit) {
+  const queue = [];
+  let clock = null;
+  const timer = setInterval(() => {
+    if (!queue.length) {
+      clock = null;
+      return;
+    }
+    if (clock === null) clock = Date.now();
+    while (queue.length && clock <= Date.now()) {
+      emit(queue.shift());
+      clock += 20;
+    }
+    if (queue.length > 250) queue.splice(0, queue.length - 250);
+  }, 10);
+  timer.unref();
+  return { push: (frame) => queue.push(frame), stop: () => clearInterval(timer) };
+}
+
 /**
  * Scan-All ingest: the decoder's TGID-0 stream carries EVERY clear call on the
  * system, each datagram prefixed with its 4-byte little-endian TGID. Demux by
@@ -245,25 +279,7 @@ function runScanAllIngest(port, bridgedTgids, tgNames) {
   const sock = createSocket("udp4");
   let currentTg = null;
   let carry = Buffer.alloc(0);
-
-  // Paced output: the decoder can flush audio in bursts; shoving a burst of
-  // 20ms frames at the relay in one go plays back sped-up/garbled. Queue the
-  // frames and release them on a real-time 20ms clock instead.
-  const queue = [];
-  let clock = null;
-  setInterval(() => {
-    if (!queue.length) {
-      clock = null;
-      return;
-    }
-    if (clock === null) clock = Date.now();
-    while (queue.length && clock <= Date.now()) {
-      monitor.send(queue.shift());
-      clock += 20;
-    }
-    // Never let backlog exceed ~5s: a scanner must stay near-live.
-    if (queue.length > 250) queue.splice(0, queue.length - 250);
-  }, 10).unref();
+  const paced = makePacedSender((frame) => monitor.send(frame));
 
   sock.on("message", (msg) => {
     if (msg.length < 6) return;
@@ -275,18 +291,9 @@ function runScanAllIngest(port, bridgedTgids, tgNames) {
       currentTg = tgid;
       carry = Buffer.alloc(0);
     }
-    // 8 kHz mono s16le -> 16 kHz by sample doubling (fine for radio voice).
-    const pcm = msg.subarray(4);
-    const usable = pcm.length - (pcm.length % 2);
-    const up = Buffer.alloc(usable * 2);
-    for (let i = 0; i < usable; i += 2) {
-      const s = pcm.readInt16LE(i);
-      up.writeInt16LE(s, i * 2);
-      up.writeInt16LE(s, i * 2 + 2);
-    }
-    carry = carry.length ? Buffer.concat([carry, up]) : up;
+    carry = carry.length ? Buffer.concat([carry, upsample8to16(msg.subarray(4))]) : upsample8to16(msg.subarray(4));
     while (carry.length >= FRAME_BYTES) {
-      queue.push(carry.subarray(0, FRAME_BYTES));
+      paced.push(carry.subarray(0, FRAME_BYTES));
       carry = carry.subarray(FRAME_BYTES);
     }
   });
@@ -380,10 +387,11 @@ function runMonitorBridge(bridge) {
 }
 
 function runBridge(bridge, udpPort) {
-  // Read the decoder's per-talkgroup UDP directly (raw s16le mono 8 kHz) — no
-  // Icecast in the path, so nothing flaky to depend on. ffmpeg simply blocks
-  // between calls (no packets) and resumes when the next call's audio arrives.
-  const inUrl = `udp://127.0.0.1:${udpPort}?fifo_size=1000000&overrun_nonfatal=1`;
+  // Read the decoder's per-talkgroup UDP (raw s16le mono 8 kHz) with an
+  // IN-PROCESS socket — the exact mechanism the Scan All ingest uses, which is
+  // field-proven to receive. No external reader process means no orphaned
+  // zombie can ever hold the port, and a blocked port fails LOUDLY
+  // (EADDRINUSE) instead of silently stealing packets.
   const voxThreshold = Number(bridge.vox_threshold ?? 0.02);
   const voxHang = Number(bridge.vox_hang_ms ?? 1500);
   let stopped = false;
@@ -394,7 +402,9 @@ function runBridge(bridge, udpPort) {
       const token = tokenRef.value;
       const ws = new WS(`${wsBase()}/v1/voice/stream?token=${encodeURIComponent(token)}`);
       ws.binaryType = "arraybuffer";
-      let child = null;
+      const srow = statusRow(bridge);
+      let sock = null;
+      let paced = null;
       let carry = Buffer.alloc(0);
       let lastActive = 0;
       let gateWas = false;
@@ -405,9 +415,14 @@ function runBridge(bridge, udpPort) {
         finished = true;
         monitor.release(bridge.name); // don't strand the Scan-All feed if we held it
         try {
-          child && child.kill("SIGKILL");
+          paced && paced.stop();
         } catch {
           /* gone */
+        }
+        try {
+          sock && sock.close();
+        } catch {
+          /* closed */
         }
         try {
           ws.close();
@@ -419,43 +434,33 @@ function runBridge(bridge, udpPort) {
 
       const startIngest = () => {
         if (stopped) return finish();
-        child = spawn("ffmpeg", [
-          "-hide_banner", "-loglevel", "error", "-nostdin",
-          "-f", "s16le", "-ar", "8000", "-ac", "1",
-          "-i", inUrl,
-          "-ac", "1", "-ar", String(SAMPLE_RATE), "-f", "s16le", "-",
-        ]);
-        child.on("error", (e) => {
-          console.warn(`[bridge] ${bridge.name} ffmpeg error: ${e.message}`);
+        paced = makePacedSender((frame) => {
+          if (ws.readyState !== 1) return;
+          try {
+            ws.send(frame);
+            markTxFrame(bridge, Date.now());
+          } catch {
+            /* drop */
+          }
+          // Also feed the Scan-All channels if we currently hold the feed.
+          if (monitor.claim(bridge.name)) monitor.send(frame);
+        });
+        sock = createSocket("udp4");
+        sock.on("error", (e) => {
+          console.warn(`[bridge] ${bridge.name} udp ${udpPort}: ${e.message}`);
           finish();
         });
-        child.on("exit", (code) => {
-          console.warn(`[bridge] ${bridge.name} ffmpeg exited (code ${code})`);
-          finish();
-        });
-        child.stderr.on("data", (d) => {
-          const s = d.toString().trim().split("\n")[0];
-          if (s) console.warn(`[bridge] ${bridge.name} ffmpeg: ${s}`);
-        });
-        const srow = statusRow(bridge);
-        child.stdout.on("data", (chunk) => {
-          carry = carry.length ? Buffer.concat([carry, chunk]) : chunk;
+        sock.on("message", (msg) => {
+          srow.rxFrames++; // heartbeat write picks this up — no dirty flag needed
+          carry = carry.length ? Buffer.concat([carry, upsample8to16(msg)]) : upsample8to16(msg);
           while (carry.length >= FRAME_BYTES) {
-            srow.rxFrames++; // heartbeat write picks this up — no dirty flag needed
             const frame = carry.subarray(0, FRAME_BYTES);
             carry = carry.subarray(FRAME_BYTES);
             const now = Date.now();
             if (frameRms(frame) >= voxThreshold) lastActive = now;
             const open = lastActive !== 0 && now - lastActive < voxHang;
-            if (open && ws.readyState === 1) {
-              try {
-                ws.send(frame);
-                markTxFrame(bridge, now);
-              } catch {
-                /* drop */
-              }
-              // Also feed the Scan-All channels if we currently hold the feed.
-              if (monitor.claim(bridge.name)) monitor.send(frame);
+            if (open) {
+              paced.push(frame);
             } else if (gateWas && !open && ws.readyState === 1) {
               try {
                 ws.send(JSON.stringify({ type: "release_air" }));
@@ -467,6 +472,9 @@ function runBridge(bridge, udpPort) {
             gateWas = open;
           }
         });
+        sock.bind(udpPort, "127.0.0.1", () =>
+          console.log(`[bridge] ${bridge.name}: listening on udp ${udpPort}`),
+        );
       };
 
       ws.onopen = () => {
