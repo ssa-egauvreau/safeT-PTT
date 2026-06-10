@@ -196,6 +196,30 @@
       ]
     },
     {
+      "id": "mdm-deploy",
+      "title": "Enterprise mass deploy & MDM",
+      "intro": "Agencies with dozens or hundreds of handsets need repeatable provisioning. Today safeT uses a signed APK sideload model; full MDM auto-enrollment is in active development.",
+      "roadmap": true,
+      "steps": [
+        {
+          "title": "What works today — manual rollout",
+          "body": "1) Admin downloads the signed APK from Control → Downloads.\n\n2) Create each radio account in Control → Users.\n\n3) Deliver APK + credentials via USB, shared drive, email, or MDM file push.\n\n4) Field tech follows this guide through install and sign-in.\n\nFor 10+ units, contact sales@safetptt.com for assisted onboarding."
+        },
+        {
+          "title": "MDM file deploy (Intune, SOTI, Knox)",
+          "body": "If your devices are already enrolled in an MDM, upload the safeT APK as a line-of-business app and assign it to device groups. Most MDMs require the user to approve install once unless the device is fully managed with silent-install permission.\n\nYou still configure agency slug and radio credentials on first launch — automated credential injection is part of the MDM enrollment feature we are building."
+        },
+        {
+          "title": "In development — enrollment link & QR",
+          "body": "We are building one-step enrollment: scan a QR code or open a signed link to download the APK, pre-fill agency slug, and bind the handset in one flow. Join the MDM beta waitlist by emailing sales@safetptt.com with your MDM platform (Intune, SOTI, etc.) and fleet size."
+        },
+        {
+          "title": "Stay on supported builds",
+          "body": "After install, safeT Mobile checks your server for new APK versions when the app opens. When MDM rollout ships, updates will support the same centralized publish path from Control → Downloads."
+        }
+      ]
+    },
+    {
       "id": "verify",
       "title": "Step 5 — Verify you are on the air",
       "intro": "Confirm voice and GPS reach dispatch before going live.",

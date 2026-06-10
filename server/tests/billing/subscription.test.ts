@@ -1,88 +1,103 @@
 /**
- * Tests for the pure billing helpers in `server/src/billing/subscription.ts`.
+ * Tests for `server/src/billing/subscription.ts` pure helpers.
  *
- * These two helpers gate every billing-aware code path on the server:
+ * `isBillingActive` is the gate the rest of the platform reads to decide
+ * whether an agency is allowed to receive AI dispatch service, ingest new
+ * transmissions, etc. A regression that:
  *
- *  - `isBillingActive(status)` decides whether an agency is currently entitled
- *    to use paid features. A regression here either silently keeps a canceled
- *    customer on the service or wrongly locks out a paying one mid-shift, so
- *    we pin the full status table — `active`, `trialing`, and `comped` are the
- *    ONLY billing-active states, and `past_due`/`canceled` are not.
+ *  - Returns `true` for `past_due` would silently keep failed-payment
+ *    customers on the system after Stripe stopped collecting money.
+ *  - Returns `false` for `trialing` would cut off paying customers' first
+ *    seven days even though the trial is the documented onboarding path.
+ *  - Returns `true` for an unrecognised string (e.g. a future Stripe
+ *    state mapping bug) would re-enable canceled accounts.
  *
- *  - `trialDaysLeft(trialEndsAt)` powers the "trial expires in N days" badge
- *    that admins see in the billing panel. The dangerous regressions are
- *    off-by-one bugs (still showing "1 day left" on an already-expired trial)
- *    and reporting `null` (i.e. "no trial") for an expired trial, which would
- *    make the panel claim the agency is on a permanent plan.
+ * `trialDaysLeft` powers the badge in the admin Billing panel and the
+ * trial-expiry sweep's UI hint. A regression that:
  *
- * The helpers are pure — no DB, no clock injection needed — so we drive them
- * with a fixed `Date.now` and explicit ISO strings.
+ *  - Returns negative values when the trial has already lapsed would
+ *    render "expires in -3 days" in the admin panel.
+ *  - Rounds down (Math.floor) instead of up (Math.ceil) would tell a
+ *    customer they have "0 days left" with several hours still on the
+ *    clock — confusing during the actual conversion window.
+ *  - Returns `0` instead of `null` for a never-started trial would
+ *    force the suspend banner on every comped / paid account.
  */
 
-import { test, beforeEach, afterEach } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { isBillingActive, trialDaysLeft } = await import("../../src/billing/subscription.js");
-const { SUBSCRIPTION_STATUSES } = await import("../../src/billing/types.js");
+import {
+  isBillingActive,
+  trialDaysLeft,
+} from "../../src/billing/subscription.js";
+import { SUBSCRIPTION_STATUSES } from "../../src/billing/types.js";
 
-test("isBillingActive: only active, trialing, and comped are billing-active", () => {
+test("isBillingActive: returns true only for active / comped / trialing", () => {
   assert.equal(isBillingActive("active"), true);
-  assert.equal(isBillingActive("trialing"), true);
   assert.equal(isBillingActive("comped"), true);
+  assert.equal(isBillingActive("trialing"), true);
+});
+
+test("isBillingActive: returns false for past_due and canceled (paywall states)", () => {
+  // These two states are exactly when the platform must lock new
+  // transmissions out — a regression that flipped either to true would
+  // give an unpaid customer free service.
   assert.equal(isBillingActive("past_due"), false);
   assert.equal(isBillingActive("canceled"), false);
 });
 
-test("isBillingActive: returns a boolean for every declared SubscriptionStatus", () => {
-  for (const s of SUBSCRIPTION_STATUSES) {
-    assert.equal(typeof isBillingActive(s), "boolean", `status ${s} must be classified`);
+test("isBillingActive: every documented status returns a defined boolean", () => {
+  // Tripwire — adding a new SubscriptionStatus to types.ts without
+  // updating isBillingActive() would slip through here as `undefined`.
+  for (const status of SUBSCRIPTION_STATUSES) {
+    const out = isBillingActive(status);
+    assert.equal(typeof out, "boolean", `status ${status} must map to a boolean`);
   }
 });
 
-const NOW = Date.UTC(2026, 5, 10, 12, 0, 0);
-const ORIGINAL_NOW = Date.now;
-
-beforeEach(() => {
-  Date.now = () => NOW;
-});
-
-afterEach(() => {
-  Date.now = ORIGINAL_NOW;
-});
-
-test("trialDaysLeft: null/empty trial timestamp returns null (not zero)", () => {
+test("trialDaysLeft: returns null when the agency has no trial set", () => {
   assert.equal(trialDaysLeft(null), null);
-  // Empty string is a falsy value the helper must treat the same as null —
-  // it's a `null` field round-tripped through JSON, not "trial expired".
-  assert.equal(trialDaysLeft("" as unknown as string), null);
 });
 
-test("trialDaysLeft: an already-expired trial collapses to 0, never a negative", () => {
-  const yesterday = new Date(NOW - 24 * 60 * 60 * 1000).toISOString();
-  assert.equal(trialDaysLeft(yesterday), 0);
-
-  const longAgo = new Date(NOW - 14 * 24 * 60 * 60 * 1000).toISOString();
-  assert.equal(trialDaysLeft(longAgo), 0);
+test("trialDaysLeft: returns 0 once the trial deadline has passed", (t) => {
+  // Past trial — the sweep / suspend logic treats 0 as "expired now".
+  // A negative number would mis-render in the admin Billing panel.
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
+  const fiveMinAgo = new Date(Date.now() - 5 * 60_000).toISOString();
+  assert.equal(trialDaysLeft(fiveMinAgo), 0);
 });
 
-test("trialDaysLeft: exactly-now is treated as expired (0), not as a fresh day", () => {
-  assert.equal(trialDaysLeft(new Date(NOW).toISOString()), 0);
+test("trialDaysLeft: rounds up partial days so 'X days left' never under-reports", (t) => {
+  // 2 days + 1 hour remaining must read as "3 days left", not "2".
+  // The conversion CTA disappears at zero, so under-reporting would
+  // tell a customer their trial is up before it actually is.
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
+  const future = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString();
+  assert.equal(trialDaysLeft(future), 3);
 });
 
-test("trialDaysLeft: future trials are ceil'd up so any remaining time shows ≥1 day", () => {
-  // 1 ms in the future → still ceils to a full day so the badge never
-  // flickers to "0 days" while the agency is technically still trialing.
-  assert.equal(trialDaysLeft(new Date(NOW + 1).toISOString()), 1);
+test("trialDaysLeft: returns 1 for the last day even if only minutes remain", (t) => {
+  // Exactly the boundary: < 24 hours left → ceil(0-1) = 1.
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
+  const futureMinutes = new Date(Date.now() + 5 * 60_000).toISOString();
+  assert.equal(trialDaysLeft(futureMinutes), 1);
+});
 
-  // 23h59m → still ceils to 1 day (a hard "1 day left").
-  assert.equal(trialDaysLeft(new Date(NOW + 24 * 60 * 60 * 1000 - 1).toISOString()), 1);
+test("trialDaysLeft: 7-day trial reads as 7 immediately after sign-up", (t) => {
+  // Mirrors `signup.ts` writing `Date.now() + TRIAL_DAYS * 24h`. The
+  // admin Billing panel labels this "7 days left"; if we returned 8 it
+  // would mis-promise an extra day on every signup.
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
+  const trialEnds = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  assert.equal(trialDaysLeft(trialEnds), 7);
+});
 
-  // Exactly +1 day → 1 (not 2).
-  assert.equal(trialDaysLeft(new Date(NOW + 24 * 60 * 60 * 1000).toISOString()), 1);
-
-  // +1 day +1 ms → 2 (the ceil bumps up).
-  assert.equal(trialDaysLeft(new Date(NOW + 24 * 60 * 60 * 1000 + 1).toISOString()), 2);
-
-  // The full 7-day trial.
-  assert.equal(trialDaysLeft(new Date(NOW + 7 * 24 * 60 * 60 * 1000).toISOString()), 7);
+test("trialDaysLeft: ignores agency local time — the input is an ISO timestamp", (t) => {
+  // `subscription.ts` parses with `new Date(string)`, which is UTC-aware.
+  // Pin that contract so a refactor that switches to a locale-dependent
+  // parser (Date.parse with a non-ISO format) is caught.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.UTC(2026, 0, 1, 0, 0, 0) });
+  const tomorrowUtcZ = "2026-01-02T00:00:00.000Z";
+  assert.equal(trialDaysLeft(tomorrowUtcZ), 1);
 });

@@ -1,0 +1,80 @@
+{
+  "overview": "safeT PTT supplements your existing Land Mobile Radio (LMR) network — it does not replace mission-critical conventional or trunked radio. Bridges and codecs let dispatch monitor legacy radio traffic on safeT channels while field units use LTE handsets.",
+  "disclaimer": "Agencies should maintain conventional LMR backup for life-safety operations. safeT is designed for encrypted LTE push-to-talk, dispatch oversight, and optional ingest from existing radio feeds.",
+  "paths": [
+    {
+      "id": "stream-bridge",
+      "title": "Stream URL bridge",
+      "summary": "Ingest audio from an HTTP stream — Icecast, HLS, or MP3 — onto a safeT channel. The server runs ffmpeg and VOX-gates traffic so dispatch hears conventional radio alongside LTE units.",
+      "details": [
+        "Configure in safeT Control → Bridges with source type stream URL.",
+        "Server-side ingest — no desktop app required once the stream is live.",
+        "Ideal for scanner feeds, trunk-recorder outputs, or rebroadcast mounts."
+      ],
+      "audience": "Comm centers monitoring legacy talkgroups in Command"
+    },
+    {
+      "id": "audio-bridge",
+      "title": "Audio device bridge",
+      "summary": "Capture line-in from a physical radio or scanner on a Windows PC and key it onto a safeT channel. Bidirectional bridges can also decode safeT traffic back to a speaker or radio input.",
+      "details": [
+        "Run from the web console Bridges page or the standalone safeT Bridge desktop app.",
+        "safeT Bridge is designed for unattended bridge boxes — local UI survives server redeploys.",
+        "Adjust input gain, VOX threshold, and hang time per bridge with live meters."
+      ],
+      "audience": "Agencies with a dedicated PC wired to a base station or scanner"
+    },
+    {
+      "id": "sdr-p25",
+      "title": "P25 trunk ingest (SDR tooling)",
+      "summary": "For P25 trunked systems, safeT does not decode RF directly. Use trunk-recorder plus the sdr-bridge tooling in this repo to emit one Icecast stream per talkgroup, then attach each mount as a stream URL bridge.",
+      "details": [
+        "One RTL-SDR + trunk-recorder can feed multiple talkgroups as separate HTTP streams.",
+        "Each talkgroup maps to one safeT channel via its own stream bridge.",
+        "RF bandwidth limits apply — wide-spread voice channels may need additional SDR sources."
+      ],
+      "audience": "Technical staff integrating county trunked LMR monitor feeds"
+    }
+  ],
+  "codecs": {
+    "title": "Voice codecs",
+    "intro": "Channels can be configured for different vocoders. Clients auto-negotiate per channel settings.",
+    "items": [
+      {
+        "name": "P25 IMBE",
+        "id": "imbe",
+        "body": "APCO P25–compatible IMBE vocoder for radio-literate deployments and interoperability testing with P25-oriented workflows."
+      },
+      {
+        "name": "Codec2 3200",
+        "id": "codec2_3200",
+        "body": "Low-bitrate open vocoder for bandwidth-constrained LTE links."
+      },
+      {
+        "name": "Opus",
+        "id": "opus",
+        "body": "Modern wideband codec for clear voice on phones and dispatch soft-radio."
+      }
+    ]
+  },
+  "diagram": [
+    "Conventional / trunked LMR",
+    "↓ stream URL or line-in bridge",
+    "safeT channel",
+    "↓ encrypted LTE relay",
+    "Field handsets + dispatch console"
+  ],
+  "notYet": {
+    "title": "On our roadmap",
+    "items": [
+      {
+        "name": "Cross-agency mutual aid channels",
+        "note": "Share selected talkgroups across agencies — in development; contact sales for early access."
+      },
+      {
+        "name": "Hardware LMR gateway appliance",
+        "note": "Turn-key radio gateway — today use stream URL or audio device bridges."
+      }
+    ]
+  }
+}
