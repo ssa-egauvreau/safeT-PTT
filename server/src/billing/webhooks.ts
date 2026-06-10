@@ -35,25 +35,66 @@ export function agencyIdFromMeta(meta: Stripe.Metadata | null | undefined): numb
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * Pure projection from a Stripe.Subscription to the billing patch we write
+ * to the `agencies` row. Extracted so the disabled / plan / retention
+ * derivation can be unit-tested without standing up Stripe or Postgres.
+ *
+ * Critical contract: `disabled` is derived from the live Stripe status via
+ * `isStripeSubscriptionActive` so a checkout-completion webhook retry for a
+ * tenant whose subscription is `past_due` / `canceled` does NOT silently
+ * re-enable them (regression that motivated this helper).
+ */
+export interface SubscriptionBillingPatch {
+  stripeSubscriptionId: string;
+  subscriptionStatus: SubscriptionStatus;
+  planTier: PlanTier;
+  logsUnlimited: boolean;
+  transmissionRetentionDays: number | null;
+  disabled: boolean;
+  trialEndsAt: string | null;
+}
+
+export function subscriptionBillingPatch(sub: Stripe.Subscription): SubscriptionBillingPatch {
+  const planTier: PlanTier = sub.metadata?.plan_tier === "pro" ? "pro" : "basic";
+  const logsUnlimited = sub.metadata?.logs_unlimited === "true";
+  return {
+    stripeSubscriptionId: sub.id,
+    subscriptionStatus: mapStripeStatus(sub.status),
+    planTier,
+    logsUnlimited,
+    transmissionRetentionDays: logsUnlimited ? null : 3,
+    disabled: !isStripeSubscriptionActive(sub.status),
+    trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
+  };
+}
+
+/**
+ * Decides whether the `customer.subscription.updated` /
+ * `customer.subscription.deleted` branch should flip `agency.disabled`.
+ *
+ * - Returns `null` for comped agencies — those are operator-controlled and
+ *   must never be auto-disabled by a Stripe event (otherwise an admin who
+ *   manually marked an agency comped would see it suspended the next time
+ *   Stripe replays a stale subscription event).
+ * - Otherwise returns `!isStripeSubscriptionActive(subStatus)`.
+ */
+export function shouldDisableForSubscriptionUpdate(
+  subStatus: Stripe.Subscription.Status,
+  currentAgencyStatus: SubscriptionStatus,
+): boolean | null {
+  if (currentAgencyStatus === "comped") {
+    return null;
+  }
+  return !isStripeSubscriptionActive(subStatus);
+}
+
 async function applySubscription(sub: Stripe.Subscription): Promise<void> {
   const agencyId = agencyIdFromMeta(sub.metadata);
   if (!agencyId) {
     return;
   }
-  const planTier = (sub.metadata.plan_tier === "pro" ? "pro" : "basic") as PlanTier;
-  const logsUnlimited = sub.metadata.logs_unlimited === "true";
-  const status = mapStripeStatus(sub.status);
-  const active = isStripeSubscriptionActive(sub.status);
-
-  await updateAgencyBilling(agencyId, {
-    stripeSubscriptionId: sub.id,
-    subscriptionStatus: status,
-    planTier,
-    logsUnlimited,
-    transmissionRetentionDays: logsUnlimited ? null : 3,
-    disabled: !active,
-    trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
-  });
+  await updateAgencyBilling(agencyId, subscriptionBillingPatch(sub));
 }
 
 export async function handleStripeWebhook(req: Request, res: Response): Promise<void> {
@@ -97,9 +138,11 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
         const agencyId = agencyIdFromMeta(sub.metadata);
         if (agencyId) {
           const agency = await getAgencyById(agencyId);
-          if (agency && agency.subscription_status !== "comped") {
-            const active = isStripeSubscriptionActive(sub.status);
-            await updateAgencyBilling(agencyId, { disabled: !active });
+          if (agency) {
+            const disabled = shouldDisableForSubscriptionUpdate(sub.status, agency.subscription_status);
+            if (disabled !== null) {
+              await updateAgencyBilling(agencyId, { disabled });
+            }
           }
         }
         break;
