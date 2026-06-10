@@ -24,7 +24,8 @@ export function CommandPage() {
           </div>
         </div>
       </section>
-      <FeatureShowcase
+      <div className="marketing-showcase-stack">
+        <FeatureShowcase
         kicker="Situational awareness"
         title="Live map &amp; transmission log"
         body="GPS positions stream into the dispatch map. Every call is recorded and transcribed — replay any message or search history from the console."
@@ -36,7 +37,8 @@ export function CommandPage() {
         imageSrc="/marketing/screenshots/command-console.webp"
         imageAlt="safeT Command dispatch console"
         variant="browser"
-      />
+        />
+      </div>
     </MarketingLayout>
   );
 }

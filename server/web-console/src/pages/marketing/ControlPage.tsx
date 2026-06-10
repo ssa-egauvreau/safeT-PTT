@@ -24,7 +24,8 @@ export function ControlPage() {
           </div>
         </div>
       </section>
-      <FeatureShowcase
+      <div className="marketing-showcase-stack">
+        <FeatureShowcase
         kicker="Administration"
         title="Users, channels &amp; billing"
         body="Add radio and dispatcher accounts, assign channel permissions, upload custom tones, and manage your subscription from one place."
@@ -36,7 +37,8 @@ export function ControlPage() {
         imageSrc="/marketing/screenshots/control-users.webp"
         imageAlt="safeT Control admin"
         variant="browser"
-      />
+        />
+      </div>
     </MarketingLayout>
   );
 }

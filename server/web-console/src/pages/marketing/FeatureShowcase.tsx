@@ -35,7 +35,7 @@ export function FeatureShowcase({
           </ul>
         )}
       </div>
-      <div className="feature-showcase-visual">
+      <div className={`feature-showcase-visual feature-showcase-visual--${variant}`}>
         <DeviceFrame variant={variant} src={imageSrc} alt={imageAlt} />
       </div>
     </section>

@@ -89,6 +89,7 @@ export function ScreenshotTabs({ tabs, autoAdvanceMs = DEFAULT_AUTO_MS }: Screen
             aria-labelledby={`screenshot-tab-${tab.id}`}
             aria-hidden={index !== activeIndex}
             className={index === activeIndex ? "screenshot-tabs-slide active" : "screenshot-tabs-slide"}
+            data-variant={tab.variant}
           >
             <DeviceFrame variant={tab.variant} src={tab.src} alt={tab.alt} />
           </div>

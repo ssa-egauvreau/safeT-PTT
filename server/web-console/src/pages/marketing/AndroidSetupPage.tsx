@@ -185,22 +185,39 @@ export function AndroidSetupPage() {
 
           {section.steps.length > 0 ? (
             <ol className="setup-steps android-setup-steps">
-              {section.steps.map((step, index) => (
-                <li key={step.title} className="setup-step android-setup-step">
-                  <div className="setup-step-copy">
-                    <span className="lp-step-num">{index + 1}</span>
-                    <h3>{step.title}</h3>
-                    <StepBody step={step} />
-                  </div>
-                  {step.image ? (
-                    <DeviceFrame
-                      variant={step.imageVariant === "browser" ? "browser" : "phone"}
-                      src={step.image}
-                      alt={step.imageAlt ?? step.title}
-                    />
-                  ) : null}
-                </li>
-              ))}
+              {section.steps.map((step, index) => {
+                const variant =
+                  step.imageVariant === "browser"
+                    ? "browser"
+                    : step.image
+                      ? "phone"
+                      : null;
+                return (
+                  <li
+                    key={step.title}
+                    className={
+                      step.image
+                        ? `setup-step android-setup-step setup-step--media setup-step--${variant}`
+                        : "setup-step android-setup-step setup-step--copy-only"
+                    }
+                  >
+                    <div className="setup-step-copy">
+                      <span className="lp-step-num">{index + 1}</span>
+                      <h3>{step.title}</h3>
+                      <StepBody step={step} />
+                    </div>
+                    {step.image ? (
+                      <div className="setup-step-visual">
+                        <DeviceFrame
+                          variant={variant === "browser" ? "browser" : "phone"}
+                          src={step.image}
+                          alt={step.imageAlt ?? step.title}
+                        />
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ol>
           ) : null}
 

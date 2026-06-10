@@ -24,32 +24,35 @@ export function MobilePage() {
           </div>
         </div>
       </section>
-      <FeatureShowcase
-        kicker="Field operations"
-        title="Instant push-to-talk"
-        body="Sub-second voice with per-channel talk priority, scan lists, and emergency button that clears the air and alerts dispatch."
-        bullets={[
-          "Hardware PTT on Inrico IRC590 & TM7",
-          "Encrypted voice over cellular or Wi-Fi",
-          "Replay recent transmissions on the handset",
-        ]}
-        imageSrc="/marketing/screenshots/mobile-radio-portal.webp"
-        imageAlt="Screenshot of safeT radio screen in mobile browser"
-        variant="phone"
-      />
-      <p className="muted marketing-shot-note lp-section-note">
-        Screenshot shows the browser soft radio at phone size. The native safeT Mobile APK on
-        Android and Inrico handsets uses the same channels, scan lists, and PTT controls.
-      </p>
-      <FeatureShowcase
-        reverse
-        kicker="Live config"
-        title="Changes push to every radio"
-        body="Update channels, assignments, or talk priority from Control and every handset picks it up live — no reboot required."
-        imageSrc="/marketing/screenshots/control-users.webp"
-        imageAlt="Admin panel"
-        variant="browser"
-      />
+
+      <div className="marketing-showcase-stack">
+        <FeatureShowcase
+          kicker="Field operations"
+          title="Instant push-to-talk"
+          body="Sub-second voice with per-channel talk priority, scan lists, and emergency button that clears the air and alerts dispatch."
+          bullets={[
+            "Hardware PTT on Inrico IRC590 & TM7",
+            "Encrypted voice over cellular or Wi-Fi",
+            "Replay recent transmissions on the handset",
+          ]}
+          imageSrc="/marketing/screenshots/mobile-radio-portal.webp"
+          imageAlt="Screenshot of safeT radio screen in mobile browser"
+          variant="phone"
+        />
+        <p className="marketing-callout">
+          Screenshot shows the browser soft radio at phone size. The native safeT Mobile APK on
+          Android and Inrico handsets uses the same channels, scan lists, and PTT controls.
+        </p>
+        <FeatureShowcase
+          reverse
+          kicker="Live config"
+          title="Changes push to every radio"
+          body="Update channels, assignments, or talk priority from Control and every handset picks it up live — no reboot required."
+          imageSrc="/marketing/screenshots/control-users.webp"
+          imageAlt="Screenshot of safeT Control admin panel"
+          variant="browser"
+        />
+      </div>
     </MarketingLayout>
   );
 }

@@ -18,7 +18,9 @@ export function DeviceFrame({ variant, src, alt }: DeviceFrameProps) {
           <span className="device-frame-notch" />
         )}
       </div>
-      <img src={src} alt={alt} loading="lazy" className="device-frame-shot" />
+      <div className="device-frame-media">
+        <img src={src} alt={alt} loading="lazy" className="device-frame-shot" />
+      </div>
     </div>
   );
 }

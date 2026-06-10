@@ -37,7 +37,9 @@ export function IndustryPage() {
               </a>
             </div>
           </div>
-          <div className="industry-hero-visual">
+          <div
+            className={`industry-hero-visual industry-hero-visual--${page.heroImageVariant === "phone" ? "phone" : "browser"}`}
+          >
             <DeviceFrame
               variant={page.heroImageVariant === "phone" ? "phone" : "browser"}
               src={page.heroImage}

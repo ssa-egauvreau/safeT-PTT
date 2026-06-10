@@ -20,20 +20,24 @@ export function SetupPage() {
           </p>
         </div>
         <ol className="setup-steps">
-          {steps.map((step) => (
-            <li key={step.step} className="setup-step">
-              <div className="setup-step-copy">
-                <span className="lp-step-num">{step.step}</span>
-                <h2>{step.title}</h2>
-                <p>{step.body}</p>
-              </div>
-              <DeviceFrame
-                variant={step.imageVariant === "phone" ? "phone" : "browser"}
-                src={step.image}
-                alt={step.title}
-              />
-            </li>
-          ))}
+          {steps.map((step) => {
+            const variant = step.imageVariant === "phone" ? "phone" : "browser";
+            return (
+              <li
+                key={step.step}
+                className={`setup-step setup-step--media setup-step--${variant}`}
+              >
+                <div className="setup-step-copy">
+                  <span className="lp-step-num">{step.step}</span>
+                  <h2>{step.title}</h2>
+                  <p>{step.body}</p>
+                </div>
+                <div className="setup-step-visual">
+                  <DeviceFrame variant={variant} src={step.image} alt={step.title} />
+                </div>
+              </li>
+            );
+          })}
         </ol>
       </section>
     </MarketingLayout>

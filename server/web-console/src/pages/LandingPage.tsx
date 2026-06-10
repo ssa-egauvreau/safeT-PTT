@@ -344,10 +344,9 @@ export function LandingPage() {
           <h2>Ready to put your team on the air?</h2>
           <p>Start your 7-day free trial today — no credit card required.</p>
           <div className="lp-hero-actions">
-            <p className="muted marketing-shot-note">
-              Screenshots show the live product interface. The mobile view above is the browser soft
-              radio; the native Android APK uses the same channels and PTT workflow on handsets.
-            </p>
+            <Link to="/signup" className="lp-btn lp-btn-primary lp-btn-lg">
+              Start free trial <IconArrowRight size={16} />
+            </Link>
             <a href={`mailto:${SALES_EMAIL}`} className="lp-btn lp-btn-ghost lp-btn-lg">
               Contact sales
             </a>
