@@ -75,6 +75,15 @@ async function applySubscription(
   if (!agencyId) {
     return;
   }
+  // Preserve explicit owner disable actions. We only auto-reenable when the
+  // prior disable looked billing-driven (past_due/canceled), not when the
+  // agency was disabled while otherwise in good standing.
+  const currentAgency = await deps.getAgencyById(agencyId);
+  const keepManualDisable =
+    !!currentAgency?.disabled &&
+    (currentAgency.subscription_status === "active" ||
+      currentAgency.subscription_status === "trialing" ||
+      currentAgency.subscription_status === "comped");
   const planTier = (sub.metadata.plan_tier === "pro" ? "pro" : "basic") as PlanTier;
   const logsUnlimited = sub.metadata.logs_unlimited === "true";
   const status = mapStripeStatus(sub.status);
@@ -86,7 +95,7 @@ async function applySubscription(
     planTier,
     logsUnlimited,
     transmissionRetentionDays: logsUnlimited ? null : 3,
-    disabled: !active,
+    disabled: keepManualDisable ? true : !active,
     trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
   });
 }
@@ -122,14 +131,6 @@ export async function processStripeEvent(
       const eventSub = event.data.object as Stripe.Subscription;
       const sub = await stripe.subscriptions.retrieve(eventSub.id);
       await applySubscription(sub, deps);
-      const agencyId = agencyIdFromMeta(sub.metadata);
-      if (agencyId) {
-        const agency = await deps.getAgencyById(agencyId);
-        if (agency && agency.subscription_status !== "comped") {
-          const active = isStripeSubscriptionActive(sub.status);
-          await deps.updateAgencyBilling(agencyId, { disabled: !active });
-        }
-      }
       break;
     }
     case "invoice.payment_failed": {

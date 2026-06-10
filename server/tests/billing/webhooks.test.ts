@@ -291,3 +291,90 @@ test("processStripeEvent: ignores stale checkout completion for a superseded sub
   assert.equal(retrieveCalls, 0);
   assert.equal(updateCalls.length, 0);
 });
+
+test("processStripeEvent: subscription updates preserve owner-disabled agencies", async () => {
+  const updateCalls: Array<{ agencyId: number; patch: Record<string, unknown> }> = [];
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_owner_locked",
+          status: "active",
+          metadata: { agency_id: "42", plan_tier: "pro", logs_unlimited: "false" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    {
+      subscriptions: {
+        async retrieve(): Promise<Stripe.Subscription> {
+          throw new Error("retrieve should not be called for customer.subscription.updated");
+        },
+      },
+    },
+    {
+      async updateAgencyBilling(agencyId, patch) {
+        updateCalls.push({ agencyId, patch: patch as Record<string, unknown> });
+        return null;
+      },
+      async getAgencyById(agencyId) {
+        assert.equal(agencyId, 42);
+        return {
+          id: 42,
+          disabled: true,
+          subscription_status: "active",
+        } as any;
+      },
+    },
+  );
+
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.agencyId, 42);
+  assert.equal(updateCalls[0]?.patch.subscriptionStatus, "active");
+  assert.equal(updateCalls[0]?.patch.disabled, true);
+  assert.ok(!updateCalls.some((call) => call.patch.disabled === false));
+});
+
+test("processStripeEvent: active recovery clears billing-driven suspension", async () => {
+  const updateCalls: Array<{ agencyId: number; patch: Record<string, unknown> }> = [];
+  await processStripeEvent(
+    {
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_recovered",
+          status: "active",
+          metadata: { agency_id: "7", plan_tier: "basic", logs_unlimited: "false" },
+          trial_end: null,
+        },
+      },
+    } as unknown as Stripe.Event,
+    {
+      subscriptions: {
+        async retrieve(): Promise<Stripe.Subscription> {
+          throw new Error("retrieve should not be called for customer.subscription.updated");
+        },
+      },
+    },
+    {
+      async updateAgencyBilling(agencyId, patch) {
+        updateCalls.push({ agencyId, patch: patch as Record<string, unknown> });
+        return null;
+      },
+      async getAgencyById(agencyId) {
+        assert.equal(agencyId, 7);
+        return {
+          id: 7,
+          disabled: true,
+          subscription_status: "past_due",
+        } as any;
+      },
+    },
+  );
+
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.agencyId, 7);
+  assert.equal(updateCalls[0]?.patch.subscriptionStatus, "active");
+  assert.equal(updateCalls[0]?.patch.disabled, false);
+});
