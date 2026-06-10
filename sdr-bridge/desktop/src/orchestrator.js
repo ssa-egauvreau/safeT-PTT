@@ -18,7 +18,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 
-const DEFAULTS = { distro: "Ubuntu", projectDir: "~/safeT-PTT/sdr-bridge" };
+const DEFAULTS = { distro: "Ubuntu", projectDir: "~/safeT-PTT/sdr-bridge", sdrtrunkPath: "" };
 
 // ---- app settings (distro / projectDir) ---------------------------------
 
@@ -228,9 +228,63 @@ const CLEANUP_CMD =
   `pkill -9 -f stream-talkgroups 2>/dev/null; ` +
   `pkill -9 -f udp-pcm.py 2>/dev/null; ` +
   `pkill -9 -f local-bridge.mjs 2>/dev/null; ` +
+  `pkill -9 -f sdrtrunk-bridge.mjs 2>/dev/null; ` +
   `pkill -9 -f 'i udp://127.0.0.1:9' 2>/dev/null; ` +
   `pkill -9 icecast2 2>/dev/null; ` +
   `pkill -9 -f 'icecast://source' 2>/dev/null; true`;
+
+// ---- sdrtrunk decoder backend (runs on Windows) --------------------------
+
+/** Read the configured decoder backend ("sdrtrunk" | "trunk-recorder"). */
+async function readDecoder() {
+  try {
+    const cfg = await readConfig();
+    return cfg.decoder === "sdrtrunk" ? "sdrtrunk" : "trunk-recorder";
+  } catch {
+    return "trunk-recorder";
+  }
+}
+
+/** Launch sdrtrunk on Windows. With sdrtrunk the dongle stays on Windows (it
+ *  decodes natively), so we also make sure it is NOT forwarded into WSL. The
+ *  install path comes from Settings (sdrtrunkPath -> the bin\\sdr-trunk.bat or
+ *  the unzipped folder); we resolve the .bat under it. */
+async function launchSdrtrunk() {
+  const { sdrtrunkPath } = getSettings();
+  if (!sdrtrunkPath) {
+    onLogLine("[sdrtrunk] No sdrtrunk path set (Settings -> sdrtrunk folder). Start sdrtrunk yourself, then it will stream to SafeT.");
+    return { ok: false, message: "sdrtrunk path not set" };
+  }
+  // Don't let usbipd hold the dongle in WSL — sdrtrunk needs it on Windows.
+  await detachDongle().catch(() => {});
+  const ps =
+    `$p = '${sdrtrunkPath.replace(/'/g, "''")}'; ` +
+    `$bat = if (Test-Path -PathType Leaf $p) { $p } else { Join-Path $p 'bin\\sdr-trunk.bat' }; ` +
+    `if (-not (Test-Path $bat)) { 'no-bat'; exit }; ` +
+    `if (Get-Process -Name 'sdr-trunk','java' -ErrorAction SilentlyContinue | Where-Object { $_.Path -like (Join-Path (Split-Path (Split-Path $bat)) '*') }) { 'already'; exit }; ` +
+    `Start-Process -FilePath $bat -WorkingDirectory (Split-Path (Split-Path $bat)) -WindowStyle Minimized; 'launched'`;
+  const r = await runPowershell(["-Command", ps], { timeout: 20000 });
+  const out = (r.stdout || "").trim();
+  if (out.includes("no-bat")) {
+    onLogLine(`[sdrtrunk] Couldn't find sdr-trunk.bat under ${sdrtrunkPath}. Point Settings at the unzipped sdrtrunk folder.`);
+    return { ok: false, message: "sdr-trunk.bat not found" };
+  }
+  onLogLine(out.includes("already") ? "[sdrtrunk] already running." : "[sdrtrunk] launched on Windows.");
+  return { ok: true };
+}
+
+async function stopSdrtrunk() {
+  const { sdrtrunkPath } = getSettings();
+  if (!sdrtrunkPath) return;
+  // Only kill java processes launched from the sdrtrunk folder — never a
+  // stray unrelated JVM.
+  const ps =
+    `$root = '${sdrtrunkPath.replace(/'/g, "''")}'; ` +
+    `if (Test-Path -PathType Leaf $root) { $root = Split-Path (Split-Path $root) }; ` +
+    `Get-Process -Name 'sdr-trunk','java' -ErrorAction SilentlyContinue | ` +
+    `Where-Object { $_.Path -and $_.Path.StartsWith($root) } | Stop-Process -Force -ErrorAction SilentlyContinue; 'ok'`;
+  await runPowershell(["-Command", ps], { timeout: 15000 }).catch(() => {});
+}
 
 function spawnPipeline() {
   const { distro, projectDir, streamBase } = getSettings();
@@ -281,6 +335,19 @@ async function startPipeline({ quiet = false } = {}) {
   } catch {
     /* dev run without packaging */
   }
+  // sdrtrunk decodes on Windows with the dongle attached to Windows (NOT
+  // forwarded into WSL). Launch sdrtrunk, then run the WSL receiver bridge.
+  const decoder = await readDecoder();
+  if (decoder === "sdrtrunk") {
+    const { projectDir } = getSettings();
+    const pull = await runWsl(`cd ${projectDir} && git checkout -q main 2>/dev/null; git pull --ff-only 2>&1 | tail -1`, { timeout: 45000 });
+    onLogLine(`[update] ${(pull.stdout || pull.stderr).trim() || "(using existing code)"}`);
+    const tr = await launchSdrtrunk();
+    onLogLine("[start] running the sdrtrunk -> SafeT call bridge…");
+    spawnPipeline();
+    return { ok: true, dongle: tr.ok, dongleMessage: tr.message || "sdrtrunk decoding on Windows." };
+  }
+
   let dongleOk = true;
   let dongleMessage = "Dongle already attached.";
 
@@ -319,6 +386,7 @@ async function startPipeline({ quiet = false } = {}) {
 async function stopPipeline({ detach = false } = {}) {
   armed = false;
   onLogLine("[stop] shutting down…");
+  await stopSdrtrunk().catch(() => {});
   await runWsl(CLEANUP_CMD, { timeout: 30000 });
   if (pipelineChild) {
     try {
@@ -375,6 +443,25 @@ async function watchdogTick() {
   if (!armed) return;
   // Cooldown so we don't thrash while a restart settles.
   if (Date.now() - lastRecoverAt < 45000) return;
+
+  // sdrtrunk mode: the decoder + dongle live on Windows, so the WSL dongle /
+  // docker checks below don't apply — and attaching the dongle into WSL would
+  // STEAL it from sdrtrunk. Just relaunch sdrtrunk if it died; the bridge has
+  // its own respawn loop.
+  if ((await readDecoder()) === "sdrtrunk") {
+    const { sdrtrunkPath } = getSettings();
+    if (!sdrtrunkPath) return;
+    const ck = await runPowershell(
+      ["-Command", `$r='${sdrtrunkPath.replace(/'/g, "''")}'; if (Test-Path -PathType Leaf $r) { $r = Split-Path (Split-Path $r) }; if (Get-Process -Name 'sdr-trunk','java' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($r) }) { 'up' } else { 'down' }`],
+      { timeout: 12000 },
+    );
+    if (ck.stdout.includes("down")) {
+      lastRecoverAt = Date.now();
+      onLogLine("[watchdog] sdrtrunk not running — relaunching…");
+      await launchSdrtrunk().catch((e) => onLogLine("[watchdog] relaunch error: " + (e.message || e)));
+    }
+    return;
+  }
 
   const dongle = await runWsl("lsusb 2>/dev/null | grep -iq '2838\\|2832\\|RTL' && echo yes || echo no", { timeout: 8000 });
   const st = await runWsl("docker ps -a --format '{{.Names}}|{{.Status}}' 2>/dev/null | grep trunk-recorder || echo none", { timeout: 8000 });
@@ -469,6 +556,25 @@ async function getStatus() {
   status.wsl = ping.stdout.trim() === "ok";
   if (!status.wsl) return status;
 
+  const decoder = await readDecoder();
+  status.decoder.backend = decoder;
+
+  if (decoder === "sdrtrunk") {
+    // The decoder + dongle live on Windows; "running" tracks the sdrtrunk
+    // process, and the dongle is expected NOT to be in WSL.
+    const { sdrtrunkPath } = getSettings();
+    status.dongle = true; // on Windows, with sdrtrunk
+    if (sdrtrunkPath) {
+      const ck = await runPowershell(
+        ["-Command", `$r='${sdrtrunkPath.replace(/'/g, "''")}'; if (Test-Path -PathType Leaf $r) { $r = Split-Path (Split-Path $r) }; if (Get-Process -Name 'sdr-trunk','java' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($r) }) { 'up' } else { 'down' }`],
+        { timeout: 10000 },
+      ).catch(() => ({ stdout: "" }));
+      status.decoder.running = ck.stdout.includes("up");
+    }
+    status.decoder.controlChannel = "sdrtrunk (Windows)";
+    status.decoder.locked = status.decoder.running;
+  } else {
+
   const dongle = await runWsl("lsusb 2>/dev/null | grep -iq '2838\\|2832\\|RTL' && echo yes || echo no");
   status.dongle = dongle.stdout.trim() === "yes";
 
@@ -485,6 +591,7 @@ async function getStatus() {
     if (rates.length) status.decoder.decodeRate = Number(rates[rates.length - 1][1]);
     status.decoder.locked = logShowsLock(text);
   }
+  } // end trunk-recorder branch
 
   // Local SafeT bridge: a single source of truth — the status file the bridge
   // rewrites at least every 5s. Its own updatedAt stamp decides liveness (a

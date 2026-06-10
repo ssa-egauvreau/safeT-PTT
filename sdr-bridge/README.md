@@ -32,6 +32,15 @@ SafeT:
 Each talkgroup = one Icecast mount = one SafeT bridge = one SafeT channel you can
 monitor at the same time as all the others.
 
+## Simulcast systems? Use the sdrtrunk decoder
+
+For **P25 simulcast** systems (e.g. OC CCCS Countywide), the built-in
+trunk-recorder decoder struggles with multi-tower LSM distortion and audio
+comes through choppy. SafeT SDR can instead drive **[sdrtrunk](https://github.com/DSheirer/sdrtrunk)**,
+whose simulcast equalizer decodes these cleanly from a single dongle — set
+**Settings → Decoder → sdrtrunk**. See **[SDRTRUNK.md](./SDRTRUNK.md)** for the
+one-time setup. The rest of this README covers the built-in trunk-recorder path.
+
 ## ⚠️ The one hardware limit: RF bandwidth
 
 Your single Nooelec v5 captures only **~2.4 MHz at once (~2.0 MHz reliable)**.
