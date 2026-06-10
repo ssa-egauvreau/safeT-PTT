@@ -12,7 +12,7 @@
  *
  * Run from sdr-bridge/:  node scripts/local-bridge.mjs   (npm start launches it)
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createSocket } from "node:dgram";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -127,6 +127,7 @@ function statusRow(b) {
       scan: false,
       state: "connecting",
       transmitting: false,
+      rxFrames: 0, // frames received FROM the decoder (proves audio reaches us)
       lastFrameMs: 0,
       lastTxStartMs: null,
       lastTxEndMs: null,
@@ -244,6 +245,26 @@ function runScanAllIngest(port, bridgedTgids, tgNames) {
   const sock = createSocket("udp4");
   let currentTg = null;
   let carry = Buffer.alloc(0);
+
+  // Paced output: the decoder can flush audio in bursts; shoving a burst of
+  // 20ms frames at the relay in one go plays back sped-up/garbled. Queue the
+  // frames and release them on a real-time 20ms clock instead.
+  const queue = [];
+  let clock = null;
+  setInterval(() => {
+    if (!queue.length) {
+      clock = null;
+      return;
+    }
+    if (clock === null) clock = Date.now();
+    while (queue.length && clock <= Date.now()) {
+      monitor.send(queue.shift());
+      clock += 20;
+    }
+    // Never let backlog exceed ~5s: a scanner must stay near-live.
+    if (queue.length > 250) queue.splice(0, queue.length - 250);
+  }, 10).unref();
+
   sock.on("message", (msg) => {
     if (msg.length < 6) return;
     const tgid = msg.readUInt32LE(0);
@@ -265,7 +286,7 @@ function runScanAllIngest(port, bridgedTgids, tgNames) {
     }
     carry = carry.length ? Buffer.concat([carry, up]) : up;
     while (carry.length >= FRAME_BYTES) {
-      monitor.send(carry.subarray(0, FRAME_BYTES));
+      queue.push(carry.subarray(0, FRAME_BYTES));
       carry = carry.subarray(FRAME_BYTES);
     }
   });
@@ -416,9 +437,11 @@ function runBridge(bridge, udpPort) {
           const s = d.toString().trim().split("\n")[0];
           if (s) console.warn(`[bridge] ${bridge.name} ffmpeg: ${s}`);
         });
+        const srow = statusRow(bridge);
         child.stdout.on("data", (chunk) => {
           carry = carry.length ? Buffer.concat([carry, chunk]) : chunk;
           while (carry.length >= FRAME_BYTES) {
+            srow.rxFrames++; // heartbeat write picks this up — no dirty flag needed
             const frame = carry.subarray(0, FRAME_BYTES);
             carry = carry.subarray(FRAME_BYTES);
             const now = Date.now();
@@ -515,6 +538,19 @@ async function main() {
     console.error("local-bridge: config/system.json needs safet.baseUrl / username / password.");
     process.exit(1);
   }
+
+  // Kill orphaned UDP readers from a previous bridge run FIRST. A crashed
+  // bridge leaves its ffmpegs alive holding the per-talkgroup ports; a new
+  // ffmpeg binds the same port "successfully" (SO_REUSEADDR) but the kernel
+  // keeps delivering packets to the zombie — every channel silent while the
+  // decoder records happily.
+  try {
+    spawnSync("pkill", ["-9", "-f", "i udp://127.0.0.1:9"]);
+    await new Promise((r) => setTimeout(r, 300));
+  } catch {
+    /* pkill unavailable — run-all's cleanup is the backstop */
+  }
+
   tokenRef.value = await login();
 
   // Map talkgroup id -> UDP port from the decoder config the sync just wrote.
