@@ -371,7 +371,14 @@ function renderChannels(chans) {
       if (c.transmitting) {
         last = `<strong>● transmitting now</strong>${c.scan && c.via ? " — " + esc(c.via) : ""}`;
       } else if (c.lastTxStartMs) {
-        last = `${fmtClock(c.lastTxStartMs)} · ${fmtDur(c.lastTxDurMs ?? 0)}${c.scan && c.via ? " — " + esc(c.via) : ""}`;
+        // Decode coverage: % of the keyed span that was real decoded audio.
+        // Low % = simulcast distortion eating voice — tune gain/antenna up.
+        let pct = "";
+        if (Number.isFinite(c.lastTxAudioPct)) {
+          const color = c.lastTxAudioPct >= 75 ? "#3fb950" : c.lastTxAudioPct >= 40 ? "#d29922" : "#f85149";
+          pct = ` · <span style="color:${color}" title="How much of this transmission actually decoded — tune gain until this climbs">${c.lastTxAudioPct}% decoded</span>`;
+        }
+        last = `${fmtClock(c.lastTxStartMs)} · ${fmtDur(c.lastTxDurMs ?? 0)}${pct}${c.scan && c.via ? " — " + esc(c.via) : ""}`;
       }
 
       return `<tr class="${c.transmitting ? "live" : ""}">
