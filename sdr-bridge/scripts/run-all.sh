@@ -87,6 +87,9 @@ echo "[2/3] local SafeT bridge (pushing audio to your channels)..."
 # Respawn loop: a hard exit (SafeT briefly unreachable at boot, login hiccup,
 # crash) must not leave the bridge dead until the next manual restart.
 ( sleep 5; while :; do
+    # Reap orphaned UDP readers from a crashed bridge — they keep the ports
+    # bound and steal the decoder's packets from the new readers.
+    pkill -9 -f "i udp://127.0.0.1:9" 2>/dev/null
     node scripts/local-bridge.mjs
     echo "[bridge] process exited — retrying in 10s"
     sleep 10
