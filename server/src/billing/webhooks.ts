@@ -31,16 +31,24 @@ export function agencyIdFromMeta(meta: Stripe.Metadata | null | undefined): numb
   return Number.isFinite(n) ? n : null;
 }
 
-async function applySubscription(sub: Stripe.Subscription): Promise<void> {
-  const agencyId = agencyIdFromMeta(sub.metadata);
-  if (!agencyId) {
-    return;
-  }
+/**
+ * Pure helper: derives the `updateAgencyBilling` patch from a Stripe.Subscription
+ * payload. Exported so tests can pin the projection rules without hitting the
+ * DB or the Stripe SDK; the webhook handler is the only production caller.
+ */
+export function subscriptionPatchFromStripe(sub: Stripe.Subscription): {
+  stripeSubscriptionId: string;
+  subscriptionStatus: SubscriptionStatus;
+  planTier: PlanTier;
+  logsUnlimited: boolean;
+  transmissionRetentionDays: number | null;
+  disabled: boolean;
+  trialEndsAt: string | null;
+} {
   const planTier = (sub.metadata.plan_tier === "pro" ? "pro" : "basic") as PlanTier;
   const logsUnlimited = sub.metadata.logs_unlimited === "true";
   const status = mapStripeStatus(sub.status);
-
-  await updateAgencyBilling(agencyId, {
+  return {
     stripeSubscriptionId: sub.id,
     subscriptionStatus: status,
     planTier,
@@ -48,7 +56,15 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
     transmissionRetentionDays: logsUnlimited ? null : 3,
     disabled: status === "canceled" || status === "past_due",
     trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
-  });
+  };
+}
+
+async function applySubscription(sub: Stripe.Subscription): Promise<void> {
+  const agencyId = agencyIdFromMeta(sub.metadata);
+  if (!agencyId) {
+    return;
+  }
+  await updateAgencyBilling(agencyId, subscriptionPatchFromStripe(sub));
 }
 
 export async function handleStripeWebhook(req: Request, res: Response): Promise<void> {

@@ -20,6 +20,45 @@ export function isBillingActive(status: SubscriptionStatus): boolean {
   return status === "active" || status === "comped" || status === "trialing";
 }
 
+/**
+ * Pure helper: decides whether a disabled agency is disabled BECAUSE of
+ * billing — i.e. should the auth gate surface `agency_suspended_billing`
+ * (the "your free trial ended / payment failed" UX) rather than the
+ * generic `agency_disabled` (admin manually flipped the kill switch).
+ *
+ * The rule mirrors what the auth middleware in `apiRoutes.ts` was inlining
+ * pre-extraction:
+ *   - The agency must be a self-service tenant (`signup_completed_at` set).
+ *     Grandfathered / comped tenants without a sign-up record never hit this
+ *     branch — they get the generic "agency_disabled" message.
+ *   - `comped` and `active` are paying / sponsored tenants — never billing
+ *     suspended.
+ *   - `trialing` is billing-suspended ONLY if the trial deadline has already
+ *     elapsed; an in-flight trial that an admin manually disables is not a
+ *     billing problem.
+ *   - Every other status (`past_due`, `canceled`) is billing-suspended.
+ */
+export function isBillingSuspended(
+  agency: Pick<AgencyRow, "signup_completed_at" | "subscription_status" | "trial_ends_at"> | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!agency) {
+    return false;
+  }
+  if (agency.signup_completed_at == null) {
+    return false;
+  }
+  if (agency.subscription_status === "comped" || agency.subscription_status === "active") {
+    return false;
+  }
+  if (agency.subscription_status === "trialing") {
+    if (agency.trial_ends_at != null && new Date(agency.trial_ends_at) > now) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function trialDaysLeft(trialEndsAt: string | null): number | null {
   if (!trialEndsAt) {
     return null;
