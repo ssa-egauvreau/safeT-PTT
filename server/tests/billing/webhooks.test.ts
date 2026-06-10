@@ -24,6 +24,7 @@ import type Stripe from "stripe";
 
 import {
   agencyIdFromMeta,
+  isStripeSubscriptionActive,
   mapStripeStatus,
 } from "../../src/billing/webhooks.js";
 
@@ -75,6 +76,24 @@ test("mapStripeStatus: never returns 'comped' (that's a platform-only state, nev
   for (const s of stripeStates) {
     assert.notEqual(mapStripeStatus(s), "comped", `state ${s} must not collapse onto 'comped'`);
   }
+});
+
+test("isStripeSubscriptionActive: true only for active and trialing", () => {
+  assert.equal(isStripeSubscriptionActive("active"), true);
+  assert.equal(isStripeSubscriptionActive("trialing"), true);
+});
+
+test("isStripeSubscriptionActive: false for delinquent/canceled/unknown states", () => {
+  assert.equal(isStripeSubscriptionActive("past_due"), false);
+  assert.equal(isStripeSubscriptionActive("unpaid"), false);
+  assert.equal(isStripeSubscriptionActive("canceled"), false);
+  assert.equal(isStripeSubscriptionActive("incomplete_expired"), false);
+  assert.equal(isStripeSubscriptionActive("incomplete"), false);
+  assert.equal(isStripeSubscriptionActive("paused"), false);
+  assert.equal(
+    isStripeSubscriptionActive("brand_new_status" as unknown as Stripe.Subscription.Status),
+    false,
+  );
 });
 
 test("agencyIdFromMeta: extracts numeric agency_id from Stripe metadata", () => {
