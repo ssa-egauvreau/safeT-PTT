@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 640" role="img" aria-label="Install safeT APK">
-  <rect width="360" height="640" fill="#f1f5f9"/>
-  <rect x="80" y="120" width="200" height="200" rx="24" fill="#0d9488"/>
-  <text x="180" y="230" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="28" font-weight="700">safeT</text>
-  <text x="180" y="260" text-anchor="middle" fill="#ccfbf1" font-family="system-ui,sans-serif" font-size="14">PTT</text>
-  <text x="180" y="340" text-anchor="middle" fill="#0f172a" font-family="system-ui,sans-serif" font-size="18" font-weight="600">safeT PTT</text>
-  <text x="180" y="368" text-anchor="middle" fill="#64748b" font-family="system-ui,sans-serif" font-size="13">com.securityradio.ptt</text>
-  <rect x="100" y="420" width="160" height="48" rx="24" fill="#0d9488"/>
-  <text x="180" y="450" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="16" font-weight="700">Install</text>
-  <text x="180" y="500" text-anchor="middle" fill="#64748b" font-family="system-ui,sans-serif" font-size="14">Cancel</text>
+ <rect width="360" height="640" fill="#f1f5f9"/>
+ <rect x="80" y="120" width="200" height="200" rx="24" fill="#0d9488"/>
+ <text x="180" y="230" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="28" font-weight="700">safeT</text>
+ <text x="180" y="260" text-anchor="middle" fill="#ccfbf1" font-family="system-ui,sans-serif" font-size="14">PTT</text>
+ <text x="180" y="340" text-anchor="middle" fill="#0f172a" font-family="system-ui,sans-serif" font-size="18" font-weight="600">safeT PTT</text>
+ <text x="180" y="368" text-anchor="middle" fill="#64748b" font-family="system-ui,sans-serif" font-size="13">com.securityradio.ptt</text>
+ <rect x="100" y="420" width="160" height="48" rx="24" fill="#0d9488"/>
+ <text x="180" y="450" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="16" font-weight="700">Install</text>
+ <text x="180" y="500" text-anchor="middle" fill="#64748b" font-family="system-ui,sans-serif" font-size="14">Cancel</text>
 </svg>

@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 640" role="img" aria-label="Location and notifications">
-  <rect width="360" height="640" fill="#0a0f14"/>
-  <rect x="40" y="140" width="280" height="120" rx="12" fill="#111820" stroke="#334155"/>
-  <text x="180" y="175" text-anchor="middle" fill="#f8fafc" font-family="system-ui,sans-serif" font-size="14" font-weight="600">Allow location?</text>
-  <rect x="200" y="195" width="80" height="32" rx="6" fill="#0d9488"/>
-  <text x="240" y="216" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="12">Allow</text>
-  <rect x="40" y="280" width="280" height="120" rx="12" fill="#111820" stroke="#334155"/>
-  <text x="180" y="315" text-anchor="middle" fill="#f8fafc" font-family="system-ui,sans-serif" font-size="14" font-weight="600">Send notifications?</text>
-  <rect x="200" y="335" width="80" height="32" rx="6" fill="#0d9488"/>
-  <text x="240" y="356" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="12">Allow</text>
+ <rect width="360" height="640" fill="#0a0f14"/>
+ <rect x="40" y="140" width="280" height="120" rx="12" fill="#111820" stroke="#334155"/>
+ <text x="180" y="175" text-anchor="middle" fill="#f8fafc" font-family="system-ui,sans-serif" font-size="14" font-weight="600">Allow location?</text>
+ <rect x="200" y="195" width="80" height="32" rx="6" fill="#0d9488"/>
+ <text x="240" y="216" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="12">Allow</text>
+ <rect x="40" y="280" width="280" height="120" rx="12" fill="#111820" stroke="#334155"/>
+ <text x="180" y="315" text-anchor="middle" fill="#f8fafc" font-family="system-ui,sans-serif" font-size="14" font-weight="600">Send notifications?</text>
+ <rect x="200" y="335" width="80" height="32" rx="6" fill="#0d9488"/>
+ <text x="240" y="356" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="12">Allow</text>
 </svg>

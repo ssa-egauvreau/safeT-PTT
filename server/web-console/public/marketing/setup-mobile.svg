@@ -1,14 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 640" role="img" aria-label="safeT Mobile handset screen">
-  <rect width="360" height="640" fill="#0a0f14"/>
-  <rect y="0" width="360" height="44" fill="#111820"/>
-  <text x="24" y="28" fill="#5eead4" font-family="system-ui,sans-serif" font-size="13" font-weight="600">GREEN 1</text>
-  <text x="300" y="28" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="12">12:41</text>
-  <text x="180" y="200" text-anchor="middle" fill="#f8fafc" font-family="system-ui,sans-serif" font-size="42" font-weight="700">GREEN 1</text>
-  <text x="180" y="240" text-anchor="middle" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="16">Patrol  Citywide</text>
-  <rect x="40" y="280" width="280" height="56" rx="8" fill="#15202b"/>
-  <text x="56" y="314" fill="#5eead4" font-family="system-ui,sans-serif" font-size="15">Unit 412 � transmitting</text>
-  <rect x="80" y="480" width="200" height="80" rx="40" fill="#0d9488"/>
-  <text x="180" y="528" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="16" font-weight="700">PUSH TO TALK</text>
-  <rect x="24" y="580" width="100" height="36" rx="6" fill="#7f1d1d"/>
-  <text x="74" y="603" text-anchor="middle" fill="#fecaca" font-family="system-ui,sans-serif" font-size="11" font-weight="600">EMERGENCY</text>
+ <rect width="360" height="640" fill="#0a0f14"/>
+ <rect y="0" width="360" height="44" fill="#111820"/>
+ <text x="24" y="28" fill="#5eead4" font-family="system-ui,sans-serif" font-size="13" font-weight="600">GREEN 1</text>
+ <text x="300" y="28" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="12">12:41</text>
+ <text x="180" y="200" text-anchor="middle" fill="#f8fafc" font-family="system-ui,sans-serif" font-size="42" font-weight="700">GREEN 1</text>
+ <text x="180" y="240" text-anchor="middle" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="16">Patrol — Citywide</text>
+ <rect x="40" y="280" width="280" height="56" rx="8" fill="#15202b"/>
+ <text x="56" y="314" fill="#5eead4" font-family="system-ui,sans-serif" font-size="15">Unit 412 · transmitting</text>
+ <rect x="80" y="480" width="200" height="80" rx="40" fill="#0d9488"/>
+ <text x="180" y="528" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="16" font-weight="700">PUSH TO TALK</text>
+ <rect x="24" y="580" width="100" height="36" rx="6" fill="#7f1d1d"/>
+ <text x="74" y="603" text-anchor="middle" fill="#fecaca" font-family="system-ui,sans-serif" font-size="11" font-weight="600">EMERGENCY</text>
 </svg>

@@ -1,16 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 640" role="img" aria-label="Android Settings About phone">
-  <rect width="360" height="640" fill="#f1f5f9"/>
-  <rect y="0" width="360" height="48" fill="#fff"/>
-  <text x="24" y="32" fill="#0f172a" font-family="system-ui,sans-serif" font-size="18" font-weight="600">Settings</text>
-  <rect x="16" y="64" width="328" height="52" rx="8" fill="#fff"/>
-  <text x="32" y="96" fill="#334155" font-family="system-ui,sans-serif" font-size="15">Network &amp; internet</text>
-  <rect x="16" y="124" width="328" height="52" rx="8" fill="#fff"/>
-  <text x="32" y="156" fill="#334155" font-family="system-ui,sans-serif" font-size="15">Connected devices</text>
-  <rect x="16" y="184" width="328" height="52" rx="8" fill="#fff"/>
-  <text x="32" y="216" fill="#334155" font-family="system-ui,sans-serif" font-size="15">Apps</text>
-  <rect x="16" y="244" width="328" height="52" rx="8" fill="#fff" stroke="#0d9488" stroke-width="2"/>
-  <text x="32" y="276" fill="#0d9488" font-family="system-ui,sans-serif" font-size="15" font-weight="600">About phone</text>
-  <text x="300" y="276" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="18">:</text>
-  <path d="M280 260 L310 276 L280 292" fill="none" stroke="#f59e0b" stroke-width="3"/>
-  <text x="180" y="340" text-anchor="middle" fill="#b45309" font-family="system-ui,sans-serif" font-size="13" font-weight="600">Tap About phone</text>
+ <rect width="360" height="640" fill="#f1f5f9"/>
+ <rect y="0" width="360" height="48" fill="#fff"/>
+ <text x="24" y="32" fill="#0f172a" font-family="system-ui,sans-serif" font-size="18" font-weight="600">Settings</text>
+ <rect x="16" y="64" width="328" height="52" rx="8" fill="#fff"/>
+ <text x="32" y="96" fill="#334155" font-family="system-ui,sans-serif" font-size="15">Network &amp; internet</text>
+ <rect x="16" y="124" width="328" height="52" rx="8" fill="#fff"/>
+ <text x="32" y="156" fill="#334155" font-family="system-ui,sans-serif" font-size="15">Connected devices</text>
+ <rect x="16" y="184" width="328" height="52" rx="8" fill="#fff"/>
+ <text x="32" y="216" fill="#334155" font-family="system-ui,sans-serif" font-size="15">Apps</text>
+ <rect x="16" y="244" width="328" height="52" rx="8" fill="#fff" stroke="#0d9488" stroke-width="2"/>
+ <text x="32" y="276" fill="#0d9488" font-family="system-ui,sans-serif" font-size="15" font-weight="600">About phone</text>
+ <text x="300" y="276" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="18">:</text>
+ <path d="M280 260 L310 276 L280 292" fill="none" stroke="#f59e0b" stroke-width="3"/>
+ <text x="180" y="340" text-anchor="middle" fill="#b45309" font-family="system-ui,sans-serif" font-size="13" font-weight="600">Tap About phone</text>
 </svg>
