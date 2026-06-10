@@ -23,6 +23,39 @@ export const LAST_CHANNEL_KEY = "securityradio.lastChannel";
 export const PTT_CODE_KEY = "securityradio.pttKey";
 export const DEFAULT_PTT_CODE = "Space";
 export const KEYBOARD_ENABLED_KEY = "securityradio.keyboardOn";
+export const CHANNEL_RAIL_COLLAPSED_KEY = "securityradio.channelRailCollapsed";
+
+/** Whether the Mission Control channel list sidebar is collapsed. */
+export function loadChannelRailCollapsed(): boolean {
+  return localStorage.getItem(CHANNEL_RAIL_COLLAPSED_KEY) === "1";
+}
+
+/**
+ * Console label for a radio unit: "{unit_id} {name}" when an ID exists,
+ * otherwise just the name. Falls back to aliasFor(unit_id) when display_name is blank.
+ */
+export function formatUnitSpeakerLabel(
+  unitId: string | null | undefined,
+  displayName: string | null | undefined,
+  aliasFor?: (id: string) => string,
+): string {
+  const id = unitId?.trim() ?? "";
+  const name =
+    displayName?.trim() ||
+    (id && aliasFor ? aliasFor(id).trim() : "") ||
+    "";
+  if (!id) {
+    return name || "Unknown";
+  }
+  if (!name) {
+    return id;
+  }
+  return `${id} ${name}`;
+}
+
+export function saveChannelRailCollapsed(collapsed: boolean): void {
+  localStorage.setItem(CHANNEL_RAIL_COLLAPSED_KEY, collapsed ? "1" : "0");
+}
 
 export const volumeKey = (id: number) => `securityradio.vol.${id}`;
 export const muteKey = (id: number) => `securityradio.mute.${id}`;

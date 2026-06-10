@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   api,
   describeError,
@@ -8,26 +8,23 @@ import {
   type Membership,
   type Permission,
   type Role,
+  type UserPermissionTemplate,
 } from "../../api";
+import { ChannelPermissionsModal } from "./ChannelPermissionsModal";
+import type { CellValue } from "./channelPermissionUi";
+import { UserTemplateEditorModal } from "./UserTemplateEditorModal";
+import {
+  membershipsFromGrid,
+  membershipsToApi,
+  membershipKey,
+  templateMembershipsFromMap,
+} from "./userTemplateUtils";
 
 const ROLES: Role[] = ["admin", "dispatcher", "radio"];
-
-type CellValue = Permission | "none";
-
-const PERM_OPTIONS: { value: CellValue; label: string }[] = [
-  { value: "none", label: "Disabled" },
-  { value: "listen_only", label: "Listen only" },
-  { value: "talk", label: "Normal" },
-  { value: "talk_priority", label: "Talk priority" },
-];
 
 type SortDir = "asc" | "desc";
 
 type UserSortKey = "username" | "display_name" | "role" | "unit_id" | "device_type" | "status";
-
-function membershipKey(userId: number, channelId: number): string {
-  return `${userId}:${channelId}`;
-}
 
 function compareText(a: string, b: string, dir: SortDir): number {
   const cmp = a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
@@ -49,27 +46,6 @@ function sortActiveSuffix(key: UserSortKey, dir: SortDir): string {
     default:
       return dir === "asc" ? " A→Z" : " Z→A";
   }
-}
-
-function channelHeaderStyle(color: string | null): CSSProperties | undefined {
-  if (!color) {
-    return undefined;
-  }
-  return {
-    background: color,
-    color: "#fff",
-    borderBottomColor: color,
-  };
-}
-
-function channelCellStyle(color: string | null): CSSProperties | undefined {
-  if (!color) {
-    return undefined;
-  }
-  return {
-    borderLeft: `3px solid ${color}`,
-    background: `color-mix(in srgb, ${color} 20%, var(--bg-raised))`,
-  };
 }
 
 function SortableTh({
@@ -99,6 +75,7 @@ function SortableTh({
 export function UsersAndAssignmentsPanel() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [templates, setTemplates] = useState<UserPermissionTemplate[]>([]);
   const [grid, setGrid] = useState<Map<string, Permission>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,17 +86,25 @@ export function UsersAndAssignmentsPanel() {
   const [role, setRole] = useState<Role>("radio");
   const [unitId, setUnitId] = useState("");
   const [deviceType, setDeviceType] = useState("");
+  const [createTemplateId, setCreateTemplateId] = useState("");
   const [creating, setCreating] = useState(false);
 
   const [userSortKey, setUserSortKey] = useState<UserSortKey>("username");
   const [userSortDir, setUserSortDir] = useState<SortDir>("asc");
-  const [channelSortDir, setChannelSortDir] = useState<SortDir>("asc");
+  const [permissionsUser, setPermissionsUser] = useState<AdminUser | null>(null);
+  const [editingTemplate, setEditingTemplate] = useState<UserPermissionTemplate | null | "new">(null);
 
   async function reload() {
     try {
-      const [u, c, m] = await Promise.all([api.listUsers(), api.listChannels(), api.listMemberships()]);
+      const [u, c, m, t] = await Promise.all([
+        api.listUsers(),
+        api.listChannels(),
+        api.listMemberships(),
+        api.listUserTemplates(),
+      ]);
       setUsers(u.users);
       setChannels(c.channels);
+      setTemplates(t.templates);
       const next = new Map<string, Permission>();
       m.memberships.forEach((row: Membership) =>
         next.set(membershipKey(row.user_id, row.channel_id), row.permission),
@@ -136,10 +121,6 @@ export function UsersAndAssignmentsPanel() {
   useEffect(() => {
     void reload();
   }, []);
-
-  const sortedChannels = useMemo(() => {
-    return [...channels].sort((a, b) => compareText(a.name, b.name, channelSortDir));
-  }, [channels, channelSortDir]);
 
   const sortedUsers = useMemo(() => {
     const keyFn = (u: AdminUser): string => {
@@ -177,7 +158,7 @@ export function UsersAndAssignmentsPanel() {
     setCreating(true);
     setError(null);
     try {
-      await api.createUser({
+      const res = await api.createUser({
         username: username.trim(),
         displayName: displayName.trim() || username.trim(),
         password,
@@ -185,18 +166,95 @@ export function UsersAndAssignmentsPanel() {
         unitId: unitId.trim() ? unitId.trim().toUpperCase() : null,
         deviceType: deviceType || null,
       });
+      const templateId = Number(createTemplateId);
+      if (Number.isFinite(templateId) && templateId > 0) {
+        await api.applyUserTemplate(templateId, res.user.id);
+      }
       setUsername("");
       setDisplayName("");
       setPassword("");
       setRole("radio");
       setUnitId("");
       setDeviceType("");
+      setCreateTemplateId("");
       await reload();
     } catch (err) {
       setError(describeError(err));
     } finally {
       setCreating(false);
     }
+  }
+
+  async function saveTemplate(name: string, values: Map<number, CellValue>) {
+    const memberships = membershipsToApi(templateMembershipsFromMap(values));
+    setError(null);
+    try {
+      if (editingTemplate && editingTemplate !== "new") {
+        await api.updateUserTemplate(editingTemplate.id, { name, memberships });
+      } else {
+        await api.createUserTemplate({ name, memberships });
+      }
+      setEditingTemplate(null);
+      await reload();
+    } catch (err) {
+      setError(describeError(err));
+    }
+  }
+
+  async function deleteTemplate(template: UserPermissionTemplate) {
+    if (!window.confirm(`Delete template "${template.name}"?`)) {
+      return;
+    }
+    setError(null);
+    try {
+      await api.deleteUserTemplate(template.id);
+      if (createTemplateId === String(template.id)) {
+        setCreateTemplateId("");
+      }
+      await reload();
+    } catch (err) {
+      setError(describeError(err));
+    }
+  }
+
+  async function applyTemplateToUser(user: AdminUser, template: UserPermissionTemplate) {
+    if (
+      !window.confirm(
+        `Apply template "${template.name}" to ${user.username}?\n\nThis updates channel permissions listed in the template. Other channel access is left unchanged.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    try {
+      const result = await api.applyUserTemplate(template.id, user.id);
+      await reload();
+      if (result.skipped > 0) {
+        setError(
+          `Applied ${result.applied} channel permission(s); ${result.skipped} referenced channel(s) no longer exist.`,
+        );
+      }
+    } catch (err) {
+      setError(describeError(err));
+    }
+  }
+
+  function saveTemplateFromUser(user: AdminUser) {
+    const memberships = membershipsFromGrid(user.id, grid);
+    if (memberships.length === 0) {
+      setError(`${user.username} has no channel permissions to copy.`);
+      return;
+    }
+    const suggested = `${user.display_name || user.username} template`;
+    const name = window.prompt("Template name", suggested)?.trim();
+    if (!name) {
+      return;
+    }
+    setError(null);
+    void api
+      .createUserTemplate({ name, memberships: membershipsToApi(memberships) })
+      .then(() => reload())
+      .catch((err) => setError(describeError(err)));
   }
 
   async function patch(user: AdminUser, change: Parameters<typeof api.updateUser>[1]) {
@@ -258,21 +316,60 @@ export function UsersAndAssignmentsPanel() {
         <span className="count">
           {users.length} users · {channels.length} channels
         </span>
-        <button
-          type="button"
-          className="btn sm"
-          onClick={() => setChannelSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-        >
-          Channel columns {channelSortDir === "asc" ? "A→Z" : "Z→A"}
-        </button>
       </div>
       <p className="panel-desc">
-        One row per account: edit login details, unit, device, and channel permissions together.
-        Click a column heading to sort (username and unit ID use A→Z; role, device, and status sort by
-        that field).
+        One row per account: edit login details, unit, and device here. Use a{" "}
+        <strong>user template</strong> to auto-assign channel permissions, or open{" "}
+        <strong>Channel permissions</strong> on any row to edit manually.
       </p>
 
       {error && <div className="banner error">{error}</div>}
+
+      <div className="card user-templates-card">
+        <div className="panel-head">
+          <h3>User templates</h3>
+          <button type="button" className="btn sm" onClick={() => setEditingTemplate("new")}>
+            New template
+          </button>
+        </div>
+        <p className="panel-desc">
+          Reusable channel-permission presets. Pick one when creating a user, or apply one to an
+          existing account.
+        </p>
+        {templates.length === 0 ? (
+          <div className="empty">No templates yet — create one or save from an existing user.</div>
+        ) : (
+          <ul className="user-templates-list">
+            {templates.map((template) => (
+              <li key={template.id} className="user-template-row">
+                <div>
+                  <div className="user-template-name">{template.name}</div>
+                  <div className="user-template-meta">
+                    {template.memberships.length} channel
+                    {template.memberships.length === 1 ? "" : "s"}
+                  </div>
+                </div>
+                <div className="user-template-actions">
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={() => setEditingTemplate(template)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="btn sm danger"
+                    onClick={() => void deleteTemplate(template)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <form className="card" onSubmit={onCreate}>
         <h3>Create account</h3>
@@ -309,6 +406,17 @@ export function UsersAndAssignmentsPanel() {
               {DEVICE_TYPE_OPTIONS.map((d) => (
                 <option key={d.value} value={d.value}>
                   {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>Template</label>
+            <select value={createTemplateId} onChange={(e) => setCreateTemplateId(e.target.value)}>
+              <option value="">None</option>
+              {templates.map((template) => (
+                <option key={template.id} value={String(template.id)}>
+                  {template.name} ({template.memberships.length} channels)
                 </option>
               ))}
             </select>
@@ -370,17 +478,7 @@ export function UsersAndAssignmentsPanel() {
                   dir={userSortDir}
                   onClick={() => toggleUserSort("status")}
                 />
-                <th className="sticky-actions">Actions</th>
-                {sortedChannels.map((channel) => (
-                  <th
-                    key={channel.id}
-                    className={`channel-col-head${channel.color ? " has-channel-color" : ""}`}
-                    title={channel.name}
-                    style={channelHeaderStyle(channel.color)}
-                  >
-                    {channel.name}
-                  </th>
-                ))}
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -456,8 +554,47 @@ export function UsersAndAssignmentsPanel() {
                       {user.disabled ? "Disabled" : "Active"}
                     </span>
                   </td>
-                  <td className="sticky-actions">
+                  <td>
                     <div className="cell-actions compact">
+                      {templates.length > 0 && (
+                        <select
+                          className="apply-template-select"
+                          defaultValue=""
+                          title="Apply a user template"
+                          onChange={(e) => {
+                            const templateId = Number(e.target.value);
+                            e.target.value = "";
+                            if (!Number.isFinite(templateId)) {
+                              return;
+                            }
+                            const template = templates.find((t) => t.id === templateId);
+                            if (template) {
+                              void applyTemplateToUser(user, template);
+                            }
+                          }}
+                        >
+                          <option value="">Apply template…</option>
+                          {templates.map((template) => (
+                            <option key={template.id} value={String(template.id)}>
+                              {template.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <button
+                        type="button"
+                        className="btn sm"
+                        onClick={() => setPermissionsUser(user)}
+                      >
+                        Channel permissions
+                      </button>
+                      <button
+                        type="button"
+                        className="btn sm"
+                        onClick={() => saveTemplateFromUser(user)}
+                      >
+                        Save as template
+                      </button>
                       <button
                         className="btn sm"
                         onClick={() => patch(user, { disabled: !user.disabled })}
@@ -480,35 +617,30 @@ export function UsersAndAssignmentsPanel() {
                       </button>
                     </div>
                   </td>
-                  {sortedChannels.map((channel) => {
-                    const value: CellValue = grid.get(membershipKey(user.id, channel.id)) ?? "none";
-                    return (
-                      <td
-                        key={channel.id}
-                        className={`channel-assign-cell${channel.color ? " has-channel-color" : ""}`}
-                        style={channelCellStyle(channel.color)}
-                      >
-                        <select
-                          value={value}
-                          onChange={(e) =>
-                            changeMembership(user, channel, e.target.value as CellValue)
-                          }
-                          title={`${user.username} on ${channel.name}`}
-                        >
-                          {PERM_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    );
-                  })}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {permissionsUser && (
+        <ChannelPermissionsModal
+          user={permissionsUser}
+          channels={channels}
+          grid={grid}
+          onClose={() => setPermissionsUser(null)}
+          onChange={(channel, value) => changeMembership(permissionsUser, channel, value)}
+        />
+      )}
+
+      {editingTemplate && (
+        <UserTemplateEditorModal
+          template={editingTemplate === "new" ? null : editingTemplate}
+          channels={channels}
+          onClose={() => setEditingTemplate(null)}
+          onSave={saveTemplate}
+        />
       )}
     </div>
   );

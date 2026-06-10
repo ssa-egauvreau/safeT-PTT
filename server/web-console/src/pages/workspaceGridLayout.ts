@@ -4,6 +4,7 @@ import {
   WORKSPACE_DEFAULT_WIDGET_SIZE,
   WORKSPACE_GRID_GAP_PX,
   WORKSPACE_GRID_ROW_PX,
+  WORKSPACE_LARGE_ROWS,
   workspacePresetForSize,
   workspaceTileSize,
 } from "../consoleStore";
@@ -31,7 +32,7 @@ export function rglItemFromTile(
     minW: 1,
     minH: 1,
     maxW: gridCols,
-    maxH: 8,
+    maxH: WORKSPACE_LARGE_ROWS,
     static: false,
   };
 }

@@ -25,6 +25,8 @@ on a bridge box for weeks.
 - **Infinite auto-reconnect** — each bridge owns its own reconnect loop
   (1s → 20s backoff with jitter). The mic + audio graph stay open across
   reconnects, so a reconnect is silent and never re-prompts for the device.
+  When Windows reports the network is back online, the bridge reconnects
+  immediately instead of waiting out the backoff.
 - **Auto-login** — credentials are encrypted at rest with the Windows keychain
   (DPAPI via Electron `safeStorage`) and replayed automatically after a reboot.
 - **Token self-heal** — a watchdog re-validates the session every 30s; if the
@@ -46,6 +48,30 @@ Each bridge card exposes, with live feedback:
 
 Overrides are stored on the box; "Reset audio settings" restores the server
 defaults. Gain/VOX changes apply live to a running bridge without restarting it.
+
+## See that it's working at a glance
+
+Each bridge card is split into an always-visible header (name, channel, status,
+TX/RX lamps, live meter, start/stop) and a **collapsible body** so a box running
+many bridges fits on one screen — collapse state is remembered per bridge, with
+**Collapse all / Expand all** buttons. A compact telemetry line stays visible
+even when collapsed (`Connected 2h 14m · TX 12 (last 32s ago) · RX 4 …`).
+
+The expanded body adds proof-of-life detail:
+
+- **Connected since / total connected** — when the current connection was
+  established and how long it has been up, plus the total time on the channel
+  with an uptime percentage for the run.
+- **Last audio** — when line-in audio last keyed the channel (TX) and, for
+  bidirectional bridges, when channel audio last played out (RX), each with
+  time, duration, size, how long ago, and a running count.
+- **Connection drops** — how many, when the last one happened, and a diagnosis:
+  the app distinguishes *"this computer's internet connection appears to be
+  down"* from *"internet looks OK; the safeT server is not responding (it may
+  be restarting or redeploying)"*.
+- An **activity & diagnostics log** (newest first) recording every connect,
+  disconnect with its diagnosis, reconnect (with attempts and downtime),
+  network offline/online transition, and sign-in refresh.
 
 ## Develop / run
 

@@ -110,44 +110,48 @@ export function Topbar({
         {section !== "owner" && (
           <>
             {isRadioRole ? (
-              <Link className={navTabClass(section === "radio")} to="/radio">
-                <IconMobile size={15} /> Mobile
+              <Link className={navTabClass(section === "radio")} to="/radio" title="Mobile">
+                <IconMobile size={15} /> <span className="nav-tab-label">Mobile</span>
               </Link>
             ) : (
               <>
                 <Link
                   className={navTabClass(section === "console" && consoleNav === "mission")}
                   to="/console"
+                  title="Mission Control"
                 >
-                  <IconShield size={15} /> Mission Control
+                  <IconShield size={15} /> <span className="nav-tab-label">Mission Control</span>
                 </Link>
                 <Link
                   className={navTabClass(section === "console" && consoleNav === "dashboard")}
                   to="/console/dashboard"
+                  title="Dashboard"
                 >
-                  <IconDashboard size={15} /> Dashboard
+                  <IconDashboard size={15} /> <span className="nav-tab-label">Dashboard</span>
                 </Link>
                 <Link
                   className={navTabClass(section === "console" && consoleNav === "analytics")}
                   to="/console/analytics"
+                  title="Analytics"
                 >
-                  <IconBarChart size={15} /> Analytics
+                  <IconBarChart size={15} /> <span className="nav-tab-label">Analytics</span>
                 </Link>
                 <Link
                   className={navTabClass(section === "console" && consoleNav === "ai-activity")}
                   to="/console/ai-activity"
+                  title="AI Log"
                 >
-                  <IconAi size={15} /> AI Log
+                  <IconAi size={15} /> <span className="nav-tab-label">AI Log</span>
                 </Link>
-                <Link className={navTabClass(section === "bridges")} to="/bridges">
-                  <IconWaveform size={15} /> Bridges
+                <Link className={navTabClass(section === "bridges")} to="/bridges" title="Bridges">
+                  <IconWaveform size={15} /> <span className="nav-tab-label">Bridges</span>
                 </Link>
-                <Link className={navTabClass(section === "radio")} to="/radio">
-                  <IconMobile size={15} /> Mobile
+                <Link className={navTabClass(section === "radio")} to="/radio" title="Mobile">
+                  <IconMobile size={15} /> <span className="nav-tab-label">Mobile</span>
                 </Link>
                 {user?.role === "admin" && (
-                  <Link className={navTabClass(section === "admin")} to="/admin">
-                    <IconSettings size={15} /> Settings
+                  <Link className={navTabClass(section === "admin")} to="/admin" title="Settings">
+                    <IconSettings size={15} /> <span className="nav-tab-label">Settings</span>
                   </Link>
                 )}
               </>
@@ -171,8 +175,8 @@ export function Topbar({
         <span className="role-chip">{user?.role}</span>
         <span className="who-name">{user?.displayName}</span>
         <ThemeToggle />
-        <button className="btn sm icon-btn" onClick={logout}>
-          <IconLogOut size={14} /> Sign out
+        <button className="btn sm icon-btn" onClick={logout} title="Sign out" aria-label="Sign out">
+          <IconLogOut size={14} /> <span className="topbar-btn-label">Sign out</span>
         </button>
       </div>
       </div>

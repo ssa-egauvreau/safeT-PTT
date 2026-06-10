@@ -76,7 +76,12 @@ const plan = bridges.map((b) => ({
   name: b.name ?? `${cfg.system?.shortName ?? "sdr"} ${b.channel}`,
 }));
 
-const withPorts = writeArtifacts(ROOT, cfg, plan);
+let withPorts;
+try {
+  withPorts = writeArtifacts(ROOT, cfg, plan);
+} catch (e) {
+  die(e.message);
+}
 
 // generated/bridges.json — manifest for import-bridges.mjs (offline -> SafeT).
 const ice = cfg.icecast ?? {};

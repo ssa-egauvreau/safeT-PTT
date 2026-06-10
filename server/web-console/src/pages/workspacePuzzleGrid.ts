@@ -1,13 +1,13 @@
 /** Puzzle-grid packing for Mission Control (no store import — avoids cycles). */
 
 export const PUZZLE_GRID_MIN_COLS = 2;
-export const PUZZLE_GRID_MAX_COLS = 10;
+export const PUZZLE_GRID_MAX_COLS = 16;
 export const PUZZLE_GRID_GAP_PX = 8;
 export const PUZZLE_GRID_ROW_PX = 72;
 
 export const PUZZLE_SMALL = { colSpan: 2, rowSpan: 2 } as const;
 export const PUZZLE_MEDIUM = { colSpan: 4, rowSpan: 4 } as const;
-export const PUZZLE_LARGE = { colSpan: 4, rowSpan: 8 } as const;
+export const PUZZLE_LARGE = { colSpan: 4, rowSpan: 7 } as const;
 
 export type PuzzleTile = {
   colSpan: number;

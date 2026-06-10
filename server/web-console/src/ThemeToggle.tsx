@@ -13,9 +13,14 @@ export function ThemeToggle() {
   }
 
   return (
-    <button className="btn sm icon-btn" onClick={toggle} title="Toggle day / night mode">
+    <button
+      className="btn sm icon-btn"
+      onClick={toggle}
+      title="Toggle day / night mode"
+      aria-label="Toggle day / night mode"
+    >
       {theme === "day" ? <IconMoon size={14} /> : <IconSun size={14} />}
-      {theme === "day" ? "Night" : "Day"}
+      <span className="topbar-btn-label">{theme === "day" ? "Night" : "Day"}</span>
     </button>
   );
 }

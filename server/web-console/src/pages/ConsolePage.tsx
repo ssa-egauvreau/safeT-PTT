@@ -5,7 +5,6 @@ import { Topbar } from "../Topbar";
 import { ChannelsPanel } from "./ChannelsPanel";
 import { MapAlertsColumn } from "./MapAlertsColumn";
 import { MissionControlLayout } from "./MissionControlLayout";
-import { Link } from "react-router-dom";
 import { PopOutSection } from "./PopOutSection";
 
 export function ConsolePage() {
@@ -23,11 +22,6 @@ export function ConsolePage() {
     <div className="app-shell">
       <ConsoleErrorBoundary>
       <Topbar section="console" />
-
-      <p className="mission-control-intro">
-        <Link to="/console/ai-activity">AI dispatch activity log</Link>
-        <span className="muted"> — transcripts, 10-33, plate lookups, 10-8 CAD notes</span>
-      </p>
 
         <MissionControlLayout
           channels={

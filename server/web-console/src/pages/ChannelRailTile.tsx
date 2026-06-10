@@ -1,6 +1,6 @@
 import { useRef, useSyncExternalStore, type DragEvent } from "react";
 import type { UserChannel } from "../api";
-import { IconClose, IconHeadphones, IconRadio } from "../icons";
+import { IconBoard, IconHeadphones, IconRadio } from "../icons";
 import {
   createRailDragGhostElement,
   getRailDragPreview,
@@ -9,6 +9,13 @@ import {
   workspacePreviewForChannel,
 } from "./workspaceRailDrag";
 
+/**
+ * One channel row in the left rail. The two states a dispatcher needs at a
+ * glance are explicit, separate controls:
+ *   - board button: filled when the channel is docked on the workspace;
+ *   - headphones button: green "live" when audio is on (monitoring), with a
+ *     pulsing dot beside the name as a second cue.
+ */
 export function ChannelRailTile({
   channel,
   monitoring,
@@ -61,6 +68,14 @@ export function ChannelRailTile({
     setRailDragPreview(null);
   }
 
+  function toggleBoard() {
+    if (docked) {
+      onUndock?.();
+    } else {
+      onDock();
+    }
+  }
+
   return (
     <div
       className={`channel-rail-tile${docked ? " docked" : ""}${monitoring ? " monitoring" : ""}${
@@ -71,7 +86,7 @@ export function ChannelRailTile({
           ? { borderLeftColor: channel.color, borderLeftWidth: 3 }
           : undefined
       }
-      title="Tap the name to open it in the workspace, or drag the ⋮⋮ grip to drag it in"
+      title="Tap the name to open it on the board, or drag the ⋮⋮ grip to drag it in"
     >
       <span
         className="channel-rail-grip"
@@ -79,7 +94,7 @@ export function ChannelRailTile({
         draggable
         onDragStart={onGripDragStart}
         onDragEnd={onDragEnd}
-        title="Drag into workspace"
+        title="Drag onto the board"
       >
         ⋮⋮
       </span>
@@ -87,21 +102,23 @@ export function ChannelRailTile({
         <IconRadio size={13} />
         <span className="channel-rail-label">{channel.name}</span>
         {channel.simulcast && <span className="chan-sim-tag">SIM</span>}
+        {monitoring && (
+          <span className="channel-rail-live-dot" title="Audio on" aria-label="Audio on" role="img" />
+        )}
       </button>
-      {docked && onUndock ? (
-        <button
-          type="button"
-          className="channel-rail-close"
-          onClick={(e) => {
-            e.stopPropagation();
-            onUndock();
-          }}
-          aria-label={`Close ${channel.name} window`}
-          title="Remove from workspace"
-        >
-          <IconClose size={12} />
-        </button>
-      ) : null}
+      <button
+        type="button"
+        className={docked ? "channel-rail-board on" : "channel-rail-board"}
+        onClick={(e) => {
+          e.stopPropagation();
+          toggleBoard();
+        }}
+        aria-pressed={docked}
+        aria-label={docked ? `Remove ${channel.name} from the board` : `Open ${channel.name} on the board`}
+        title={docked ? "On the board — click to remove" : "Not on the board — click to add"}
+      >
+        <IconBoard size={12} />
+      </button>
       <button
         type="button"
         className={monitoring ? "ch-power active" : "ch-power"}
@@ -110,7 +127,7 @@ export function ChannelRailTile({
           onToggleMonitor();
         }}
         aria-pressed={monitoring}
-        title={monitoring ? "Turn channel off" : "Turn channel on"}
+        title={monitoring ? "Audio on — click to turn off" : "Audio off — click to turn on"}
       >
         <IconHeadphones size={15} />
       </button>
