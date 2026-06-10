@@ -67,6 +67,22 @@
 
       <!-- SETTINGS -->
       <section id="tab-settings" class="tab-panel">
+        <h2>Decoder</h2>
+        <div class="grid2">
+          <label>Decoder backend
+            <select id="decoder">
+              <option value="trunk-recorder">trunk-recorder (built-in, runs in WSL)</option>
+              <option value="sdrtrunk">sdrtrunk (runs on Windows — best for simulcast)</option>
+            </select>
+            <small>sdrtrunk decodes P25 simulcast far better with one dongle. It runs on Windows and streams finished calls to SafeT; the dongle stays on Windows (no WSL forwarding).</small>
+          </label>
+          <label id="sdrtrunkPathBox" hidden>sdrtrunk folder
+            <input id="sdrtrunkPath" type="text" placeholder="C:\\sdrtrunk-windows-x86_64-v0.6.1" />
+            <small>The unzipped sdrtrunk folder (contains <code>bin\\sdr-trunk.bat</code>). The app launches and stops it for you.</small>
+          </label>
+        </div>
+        <small id="sdrtrunkNote" class="block" hidden>One-time sdrtrunk setup: add a stream and import the alias list — see the README "sdrtrunk decoder" section. The radio settings below are only used by the built-in trunk-recorder decoder.</small>
+
         <h2>Radio settings</h2>
         <div class="grid2">
           <label>Center frequency (MHz)

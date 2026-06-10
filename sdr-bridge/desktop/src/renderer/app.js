@@ -70,8 +70,18 @@ async function loadSettings() {
   $("projectDir").value = s.projectDir || "~/safeT-PTT/sdr-bridge";
   $("streamBase").value = s.streamBase || "";
 
+  $("decoder").value = cfg.decoder === "sdrtrunk" ? "sdrtrunk" : "trunk-recorder";
+  $("sdrtrunkPath").value = s.sdrtrunkPath || "";
+  applyDecoderVisibility();
+
   $("autostart").checked = await window.api.getAutoStart();
   $("notifications").checked = s.notifications !== false;
+}
+
+function applyDecoderVisibility() {
+  const isSdrtrunk = $("decoder").value === "sdrtrunk";
+  $("sdrtrunkPathBox").hidden = !isSdrtrunk;
+  $("sdrtrunkNote").hidden = !isSdrtrunk;
 }
 
 function parseControl(text) {
@@ -102,13 +112,16 @@ async function saveSettings() {
     msg.textContent = text;
     btn.disabled = false;
   };
+  const isSdrtrunk = $("decoder").value === "sdrtrunk";
   const centerHz = mhzToHz("centerMHz");
   const controlChannelsHz = parseControl($("controlMHz").value);
-  if (!centerHz)
+  // sdrtrunk owns the radio on Windows, so the center / control-channel fields
+  // below don't apply — only validate them for the built-in decoder.
+  if (!isSdrtrunk && !centerHz)
     return fail("Enter a center frequency first — without it the decoder tunes to the wrong place and the bridge stays silent.");
-  if (!controlChannelsHz.length)
+  if (!isSdrtrunk && !controlChannelsHz.length)
     return fail("Enter at least one control channel frequency first — a P25 system can't be followed without it.");
-  if ($("dongle2on").checked && !mhzToHz("d2center"))
+  if (!isSdrtrunk && $("dongle2on").checked && !mhzToHz("d2center"))
     return fail("Enter a center frequency for the second dongle, or turn it off.");
 
   // Dongle 1 (always present) + optional dongle 2 -> a `sources` array.
@@ -126,6 +139,7 @@ async function saveSettings() {
   }
 
   const patch = {
+    decoder: $("decoder").value === "sdrtrunk" ? "sdrtrunk" : "trunk-recorder",
     sources,
     system: {
       controlChannelsHz,
@@ -155,6 +169,7 @@ async function saveSettings() {
       distro: $("distro").value || "Ubuntu",
       projectDir: $("projectDir").value || "~/safeT-PTT/sdr-bridge",
       streamBase,
+      sdrtrunkPath: $("sdrtrunkPath").value.trim(),
       notifications: $("notifications").checked,
     });
     const res = await window.api.saveConfig(patch);
@@ -174,6 +189,7 @@ async function saveSettings() {
   }
 }
 $("saveBtn").addEventListener("click", saveSettings);
+$("decoder").addEventListener("change", applyDecoderVisibility);
 $("dongle2on").addEventListener("change", () => {
   $("dongle2fields").hidden = !$("dongle2on").checked;
 });

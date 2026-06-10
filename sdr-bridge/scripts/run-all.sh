@@ -6,6 +6,28 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."   # -> sdr-bridge/
 
+# Decoder backend: "sdrtrunk" (decodes on Windows, uploads finished calls to our
+# RdioScanner receiver) or "trunk-recorder" (the in-WSL Docker decoder, default).
+DECODER="$(node -e 'try{process.stdout.write(String((JSON.parse(require("fs").readFileSync("config/system.json","utf8")).decoder)||"trunk-recorder"))}catch{process.stdout.write("trunk-recorder")}' 2>/dev/null || echo trunk-recorder)"
+
+if [ "$DECODER" = "sdrtrunk" ]; then
+  # sdrtrunk runs on Windows (launched by the desktop app) and POSTs each finished
+  # call to scripts/sdrtrunk-bridge.mjs. No Docker, Icecast, or RF config in WSL —
+  # sdrtrunk owns the radio. We just run the receiver and keep it alive.
+  echo "[sdrtrunk] decoder backend = sdrtrunk; running the call-upload bridge to SafeT."
+  [ -d node_modules/ws ] || npm install ws --no-audit --no-fund >/dev/null 2>&1 || true
+  node scripts/sdrtrunk-playlist.mjs || true   # refresh the importable alias list
+  cleanup_sdrtrunk() { pkill -9 -f sdrtrunk-bridge.mjs 2>/dev/null || true; }
+  trap cleanup_sdrtrunk EXIT INT TERM
+  pkill -9 -f sdrtrunk-bridge.mjs 2>/dev/null || true
+  while :; do
+    node scripts/sdrtrunk-bridge.mjs
+    echo "[sdrtrunk] bridge exited — retrying in 10s"
+    sleep 10
+  done
+  exit 0
+fi
+
 # One-shot RF profile fixes (e.g. the OC CCCS high control channels) — before
 # the sync so the regenerated decoder config picks them up.
 node scripts/migrate-config.mjs || true

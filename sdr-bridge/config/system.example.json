@@ -44,6 +44,14 @@
     "password": "CHANGE_ME_safet_admin_password",
     "agencySlug": ""
   },
+  "_decoder_comment": "Which decoder backend to run. 'trunk-recorder' (default) decodes in WSL/Docker. 'sdrtrunk' decodes on Windows (best for P25 simulcast) and uploads finished calls to the bridge — see SDRTRUNK.md. The 'sdrtrunk' block below is only used in that mode.",
+  "decoder": "trunk-recorder",
+  "sdrtrunk": {
+    "_comment": "Used only when decoder='sdrtrunk'. uploadPort: where the RdioScanner call-upload receiver listens. streamName/aliasList: the sdrtrunk broadcast-channel and alias-list names the generated safet-aliases.xml uses.",
+    "uploadPort": 8765,
+    "streamName": "SafeT",
+    "aliasList": "OCCCS"
+  },
 
   "bridgeDefaults": {
     "_comment": "Applied to every bridge unless overridden per-entry below. voxThreshold 0-1 (lower = more sensitive). yieldToUnits=false keeps scanner traffic on-air even when a real unit keys up; set true if you want live units to pre-empt the feed.",
