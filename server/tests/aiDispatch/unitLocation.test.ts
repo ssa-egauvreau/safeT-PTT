@@ -29,7 +29,9 @@ import assert from "node:assert/strict";
 
 import {
   findRadioMapPosition,
+  formatUnitIdForRadio,
   parseUnitLocationSubject,
+  positionIsFresh,
 } from "../../src/aiDispatch/unitLocation.js";
 import type { RadioPosition } from "../../src/store.js";
 
@@ -221,4 +223,102 @@ test("findRadioMapPosition: suffix match catches partial radio numbers", () => {
   // by the endsWith fall-through (normalized "2040" endsWith "40").
   const ps = [pos("27-2040")];
   assert.equal(findRadioMapPosition(ps, "40")?.unit_id, "27-2040");
+});
+
+// ---------- formatUnitIdForRadio ----------------------------------------
+//
+// `formatUnitIdForRadio` is the speech-side mirror of the prefix-strip rule
+// used by buildDeterministicDispatchAck and buildInfoRequestAck. It feeds
+// distress callouts ("All units 10-33, X needs assistance...") and unit
+// 10-20 responses, where saying the wrong callsign is worse than saying
+// nothing at all.
+
+test("formatUnitIdForRadio: null / undefined / blank → 'unknown unit' (never empty / undefined)", () => {
+  // The downstream callers concatenate this into a TTS line, so an empty
+  // string would produce "All units 10-33,  needs assistance" — which the
+  // dispatcher must never broadcast. Lock the fallback wording.
+  assert.equal(formatUnitIdForRadio(null), "unknown unit");
+  assert.equal(formatUnitIdForRadio(undefined), "unknown unit");
+  assert.equal(formatUnitIdForRadio(""), "unknown unit");
+  assert.equal(formatUnitIdForRadio("   "), "unknown unit");
+});
+
+test("formatUnitIdForRadio: command-staff 27-0[0-3]0 keep the 27- prefix on the air", () => {
+  // 27-000 / 27-010 / 27-020 / 27-030 are SSA command staff and are
+  // addressed with the full prefix on the radio.
+  for (const cs of ["27-000", "27-010", "27-020", "27-030"]) {
+    assert.equal(formatUnitIdForRadio(cs), cs);
+  }
+});
+
+test("formatUnitIdForRadio: patrol callsigns drop the 27- prefix", () => {
+  // 27-040, 27-205, 27-352 are line patrol units — radio voice is "040".
+  assert.equal(formatUnitIdForRadio("27-040"), "040");
+  assert.equal(formatUnitIdForRadio("27-205"), "205");
+  assert.equal(formatUnitIdForRadio("27-352"), "352");
+});
+
+test("formatUnitIdForRadio: trims surrounding whitespace before the prefix check", () => {
+  // The check is anchored — without trimming first, "  27-040  " would
+  // skip the regex and land on the un-stripped fallback path.
+  assert.equal(formatUnitIdForRadio("  27-040  "), "040");
+  assert.equal(formatUnitIdForRadio("\t27-020\n"), "27-020");
+});
+
+test("formatUnitIdForRadio: non-27 prefixes pass through unchanged (no false strip)", () => {
+  // ADAM-5, K-9, EXT-352 — only the 27- prefix is patrol convention.
+  assert.equal(formatUnitIdForRadio("ADAM-5"), "ADAM-5");
+  assert.equal(formatUnitIdForRadio("K-9"), "K-9");
+  assert.equal(formatUnitIdForRadio("EXT-352"), "EXT-352");
+});
+
+// ---------- positionIsFresh --------------------------------------------
+//
+// `positionIsFresh` gates whether a 10-20 / 10-33 location lookup uses the
+// stored GPS or refuses ("no recent GPS"). The threshold is 10 minutes —
+// older than that and the unit may have moved out of range, so we'd be
+// reading a stale position over the radio.
+
+test("positionIsFresh: a position 'now' is fresh", () => {
+  assert.equal(positionIsFresh(new Date().toISOString()), true);
+});
+
+test("positionIsFresh: a position from 1 minute ago is fresh", () => {
+  const oneMinAgo = new Date(Date.now() - 60_000).toISOString();
+  assert.equal(positionIsFresh(oneMinAgo), true);
+});
+
+test("positionIsFresh: a position older than 10 minutes is stale", () => {
+  // 10 minutes is the documented POSITION_MAX_AGE_MS threshold. 11 minutes
+  // ago must be stale; if a refactor flips the comparison sign or unit
+  // (seconds vs ms), this test catches it.
+  const elevenMinAgo = new Date(Date.now() - 11 * 60_000).toISOString();
+  assert.equal(positionIsFresh(elevenMinAgo), false);
+});
+
+test("positionIsFresh: a position exactly at the 10-minute boundary is still fresh", () => {
+  // Boundary contract: <= 10 minutes is fresh (Date.now - t <= 10*60*1000).
+  // A regression that flips this to strict less-than would silently mark
+  // every position arriving exactly on the cron tick as stale.
+  const tenMinAgo = new Date(Date.now() - 10 * 60_000 + 100).toISOString();
+  assert.equal(positionIsFresh(tenMinAgo), true);
+});
+
+test("positionIsFresh: an unparseable updatedAt is treated as stale (never freshly accepted)", () => {
+  // Date.parse('not a date') is NaN. We must NOT treat NaN as recent — the
+  // fallback is 'stale', so the radio lookup answers "no recent GPS"
+  // instead of broadcasting a phantom address from lat 0,0.
+  assert.equal(positionIsFresh("not a date"), false);
+  assert.equal(positionIsFresh(""), false);
+});
+
+test("positionIsFresh: a future-dated position is still considered fresh (clock skew tolerance)", () => {
+  // A position dated slightly in the future means the device clock is ahead
+  // of the server's — common for handsets after a daylight-savings flip or
+  // a freshly synced GPS. Date.now() - t becomes negative, which is <= the
+  // threshold, so it stays fresh. Locking that contract so a future
+  // refactor that adds Math.abs() doesn't accidentally start treating
+  // future dates as stale (or, worse, throwing on a negative).
+  const oneMinFuture = new Date(Date.now() + 60_000).toISOString();
+  assert.equal(positionIsFresh(oneMinFuture), true);
 });
