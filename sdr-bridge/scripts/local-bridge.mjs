@@ -13,6 +13,7 @@
  * Run from sdr-bridge/:  node scripts/local-bridge.mjs   (npm start launches it)
  */
 import { spawn } from "node:child_process";
+import { createSocket } from "node:dgram";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -231,6 +232,64 @@ setInterval(() => {
     monitor.release(monitor.holder);
   }
 }, 500).unref();
+
+/**
+ * Scan-All ingest: the decoder's TGID-0 stream carries EVERY clear call on the
+ * system, each datagram prefixed with its 4-byte little-endian TGID. Demux by
+ * TGID, claim the scan hub under the talkgroup's name (one call at a time —
+ * real scanner behavior), upsample 8 kHz -> 16 kHz, and feed the hub. Bridged
+ * talkgroups are skipped here: their own ingests already feed the hub.
+ */
+function runScanAllIngest(port, bridgedTgids, tgNames) {
+  const sock = createSocket("udp4");
+  let currentTg = null;
+  let carry = Buffer.alloc(0);
+  sock.on("message", (msg) => {
+    if (msg.length < 6) return;
+    const tgid = msg.readUInt32LE(0);
+    if (bridgedTgids.has(tgid)) return;
+    const name = tgNames.get(tgid) || `TG ${tgid}`;
+    if (!monitor.claim(name)) return; // another call holds the scan feed
+    if (currentTg !== tgid) {
+      currentTg = tgid;
+      carry = Buffer.alloc(0);
+    }
+    // 8 kHz mono s16le -> 16 kHz by sample doubling (fine for radio voice).
+    const pcm = msg.subarray(4);
+    const usable = pcm.length - (pcm.length % 2);
+    const up = Buffer.alloc(usable * 2);
+    for (let i = 0; i < usable; i += 2) {
+      const s = pcm.readInt16LE(i);
+      up.writeInt16LE(s, i * 2);
+      up.writeInt16LE(s, i * 2 + 2);
+    }
+    carry = carry.length ? Buffer.concat([carry, up]) : up;
+    while (carry.length >= FRAME_BYTES) {
+      monitor.send(carry.subarray(0, FRAME_BYTES));
+      carry = carry.subarray(FRAME_BYTES);
+    }
+  });
+  sock.on("error", (e) => console.warn("[bridge] scan-all ingest error:", e.message));
+  sock.bind(port, "127.0.0.1", () =>
+    console.log(`[bridge] Scan All ingest: every clear talkgroup on the system (udp ${port})`),
+  );
+}
+
+/** tgid -> alpha tag, from the generated talkgroups.csv (bridged + full system). */
+function loadTalkgroupNames() {
+  const names = new Map();
+  try {
+    const lines = readFileSync(join(ROOT, "trunk-recorder", "talkgroups.csv"), "utf8").split(/\r?\n/);
+    for (const line of lines.slice(1)) {
+      const c = line.split(",");
+      const id = Number((c[0] ?? "").trim());
+      if (Number.isFinite(id) && id > 0 && c[2]) names.set(id, c[2].trim());
+    }
+  } catch {
+    /* names are nice-to-have */
+  }
+  return names;
+}
 
 /** A monitor/Scan-All bridge: no ingest of its own — it joins its channel and
  * is fed by the talkgroup ingests via the `monitor` hub. */
@@ -523,6 +582,18 @@ async function main() {
     console.log(`    • ${b.name}  ->  channel "${b.target_channel}"  (udp ${port})`);
     mark(b, { tgid: Number(String(b.source_url).match(/\/tg(\d+)\/?$/i)?.[1] ?? null) || null });
     runBridge(b, port);
+  }
+
+  // Scan All carries EVERY clear call on the system — not just the bridged
+  // talkgroups — via the decoder's TGID-0 "everything" stream (when present).
+  const scanPort = tgPort.get(0);
+  if (monitors.length && scanPort) {
+    const bridgedTgids = new Set(
+      runnable
+        .map(({ bridge: b }) => Number(String(b.source_url).match(/\/tg(\d+)\/?$/i)?.[1]))
+        .filter(Number.isFinite),
+    );
+    runScanAllIngest(scanPort, bridgedTgids, loadTalkgroupNames());
   }
 }
 
