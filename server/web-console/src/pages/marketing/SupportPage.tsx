@@ -21,6 +21,10 @@ export function SupportPage() {
             <h3>Setup guide</h3>
             <p>Step-by-step agency provisioning and handset deployment.</p>
           </Link>
+          <Link to="/setup/android" className="support-link-card">
+            <h3>Android &amp; Inrico setup</h3>
+            <p>APK install, Vysor, IRC590 and TM-7 Plus hardware keys — with pictures.</p>
+          </Link>
           <Link to="/faq" className="support-link-card">
             <h3>FAQ</h3>
             <p>Billing, hardware, security, and common questions.</p>
@@ -28,6 +32,14 @@ export function SupportPage() {
           <Link to="/devices" className="support-link-card">
             <h3>Supported devices</h3>
             <p>Inrico IRC590, TM7 Plus, Android, iOS, Windows, browser, and more.</p>
+          </Link>
+          <Link to="/trust" className="support-link-card">
+            <h3>Trust Center</h3>
+            <p>Security architecture, compliance status, and security packet requests.</p>
+          </Link>
+          <Link to="/interoperability" className="support-link-card">
+            <h3>Interoperability</h3>
+            <p>LMR bridges, P25 stream ingest, and codec options.</p>
           </Link>
           <Link to="/security" className="support-link-card">
             <h3>Security</h3>

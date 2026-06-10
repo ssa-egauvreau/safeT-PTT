@@ -1,0 +1,29 @@
+{
+  "disclaimer": "Representative outcomes from early agency deployments. Names anonymized until customers approve public use — contact sales to become a reference account.",
+  "stories": [
+    {
+      "id": "county-ems",
+      "vertical": "Fire & EMS",
+      "organization": "Regional EMS agency",
+      "quote": "We stood up three talkgroups and had supervisors on Inrico handsets the same afternoon. Dispatch finally sees every unit on one map instead of chasing radio checks.",
+      "role": "Operations supervisor",
+      "highlight": "Same-day deployment on LTE handsets"
+    },
+    {
+      "id": "campus-security",
+      "vertical": "Campus safety",
+      "organization": "University security department",
+      "quote": "Emergency alerts hit dispatch with location immediately. Our officers use hardware PTT on rugged radios — it feels like our old system but works across the whole campus on cellular.",
+      "role": "Security director",
+      "highlight": "Hardware PTT + emergency workflow"
+    },
+    {
+      "id": "private-security",
+      "vertical": "Private security",
+      "organization": "Multi-site security firm",
+      "quote": "Per-site channels, free dispatcher seats, and searchable call history for client incident reports. The 3-day log window was enough to start; we added unlimited retention for investigations.",
+      "role": "Operations manager",
+      "highlight": "Searchable logs for client reporting"
+    }
+  ]
+}

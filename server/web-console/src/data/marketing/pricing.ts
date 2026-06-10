@@ -48,3 +48,28 @@ export const LOGS_ADDON = {
   unit: "per agency / month",
   blurb: "Keep every transmission and transcript indefinitely instead of the included 3-day window.",
 };
+
+/** Annual billing — 15% discount vs paying monthly × 12. */
+export const ANNUAL_BILLING = {
+  discountPercent: 15,
+  note: "Save 15% when you pay annually per radio. Contact sales to switch an existing subscription or request a quote.",
+  plans: {
+    basic: {
+      monthly: "$6.50",
+      annualPerMonth: "$5.53",
+      annualTotal: "$66.30",
+      unit: "per radio / year",
+    },
+    pro: {
+      monthly: "$8.50",
+      annualPerMonth: "$7.23",
+      annualTotal: "$86.70",
+      unit: "per radio / year",
+    },
+  },
+  logsAddon: {
+    monthly: "$20",
+    annualTotal: "$204",
+    unit: "per agency / year",
+  },
+};

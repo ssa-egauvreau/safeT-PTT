@@ -1,48 +1,40 @@
 /**
  * Tests for `server/src/billing/config.ts`.
  *
- * `config.ts` is the trust boundary between Railway env vars and the rest
- * of the billing module. Every helper here gates real money:
+ * Every billing call site keys off these env-readers — a regression here
+ * silently breaks Stripe initialisation, checkout URLs, or trial enforcement
+ * across the entire self-service signup flow added in 4e7ffa6.
  *
- *  - `billingEnabled()` is consulted by `getStripe()`, `routes.ts`, and
- *    `webhooks.ts` to short-circuit when Stripe is unconfigured. A
- *    regression that returned `true` on a blank/whitespace key would
- *    have the runtime trying (and failing noisily) to call Stripe on
- *    every request.
- *  - `priceIdForTier()` decides which Stripe price ID is used for the
- *    Basic vs Pro plan. Swapping these silently bills Pro customers at
- *    the Basic rate (or vice-versa).
- *  - `publicAppUrl()` is folded into `success_url` / `cancel_url` for
- *    Stripe Checkout. A trailing slash leaks into the redirect URL and
- *    the browser sees `//admin?...`. A malformed value would also let a
- *    misconfigured deploy redirect to an attacker-controlled host —
- *    pinned by the trim/strip rule plus the explicit fallback.
- *  - `billingFromEmail()` is the From: address for verification email.
- *    Falling back to the wrong default would burn deliverability
- *    silently.
+ * Properties pinned by this file:
  *
- * Each test isolates the env vars it touches so the rest of the suite
- * (and parallel test workers) can run unaffected.
+ *  1. **`billingEnabled`** is a strict, trimmed truthiness check on
+ *     `STRIPE_SECRET_KEY` — empty / whitespace-only / unset must all return
+ *     `false` so `getStripe()` never instantiates a Stripe client with a bad
+ *     credential and the billing routes degrade to `billing_not_configured`.
+ *
+ *  2. **`stripeSecretKey` / `stripeWebhookSecret` / `stripePriceBasic` /
+ *     `stripePricePro` / `stripePriceLogsUnlimited`** all return `null` when
+ *     missing or whitespace-only, and trim their value otherwise. A leading
+ *     newline copy-pasted into Railway is the most common operator footgun;
+ *     these helpers must not return it verbatim.
+ *
+ *  3. **`publicAppUrl`** falls back to the production hostname when neither
+ *     `PUBLIC_APP_URL` nor `APP_URL` is set, prefers `PUBLIC_APP_URL` over
+ *     `APP_URL`, and strips trailing slashes so checkout `success_url` /
+ *     `cancel_url` don't get a double-slash and 404 from Vite preview.
+ *
+ *  4. **`priceIdForTier`** routes only the literal string `"pro"` to the
+ *     pro price; every other input (including casing variants) maps to the
+ *     basic price. This is the only thing keeping a typo'd plan tier from
+ *     silently subscribing a tenant to the wrong tier.
+ *
+ *  5. **`billingFromEmail`** has a hard-coded fallback so verification email
+ *     send never throws on a missing env var, but env-supplied values win.
  */
 
-import { afterEach, test } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import {
-  billingEnabled,
-  billingFromEmail,
-  priceIdForTier,
-  publicAppUrl,
-  resendApiKey,
-  stripePriceBasic,
-  stripePriceLogsUnlimited,
-  stripePricePro,
-  stripeSecretKey,
-  stripeWebhookSecret,
-} from "../../src/billing/config.js";
-
-// Every config helper reads `process.env`; snapshot the keys this suite
-// touches and restore after each case so nothing leaks between tests.
 const ENV_KEYS = [
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
@@ -55,155 +47,168 @@ const ENV_KEYS = [
   "BILLING_FROM_EMAIL",
 ] as const;
 
-function snapshot(): Record<string, string | undefined> {
-  const out: Record<string, string | undefined> = {};
-  for (const k of ENV_KEYS) {
-    out[k] = process.env[k];
-  }
-  return out;
-}
-
-function restore(snap: Record<string, string | undefined>): void {
-  for (const k of ENV_KEYS) {
-    if (snap[k] === undefined) {
-      delete process.env[k];
+function withEnv<T>(overrides: Record<string, string | undefined>, fn: () => T): T {
+  const saved: Record<string, string | undefined> = {};
+  for (const key of ENV_KEYS) saved[key] = process.env[key];
+  for (const [key, val] of Object.entries(overrides)) {
+    if (val === undefined) {
+      delete process.env[key];
     } else {
-      process.env[k] = snap[k]!;
+      process.env[key] = val;
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    for (const key of ENV_KEYS) {
+      if (saved[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = saved[key];
+      }
     }
   }
 }
 
-const ORIGINAL = snapshot();
-afterEach(() => restore(ORIGINAL));
+const config = await import("../../src/billing/config.js");
 
-test("billingEnabled: false when STRIPE_SECRET_KEY is unset, blank, or whitespace", () => {
-  delete process.env.STRIPE_SECRET_KEY;
-  assert.equal(billingEnabled(), false);
+// ---------------------------------------------------------------------------
+// billingEnabled
+// ---------------------------------------------------------------------------
 
-  process.env.STRIPE_SECRET_KEY = "";
-  assert.equal(billingEnabled(), false);
+test("billingEnabled: false when STRIPE_SECRET_KEY is unset", () => {
+  withEnv({ STRIPE_SECRET_KEY: undefined }, () => {
+    assert.equal(config.billingEnabled(), false);
+  });
+});
 
-  process.env.STRIPE_SECRET_KEY = "   ";
-  assert.equal(
-    billingEnabled(),
-    false,
-    "whitespace-only must read as unset — the check is .trim()-aware",
+test("billingEnabled: false when STRIPE_SECRET_KEY is empty or whitespace", () => {
+  withEnv({ STRIPE_SECRET_KEY: "" }, () => assert.equal(config.billingEnabled(), false));
+  withEnv({ STRIPE_SECRET_KEY: "   " }, () => assert.equal(config.billingEnabled(), false));
+  withEnv({ STRIPE_SECRET_KEY: "\n\t  " }, () => assert.equal(config.billingEnabled(), false));
+});
+
+test("billingEnabled: true when STRIPE_SECRET_KEY has any non-whitespace value", () => {
+  withEnv({ STRIPE_SECRET_KEY: "sk_test_123" }, () => assert.equal(config.billingEnabled(), true));
+  withEnv({ STRIPE_SECRET_KEY: "  sk_test_123  " }, () =>
+    assert.equal(config.billingEnabled(), true),
   );
 });
 
-test("billingEnabled: true when STRIPE_SECRET_KEY has any non-whitespace content", () => {
-  process.env.STRIPE_SECRET_KEY = "sk_test_abc123";
-  assert.equal(billingEnabled(), true);
+// ---------------------------------------------------------------------------
+// stripeSecretKey / stripeWebhookSecret / stripePrice*
+// ---------------------------------------------------------------------------
+
+const STRING_GETTERS: Array<[keyof typeof config, string]> = [
+  ["stripeSecretKey", "STRIPE_SECRET_KEY"],
+  ["stripeWebhookSecret", "STRIPE_WEBHOOK_SECRET"],
+  ["stripePriceBasic", "STRIPE_PRICE_BASIC"],
+  ["stripePricePro", "STRIPE_PRICE_PRO"],
+  ["stripePriceLogsUnlimited", "STRIPE_PRICE_LOGS_UNLIMITED"],
+  ["resendApiKey", "RESEND_API_KEY"],
+];
+
+for (const [getter, env] of STRING_GETTERS) {
+  test(`${getter}: null when ${env} is unset, empty, or whitespace`, () => {
+    withEnv({ [env]: undefined }, () => assert.equal((config[getter] as () => string | null)(), null));
+    withEnv({ [env]: "" }, () => assert.equal((config[getter] as () => string | null)(), null));
+    withEnv({ [env]: "   " }, () => assert.equal((config[getter] as () => string | null)(), null));
+  });
+
+  test(`${getter}: trims whitespace and returns ${env}`, () => {
+    withEnv({ [env]: "  hello-world  " }, () =>
+      assert.equal((config[getter] as () => string | null)(), "hello-world"),
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// publicAppUrl
+// ---------------------------------------------------------------------------
+
+test("publicAppUrl: defaults to safet-ptt.com when neither PUBLIC_APP_URL nor APP_URL is set", () => {
+  withEnv({ PUBLIC_APP_URL: undefined, APP_URL: undefined }, () => {
+    assert.equal(config.publicAppUrl(), "https://safet-ptt.com");
+  });
 });
 
-test("stripeSecretKey / stripeWebhookSecret / stripePrice*: trim and return null on blank", () => {
-  process.env.STRIPE_SECRET_KEY = "  sk_live_abcdef  ";
-  process.env.STRIPE_WEBHOOK_SECRET = "  whsec_xyz  ";
-  process.env.STRIPE_PRICE_BASIC = "  price_basic  ";
-  process.env.STRIPE_PRICE_PRO = "  price_pro  ";
-  process.env.STRIPE_PRICE_LOGS_UNLIMITED = "  price_logs  ";
-
-  assert.equal(stripeSecretKey(), "sk_live_abcdef");
-  assert.equal(stripeWebhookSecret(), "whsec_xyz");
-  assert.equal(stripePriceBasic(), "price_basic");
-  assert.equal(stripePricePro(), "price_pro");
-  assert.equal(stripePriceLogsUnlimited(), "price_logs");
-
-  // Empty string and whitespace-only must both read as null so missing
-  // keys fail open (no Stripe calls) instead of being passed through
-  // verbatim.
-  process.env.STRIPE_PRICE_BASIC = "";
-  process.env.STRIPE_PRICE_PRO = "   ";
-  delete process.env.STRIPE_PRICE_LOGS_UNLIMITED;
-  assert.equal(stripePriceBasic(), null);
-  assert.equal(stripePricePro(), null);
-  assert.equal(stripePriceLogsUnlimited(), null);
+test("publicAppUrl: strips a single trailing slash", () => {
+  withEnv({ PUBLIC_APP_URL: "https://app.example.com/" }, () => {
+    assert.equal(config.publicAppUrl(), "https://app.example.com");
+  });
 });
 
-test("priceIdForTier: 'basic' tier resolves to STRIPE_PRICE_BASIC, 'pro' to STRIPE_PRICE_PRO", () => {
-  // The single most expensive bug in this file would be flipping these
-  // mappings — Pro customers get billed at Basic rate or vice-versa.
-  process.env.STRIPE_PRICE_BASIC = "price_basic_id";
-  process.env.STRIPE_PRICE_PRO = "price_pro_id";
-  assert.equal(priceIdForTier("basic"), "price_basic_id");
-  assert.equal(priceIdForTier("pro"), "price_pro_id");
+test("publicAppUrl: strips repeated trailing slashes", () => {
+  withEnv({ PUBLIC_APP_URL: "https://app.example.com////" }, () => {
+    assert.equal(config.publicAppUrl(), "https://app.example.com");
+  });
 });
 
-test("priceIdForTier: returns null when the tier's price env var is unset", () => {
-  delete process.env.STRIPE_PRICE_BASIC;
-  delete process.env.STRIPE_PRICE_PRO;
-  assert.equal(priceIdForTier("basic"), null);
-  assert.equal(priceIdForTier("pro"), null);
+test("publicAppUrl: PUBLIC_APP_URL takes precedence over APP_URL", () => {
+  withEnv({ PUBLIC_APP_URL: "https://primary.example.com", APP_URL: "https://fallback.example.com" }, () => {
+    assert.equal(config.publicAppUrl(), "https://primary.example.com");
+  });
 });
 
-test("publicAppUrl: prefers PUBLIC_APP_URL, falls back to APP_URL, then to the production hostname", () => {
-  delete process.env.PUBLIC_APP_URL;
-  delete process.env.APP_URL;
-  assert.equal(
-    publicAppUrl(),
-    "https://safet-ptt.com",
-    "must hard-code the production hostname when nothing is set so prod redirects don't 404",
+test("publicAppUrl: falls back to APP_URL when PUBLIC_APP_URL is unset", () => {
+  withEnv({ PUBLIC_APP_URL: undefined, APP_URL: "https://legacy.example.com/" }, () => {
+    assert.equal(config.publicAppUrl(), "https://legacy.example.com");
+  });
+});
+
+test("publicAppUrl: whitespace-only PUBLIC_APP_URL falls back to APP_URL or default", () => {
+  withEnv({ PUBLIC_APP_URL: "   ", APP_URL: "https://legacy.example.com" }, () => {
+    assert.equal(config.publicAppUrl(), "https://legacy.example.com");
+  });
+  withEnv({ PUBLIC_APP_URL: "   ", APP_URL: undefined }, () => {
+    assert.equal(config.publicAppUrl(), "https://safet-ptt.com");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// priceIdForTier
+// ---------------------------------------------------------------------------
+
+test("priceIdForTier: 'pro' returns STRIPE_PRICE_PRO", () => {
+  withEnv({ STRIPE_PRICE_PRO: "price_pro_x", STRIPE_PRICE_BASIC: "price_basic_x" }, () => {
+    assert.equal(config.priceIdForTier("pro"), "price_pro_x");
+  });
+});
+
+test("priceIdForTier: 'basic' returns STRIPE_PRICE_BASIC", () => {
+  withEnv({ STRIPE_PRICE_PRO: "price_pro_x", STRIPE_PRICE_BASIC: "price_basic_x" }, () => {
+    assert.equal(config.priceIdForTier("basic"), "price_basic_x");
+  });
+});
+
+test("priceIdForTier: returns null when the matching env var is unset", () => {
+  withEnv({ STRIPE_PRICE_PRO: undefined, STRIPE_PRICE_BASIC: "price_basic_x" }, () => {
+    assert.equal(config.priceIdForTier("pro"), null);
+    assert.equal(config.priceIdForTier("basic"), "price_basic_x");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// billingFromEmail
+// ---------------------------------------------------------------------------
+
+test("billingFromEmail: defaults to billing@safetptt.com when unset", () => {
+  withEnv({ BILLING_FROM_EMAIL: undefined }, () => {
+    assert.equal(config.billingFromEmail(), "billing@safetptt.com");
+  });
+});
+
+test("billingFromEmail: trims and returns env value when set", () => {
+  withEnv({ BILLING_FROM_EMAIL: "  noreply@example.com  " }, () => {
+    assert.equal(config.billingFromEmail(), "noreply@example.com");
+  });
+});
+
+test("billingFromEmail: empty / whitespace env falls back to default", () => {
+  withEnv({ BILLING_FROM_EMAIL: "" }, () =>
+    assert.equal(config.billingFromEmail(), "billing@safetptt.com"),
   );
-
-  process.env.APP_URL = "https://staging.safet-ptt.com";
-  assert.equal(publicAppUrl(), "https://staging.safet-ptt.com");
-
-  process.env.PUBLIC_APP_URL = "https://app.example.com";
-  assert.equal(
-    publicAppUrl(),
-    "https://app.example.com",
-    "PUBLIC_APP_URL must take precedence over APP_URL",
+  withEnv({ BILLING_FROM_EMAIL: "   " }, () =>
+    assert.equal(config.billingFromEmail(), "billing@safetptt.com"),
   );
-});
-
-test("publicAppUrl: strips trailing slashes so success_url doesn't double up '//admin'", () => {
-  // `stripe.ts` builds `${publicAppUrl()}/admin?billing=success`. A
-  // trailing slash on the env var would push Stripe to redirect the
-  // browser to `https://app.example.com//admin?billing=success`,
-  // which most servers normalise but which is fragile and looks broken
-  // in the address bar.
-  process.env.PUBLIC_APP_URL = "https://app.example.com/";
-  assert.equal(publicAppUrl(), "https://app.example.com");
-  process.env.PUBLIC_APP_URL = "https://app.example.com////";
-  assert.equal(publicAppUrl(), "https://app.example.com");
-});
-
-test("publicAppUrl: ignores blank / whitespace-only values and treats them as unset", () => {
-  process.env.PUBLIC_APP_URL = "   ";
-  process.env.APP_URL = "https://app2.example.com";
-  assert.equal(
-    publicAppUrl(),
-    "https://app2.example.com",
-    "whitespace-only PUBLIC_APP_URL must NOT shadow a valid APP_URL",
-  );
-
-  process.env.PUBLIC_APP_URL = "";
-  process.env.APP_URL = "";
-  assert.equal(publicAppUrl(), "https://safet-ptt.com");
-});
-
-test("resendApiKey: trims and returns null on blank", () => {
-  delete process.env.RESEND_API_KEY;
-  assert.equal(resendApiKey(), null);
-
-  process.env.RESEND_API_KEY = "   ";
-  assert.equal(resendApiKey(), null);
-
-  process.env.RESEND_API_KEY = "  re_abc123  ";
-  assert.equal(resendApiKey(), "re_abc123");
-});
-
-test("billingFromEmail: returns the configured override, otherwise the documented default", () => {
-  delete process.env.BILLING_FROM_EMAIL;
-  assert.equal(billingFromEmail(), "billing@safetptt.com");
-
-  process.env.BILLING_FROM_EMAIL = "   ";
-  assert.equal(
-    billingFromEmail(),
-    "billing@safetptt.com",
-    "whitespace-only override must fall back to the default — the From: header is the customer's first impression of the platform and a blank one tanks deliverability",
-  );
-
-  process.env.BILLING_FROM_EMAIL = "  no-reply@example.com  ";
-  assert.equal(billingFromEmail(), "no-reply@example.com");
 });

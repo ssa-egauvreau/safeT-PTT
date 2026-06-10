@@ -1,6 +1,8 @@
+import { Link } from "react-router-dom";
 import steps from "../../data/marketing/setupSteps.json";
 import { MarketingLayout } from "./MarketingLayout";
 import { DeviceFrame } from "./DeviceFrame";
+import { IconArrowRight } from "../../icons";
 
 export function SetupPage() {
   return (
@@ -10,6 +12,12 @@ export function SetupPage() {
           <span className="lp-kicker">Setup</span>
           <h1>From signup to first transmission</h1>
           <p>Follow these steps to put your agency on the air.</p>
+          <p className="setup-android-callout">
+            Installing on Android phones or Inrico IRC590 / TM-7 Plus radios?{" "}
+            <Link to="/setup/android" className="lp-inline-link">
+              Open the detailed Android setup guide <IconArrowRight size={14} />
+            </Link>
+          </p>
         </div>
         <ol className="setup-steps">
           {steps.map((step) => (

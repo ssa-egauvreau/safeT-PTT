@@ -36,8 +36,8 @@ export function DevicesPage() {
               and admin run in any modern browser — or install the desktop shell on Windows, macOS,
               or Linux. iOS is in beta.
             </p>
-            <Link to="/setup" className="lp-btn lp-btn-primary lp-btn-lg">
-              Setup guide <IconArrowRight size={16} />
+            <Link to="/setup/android" className="lp-btn lp-btn-primary lp-btn-lg">
+              Android setup guide <IconArrowRight size={16} />
             </Link>
           </div>
         </div>
@@ -80,6 +80,23 @@ export function DevicesPage() {
                     </li>
                   ))}
                 </ul>
+                {(device.id === "inrico-irc590" || device.id === "inrico-tm7-plus") && (
+                  <Link
+                    to={
+                      device.id === "inrico-irc590"
+                        ? "/setup/android#irc590"
+                        : "/setup/android#tm7"
+                    }
+                    className="lp-btn lp-btn-ghost device-setup-link"
+                  >
+                    Setup instructions <IconArrowRight size={14} />
+                  </Link>
+                )}
+                {device.id === "android-phone" && (
+                  <Link to="/setup/android#mdm-deploy" className="lp-btn lp-btn-ghost device-setup-link">
+                    Mass deploy &amp; MDM <IconArrowRight size={14} />
+                  </Link>
+                )}
               </div>
             </article>
           ))}
@@ -137,6 +154,8 @@ export function DevicesPage() {
           </table>
         </div>
         <p className="lp-section-cta">
+          Monitor legacy LMR on safeT channels? <Link to="/interoperability">Interoperability guide</Link>
+          {" · "}
           Questions about a specific device? <Link to="/support">Visit support</Link> or{" "}
           <a href="mailto:sales@safetptt.com">contact sales</a>.
         </p>
