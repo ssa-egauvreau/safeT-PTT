@@ -246,6 +246,168 @@ test("GET /v1/billing/status: superseded admin token is rejected before billing 
   }
 });
 
+test("GET /v1/billing/status: disabled user account is rejected before billing handlers", async () => {
+  // Companion regression test for billing router ordering. The fix that
+  // motivated this test moved `router.use(createBillingRouter())` to AFTER
+  // the disabled-account/superseded-session enforcement middleware. Before
+  // the fix, an admin whose user row had been disabled (e.g. by an agency
+  // admin in the console, or by the platform owner) could still hit
+  // /v1/billing/* until their JWT expired — including `POST /billing/portal`
+  // and `POST /billing/checkout`, which is precisely the surface a former
+  // admin should NOT be able to drive.
+  //
+  // Pin the contract: cache says the user is disabled → all authenticated
+  // billing endpoints must return 401 `account_disabled` before the
+  // billing router's own handlers run. If billing ever gets re-mounted
+  // above the disable middleware (or the cache check drops the
+  // `userDisabled` branch), this test fails.
+  const prevDbUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  clearAuthCache();
+  const adminUserId = 9_999_011;
+  setCachedAuth(adminUserId, {
+    tokenGeneration: 0,
+    userDisabled: true,
+    agencyDisabled: false,
+  });
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const token = tokenFor({ id: adminUserId, agencyId: 42, role: "admin", gen: 0 });
+    const res = await fetch(`${baseUrl}/v1/billing/status`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(res.status, 401);
+    const body = (await res.json()) as { error?: string };
+    assert.equal(body.error, "account_disabled");
+  } finally {
+    await close();
+    clearAuthCache();
+    if (prevDbUrl !== undefined) {
+      process.env.DATABASE_URL = prevDbUrl;
+    }
+  }
+});
+
+test("GET /v1/billing/status: disabled agency is rejected before billing handlers", async () => {
+  // Same ordering invariant, but for the agency-disabled branch. When an
+  // agency is hard-disabled (deleted by the platform owner, or wound down
+  // for non-billing reasons), every authenticated request from that
+  // tenant — including /billing/* — must surface the 403 `agency_disabled`
+  // signal so the console can show the right "agency offline" UI instead
+  // of letting an admin keep hammering Stripe-backed endpoints with a
+  // tenant that no longer exists.
+  //
+  // The cached agencyDisabled path is the hot path on the request flow
+  // (Postgres unavailable in this test process), so we seed the cache
+  // directly. A regression that re-mounted billing above this middleware
+  // would let the request reach `requireAdmin` → handler and either crash
+  // or 503, both of which would be observable here as a non-403 status.
+  const prevDbUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  clearAuthCache();
+  const adminUserId = 9_999_012;
+  setCachedAuth(adminUserId, {
+    tokenGeneration: 0,
+    userDisabled: false,
+    agencyDisabled: true,
+  });
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const token = tokenFor({ id: adminUserId, agencyId: 42, role: "admin", gen: 0 });
+    const res = await fetch(`${baseUrl}/v1/billing/status`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(res.status, 403);
+    const body = (await res.json()) as { error?: string };
+    assert.equal(body.error, "agency_disabled");
+  } finally {
+    await close();
+    clearAuthCache();
+    if (prevDbUrl !== undefined) {
+      process.env.DATABASE_URL = prevDbUrl;
+    }
+  }
+});
+
+test("POST /v1/signup/verify-email: public signup endpoint stays reachable without auth", async () => {
+  // The billing router is mounted AFTER the auth-enforcement middleware so
+  // authenticated billing routes pass through the disabled/superseded
+  // gates. The same router ALSO carries the unauthenticated public-signup
+  // endpoints (POST /signup/verify-email and POST /signup) — these must
+  // continue to work for callers without a JWT, otherwise no new agency
+  // can self-serve onboarding through the marketing site.
+  //
+  // The router-level middleware short-circuits with `if (auth == null)
+  // next();` so anonymous callers fall through to the billing router. A
+  // regression that dropped that short-circuit (or mounted the billing
+  // router above `authenticate`) would either return 401 here or never
+  // even reach the handler. We assert the handler's own 400 contract for
+  // an empty/invalid email to prove the public path is intact.
+  const prevDbUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  clearAuthCache();
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const res = await fetch(`${baseUrl}/v1/signup/verify-email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "" }),
+    });
+    // The critical signal is: NOT 401. A 401 would mean the billing
+    // router got accidentally placed behind a `requireAuth`-style gate.
+    assert.notEqual(res.status, 401, "public signup must not require auth");
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error?: string };
+    assert.equal(body.error, "invalid_email");
+  } finally {
+    await close();
+    clearAuthCache();
+    if (prevDbUrl !== undefined) {
+      process.env.DATABASE_URL = prevDbUrl;
+    }
+  }
+});
+
+test("POST /v1/signup: public signup endpoint stays reachable without auth", async () => {
+  // Sibling of the verify-email check above: the second of the two public
+  // billing endpoints. Validates the unauthenticated path reaches the
+  // handler (which returns 400 `terms_required` when accept_terms is
+  // missing) rather than being intercepted by the auth-enforcement
+  // middleware. Pinning both endpoints individually means a future
+  // refactor that moves only one of them behind auth still trips a test.
+  const prevDbUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  clearAuthCache();
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const res = await fetch(`${baseUrl}/v1/signup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        agency_name: "Test Agency",
+        admin_username: "admin",
+        admin_password: "pw",
+        email: "ops@example.com",
+        verification_code: "123456",
+        plan_tier: "basic",
+        // accept_terms intentionally omitted to trigger the early
+        // `terms_required` branch; this keeps the assertion deterministic
+        // without a Stripe / DB / SMTP dependency.
+      }),
+    });
+    assert.notEqual(res.status, 401, "public signup must not require auth");
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error?: string };
+    assert.equal(body.error, "terms_required");
+  } finally {
+    await close();
+    clearAuthCache();
+    if (prevDbUrl !== undefined) {
+      process.env.DATABASE_URL = prevDbUrl;
+    }
+  }
+});
+
 test("GET /v1/audio/config: agency member with no DATABASE_URL → 503, not a crash", async () => {
   // The handler reads `getGlobalAudioConfig` which throws
   // `database_unavailable` when DATABASE_URL is unset (dev / CI default).
