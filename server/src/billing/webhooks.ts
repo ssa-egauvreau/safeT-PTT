@@ -100,8 +100,16 @@ export async function processStripeEvent(
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
       const agencyId = agencyIdFromMeta(session.metadata);
-      if (agencyId && typeof session.subscription === "string") {
-        const sub = await stripe.subscriptions.retrieve(session.subscription);
+      const subscriptionId = typeof session.subscription === "string" ? session.subscription : null;
+      if (agencyId && subscriptionId) {
+        const agency = await deps.getAgencyById(agencyId);
+        // A retried old checkout event can arrive after the agency has moved
+        // to a newer subscription. Ignore those stale events so they cannot
+        // overwrite current billing state.
+        if (agency?.stripe_subscription_id && agency.stripe_subscription_id !== subscriptionId) {
+          break;
+        }
+        const sub = await stripe.subscriptions.retrieve(subscriptionId);
         // Keep disabled status aligned with the fetched subscription state.
         // Never force-enable here, because stale/retried checkout events can
         // arrive after a subscription already became past_due/canceled.

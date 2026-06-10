@@ -246,3 +246,48 @@ test("processStripeEvent: subscription.updated reconciles against live Stripe st
   assert.equal(updateCalls[0]?.patch.subscriptionStatus, "past_due");
   assert.equal(updateCalls[0]?.patch.disabled, true);
 });
+
+test("processStripeEvent: ignores stale checkout completion for a superseded subscription id", async () => {
+  const updateCalls: Array<{ agencyId: number; patch: Record<string, unknown> }> = [];
+  let retrieveCalls = 0;
+  const fakeStripe = {
+    subscriptions: {
+      async retrieve(): Promise<Stripe.Subscription> {
+        retrieveCalls += 1;
+        return {
+          id: "sub_old",
+          status: "canceled",
+          metadata: { agency_id: "42", plan_tier: "pro", logs_unlimited: "true" },
+          trial_end: null,
+        } as unknown as Stripe.Subscription;
+      },
+    },
+  };
+
+  await processStripeEvent(
+    {
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          metadata: { agency_id: "42" },
+          subscription: "sub_old",
+        },
+      },
+    } as unknown as Stripe.Event,
+    fakeStripe,
+    {
+      async updateAgencyBilling(agencyId, patch) {
+        updateCalls.push({ agencyId, patch: patch as Record<string, unknown> });
+        return null;
+      },
+      async getAgencyById() {
+        return {
+          stripe_subscription_id: "sub_new",
+        } as any;
+      },
+    },
+  );
+
+  assert.equal(retrieveCalls, 0);
+  assert.equal(updateCalls.length, 0);
+});
