@@ -17,7 +17,8 @@ enum class VoiceCodec(
 ) {
     IMBE("imbe", 0xF5.toByte(), 0xAB.toByte()),
     CODEC2_3200("codec2_3200", 0xC2.toByte(), 0x01.toByte()),
-    OPUS("opus", 0x4F.toByte(), 0x70.toByte());
+    OPUS("opus", 0x4F.toByte(), 0x70.toByte()),
+    AMBE_2450("ambe_2450", 0xA2.toByte(), 0x45.toByte());
 
     companion object {
         /** Fallback for any control message that omits or mangles the codec. */

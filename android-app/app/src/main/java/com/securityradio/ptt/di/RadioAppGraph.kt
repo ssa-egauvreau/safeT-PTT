@@ -26,6 +26,7 @@ import com.securityradio.ptt.device.LastRxAudioRecorder
 import com.securityradio.ptt.device.RxMessageHistory
 import com.securityradio.ptt.device.LocalUnitIdentifier
 import com.securityradio.ptt.device.LocationReporter
+import com.securityradio.ptt.device.P25AmbeNative
 import com.securityradio.ptt.device.P25ImbeNative
 import com.securityradio.ptt.device.PttHapticFeedback
 import com.securityradio.ptt.device.PttMicCapture
@@ -47,6 +48,7 @@ class RadioAppGraph(val application: Application) {
 
     init {
         P25ImbeNative.tryLoadLibrary()
+        P25AmbeNative.tryLoadLibrary()
     }
 
     val radioPreferences = RadioPreferences(application)

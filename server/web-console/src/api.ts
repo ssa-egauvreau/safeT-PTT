@@ -80,7 +80,7 @@ export interface BillingStatus {
  * Voice codecs the platform supports on the wire. Kept in sync with
  * server/src/voiceCodecs.ts and android-app/.../VoiceCodec.kt.
  */
-export const VOICE_CODECS = ["imbe", "codec2_3200", "opus"] as const;
+export const VOICE_CODECS = ["imbe", "codec2_3200", "opus", "ambe_2450"] as const;
 export type VoiceCodec = (typeof VOICE_CODECS)[number];
 
 /** Human-readable label for the admin UI dropdown / channel rows. */
@@ -88,6 +88,7 @@ export const VOICE_CODEC_LABEL: Record<VoiceCodec, string> = {
   imbe: "IMBE (P25, default)",
   codec2_3200: "Codec2 3200",
   opus: "Opus (wideband)",
+  ambe_2450: "AMBE+2 2450 (P25 Phase 2)",
 };
 
 /** Safe label when codec may be missing from an API row (e.g. older cached payloads). */

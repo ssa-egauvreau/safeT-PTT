@@ -12,6 +12,7 @@ import { recoverPendingTranscriptions } from "./transcribe.js";
 import { initServerImbe } from "./imbeServerCodec.js";
 import { initServerCodec2 } from "./codec2ServerCodec.js";
 import { initServerOpus } from "./opusServerCodec.js";
+import { initServerAmbe } from "./ambeServerCodec.js";
 import { authenticate } from "./auth.js";
 import { createApiRouter } from "./apiRoutes.js";
 import { countPresence, heartbeatPresence } from "./presence.js";
@@ -307,6 +308,7 @@ async function main(): Promise<void> {
   void initServerImbe();
   void initServerCodec2();
   void initServerOpus();
+  void initServerAmbe();
   // Load the KB embedding model in the background so the first retrieval at
   // dispatch time isn't stuck waiting on a cold load, and re-queue any documents
   // left mid-ingest by a previous crash/restart.

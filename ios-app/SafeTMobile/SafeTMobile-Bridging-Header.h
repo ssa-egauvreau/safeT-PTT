@@ -9,6 +9,12 @@ bool p25_imbe_init(void);
 bool p25_imbe_encode(const int16_t *samples8k160, uint8_t *codeword11_out);
 bool p25_imbe_decode(const uint8_t *codeword11, int16_t *samples8k160_out);
 
+// AMBE+2 half-rate — the P25 Phase 2 / DMR vocoder rate (49 voice bits @
+// 2450 bps in a 9-byte DMR-interleaved codeword, 20 ms frame @ 8 kHz).
+bool p25_ambe_init(void);
+bool p25_ambe_encode(const int16_t *samples8k160, uint8_t *codeword9_out);
+bool p25_ambe_decode(const uint8_t *codeword9, int16_t *samples8k160_out);
+
 // libcodec2 mode 3200 (64-bit codeword, 20 ms frame @ 8 kHz, 160 samples).
 // Forward-declare the C functions Codec2VoiceCodec.swift calls — keeps
 // the bridging header light without dragging in codec2.h's full transitive

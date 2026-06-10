@@ -92,3 +92,92 @@ bool p25_imbe_decode(const uint8_t* codeword11, int16_t* samples8k160_out) {
 }
 
 } // extern "C"
+
+// --- AMBE+2 half-rate (P25 Phase 2 / DMR vocoder rate) ----------------------
+// Same shape as the IMBE bridge above, on dvmvocoder's DMR_AMBE mode:
+// 160 PCM samples (8 kHz, 20 ms) <-> 9-byte DMR-interleaved codeword carrying
+// 49 voice bits @ 2450 bps. Separate encoder/decoder instances — both MBE
+// vocoders keep frame-to-frame history.
+
+namespace {
+
+std::mutex gAmbeCodecMutex;
+MBEEncoder* gAmbeEncoder = nullptr;
+MBEDecoder* gAmbeDecoder = nullptr;
+
+void ensureAmbeAllocatedLocked() {
+    if (gAmbeEncoder != nullptr && gAmbeDecoder != nullptr) {
+        return;
+    }
+
+    delete gAmbeEncoder;
+    delete gAmbeDecoder;
+    gAmbeEncoder = nullptr;
+    gAmbeDecoder = nullptr;
+
+    gAmbeEncoder = new (std::nothrow) MBEEncoder(ENCODE_DMR_AMBE);
+    if (gAmbeEncoder == nullptr) {
+        return;
+    }
+    gAmbeEncoder->setGainAdjust(1.0f);
+
+    gAmbeDecoder = new (std::nothrow) MBEDecoder(DECODE_DMR_AMBE);
+    if (gAmbeDecoder == nullptr) {
+        delete gAmbeEncoder;
+        gAmbeEncoder = nullptr;
+        return;
+    }
+    gAmbeDecoder->setAutoGain(true);
+}
+
+} // namespace
+
+extern "C" {
+
+bool p25_ambe_init(void) {
+    std::lock_guard<std::mutex> lock(gAmbeCodecMutex);
+    delete gAmbeEncoder;
+    delete gAmbeDecoder;
+    gAmbeEncoder = nullptr;
+    gAmbeDecoder = nullptr;
+    ensureAmbeAllocatedLocked();
+    return gAmbeEncoder != nullptr && gAmbeDecoder != nullptr;
+}
+
+bool p25_ambe_encode(const int16_t* samples8k160, uint8_t* codeword9_out) {
+    if (samples8k160 == nullptr || codeword9_out == nullptr) {
+        return false;
+    }
+    uint8_t codeword[9]{};
+    std::lock_guard<std::mutex> lock(gAmbeCodecMutex);
+    if (gAmbeEncoder == nullptr) {
+        ensureAmbeAllocatedLocked();
+    }
+    if (gAmbeEncoder == nullptr) {
+        return false;
+    }
+    gAmbeEncoder->encode(const_cast<int16_t*>(samples8k160), codeword);
+    std::memcpy(codeword9_out, codeword, 9);
+    return true;
+}
+
+bool p25_ambe_decode(const uint8_t* codeword9, int16_t* samples8k160_out) {
+    if (codeword9 == nullptr || samples8k160_out == nullptr) {
+        return false;
+    }
+    uint8_t codeword[9]{};
+    std::memcpy(codeword, codeword9, 9);
+    int16_t samples[160]{};
+    std::lock_guard<std::mutex> lock(gAmbeCodecMutex);
+    if (gAmbeDecoder == nullptr) {
+        ensureAmbeAllocatedLocked();
+    }
+    if (gAmbeDecoder == nullptr) {
+        return false;
+    }
+    gAmbeDecoder->decode(codeword, samples);
+    std::memcpy(samples8k160_out, samples, sizeof(samples));
+    return true;
+}
+
+} // extern "C"

@@ -12,6 +12,7 @@ enum VoiceCodec: String, CaseIterable {
     case imbe = "imbe"
     case codec2_3200 = "codec2_3200"
     case opus = "opus"
+    case ambe_2450 = "ambe_2450"
 
     /// Fallback for any control message that omits or mangles the codec.
     static let `default`: VoiceCodec = .imbe
@@ -21,6 +22,7 @@ enum VoiceCodec: String, CaseIterable {
         case .imbe: return 0xF5
         case .codec2_3200: return 0xC2
         case .opus: return 0x4F
+        case .ambe_2450: return 0xA2
         }
     }
 
@@ -29,6 +31,7 @@ enum VoiceCodec: String, CaseIterable {
         case .imbe: return 0xAB
         case .codec2_3200: return 0x01
         case .opus: return 0x70
+        case .ambe_2450: return 0x45
         }
     }
 

@@ -64,7 +64,7 @@ final class VoiceTransport {
     var activeCaptureSessionId: UInt64?
 
     /// Registry of every voice codec this client can encode + decode (IMBE,
-    /// Codec2, Opus — same wire format as Android and the web console).
+    /// Codec2, Opus, AMBE+2 — same wire format as Android and the web console).
     private let codecRegistry: VoiceCodecRegistry = {
         let registry = VoiceCodecRegistry()
         registry.registerEncoder(ImbeEncoder())
@@ -73,6 +73,8 @@ final class VoiceTransport {
         registry.registerDecoder(Codec2Decoder())
         registry.registerEncoder(OpusEncoder())
         registry.registerDecoder(OpusDecoder())
+        registry.registerEncoder(AmbeEncoder())
+        registry.registerDecoder(AmbeDecoder())
         return registry
     }()
 
@@ -119,6 +121,7 @@ final class VoiceTransport {
         self.audio = audio
         self.session = session
         _ = P25ImbeNative.initialize()
+        _ = P25AmbeNative.initialize()
     }
 
     func join(channel: String) {
@@ -428,6 +431,11 @@ final class VoiceTransport {
             if decoder.codec == .imbe, !P25ImbeNative.isAvailable, !P25ImbeNative.initialize() {
                 VoiceLinkTelemetryReporter.shared.recordDecodeFailure()
                 logger.warning("IMBE frame discarded — vocoder not loaded")
+                return
+            }
+            if decoder.codec == .ambe_2450, !P25AmbeNative.isAvailable, !P25AmbeNative.initialize() {
+                VoiceLinkTelemetryReporter.shared.recordDecodeFailure()
+                logger.warning("AMBE frame discarded — vocoder not loaded")
                 return
             }
             guard decoder.isReady else {

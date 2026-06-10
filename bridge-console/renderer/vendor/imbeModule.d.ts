@@ -5,6 +5,9 @@ interface ImbeWasmModule {
   _imbe_init(): number;
   _imbe_encode(samplesPtr: number, codewordPtr: number): number;
   _imbe_decode(codewordPtr: number, samplesPtr: number): number;
+  _ambe_init(): number;
+  _ambe_encode(samplesPtr: number, codewordPtr: number): number;
+  _ambe_decode(codewordPtr: number, samplesPtr: number): number;
   _malloc(bytes: number): number;
   _free(ptr: number): void;
   HEAP16: Int16Array;

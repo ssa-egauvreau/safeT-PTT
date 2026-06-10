@@ -81,6 +81,7 @@ class ScanVoiceListenTransport(
         .registerDecoder(ImbeDecoder())
         .registerDecoder(Codec2Decoder())
         .registerDecoder(OpusDecoder())
+        .registerDecoder(AmbeDecoder())
 
     private fun shortLeMonoBytes(samples: ShortArray): ByteArray {
         val out = ByteArray(samples.size * 2)

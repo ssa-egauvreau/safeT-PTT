@@ -144,6 +144,8 @@ class VoiceRelayTransport(
         .registerDecoder(Codec2Decoder())
         .registerEncoder(OpusEncoder())
         .registerDecoder(OpusDecoder())
+        .registerEncoder(AmbeEncoder())
+        .registerDecoder(AmbeDecoder())
 
     /** Codec the channel asked us to TX with. Updated by the joined reply and
      *  by codec_change push messages; the registry resolves it to an actual

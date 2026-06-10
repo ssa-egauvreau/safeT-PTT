@@ -5,6 +5,7 @@
 
 import type { VoiceCodec } from "../../../api";
 import { getToken } from "../../../api";
+import { ambeEncode, ambeReady, initAmbe } from "../../../voice/ambeVocoder";
 import { codec2Encode, codec2Ready, initCodec2 } from "../../../voice/codec2Vocoder";
 import { imbeEncode, imbeReady, initImbe } from "../../../voice/imbeVocoder";
 import { opusEncode, opusReady, initOpus } from "../../../voice/opusWasmCodec";
@@ -52,6 +53,13 @@ async function ensurePushCodec(codec: VoiceCodec): Promise<void> {
     if (!codec2Ready()) {
       const ok = await initCodec2();
       if (!ok) throw new Error("Codec2 vocoder unavailable — cannot push to channel");
+    }
+    return;
+  }
+  if (codec === "ambe_2450") {
+    if (!ambeReady()) {
+      const ok = await initAmbe();
+      if (!ok) throw new Error("AMBE vocoder unavailable — cannot push to channel");
     }
     return;
   }
@@ -193,6 +201,8 @@ export function pushClipToChannel(opts: ChannelPushOptions): ChannelPushHandle {
           let payload: Uint8Array | null = null;
           if (codec === "codec2_3200") {
             payload = codec2Encode(slice8k);
+          } else if (codec === "ambe_2450") {
+            payload = ambeEncode(slice8k);
           } else {
             payload = imbeEncode(slice8k);
           }
