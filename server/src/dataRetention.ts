@@ -12,7 +12,13 @@ const TEN8_WEBHOOK_LOG_RETENTION_MS = 30 * DAY_MS;
 /** AI activity log — long enough for weekly triage, short enough to cap growth. */
 const AI_DISPATCH_LOG_RETENTION_MS = 90 * DAY_MS;
 
-function parseTransmissionRetentionDays(): number | null {
+/**
+ * Parses `TRANSMISSION_RETENTION_DAYS` env var into an integer day count, or
+ * `null` to mean "no global sweep". Exported for unit testing — a regression
+ * that returns 0/NaN/negative as a finite number would hand a 0-day cutoff to
+ * `sweepTransmissions` and erase the table on every cron tick.
+ */
+export function parseTransmissionRetentionDays(): number | null {
   const raw = process.env.TRANSMISSION_RETENTION_DAYS?.trim();
   if (!raw) {
     return null;
