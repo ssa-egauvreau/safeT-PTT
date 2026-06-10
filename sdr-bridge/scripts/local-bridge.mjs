@@ -148,8 +148,12 @@ function statusRow(b) {
       scan: false,
       state: "connecting",
       transmitting: false,
-      rxFrames: 0, // datagrams received FROM the decoder (proves audio reaches us)
+      rxFrames: 0, // datagrams routed into this channel's audio path
       rxBytes: 0,
+      portFrames: 0, // raw datagrams seen on the per-TG UDP port (diagnostic —
+      portBytes: 0, //  field data showed simplestream's per-TG streams skipping
+      //               whole calls and emitting 2-byte junk; audio is routed from
+      //               the tagged TGID-0 stream instead when it exists)
       lastFrameMs: 0,
       lastTxStartMs: null,
       lastTxEndMs: null,
@@ -285,11 +289,16 @@ function upsample8to16(pcm) {
  * the gap exceeds `hangMs` (call over), then fire `onHangEnd` once so the
  * owner can un-key crisply.
  *
+ * `prerollMs` is a jitter buffer: the decoder delivers audio in uneven bursts
+ * (field symptom: 0.3s audio / 0.5s silence / 0.2s audio), so playback of a
+ * NEW call starts that far behind arrival — the standing backlog absorbs
+ * burst gaps up to the pre-roll without ever going silent mid-sentence.
+ *
  * `ready` gates the clock: while false (socket reconnecting) frames are HELD,
  * not dropped — the call resumes complete (a beat late) instead of losing its
  * head. Backlog capped at ~5s so the feed stays near-live. */
 const SILENCE_FRAME = Buffer.alloc(FRAME_BYTES);
-function makePacedSender(emit, { hangMs = 2000, onHangEnd, ready = () => true } = {}) {
+function makePacedSender(emit, { hangMs = 2000, prerollMs = 600, onHangEnd, ready = () => true } = {}) {
   const queue = [];
   let clock = null;
   let lastRealMs = null; // wall time real audio last flowed (null = between calls)
@@ -328,7 +337,12 @@ function makePacedSender(emit, { hangMs = 2000, onHangEnd, ready = () => true } 
   }, 10);
   timer.unref();
   return {
-    push: (frame) => queue.push(frame),
+    push: (frame) => {
+      // First frame of a NEW call: anchor the clock a pre-roll into the
+      // future so a jitter buffer builds before playback starts.
+      if (clock === null && lastRealMs === null && !queue.length) clock = Date.now() + prerollMs;
+      queue.push(frame);
+    },
     /** Real frames still queued (a call is mid-playback)? */
     draining: () => queue.length > 0,
     /** End the silence hang NOW (a different call wants the air). */
@@ -344,13 +358,14 @@ function makePacedSender(emit, { hangMs = 2000, onHangEnd, ready = () => true } 
 }
 
 /**
- * Scan-All ingest: the decoder's TGID-0 stream carries EVERY clear call on the
- * system, each datagram prefixed with its 4-byte little-endian TGID. Demux by
- * TGID, claim the scan hub under the talkgroup's name (one call at a time —
- * real scanner behavior), upsample 8 kHz -> 16 kHz, and feed the hub. Bridged
- * talkgroups are skipped here: their own ingests already feed the hub.
+ * Tagged-stream ingest: the decoder's TGID-0 stream carries EVERY clear call
+ * on the system, each datagram prefixed with its 4-byte little-endian TGID.
+ * Bridged talkgroups route to their channel's audio path (`tgRoutes` — the
+ * per-TG simplestream streams proved unreliable in the field, skipping whole
+ * calls); everything else feeds the Scan-All hub, claimed under the
+ * talkgroup's name one call at a time like a real scanner.
  */
-function runScanAllIngest(port, bridgedTgids, tgNames) {
+function runScanAllIngest(port, tgRoutes, tgNames) {
   const sock = createSocket("udp4");
   let currentTg = null;
   let currentName = null;
@@ -373,7 +388,11 @@ function runScanAllIngest(port, bridgedTgids, tgNames) {
   sock.on("message", (msg) => {
     if (msg.length < 6) return;
     const tgid = msg.readUInt32LE(0);
-    if (bridgedTgids.has(tgid)) return;
+    const route = tgRoutes.get(tgid);
+    if (route) {
+      route(msg.subarray(4)); // a bridged talkgroup — its channel's audio path
+      return;
+    }
     const name = tgNames.get(tgid) || `TG ${tgid}`;
     if (currentTg !== null && tgid !== currentTg) {
       if (paced.draining()) return; // previous call still playing — one at a time
@@ -486,16 +505,22 @@ function runMonitorBridge(bridge) {
   return { stop: () => (stopped = true) };
 }
 
-function runBridge(bridge, udpPort) {
+/**
+ * One talkgroup -> one SafeT channel. `portIsPrimary` picks the audio source:
+ * false (the normal case) means audio is routed in from the decoder's tagged
+ * TGID-0 stream via `writeTagged` and the per-TG UDP port is only COUNTED
+ * (field data showed simplestream's per-TG streams skipping whole calls and
+ * emitting 2-byte junk while the tagged stream delivered); true means no
+ * tagged stream exists and the per-TG port feeds the audio path directly.
+ */
+function runBridge(bridge, udpPort, { portIsPrimary = false } = {}) {
   let stopped = false;
   let backoff = RECONNECT_MIN;
   const srow = statusRow(bridge);
 
   // ---- ingest: lives for the BRIDGE's lifetime, not one connection's ----
-  // The decoder's per-talkgroup UDP (raw s16le mono 8 kHz) is read with an
-  // IN-PROCESS socket bound exactly once: no orphaned reader can ever hold the
-  // port, and audio captured while the voice socket is reconnecting is HELD in
-  // the paced queue, not dropped — a reconnect no longer eats the call's head.
+  // Audio captured while the voice socket is reconnecting is HELD in the
+  // paced queue, not dropped — a reconnect no longer eats the call's head.
   let ws = null; // current voice socket, only set while joined ("on air")
   let carry = Buffer.alloc(0);
   const onAir = () => ws !== null && ws.readyState === 1;
@@ -529,6 +554,17 @@ function runBridge(bridge, udpPort) {
 
   // NO VOX gate: the decoder only ever sends voice (field data showed the
   // gate eating entire calls — 60 packets in, 0 frames out).
+  const ingestPcm = (pcm) => {
+    if (pcm.length < 4) return; // simplestream sometimes emits 2-byte (one-sample) junk
+    srow.rxFrames++;
+    srow.rxBytes = (srow.rxBytes || 0) + pcm.length;
+    carry = carry.length ? Buffer.concat([carry, upsample8to16(pcm)]) : upsample8to16(pcm);
+    while (carry.length >= FRAME_BYTES) {
+      paced.push(carry.subarray(0, FRAME_BYTES));
+      carry = carry.subarray(FRAME_BYTES);
+    }
+  };
+
   const openIngest = () => {
     if (stopped) return;
     const sock = createSocket("udp4");
@@ -538,16 +574,12 @@ function runBridge(bridge, udpPort) {
       setTimeout(openIngest, 5000).unref();
     });
     sock.on("message", (msg) => {
-      srow.rxFrames++;
-      srow.rxBytes = (srow.rxBytes || 0) + msg.length;
-      carry = carry.length ? Buffer.concat([carry, upsample8to16(msg)]) : upsample8to16(msg);
-      while (carry.length >= FRAME_BYTES) {
-        paced.push(carry.subarray(0, FRAME_BYTES));
-        carry = carry.subarray(FRAME_BYTES);
-      }
+      srow.portFrames = (srow.portFrames || 0) + 1;
+      srow.portBytes = (srow.portBytes || 0) + msg.length;
+      if (portIsPrimary) ingestPcm(msg);
     });
     sock.bind(udpPort, "127.0.0.1", () =>
-      console.log(`[bridge] ${bridge.name}: listening on udp ${udpPort}`),
+      console.log(`[bridge] ${bridge.name}: listening on udp ${udpPort}${portIsPrimary ? "" : " (diagnostic only — audio rides the tagged stream)"}`),
     );
   };
   openIngest();
@@ -637,7 +669,7 @@ function runBridge(bridge, udpPort) {
     }
   })();
 
-  return { stop: () => (stopped = true) };
+  return { stop: () => (stopped = true), writeTagged: ingestPcm };
 }
 
 async function main() {
@@ -715,28 +747,33 @@ async function main() {
     console.error("local-bridge: no runnable bridges (check the bridges exist + sync ran).");
     process.exit(1);
   }
+  // The decoder's TGID-0 "everything" stream (when present) is the PRIMARY
+  // audio source: bridged talkgroups demux out of it (the per-TG streams
+  // proved unreliable — whole calls skipped), the rest feeds Scan All.
+  const scanPort = tgPort.get(0);
+
   console.log(`[bridge] pushing ${runnable.length} talkgroup + ${monitors.length} scan bridge(s) to SafeT (${wsBase()}):`);
   for (const b of monitors) {
     console.log(`    • ${b.name}  ->  channel "${b.target_channel}"  (Scan All — every talkgroup)`);
     mark(b, { scan: true });
     runMonitorBridge(b);
   }
+  const tgRoutes = new Map(); // tgid -> that channel's audio-path write fn
   for (const { bridge: b, port } of runnable) {
     console.log(`    • ${b.name}  ->  channel "${b.target_channel}"  (udp ${port})`);
-    mark(b, { tgid: Number(String(b.source_url).match(/\/tg(\d+)\/?$/i)?.[1] ?? null) || null });
-    runBridge(b, port);
+    const tgid = Number(String(b.source_url).match(/\/tg(\d+)\/?$/i)?.[1] ?? null) || null;
+    mark(b, { tgid });
+    const handle = runBridge(b, port, { portIsPrimary: !scanPort });
+    if (scanPort && tgid) tgRoutes.set(tgid, handle.writeTagged);
   }
 
-  // Scan All carries EVERY clear call on the system — not just the bridged
-  // talkgroups — via the decoder's TGID-0 "everything" stream (when present).
-  const scanPort = tgPort.get(0);
-  if (monitors.length && scanPort) {
-    const bridgedTgids = new Set(
-      runnable
-        .map(({ bridge: b }) => Number(String(b.source_url).match(/\/tg(\d+)\/?$/i)?.[1]))
-        .filter(Number.isFinite),
+  if (scanPort && (monitors.length || tgRoutes.size)) {
+    runScanAllIngest(scanPort, tgRoutes, loadTalkgroupNames());
+  } else if (!scanPort) {
+    console.warn(
+      "[bridge] no TGID-0 tagged stream in the decoder config — per-talkgroup " +
+        "UDP feeds the channels directly (less reliable) and Scan All is unavailable.",
     );
-    runScanAllIngest(scanPort, bridgedTgids, loadTalkgroupNames());
   }
 }
 
