@@ -36,8 +36,8 @@ export function DevicesPage() {
               and admin run in any modern browser — or install the desktop shell on Windows, macOS,
               or Linux. iOS is in beta.
             </p>
-            <Link to="/setup" className="lp-btn lp-btn-primary lp-btn-lg">
-              Setup guide <IconArrowRight size={16} />
+            <Link to="/setup/android" className="lp-btn lp-btn-primary lp-btn-lg">
+              Android setup guide <IconArrowRight size={16} />
             </Link>
           </div>
         </div>
@@ -80,6 +80,18 @@ export function DevicesPage() {
                     </li>
                   ))}
                 </ul>
+                {(device.id === "inrico-irc590" || device.id === "inrico-tm7-plus") && (
+                  <Link
+                    to={
+                      device.id === "inrico-irc590"
+                        ? "/setup/android#irc590"
+                        : "/setup/android#tm7"
+                    }
+                    className="lp-btn lp-btn-ghost device-setup-link"
+                  >
+                    Setup instructions <IconArrowRight size={14} />
+                  </Link>
+                )}
               </div>
             </article>
           ))}

@@ -8874,3 +8874,144 @@ table.vlt-units tbody tr:hover {
   letter-spacing: 0.05em;
   color: var(--text-dim);
 }
+
+/* --- Android / Inrico setup guide --- */
+.android-setup-hero-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+}
+.software-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 0 24px 24px;
+}
+.software-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(15, 21, 28, 0.45);
+}
+.software-card h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.software-purpose {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-dim);
+  flex: 1;
+}
+.software-platforms {
+  margin: 0;
+  font-size: 13px;
+}
+.software-notes {
+  margin: 0;
+  font-size: 13px;
+}
+.android-setup-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.android-setup-toc a {
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  text-decoration: none;
+  color: inherit;
+  font-size: 13px;
+}
+.android-setup-toc a:hover {
+  border-color: rgba(13, 148, 136, 0.5);
+  color: #5eead4;
+}
+.android-setup-section .lp-section-head h2 {
+  font-size: clamp(22px, 3vw, 28px);
+}
+.android-setup-steps .setup-step-copy h3 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+.android-setup-checklist {
+  list-style: none;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 24px 24px;
+}
+.android-setup-checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  font-size: 15px;
+  color: var(--text-dim);
+}
+.setup-code-block {
+  margin-top: 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.setup-code-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.setup-code-copy {
+  padding: 4px 10px;
+  font-size: 12px;
+  min-height: unset;
+}
+.setup-code-block pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.setup-android-callout {
+  margin-top: 16px;
+  padding: 14px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(13, 148, 136, 0.35);
+  background: rgba(13, 148, 136, 0.08);
+  font-size: 15px;
+}
+.lp-inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #5eead4;
+  font-weight: 600;
+  text-decoration: none;
+}
+.lp-inline-link:hover {
+  text-decoration: underline;
+}
+.device-setup-link {
+  margin-top: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.device-kicker-irc590,
+.device-kicker-tm7 {
+  color: #5eead4;
+}

@@ -45,6 +45,9 @@ const FaqPage = lazy(() =>
 const SetupPage = lazy(() =>
   import("./pages/marketing/SetupPage").then((m) => ({ default: m.SetupPage })),
 );
+const AndroidSetupPage = lazy(() =>
+  import("./pages/marketing/AndroidSetupPage").then((m) => ({ default: m.AndroidSetupPage })),
+);
 const SupportPage = lazy(() =>
   import("./pages/marketing/SupportPage").then((m) => ({ default: m.SupportPage })),
 );
@@ -104,6 +107,7 @@ export function App() {
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/faq" element={<FaqPage />} />
       <Route path="/setup" element={<SetupPage />} />
+      <Route path="/setup/android" element={<AndroidSetupPage />} />
       <Route path="/support" element={<SupportPage />} />
       <Route path="/security" element={<SecurityPage />} />
       <Route path="/mobile" element={<MobilePage />} />

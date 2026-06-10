@@ -41,8 +41,8 @@
   },
   {
     "category": "Hardware",
-    "q": "Which devices and platforms does safeT support?",
-    "a": "Android and Inrico hardware for field radios; web browsers for dispatch and admin; Windows, macOS, and Linux desktop shells for comm centers; iOS is in beta. Details at /devices."
+    "q": "How do I install safeT on Android or Inrico radios?",
+    "a": "Follow the illustrated guide at /setup/android. It covers APK download, sideloading, Vysor for small screens, IRC590 hardware keys, and TM-7 Plus accessibility (ADB) setup."
   },
   {
     "category": "Hardware",

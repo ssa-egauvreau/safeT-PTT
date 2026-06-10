@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400" role="img" aria-label="ADB setup for TM-7 Plus">
+  <rect width="960" height="400" fill="#0c0c0c"/>
+  <rect x="40" y="40" width="520" height="320" rx="8" fill="#1e1e1e" stroke="#333"/>
+  <text x="56" y="72" fill="#569cd6" font-family="Consolas,monospace" font-size="14">C:\platform-tools&gt; adb devices</text>
+  <text x="56" y="100" fill="#d4d4d4" font-family="Consolas,monospace" font-size="13">List of devices attached</text>
+  <text x="56" y="124" fill="#4ec9b0" font-family="Consolas,monospace" font-size="13">TM7PLUS123456    device</text>
+  <text x="56" y="160" fill="#569cd6" font-family="Consolas,monospace" font-size="14">C:\platform-tools&gt; adb shell settings put secure accessibility_enabled 1</text>
+  <text x="56" y="196" fill="#569cd6" font-family="Consolas,monospace" font-size="13">C:\platform-tools&gt; adb shell settings put secure enabled_accessibility_services com.securityradio.ptt/...</text>
+  <rect x="600" y="80" width="280" height="240" rx="16" fill="#1e293b" stroke="#64748b"/>
+  <text x="740" y="120" text-anchor="middle" fill="#f8fafc" font-family="system-ui,sans-serif" font-size="14">TM-7 Plus</text>
+  <text x="740" y="200" text-anchor="middle" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="12">USB debugging ON</text>
+</svg>

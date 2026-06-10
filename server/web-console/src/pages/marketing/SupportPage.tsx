@@ -21,6 +21,10 @@ export function SupportPage() {
             <h3>Setup guide</h3>
             <p>Step-by-step agency provisioning and handset deployment.</p>
           </Link>
+          <Link to="/setup/android" className="support-link-card">
+            <h3>Android &amp; Inrico setup</h3>
+            <p>APK install, Vysor, IRC590 and TM-7 Plus hardware keys — with pictures.</p>
+          </Link>
           <Link to="/faq" className="support-link-card">
             <h3>FAQ</h3>
             <p>Billing, hardware, security, and common questions.</p>
