@@ -5,6 +5,22 @@ import { stripeWebhookSecret } from "./config.js";
 import { updateAgencyBilling, getAgencyById } from "../store.js";
 import type { PlanTier, SubscriptionStatus } from "./types.js";
 
+interface WebhookStoreDeps {
+  updateAgencyBilling: typeof updateAgencyBilling;
+  getAgencyById: typeof getAgencyById;
+}
+
+interface StripeSubscriptionReader {
+  subscriptions: {
+    retrieve(subscriptionId: string): Promise<Stripe.Subscription>;
+  };
+}
+
+const defaultStoreDeps: WebhookStoreDeps = {
+  updateAgencyBilling,
+  getAgencyById,
+};
+
 /**
  * Maps a Stripe subscription state onto the platform's internal lifecycle
  * column. Exported so the contract can be pinned by unit tests — every
@@ -51,7 +67,10 @@ export function agencyIdFromMeta(meta: Stripe.Metadata | null | undefined): numb
   return Number.isFinite(n) ? n : null;
 }
 
-async function applySubscription(sub: Stripe.Subscription): Promise<void> {
+async function applySubscription(
+  sub: Stripe.Subscription,
+  deps: WebhookStoreDeps = defaultStoreDeps,
+): Promise<void> {
   const agencyId = agencyIdFromMeta(sub.metadata);
   if (!agencyId) {
     return;
@@ -61,7 +80,7 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
   const status = mapStripeStatus(sub.status);
   const active = isStripeSubscriptionActive(sub.status);
 
-  await updateAgencyBilling(agencyId, {
+  await deps.updateAgencyBilling(agencyId, {
     stripeSubscriptionId: sub.id,
     subscriptionStatus: status,
     planTier,
@@ -70,6 +89,53 @@ async function applySubscription(sub: Stripe.Subscription): Promise<void> {
     disabled: !active,
     trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
   });
+}
+
+export async function processStripeEvent(
+  event: Stripe.Event,
+  stripe: StripeSubscriptionReader,
+  deps: WebhookStoreDeps = defaultStoreDeps,
+): Promise<void> {
+  switch (event.type) {
+    case "checkout.session.completed": {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const agencyId = agencyIdFromMeta(session.metadata);
+      if (agencyId && typeof session.subscription === "string") {
+        const sub = await stripe.subscriptions.retrieve(session.subscription);
+        // Keep disabled status aligned with the fetched subscription state.
+        // Never force-enable here, because stale/retried checkout events can
+        // arrive after a subscription already became past_due/canceled.
+        await applySubscription(sub, deps);
+      }
+      break;
+    }
+    case "customer.subscription.updated":
+    case "customer.subscription.deleted": {
+      const sub = event.data.object as Stripe.Subscription;
+      await applySubscription(sub, deps);
+      const agencyId = agencyIdFromMeta(sub.metadata);
+      if (agencyId) {
+        const agency = await deps.getAgencyById(agencyId);
+        if (agency && agency.subscription_status !== "comped") {
+          const active = isStripeSubscriptionActive(sub.status);
+          await deps.updateAgencyBilling(agencyId, { disabled: !active });
+        }
+      }
+      break;
+    }
+    case "invoice.payment_failed": {
+      const invoice = event.data.object as Stripe.Invoice;
+      const subRef = invoice.parent?.subscription_details?.subscription;
+      const subId = typeof subRef === "string" ? subRef : subRef?.id;
+      if (subId) {
+        const sub = await stripe.subscriptions.retrieve(subId);
+        await applySubscription(sub, deps);
+      }
+      break;
+    }
+    default:
+      break;
+  }
 }
 
 export async function handleStripeWebhook(req: Request, res: Response): Promise<void> {
@@ -96,43 +162,7 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
   }
 
   try {
-    switch (event.type) {
-      case "checkout.session.completed": {
-        const session = event.data.object as Stripe.Checkout.Session;
-        const agencyId = agencyIdFromMeta(session.metadata);
-        if (agencyId && typeof session.subscription === "string") {
-          const sub = await stripe.subscriptions.retrieve(session.subscription);
-          await applySubscription(sub);
-        }
-        break;
-      }
-      case "customer.subscription.updated":
-      case "customer.subscription.deleted": {
-        const sub = event.data.object as Stripe.Subscription;
-        await applySubscription(sub);
-        const agencyId = agencyIdFromMeta(sub.metadata);
-        if (agencyId) {
-          const agency = await getAgencyById(agencyId);
-          if (agency && agency.subscription_status !== "comped") {
-            const active = isStripeSubscriptionActive(sub.status);
-            await updateAgencyBilling(agencyId, { disabled: !active });
-          }
-        }
-        break;
-      }
-      case "invoice.payment_failed": {
-        const invoice = event.data.object as Stripe.Invoice;
-        const subRef = invoice.parent?.subscription_details?.subscription;
-        const subId = typeof subRef === "string" ? subRef : subRef?.id;
-        if (subId) {
-          const sub = await stripe.subscriptions.retrieve(subId);
-          await applySubscription(sub);
-        }
-        break;
-      }
-      default:
-        break;
-    }
+    await processStripeEvent(event, stripe, defaultStoreDeps);
     res.json({ received: true });
   } catch (error) {
     console.error("[billing] webhook handler error", error);
