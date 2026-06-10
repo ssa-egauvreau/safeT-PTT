@@ -18,6 +18,7 @@ type SetupSection = {
   title: string;
   intro: string;
   device?: string;
+  roadmap?: boolean;
   steps: SetupStep[];
 };
 
@@ -170,6 +171,10 @@ export function AndroidSetupPage() {
               <span className="lp-kicker device-kicker-irc590">Inrico IRC590</span>
             ) : section.device === "tm7" ? (
               <span className="lp-kicker device-kicker-tm7">Inrico TM-7 Plus</span>
+            ) : section.roadmap ? (
+              <span className="lp-kicker">
+                Enterprise · <span className="trust-status trust-status-roadmap">In development</span>
+              </span>
             ) : (
               <span className="lp-kicker">Setup</span>
             )}

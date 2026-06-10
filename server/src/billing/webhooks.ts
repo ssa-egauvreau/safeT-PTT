@@ -21,6 +21,14 @@ const defaultStoreDeps: WebhookStoreDeps = {
   getAgencyById,
 };
 
+/**
+ * Maps a Stripe subscription state onto the platform's internal lifecycle
+ * column. Exported so the contract can be pinned by unit tests — every
+ * Stripe state must collapse onto exactly one of our five
+ * `SubscriptionStatus` values, and any unknown future state must
+ * conservatively land in `past_due` (which trips the disabled gate in
+ * `applySubscription`) rather than silently re-enabling the agency.
+ */
 export function mapStripeStatus(status: Stripe.Subscription.Status): SubscriptionStatus {
   switch (status) {
     case "active":
@@ -38,6 +46,18 @@ export function mapStripeStatus(status: Stripe.Subscription.Status): Subscriptio
   }
 }
 
+/** True only when Stripe reports a subscription the platform should treat as online. */
+export function isStripeSubscriptionActive(status: Stripe.Subscription.Status): boolean {
+  return status === "active" || status === "trialing";
+}
+
+/**
+ * Pulls the agency id out of Stripe webhook metadata (set on checkout
+ * session + subscription metadata in `stripe.ts`). Exported for unit
+ * testing — a regression that returned `0`/`NaN` instead of `null` would
+ * cause `applySubscription` to update agency id 0 (or throw mid-webhook
+ * and Stripe to retry), so the tripwire matters.
+ */
 export function agencyIdFromMeta(meta: Stripe.Metadata | null | undefined): number | null {
   const raw = meta?.agency_id;
   if (!raw) {
@@ -58,6 +78,7 @@ async function applySubscription(
   const planTier = (sub.metadata.plan_tier === "pro" ? "pro" : "basic") as PlanTier;
   const logsUnlimited = sub.metadata.logs_unlimited === "true";
   const status = mapStripeStatus(sub.status);
+  const active = isStripeSubscriptionActive(sub.status);
 
   await deps.updateAgencyBilling(agencyId, {
     stripeSubscriptionId: sub.id,
@@ -65,7 +86,7 @@ async function applySubscription(
     planTier,
     logsUnlimited,
     transmissionRetentionDays: logsUnlimited ? null : 3,
-    disabled: status === "canceled" || status === "past_due",
+    disabled: !active,
     trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
   });
 }
@@ -96,7 +117,7 @@ export async function processStripeEvent(
       if (agencyId) {
         const agency = await deps.getAgencyById(agencyId);
         if (agency && agency.subscription_status !== "comped") {
-          const active = sub.status === "active" || sub.status === "trialing";
+          const active = isStripeSubscriptionActive(sub.status);
           await deps.updateAgencyBilling(agencyId, { disabled: !active });
         }
       }

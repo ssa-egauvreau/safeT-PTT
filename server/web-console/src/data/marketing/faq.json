@@ -31,6 +31,16 @@
   },
   {
     "category": "Pricing",
+    "q": "Can I pay annually?",
+    "a": "Yes. Annual billing saves 15% versus paying monthly for 12 months. Basic is $66.30/radio/year ($5.53/mo equivalent); Pro is $86.70/radio/year ($7.23/mo equivalent). Contact sales@safetptt.com to switch or request a quote."
+  },
+  {
+    "category": "Pricing",
+    "q": "Do you accept purchase orders or invoice billing?",
+    "a": "Government agencies and enterprises can request PO / invoice billing and customized payment terms. Email sales@safetptt.com with your agency name, estimated radio count, and procurement requirements."
+  },
+  {
+    "category": "Pricing",
     "q": "Can I cancel anytime?",
     "a": "Yes. Manage your subscription from the Billing page in safeT Control or the Stripe customer portal. Cancellation takes effect at the end of the current billing period."
   },
@@ -46,18 +56,33 @@
   },
   {
     "category": "Hardware",
+    "q": "Can safeT work with our existing LMR radios?",
+    "a": "Yes — as a supplement, not a replacement. Stream URL bridges ingest scanner or trunk-recorder feeds; audio device bridges capture line-in from a base radio. See /interoperability for P25 ingest tooling and IMBE codec details."
+  },
+  {
+    "category": "Hardware",
+    "q": "How do we deploy to many Android devices (MDM)?",
+    "a": "Today: download the signed APK from Control and push via MDM file deploy or manual sideload. Automated enrollment links and QR provisioning are in development — see /setup/android#mdm-deploy and email sales@safetptt.com for the MDM beta waitlist."
+  },
+  {
+    "category": "Hardware",
     "q": "Do dispatchers need a special app?",
     "a": "No. Dispatchers and admins use safeT Command and Control in any modern web browser. Radio-role users can also use a browser-based soft radio."
   },
   {
     "category": "Security",
     "q": "Is voice encrypted?",
-    "a": "Yes. Every transmission is carried over an authenticated, encrypted relay. Accounts sign in individually — the newest sign-in wins so a lost device cannot keep listening."
+    "a": "Yes. Every transmission is carried over an authenticated, encrypted relay. Accounts sign in individually — the newest sign-in wins so a lost device cannot keep listening. Full details at /trust."
   },
   {
     "category": "Security",
     "q": "Is my agency data isolated from others?",
     "a": "Yes. safeT PTT is multi-tenant: every account, channel, recording, and transmission belongs to your agency only."
+  },
+  {
+    "category": "Security",
+    "q": "Do you have SOC 2 or CJIS certification?",
+    "a": "SOC 2 Type II is on our roadmap. We do not claim CJIS certification today. Request our security packet at /trust for procurement review."
   },
   {
     "category": "Troubleshooting",

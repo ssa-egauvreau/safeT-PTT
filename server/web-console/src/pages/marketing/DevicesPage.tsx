@@ -92,6 +92,11 @@ export function DevicesPage() {
                     Setup instructions <IconArrowRight size={14} />
                   </Link>
                 )}
+                {device.id === "android-phone" && (
+                  <Link to="/setup/android#mdm-deploy" className="lp-btn lp-btn-ghost device-setup-link">
+                    Mass deploy &amp; MDM <IconArrowRight size={14} />
+                  </Link>
+                )}
               </div>
             </article>
           ))}
@@ -149,6 +154,8 @@ export function DevicesPage() {
           </table>
         </div>
         <p className="lp-section-cta">
+          Monitor legacy LMR on safeT channels? <Link to="/interoperability">Interoperability guide</Link>
+          {" · "}
           Questions about a specific device? <Link to="/support">Visit support</Link> or{" "}
           <a href="mailto:sales@safetptt.com">contact sales</a>.
         </p>
