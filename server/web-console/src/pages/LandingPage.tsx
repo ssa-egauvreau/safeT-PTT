@@ -13,7 +13,9 @@ import {
   IconArrowRight,
   type IconProps,
 } from "../icons";
-import { LOGS_ADDON, PLANS } from "../data/marketing/pricing";
+import { LOGS_ADDON, PLANS, ANNUAL_BILLING } from "../data/marketing/pricing";
+import trustData from "../data/marketing/trustCenter.json";
+import customerStories from "../data/marketing/customerStories.json";
 import { MarketingLayout } from "./marketing/MarketingLayout";
 import { ScreenshotTabs } from "./marketing/ScreenshotTabs";
 
@@ -176,7 +178,43 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section className="lp-section" id="platform">
+      <section className="lp-section lp-section-alt lp-stats-strip">
+        <div className="trust-stats-grid trust-stats-home">
+          {trustData.reliabilityStats.map((stat) => (
+            <article className="trust-stat-card" key={stat.label}>
+              <div className="trust-stat-value">{stat.value}</div>
+              <p>{stat.label}</p>
+            </article>
+          ))}
+        </div>
+        <p className="lp-stats-footnote">
+          <Link to="/trust">Trust Center</Link> — security packet available for procurement review.
+        </p>
+      </section>
+
+      <section className="lp-section" id="stories">
+        <div className="lp-section-head">
+          <span className="lp-kicker">Agencies on safeT</span>
+          <h2>What teams are saying</h2>
+          <p className="muted">{customerStories.disclaimer}</p>
+        </div>
+        <div className="customer-stories-grid">
+          {customerStories.stories.map((story) => (
+            <blockquote className="customer-story-card" key={story.id}>
+              <p className="customer-story-quote">&ldquo;{story.quote}&rdquo;</p>
+              <footer>
+                <strong>{story.role}</strong>
+                <span>
+                  {story.organization} · {story.vertical}
+                </span>
+                <span className="customer-story-highlight">{story.highlight}</span>
+              </footer>
+            </blockquote>
+          ))}
+        </div>
+      </section>
+
+      <section className="lp-section lp-section-alt" id="platform">
         <div className="lp-section-head">
           <span className="lp-kicker">The platform</span>
           <h2>Three surfaces, one radio network</h2>
@@ -193,6 +231,17 @@ export function LandingPage() {
             </Link>
           ))}
         </div>
+        <p className="lp-section-cta">
+          <Link to="/industries/law-enforcement">Law enforcement</Link>
+          {" · "}
+          <Link to="/industries/fire-ems">Fire &amp; EMS</Link>
+          {" · "}
+          <Link to="/industries/healthcare-security">Healthcare security</Link>
+          {" · "}
+          <Link to="/industries/search-rescue-cert">SAR / CERT</Link>
+          {" · "}
+          <Link to="/interoperability">LMR interoperability</Link>
+        </p>
       </section>
 
       <section className="lp-section lp-section-alt" id="features">
@@ -230,6 +279,9 @@ export function LandingPage() {
         <p className="lp-section-cta">
           <Link to="/setup">Read the full setup guide →</Link>
         </p>
+        <p className="lp-section-cta">
+          <Link to="/devices">See supported devices &amp; platforms →</Link>
+        </p>
       </section>
 
       <section className="lp-section lp-section-alt" id="pricing">
@@ -237,6 +289,10 @@ export function LandingPage() {
           <span className="lp-kicker">Pricing</span>
           <h2>Simple per-radio pricing</h2>
           <p>Monthly billing. Dispatchers and admins included free. 7-day trial, no card required.</p>
+          <p className="pricing-annual-banner pricing-annual-banner-compact">
+            Save {ANNUAL_BILLING.discountPercent}% with annual billing —{" "}
+            <Link to="/pricing">see pricing</Link>
+          </p>
         </div>
         <div className="lp-plan-grid">
           {PLANS.map((plan) => (

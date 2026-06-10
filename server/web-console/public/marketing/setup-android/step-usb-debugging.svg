@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 640" role="img" aria-label="USB debugging enabled">
+  <rect width="360" height="640" fill="#f1f5f9"/>
+  <rect y="0" width="360" height="48" fill="#fff"/>
+  <text x="24" y="32" fill="#0f172a" font-family="system-ui,sans-serif" font-size="18" font-weight="600">Developer options</text>
+  <rect x="16" y="72" width="328" height="64" rx="8" fill="#fff"/>
+  <text x="32" y="100" fill="#0f172a" font-family="system-ui,sans-serif" font-size="15">Developer options</text>
+  <rect x="280" y="88" width="48" height="28" rx="14" fill="#0d9488"/>
+  <circle cx="308" cy="102" r="10" fill="#fff"/>
+  <rect x="16" y="148" width="328" height="72" rx="8" fill="#fff" stroke="#0d9488" stroke-width="2"/>
+  <text x="32" y="178" fill="#0f172a" font-family="system-ui,sans-serif" font-size="15" font-weight="600">USB debugging</text>
+  <text x="32" y="200" fill="#64748b" font-family="system-ui,sans-serif" font-size="12">Debug mode when USB connected</text>
+  <rect x="280" y="168" width="48" height="28" rx="14" fill="#0d9488"/>
+  <circle cx="308" cy="182" r="10" fill="#fff"/>
+  <rect x="40" y="260" width="280" height="100" rx="12" fill="#fff" stroke="#cbd5e1"/>
+  <text x="180" y="295" text-anchor="middle" fill="#0f172a" font-family="system-ui,sans-serif" font-size="14" font-weight="600">Allow USB debugging?</text>
+  <text x="180" y="318" text-anchor="middle" fill="#64748b" font-family="system-ui,sans-serif" font-size="11">Computer RSA fingerprint&</text>
+  <rect x="200" y="330" width="90" height="32" rx="6" fill="#0d9488"/>
+  <text x="245" y="351" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="13" font-weight="600">Allow</text>
+</svg>

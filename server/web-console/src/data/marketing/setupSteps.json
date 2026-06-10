@@ -14,7 +14,7 @@
   {
     "step": "3",
     "title": "Install safeT Mobile",
-    "body": "Download the signed APK from Control → Downloads (or your admin-provided link). Sideload onto Android phones or Inrico IRC590 / TM7 radios.",
+    "body": "Download the signed APK from Control → Downloads (or your admin-provided link). Sideload onto Android phones or Inrico IRC590 / TM7 radios. See /setup/android for illustrated handset steps, Vysor, and TM-7 ADB commands.",
     "image": "/marketing/setup-mobile.svg"
   },
   {

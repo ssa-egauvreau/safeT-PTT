@@ -1,0 +1,242 @@
+{
+  "software": [
+    {
+      "name": "Vysor",
+      "purpose": "See and control your Android or Inrico radio screen on your PC (helpful when the radio has no touch or a tiny screen).",
+      "url": "https://www.vysor.io/download/",
+      "platforms": "Windows, macOS, Chrome extension",
+      "notes": "Free tier works for mirroring. Install Vysor on your PC, enable USB debugging on the device, connect USB, then click View in Vysor."
+    },
+    {
+      "name": "scrcpy (free alternative)",
+      "purpose": "Lightweight screen mirror — no account required. Best for technicians comfortable with a command window.",
+      "url": "https://github.com/Genymobile/scrcpy/releases",
+      "platforms": "Windows, macOS, Linux",
+      "notes": "Download the latest scrcpy-win64-v* zip (Windows), unzip, run scrcpy.exe with the radio connected by USB."
+    },
+    {
+      "name": "Android Platform Tools (ADB)",
+      "purpose": "Required for TM-7 Plus accessibility setup and advanced installs. Includes adb.exe.",
+      "url": "https://developer.android.com/tools/releases/platform-tools",
+      "platforms": "Windows, macOS, Linux",
+      "notes": "After install, open Command Prompt and run adb devices to confirm the radio appears."
+    },
+    {
+      "name": "safeT Mobile APK",
+      "purpose": "The handset app itself — get the latest signed build from your agency admin.",
+      "url": "/login",
+      "platforms": "Android 5.0+",
+      "notes": "Agency admins: sign in to safeT Control → Downloads → Download APK. Copy the link or file to each radio."
+    }
+  ],
+  "sections": [
+    {
+      "id": "before-you-start",
+      "title": "Before you start",
+      "intro": "You will need: (1) your agency slug, username, and password from your administrator, (2) the safeT Mobile APK file or download link, and (3) for Inrico radios, a USB cable to connect the radio to a Windows PC.",
+      "steps": []
+    },
+    {
+      "id": "get-apk",
+      "title": "Step 1 — Get the APK from your admin",
+      "intro": "The app is not in the Google Play Store. Your agency admin publishes the official build on your safeT server.",
+      "steps": [
+        {
+          "title": "Admin downloads the APK",
+          "body": "An agency administrator signs in to safeT Control (the admin website), opens the Downloads tab, and clicks Download APK. They can copy the download link to send to installers.",
+          "image": "/marketing/setup-android/step-control-downloads.svg",
+          "imageAlt": "safeT Control Downloads tab with Download APK button"
+        },
+        {
+          "title": "Copy the APK to the radio",
+          "body": "Move the APK file to the device using any method that works for you: USB cable + File Explorer, SD card, email to yourself, Google Drive, or download directly in the radio's browser using the link from Control.",
+          "image": "/marketing/setup-android/step-copy-apk.svg",
+          "imageAlt": "Diagram showing APK copied from PC to phone via USB or cloud"
+        }
+      ]
+    },
+    {
+      "id": "developer-options",
+      "title": "Step 2 — Turn on Developer options & USB debugging",
+      "intro": "Required for Vysor/scrcpy and for TM-7 Plus hardware-key setup. Standard Android phones only need this if you are mirroring from a PC.",
+      "steps": [
+        {
+          "title": "Open Settings → About phone",
+          "body": "Scroll to the bottom of Settings and tap About phone (or About device).",
+          "image": "/marketing/setup-android/step-settings-about.svg",
+          "imageAlt": "Android Settings with About phone highlighted"
+        },
+        {
+          "title": "Tap Build number seven times",
+          "body": "Find Build number and tap it quickly seven times. Android will say You are now a developer! On Inrico radios the menu may be labeled slightly differently — look for Build number or Internal version.",
+          "image": "/marketing/setup-android/step-build-number.svg",
+          "imageAlt": "About phone screen with Build number and developer enabled message"
+        },
+        {
+          "title": "Enable USB debugging",
+          "body": "Go back to Settings → System → Developer options (or Settings → Developer options). Turn on USB debugging. When you plug in USB, tap Allow on the Allow USB debugging? prompt and check Always allow from this computer.",
+          "image": "/marketing/setup-android/step-usb-debugging.svg",
+          "imageAlt": "Developer options with USB debugging toggle on"
+        }
+      ]
+    },
+    {
+      "id": "install-apk",
+      "title": "Step 3 — Install the APK",
+      "intro": "Android blocks apps from outside the Play Store until you allow installation from your file manager or browser.",
+      "steps": [
+        {
+          "title": "Allow installs from unknown sources",
+          "body": "Open the APK from Files or Downloads. If Android blocks it, go to Settings → Apps → Special access → Install unknown apps (wording varies). Enable Allow for Files, Chrome, or whichever app you use to open the APK.",
+          "image": "/marketing/setup-android/step-unknown-sources.svg",
+          "imageAlt": "Install unknown apps permission enabled for Files"
+        },
+        {
+          "title": "Tap Install",
+          "body": "Open the APK again. Review the prompt and tap Install. When finished, tap Open — or find safeT PTT in the app drawer.",
+          "image": "/marketing/setup-android/step-install-apk.svg",
+          "imageAlt": "Android package installer with Install button"
+        }
+      ]
+    },
+    {
+      "id": "first-launch",
+      "title": "Step 4 — Sign in and allow permissions",
+      "intro": "The first time you open safeT Mobile, you will sign in and grant microphone, location, and notification access.",
+      "steps": [
+        {
+          "title": "Enter agency, username, and password",
+          "body": "Agency / network is your agency slug (example: metro-pd). Username and password are the radio account your admin created. Platform owner accounts cannot sign in on handsets — use the web console instead.",
+          "image": "/marketing/setup-android/step-login.svg",
+          "imageAlt": "safeT PTT login screen with agency slug and credentials"
+        },
+        {
+          "title": "Allow microphone",
+          "body": "Push-to-talk needs the microphone. Tap ALLOW MIC or accept the system permission dialog. Without this, transmit will not work.",
+          "image": "/marketing/setup-android/step-mic-permission.svg",
+          "imageAlt": "Microphone permission dialog on Android"
+        },
+        {
+          "title": "Allow location and notifications",
+          "body": "Location lets dispatch see your unit on the map. Notifications keep the radio connected in the background. Accept both when prompted.",
+          "image": "/marketing/setup-android/step-location-notif.svg",
+          "imageAlt": "Location and notification permission prompts"
+        }
+      ]
+    },
+    {
+      "id": "irc590",
+      "title": "Inrico IRC590 — hardware notes",
+      "intro": "The IRC590 is an ultracompact rugged LTE radio. safeT Mobile auto-detects the IRC590 profile and maps hardware keys for you.",
+      "device": "irc590",
+      "steps": [
+        {
+          "title": "Use the hardware PTT button",
+          "body": "Press and hold the orange PTT key to transmit — same as a traditional radio. Release to stop. The on-screen PTT button still works if you prefer.",
+          "image": "/marketing/setup-android/step-irc590-ptt.svg",
+          "imageAlt": "Inrico IRC590 with PTT and emergency keys labeled"
+        },
+        {
+          "title": "Emergency button",
+          "body": "The red EMERGENCY key sends a priority alert to dispatch and clears the channel. Use only for real emergencies.",
+          "image": "/marketing/inrico-irc590.svg",
+          "imageAlt": "IRC590 handset illustration"
+        },
+        {
+          "title": "Volume check key",
+          "body": "Hold the volume-check side key (Inrico key 232) to play a short test tone through the speaker so field users can verify audio level.",
+          "image": null,
+          "imageAlt": null
+        },
+        {
+          "title": "Optional: mirror with Vysor for first-time setup",
+          "body": "The IRC590 screen is small. For initial login, connect USB, open Vysor on your PC, and complete sign-in from your computer keyboard. After that, the hardware keys work without the PC.",
+          "image": "/marketing/setup-android/step-vysor.svg",
+          "imageAlt": "PC and IRC590 connected with Vysor mirroring"
+        }
+      ]
+    },
+    {
+      "id": "tm7",
+      "title": "Inrico TM-7 / TM-7 Plus — hardware keys & accessibility",
+      "intro": "The TM-7 Plus has a larger touch display, a volume knob, and programmable side keys. Physical PTT and Emergency require a one-time accessibility setup on many Android 10 units.",
+      "device": "tm7",
+      "steps": [
+        {
+          "title": "Try the in-app accessibility shortcut first",
+          "body": "Open safeT PTT. If you see a warning about accessibility, tap OPEN ACCESSIBILITY SETTINGS and look for safeT PTT in the list. Turn it ON if it appears.",
+          "image": "/marketing/setup-android/step-accessibility-list.svg",
+          "imageAlt": "Accessibility settings with safeT PTT service toggle"
+        },
+        {
+          "title": "If the list is empty (common on Android 10 TM-7 Plus)",
+          "body": "Inrico sometimes hides sideloaded apps from the on-screen accessibility list. Use ADB from a Windows PC instead: connect USB, confirm USB debugging is on, install Platform Tools, then run the commands below.",
+          "image": "/marketing/setup-android/step-tm7-adb.svg",
+          "imageAlt": "TM-7 Plus connected to PC with adb devices output"
+        },
+        {
+          "title": "ADB commands (copy and paste)",
+          "body": "Open Command Prompt on your PC. Run adb devices and accept the prompt on the radio. Then run:\n\nadb shell settings put secure accessibility_enabled 1\nadb shell settings put secure enabled_accessibility_services com.securityradio.ptt/com.securityradio.ptt.device.InricoHardwareService\n\nIf other accessibility services are already enabled, append :com.securityradio.ptt/com.securityradio.ptt.device.InricoHardwareService to the existing value instead of replacing it.",
+          "image": null,
+          "imageAlt": null,
+          "code": "adb devices\nadb shell settings put secure accessibility_enabled 1\nadb shell settings put secure enabled_accessibility_services com.securityradio.ptt/com.securityradio.ptt.device.InricoHardwareService"
+        },
+        {
+          "title": "Test hardware PTT and Emergency",
+          "body": "Close and reopen safeT PTT. Press the hardware PTT key — you should hear the talk-permit tone and see transmitting on screen. Test the red Emergency key in a non-emergency drill channel first.",
+          "image": "/marketing/inrico-tm7-plus.svg",
+          "imageAlt": "TM-7 Plus handset illustration"
+        },
+        {
+          "title": "Volume knob",
+          "body": "Rotate the hardware volume knob to adjust speaker level. safeT maps detents correctly on TM-7 Plus firmware.",
+          "image": null,
+          "imageAlt": null
+        }
+      ]
+    },
+    {
+      "id": "mdm-deploy",
+      "title": "Enterprise mass deploy & MDM",
+      "intro": "Agencies with dozens or hundreds of handsets need repeatable provisioning. Today safeT uses a signed APK sideload model; full MDM auto-enrollment is in active development.",
+      "roadmap": true,
+      "steps": [
+        {
+          "title": "What works today — manual rollout",
+          "body": "1) Admin downloads the signed APK from Control → Downloads.\n\n2) Create each radio account in Control → Users.\n\n3) Deliver APK + credentials via USB, shared drive, email, or MDM file push.\n\n4) Field tech follows this guide through install and sign-in.\n\nFor 10+ units, contact sales@safetptt.com for assisted onboarding."
+        },
+        {
+          "title": "MDM file deploy (Intune, SOTI, Knox)",
+          "body": "If your devices are already enrolled in an MDM, upload the safeT APK as a line-of-business app and assign it to device groups. Most MDMs require the user to approve install once unless the device is fully managed with silent-install permission.\n\nYou still configure agency slug and radio credentials on first launch — automated credential injection is part of the MDM enrollment feature we are building."
+        },
+        {
+          "title": "In development — enrollment link & QR",
+          "body": "We are building one-step enrollment: scan a QR code or open a signed link to download the APK, pre-fill agency slug, and bind the handset in one flow. Join the MDM beta waitlist by emailing sales@safetptt.com with your MDM platform (Intune, SOTI, etc.) and fleet size."
+        },
+        {
+          "title": "Stay on supported builds",
+          "body": "After install, safeT Mobile checks your server for new APK versions when the app opens. When MDM rollout ships, updates will support the same centralized publish path from Control → Downloads."
+        }
+      ]
+    },
+    {
+      "id": "verify",
+      "title": "Step 5 — Verify you are on the air",
+      "intro": "Confirm voice and GPS reach dispatch before going live.",
+      "steps": [
+        {
+          "title": "Key up on your assigned channel",
+          "body": "Select your talkgroup (example: Green 1). Hold PTT and say a radio check. Dispatch should hear you on safeT Command and see your unit on the roster.",
+          "image": "/marketing/mobile-radio.svg",
+          "imageAlt": "safeT Mobile on channel with PTT active"
+        },
+        {
+          "title": "Automatic updates",
+          "body": "Once installed, safeT Mobile checks your server for new APK versions when the app opens. Admins publish updates from Control → Downloads; radios install with your normal sideload permission.",
+          "image": null,
+          "imageAlt": null
+        }
+      ]
+    }
+  ]
+}

@@ -45,11 +45,23 @@ const FaqPage = lazy(() =>
 const SetupPage = lazy(() =>
   import("./pages/marketing/SetupPage").then((m) => ({ default: m.SetupPage })),
 );
+const AndroidSetupPage = lazy(() =>
+  import("./pages/marketing/AndroidSetupPage").then((m) => ({ default: m.AndroidSetupPage })),
+);
 const SupportPage = lazy(() =>
   import("./pages/marketing/SupportPage").then((m) => ({ default: m.SupportPage })),
 );
 const SecurityPage = lazy(() =>
   import("./pages/marketing/SecurityPage").then((m) => ({ default: m.SecurityPage })),
+);
+const TrustPage = lazy(() =>
+  import("./pages/marketing/TrustPage").then((m) => ({ default: m.TrustPage })),
+);
+const IndustryPage = lazy(() =>
+  import("./pages/marketing/IndustryPage").then((m) => ({ default: m.IndustryPage })),
+);
+const InteroperabilityPage = lazy(() =>
+  import("./pages/marketing/InteroperabilityPage").then((m) => ({ default: m.InteroperabilityPage })),
 );
 const MobilePage = lazy(() =>
   import("./pages/marketing/MobilePage").then((m) => ({ default: m.MobilePage })),
@@ -59,6 +71,9 @@ const CommandPage = lazy(() =>
 );
 const ControlPage = lazy(() =>
   import("./pages/marketing/ControlPage").then((m) => ({ default: m.ControlPage })),
+);
+const DevicesPage = lazy(() =>
+  import("./pages/marketing/DevicesPage").then((m) => ({ default: m.DevicesPage })),
 );
 const NotFoundPage = lazy(() =>
   import("./pages/marketing/NotFoundPage").then((m) => ({ default: m.NotFoundPage })),
@@ -101,11 +116,16 @@ export function App() {
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/faq" element={<FaqPage />} />
       <Route path="/setup" element={<SetupPage />} />
+      <Route path="/setup/android" element={<AndroidSetupPage />} />
       <Route path="/support" element={<SupportPage />} />
       <Route path="/security" element={<SecurityPage />} />
+      <Route path="/trust" element={<TrustPage />} />
+      <Route path="/interoperability" element={<InteroperabilityPage />} />
+      <Route path="/industries/:slug" element={<IndustryPage />} />
       <Route path="/mobile" element={<MobilePage />} />
       <Route path="/command" element={<CommandPage />} />
       <Route path="/control" element={<ControlPage />} />
+      <Route path="/devices" element={<DevicesPage />} />
       <Route path="/login" element={user ? <Navigate to={home} replace /> : <LoginPage />} />
       <Route
         path="/console"

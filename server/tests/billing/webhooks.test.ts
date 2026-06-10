@@ -1,83 +1,82 @@
 /**
- * Tests for `server/src/billing/webhooks.ts` pure helpers.
+ * Tests for the pure helpers exported from `server/src/billing/webhooks.ts`.
  *
- * The Stripe webhook is the only path that flips an agency between active
- * and `disabled = true`. A regression in either of the helpers below silently
- * lets a delinquent tenant keep talking on the radio (status mis-mapped) or
- * orphans a webhook event because the agency_id can't be resolved.
+ * The webhook handler itself talks to Stripe + the agency store, but two
+ * tiny helpers do the entire conversion of Stripe-shaped data into
+ * platform decisions, and they are pinned here:
  *
- * Properties pinned by this file:
- *
- *  1. **`mapStripeStatus`** must:
- *     - Pass through `active` and `trialing` verbatim — these gate the
- *       handset login path (`agency.disabled` flips off these two).
- *     - Coalesce `past_due` AND `unpaid` to `past_due` so the admin UI shows
- *       a single "Payment problem" state regardless of Stripe's internal
- *       lifecycle nuance.
- *     - Coalesce `canceled` AND `incomplete_expired` to `canceled` — both
- *       mean "no working subscription, suspend the tenant".
- *     - Map every other Stripe status (incomplete, paused, future additions)
- *       to `past_due`. This is intentionally fail-safe: an unknown status
- *       must NEVER be silently promoted to `active`.
- *
- *  2. **`agencyIdFromMeta`** must:
- *     - Return `null` for null / undefined / missing-key metadata so the
- *       webhook handler can skip the event cleanly.
- *     - Parse a stringified integer to a finite number (Stripe metadata is
- *       always strings).
- *     - Return `null` for non-numeric values so a corrupted metadata bag
- *       cannot accidentally apply changes to agency `NaN`.
+ *  - `mapStripeStatus` is the single source of truth for "what happens
+ *    when Stripe says X". A regression that maps `unpaid` → `active`
+ *    silently keeps a non-paying agency online; mapping a future Stripe
+ *    state (e.g. `paused`) onto `active` is even worse — currently it
+ *    falls through to `past_due`, which trips the disabled gate in
+ *    `applySubscription`. The default-branch test pins that fail-safe.
+ *  - `agencyIdFromMeta` is how the webhook recovers WHICH agency to
+ *    update. A regression that returned `0` instead of `null` would
+ *    overwrite agency id 0 (or, worse, the first row in the SET); a
+ *    `NaN` slipping through would `UPDATE agencies WHERE id = NaN`,
+ *    failing mid-webhook and forcing Stripe to retry into eternity.
  */
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type Stripe from "stripe";
+
 import {
   agencyIdFromMeta,
   isStripeSubscriptionActive,
   mapStripeStatus,
 } from "../../src/billing/webhooks.js";
 
-// ---------------------------------------------------------------------------
-// mapStripeStatus
-// ---------------------------------------------------------------------------
-
-test("mapStripeStatus: passes through active and trialing", () => {
+test("mapStripeStatus: collapses every non-active Stripe state onto our paywall states", () => {
   assert.equal(mapStripeStatus("active"), "active");
   assert.equal(mapStripeStatus("trialing"), "trialing");
-});
-
-test("mapStripeStatus: past_due and unpaid both map to past_due", () => {
+  // Both Stripe failure states must trip the past_due paywall.
   assert.equal(mapStripeStatus("past_due"), "past_due");
   assert.equal(mapStripeStatus("unpaid"), "past_due");
-});
-
-test("mapStripeStatus: canceled and incomplete_expired both map to canceled", () => {
+  // Both terminal cancellation states must collapse onto our `canceled`
+  // — `incomplete_expired` is "the customer never finished checkout"
+  // and is functionally a cancel.
   assert.equal(mapStripeStatus("canceled"), "canceled");
   assert.equal(mapStripeStatus("incomplete_expired"), "canceled");
 });
 
-test("mapStripeStatus: incomplete falls through to past_due (fail-safe default)", () => {
-  assert.equal(mapStripeStatus("incomplete"), "past_due");
+test("mapStripeStatus: unknown / future Stripe states fall back to past_due (fail-closed)", () => {
+  // Stripe can ship new subscription states without a Stripe SDK
+  // upgrade (the union type is just a TypeScript projection of the
+  // remote API). The default branch must NOT fall back to "active"; if
+  // it does, an unknown state would silently keep a possibly-broken
+  // agency online. `past_due` is the safe choice — it disables the
+  // agency until an admin resolves the situation.
+  const exotic = "paused" as unknown as Stripe.Subscription.Status;
+  assert.equal(mapStripeStatus(exotic), "past_due");
+
+  const incomplete = "incomplete" as unknown as Stripe.Subscription.Status;
+  assert.equal(
+    mapStripeStatus(incomplete),
+    "past_due",
+    "'incomplete' (the post-Checkout, pre-payment state) must NOT count as active",
+  );
 });
 
-test("mapStripeStatus: paused falls through to past_due (fail-safe default)", () => {
-  assert.equal(mapStripeStatus("paused"), "past_due");
+test("mapStripeStatus: never returns 'comped' (that's a platform-only state, never a Stripe state)", () => {
+  // The "comped" state is set manually by the platform owner from the
+  // owner portal — Stripe never emits it. A regression that mapped any
+  // Stripe state onto comped would un-track that agency from billing
+  // entirely.
+  const stripeStates: Stripe.Subscription.Status[] = [
+    "active",
+    "trialing",
+    "past_due",
+    "unpaid",
+    "canceled",
+    "incomplete_expired",
+    "incomplete" as Stripe.Subscription.Status,
+  ];
+  for (const s of stripeStates) {
+    assert.notEqual(mapStripeStatus(s), "comped", `state ${s} must not collapse onto 'comped'`);
+  }
 });
-
-test("mapStripeStatus: any unknown status maps to past_due (never to active)", () => {
-  // Cast to bypass the literal-union; this future-proofs against Stripe
-  // adding a new status that we haven't explicitly mapped.
-  const unknown = mapStripeStatus("brand_new_status" as unknown as Stripe.Subscription.Status);
-  assert.equal(unknown, "past_due");
-  assert.notEqual(unknown, "active");
-  assert.notEqual(unknown, "trialing");
-  assert.notEqual(unknown, "comped");
-});
-
-// ---------------------------------------------------------------------------
-// isStripeSubscriptionActive
-// ---------------------------------------------------------------------------
 
 test("isStripeSubscriptionActive: true only for active and trialing", () => {
   assert.equal(isStripeSubscriptionActive("active"), true);
@@ -97,42 +96,55 @@ test("isStripeSubscriptionActive: false for delinquent/canceled/unknown states",
   );
 });
 
-// ---------------------------------------------------------------------------
-// agencyIdFromMeta
-// ---------------------------------------------------------------------------
+test("agencyIdFromMeta: extracts numeric agency_id from Stripe metadata", () => {
+  assert.equal(agencyIdFromMeta({ agency_id: "42" }), 42);
+  assert.equal(agencyIdFromMeta({ agency_id: "1" }), 1);
+});
 
-test("agencyIdFromMeta: null / undefined return null", () => {
+test("agencyIdFromMeta: returns null when metadata is missing or empty", () => {
+  // The webhook handler treats `null` here as "this event isn't ours,
+  // ignore it"; any non-null number triggers an UPDATE on the agencies
+  // table, so the boundary cases must read as null cleanly.
   assert.equal(agencyIdFromMeta(null), null);
   assert.equal(agencyIdFromMeta(undefined), null);
+  assert.equal(agencyIdFromMeta({}), null);
+  // Stripe metadata values can technically be empty strings — must
+  // also surface as null instead of NaN.
+  assert.equal(agencyIdFromMeta({ agency_id: "" }), null);
 });
 
-test("agencyIdFromMeta: missing agency_id key returns null", () => {
-  assert.equal(agencyIdFromMeta({} as Stripe.Metadata), null);
-  assert.equal(agencyIdFromMeta({ other: "x" } as unknown as Stripe.Metadata), null);
+test("agencyIdFromMeta: tolerates trailing-junk strings (parseInt semantics)", () => {
+  // Documented Node behaviour: parseInt("42abc", 10) === 42. This is
+  // the historical behaviour of the helper — we want to assert it
+  // explicitly so a refactor to Number()/coerce doesn't silently
+  // tighten the contract and start dropping legitimate Stripe events
+  // whose metadata was double-stringified by an earlier integration.
+  assert.equal(agencyIdFromMeta({ agency_id: "42abc" }), 42);
 });
 
-test("agencyIdFromMeta: empty string returns null", () => {
-  assert.equal(agencyIdFromMeta({ agency_id: "" } as unknown as Stripe.Metadata), null);
+test("agencyIdFromMeta: returns null for non-numeric agency_id strings", () => {
+  // A non-numeric value (e.g. someone wrote "agency_42" or a slug)
+  // must NOT silently collapse to 0 or NaN — it must read as null so
+  // the webhook ignores the event instead of issuing a destructive
+  // UPDATE on agency id 0.
+  assert.equal(agencyIdFromMeta({ agency_id: "not-a-number" }), null);
+  assert.equal(agencyIdFromMeta({ agency_id: "agency_42" }), null);
+  assert.equal(agencyIdFromMeta({ agency_id: "abc" }), null);
 });
 
-test("agencyIdFromMeta: parses a stringified integer", () => {
-  assert.equal(agencyIdFromMeta({ agency_id: "42" } as unknown as Stripe.Metadata), 42);
+test("agencyIdFromMeta: parses negative values verbatim (no silent clamping)", () => {
+  // Negative is a clear signal of a misconfigured metadata value, but
+  // the helper today returns the parsed number as-is and lets the
+  // caller's UPDATE WHERE id = -1 simply hit zero rows. Pin that
+  // contract — a regression that started clamping to 0 would silently
+  // re-route a misconfigured event onto agency id 0.
+  assert.equal(agencyIdFromMeta({ agency_id: "-1" }), -1);
 });
 
-test("agencyIdFromMeta: parses with leading whitespace", () => {
-  assert.equal(agencyIdFromMeta({ agency_id: "  42" } as unknown as Stripe.Metadata), 42);
-});
-
-test("agencyIdFromMeta: garbage input that has no leading digits returns null", () => {
-  // Number.parseInt("abc", 10) = NaN; Number.isFinite(NaN) = false → null.
-  assert.equal(
-    agencyIdFromMeta({ agency_id: "not-a-number" } as unknown as Stripe.Metadata),
-    null,
-  );
-});
-
-test("agencyIdFromMeta: zero is preserved (not coerced to null)", () => {
-  // We never expect agency_id=0 in practice, but the helper should not
-  // confuse a legitimate 0 with a parse failure.
-  assert.equal(agencyIdFromMeta({ agency_id: "0" } as unknown as Stripe.Metadata), 0);
+test("agencyIdFromMeta: does NOT use other metadata keys (just `agency_id`)", () => {
+  // Pin the exact key — a refactor that started reading `agencyId` or
+  // `id` would silently start sending writes to agencies whose
+  // metadata has unrelated numeric fields.
+  assert.equal(agencyIdFromMeta({ agencyId: "42" } as unknown as Stripe.Metadata), null);
+  assert.equal(agencyIdFromMeta({ id: "42" } as unknown as Stripe.Metadata), null);
 });

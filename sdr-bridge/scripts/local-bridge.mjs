@@ -17,6 +17,7 @@ import { createSocket } from "node:dgram";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isAuthWsFailure, wsFailureText } from "./lib/ws-auth.mjs";
 
 // WebSocket: prefer the `ws` package — it exposes ping()/pong so the keepalive
 // can detect half-open sockets (the built-in undici WebSocket cannot send
@@ -113,8 +114,8 @@ function startKeepalive(ws) {
 }
 
 // Shared token + de-bounced re-login. NOTE: a fresh login drops this account's
-// other voice sockets server-side, so we only re-login when a join is rejected
-// for auth — not on a timer.
+// other voice sockets server-side, so we only re-login on explicit auth/token
+// failures (join rejects, ws upgrade 401/403), never on a timer.
 const tokenRef = { value: null };
 let reloginInFlight = null;
 function relogin() {
@@ -462,11 +463,18 @@ function runMonitorBridge(bridge) {
         } else if (m.type === "error") {
           console.warn(`[bridge] ${bridge.name}: relay rejected join (${m.code ?? "error"})`);
           mark(bridge, { state: `rejected (${m.code ?? "error"})` });
+          if (isAuthWsFailure(m.code)) void relogin();
           finish();
         }
       };
-      ws.onerror = () => finish();
+      ws.onerror = (err) => {
+        if (isAuthWsFailure(err)) void relogin();
+        const why = wsFailureText(err);
+        if (why) console.warn(`[bridge] ${bridge.name}: ws error (${why})`);
+        finish();
+      };
       ws.onclose = (e) => {
+        if (isAuthWsFailure(e)) void relogin();
         console.warn(`[bridge] ${bridge.name}: ws closed ${e && e.code != null ? e.code : ""}`);
         if (statusRow(bridge).state === "on air") mark(bridge, { state: "reconnecting" });
         finish();
@@ -604,15 +612,18 @@ function runBridge(bridge, udpPort) {
         } else if (m.type === "error") {
           console.warn(`[bridge] ${bridge.name}: relay rejected join (${m.code ?? "error"})`);
           mark(bridge, { state: `rejected (${m.code ?? "error"})` });
-          if (/auth|token|unauth|expired|forbidden/i.test(String(m.code ?? ""))) void relogin();
+          if (isAuthWsFailure(m.code)) void relogin();
           finish();
         }
       };
-      w.onerror = () => {
-        console.warn(`[bridge] ${bridge.name}: ws error`);
+      w.onerror = (err) => {
+        if (isAuthWsFailure(err)) void relogin();
+        const why = wsFailureText(err);
+        console.warn(`[bridge] ${bridge.name}: ws error${why ? ` (${why})` : ""}`);
         finish();
       };
       w.onclose = (e) => {
+        if (isAuthWsFailure(e)) void relogin();
         const code = e && e.code != null ? e.code : "";
         const reason = e && e.reason ? ` ${e.reason}` : "";
         console.warn(`[bridge] ${bridge.name}: ws closed ${code}${reason}`);

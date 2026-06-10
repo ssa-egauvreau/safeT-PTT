@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 640" role="img" aria-label="Install unknown apps permission">
+  <rect width="360" height="640" fill="#f1f5f9"/>
+  <rect y="0" width="360" height="48" fill="#fff"/>
+  <text x="24" y="32" fill="#0f172a" font-family="system-ui,sans-serif" font-size="17" font-weight="600">Install unknown apps</text>
+  <rect x="16" y="72" width="328" height="64" rx="8" fill="#fff" stroke="#0d9488" stroke-width="2"/>
+  <text x="72" y="112" fill="#0f172a" font-family="system-ui,sans-serif" font-size="16">Files</text>
+  <rect x="280" y="92" width="48" height="28" rx="14" fill="#0d9488"/>
+  <circle cx="308" cy="106" r="10" fill="#fff"/>
+  <text x="180" y="180" text-anchor="middle" fill="#64748b" font-family="system-ui,sans-serif" font-size="13">Allow from this source</text>
+  <rect x="16" y="200" width="328" height="64" rx="8" fill="#fff"/>
+  <text x="72" y="240" fill="#0f172a" font-family="system-ui,sans-serif" font-size="16">Chrome</text>
+  <rect x="280" y="220" width="48" height="28" rx="14" fill="#cbd5e1"/>
+  <circle cx="294" cy="234" r="10" fill="#fff"/>
+</svg>
