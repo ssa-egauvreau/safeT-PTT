@@ -19,6 +19,11 @@ import { join } from "node:path";
 /** First UDP port; talkgroup N streams on BASE_UDP_PORT + N. */
 export const BASE_UDP_PORT = 9000;
 
+/** The decoder's "everything" stream (TGID 0 = all talkgroups, each datagram
+ * prefixed with its TGID) — feeds the Scan All hub with every clear call on
+ * the system, not just the bridged talkgroups. */
+export const SCAN_ALL_UDP_PORT = 8999;
+
 /** Derive a talkgroup id from a `…/tg<NNN>` stream mount, or null. */
 export function tgidFromMount(mountOrUrl) {
   const m = String(mountOrUrl).match(/\/?tg(\d+)\s*$/i);
@@ -140,13 +145,26 @@ function buildTrunkConfig(cfg, plan) {
       {
         name: "simplestream",
         library: "/usr/local/lib/trunk-recorder/libsimplestream.so",
-        streams: plan.map((p) => ({
-          TGID: Number(p.tgid),
-          address: "127.0.0.1",
-          port: p.udpPort,
-          sendTGID: false,
-          shortName: primaryShort,
-        })),
+        streams: [
+          ...plan.map((p) => ({
+            TGID: Number(p.tgid),
+            address: "127.0.0.1",
+            port: p.udpPort,
+            sendTGID: false,
+            shortName: primaryShort,
+          })),
+          // TGID 0 = EVERY talkgroup's audio (only clear calls ever decode),
+          // each datagram prefixed with its TGID so the bridge's Scan All
+          // ingest can label and demux it. Encrypted calls produce no audio,
+          // so this is inherently clear-voice-only.
+          {
+            TGID: 0,
+            address: "127.0.0.1",
+            port: SCAN_ALL_UDP_PORT,
+            sendTGID: true,
+            shortName: primaryShort,
+          },
+        ],
       },
     ],
     captureDir: "/tmp/trunk-recorder",
