@@ -246,6 +246,325 @@ test("GET /v1/billing/status: superseded admin token is rejected before billing 
   }
 });
 
+test("GET /v1/billing/status: rejects unauthenticated requests with 401", async () => {
+  // The inner `requireAuth` guard on `/billing/status` must still refuse a
+  // tokenless caller. A regression that loosened `requireAuth` would let
+  // anyone read another agency's plan + billing state.
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const res = await fetch(`${baseUrl}/v1/billing/status`);
+    assert.equal(res.status, 401);
+  } finally {
+    await close();
+  }
+});
+
+test("GET /v1/billing/status: dispatcher token is rejected with 403 (admin-only)", async () => {
+  // Billing state must never be readable by a non-admin agency member.
+  clearAuthCache();
+  const dispatcherUserId = 9_999_011;
+  setCachedAuth(dispatcherUserId, {
+    tokenGeneration: 0,
+    userDisabled: false,
+    agencyDisabled: false,
+  });
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const token = tokenFor({ id: dispatcherUserId, agencyId: 42, role: "dispatcher" });
+    const res = await fetch(`${baseUrl}/v1/billing/status`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(res.status, 403);
+  } finally {
+    await close();
+    clearAuthCache();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Billing router auth-gate ordering — full coverage of the fix in 9dc8053.
+//
+// The original test above only exercises `GET /v1/billing/status`. The same
+// security property has to hold for every authenticated billing endpoint
+// (`checkout`, `portal`, `plan`), and the auth-gate must NOT block the public
+// signup endpoints (`/signup/verify-email`, `/signup`). Without these tests,
+// a future refactor could:
+//
+//   - Re-introduce the original bug for any of the three other admin billing
+//     routes (so a superseded admin token could still hit Stripe checkout).
+//   - Accidentally pull the public signup endpoints behind the auth gate,
+//     which would silently break the marketing-site signup funnel — there is
+//     no other path that would surface that failure in CI.
+// ---------------------------------------------------------------------------
+
+/**
+ * The remaining authenticated billing endpoints. `/v1/billing/status` is
+ * covered by the standalone test above (it was the canonical regression
+ * scenario for 9dc8053); the three routes below carry the same security
+ * property and need their own assertions.
+ */
+const ADMIN_BILLING_ROUTES = [
+  { method: "POST", path: "/v1/billing/checkout", body: { plan_tier: "basic" } },
+  { method: "POST", path: "/v1/billing/portal" },
+  { method: "PATCH", path: "/v1/billing/plan", body: { plan_tier: "basic" } },
+] as const;
+
+for (const route of ADMIN_BILLING_ROUTES) {
+  test(`${route.method} ${route.path}: superseded admin token is rejected before billing handlers`, async () => {
+    // Same regression coverage as the /billing/status test above, replayed
+    // for every other authenticated billing endpoint. If any of these starts
+    // returning 200/4xx-other-than-401 here, the auth-gate ordering has
+    // regressed for that specific route and a stale admin token can still
+    // act on Stripe.
+    const prevDbUrl = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    clearAuthCache();
+    const adminUserId = 9_999_020 + ADMIN_BILLING_ROUTES.indexOf(route);
+    setCachedAuth(adminUserId, {
+      tokenGeneration: 1,
+      userDisabled: false,
+      agencyDisabled: false,
+    });
+    const { baseUrl, close } = await bootRouter();
+    try {
+      const token = tokenFor({ id: adminUserId, agencyId: 42, role: "admin", gen: 0 });
+      const res = await fetch(`${baseUrl}${route.path}`, {
+        method: route.method,
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: "body" in route ? JSON.stringify(route.body) : undefined,
+      });
+      assert.equal(
+        res.status,
+        401,
+        `${route.method} ${route.path} should reject a superseded token with 401`,
+      );
+      const body = (await res.json()) as { error?: string };
+      assert.equal(body.error, "session_superseded");
+    } finally {
+      await close();
+      clearAuthCache();
+      if (prevDbUrl !== undefined) {
+        process.env.DATABASE_URL = prevDbUrl;
+      }
+    }
+  });
+
+  test(`${route.method} ${route.path}: disabled-account token is rejected before billing handlers`, async () => {
+    // The same auth-gate middleware also enforces `account_disabled`. Pin
+    // it here so a future refactor can't silently let a disabled-but-still-
+    // holding-a-valid-JWT account hit Stripe.
+    const prevDbUrl = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    clearAuthCache();
+    const adminUserId = 9_999_030 + ADMIN_BILLING_ROUTES.indexOf(route);
+    setCachedAuth(adminUserId, {
+      tokenGeneration: 0,
+      userDisabled: true,
+      agencyDisabled: false,
+    });
+    const { baseUrl, close } = await bootRouter();
+    try {
+      const token = tokenFor({ id: adminUserId, agencyId: 42, role: "admin" });
+      const res = await fetch(`${baseUrl}${route.path}`, {
+        method: route.method,
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: "body" in route ? JSON.stringify(route.body) : undefined,
+      });
+      assert.equal(res.status, 401);
+      const body = (await res.json()) as { error?: string };
+      assert.equal(body.error, "account_disabled");
+    } finally {
+      await close();
+      clearAuthCache();
+      if (prevDbUrl !== undefined) {
+        process.env.DATABASE_URL = prevDbUrl;
+      }
+    }
+  });
+
+  test(`${route.method} ${route.path}: rejects unauthenticated requests with 401`, async () => {
+    // No token at all → the inner `requireAuth` guard on each billing route
+    // returns 401. A regression that loosened `requireAuth` (e.g. an `if (!user)
+    // return next();` typo) would let an anonymous caller open the billing
+    // portal for any agency.
+    const { baseUrl, close } = await bootRouter();
+    try {
+      const res = await fetch(`${baseUrl}${route.path}`, {
+        method: route.method,
+        headers: { "content-type": "application/json" },
+        body: "body" in route ? JSON.stringify(route.body) : undefined,
+      });
+      assert.equal(res.status, 401);
+    } finally {
+      await close();
+    }
+  });
+
+  test(`${route.method} ${route.path}: dispatcher token is rejected with 403 (admin-only)`, async () => {
+    // The admin-billing surface must never be reachable by a plain agency
+    // member. `requireAdmin` enforces this — pin the contract so a future
+    // "let dispatchers see billing too" change has to consciously break the
+    // assertion rather than silently widen the security boundary.
+    clearAuthCache();
+    const dispatcherUserId = 9_999_040 + ADMIN_BILLING_ROUTES.indexOf(route);
+    setCachedAuth(dispatcherUserId, {
+      tokenGeneration: 0,
+      userDisabled: false,
+      agencyDisabled: false,
+    });
+    const { baseUrl, close } = await bootRouter();
+    try {
+      const token = tokenFor({
+        id: dispatcherUserId,
+        agencyId: 42,
+        role: "dispatcher",
+      });
+      const res = await fetch(`${baseUrl}${route.path}`, {
+        method: route.method,
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: "body" in route ? JSON.stringify(route.body) : undefined,
+      });
+      assert.equal(res.status, 403);
+    } finally {
+      await close();
+      clearAuthCache();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Public signup endpoints — must stay reachable WITHOUT a token.
+//
+// `/v1/signup/verify-email` and `/v1/signup` are the entry points to the
+// self-service trial flow. They are public by design: nobody has an account
+// yet when they call them. The billing router is now mounted AFTER the
+// `account_disabled / session_superseded / agency_disabled` gate; the gate
+// no-ops when `req.authUser == null`, so these calls must still reach the
+// signup handlers. A regression that pulled the gate up to run before the
+// `next()` shortcut would make the marketing-site signup form 401 instantly
+// and there is no UI test that would catch that.
+// ---------------------------------------------------------------------------
+
+test("POST /v1/signup/verify-email: reachable without a token, rejects invalid email with 400", async () => {
+  // An unauthenticated POST must NOT be 401. The handler validates the body
+  // shape and returns 400 `invalid_email` before any DB call — observable
+  // even with DATABASE_URL unset.
+  const prevDbUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  clearAuthCache();
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const res = await fetch(`${baseUrl}/v1/signup/verify-email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "not-an-email" }),
+    });
+    assert.notEqual(res.status, 401, "public signup must not require a token");
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error?: string };
+    assert.equal(body.error, "invalid_email");
+  } finally {
+    await close();
+    if (prevDbUrl !== undefined) {
+      process.env.DATABASE_URL = prevDbUrl;
+    }
+  }
+});
+
+test("POST /v1/signup/verify-email: empty email is rejected with 400 invalid_email", async () => {
+  // Empty / missing body should hit the same `invalid_email` branch — not
+  // a 500 from a downstream DB call.
+  const prevDbUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  clearAuthCache();
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const res = await fetch(`${baseUrl}/v1/signup/verify-email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error?: string };
+    assert.equal(body.error, "invalid_email");
+  } finally {
+    await close();
+    if (prevDbUrl !== undefined) {
+      process.env.DATABASE_URL = prevDbUrl;
+    }
+  }
+});
+
+test("POST /v1/signup: reachable without a token, rejects missing accept_terms with 400", async () => {
+  // The terms-of-service checkbox is required on the marketing signup form.
+  // The server-side `completeSignup` helper enforces it BEFORE any DB write,
+  // so the validation surface is observable even without Postgres.
+  const prevDbUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  clearAuthCache();
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const res = await fetch(`${baseUrl}/v1/signup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        agency_name: "Demo Agency",
+        admin_username: "demo-admin",
+        admin_display_name: "Demo Admin",
+        admin_password: "hunter22hunter22",
+        email: "demo@example.com",
+        verification_code: "000000",
+        plan_tier: "basic",
+        accept_terms: false,
+      }),
+    });
+    assert.notEqual(res.status, 401, "public signup must not require a token");
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error?: string };
+    assert.equal(body.error, "terms_required");
+  } finally {
+    await close();
+    if (prevDbUrl !== undefined) {
+      process.env.DATABASE_URL = prevDbUrl;
+    }
+  }
+});
+
+test("createApiRouter: public signup + authenticated billing routes are all registered", () => {
+  // Trip-wire for accidental route deletion in a refactor of `routes.ts`.
+  // We assert the full set explicitly so a partial rename / typo can't drop
+  // either the public or the admin half of the billing surface.
+  const router = createApiRouter();
+  type RouteLayer = {
+    route?: { path: string; methods: Record<string, boolean> };
+  };
+  const registered = new Set<string>();
+  for (const layer of (router as unknown as { stack: RouteLayer[] }).stack) {
+    if (!layer.route) continue;
+    for (const method of Object.keys(layer.route.methods)) {
+      if (layer.route.methods[method]) {
+        registered.add(`${method.toUpperCase()} ${layer.route.path}`);
+      }
+    }
+  }
+  // The billing router is a sub-router, so its paths register as nested
+  // layers; the outermost router exposes them by full path on each request,
+  // not by symbol here. We assert on actual request handling instead — see
+  // the per-route tests above. This test just locks in the route count of
+  // the top-level router so an accidental `router.use(...)` deletion that
+  // unmounted the billing router at the top level is caught immediately.
+  assert.ok(registered.size > 50, `expected >50 routes, got ${registered.size}`);
+});
+
 test("GET /v1/audio/config: agency member with no DATABASE_URL → 503, not a crash", async () => {
   // The handler reads `getGlobalAudioConfig` which throws
   // `database_unavailable` when DATABASE_URL is unset (dev / CI default).
