@@ -1,0 +1,133 @@
+{
+  "overview": "safeT PTT is a private, multi-tenant push-to-talk platform built for public safety agencies. Voice, location, recordings, and admin actions are scoped to your agency — never mixed with other customers.",
+  "requestPacketEmail": "sales@safetptt.com",
+  "requestPacketSubject": "safeT PTT — Security packet request",
+  "pillars": [
+    {
+      "id": "encryption",
+      "title": "Encrypted voice relay",
+      "summary": "Every transmission travels over TLS (HTTPS/WSS) to an authenticated relay. Handsets bind to your agency with a per-tenant radio key; console and admin users authenticate with individual accounts.",
+      "details": [
+        "Voice WebSocket connections require a valid agency radio key or user JWT.",
+        "Transport encryption uses industry-standard TLS on all client ↔ server paths.",
+        "Agency radio keys can be rotated from safeT Control without rebuilding channels."
+      ]
+    },
+    {
+      "id": "isolation",
+      "title": "Multi-tenant isolation",
+      "summary": "Channels, users, recordings, alerts, billing, and audit events belong to one agency. API handlers enforce agency scope on every read and write.",
+      "details": [
+        "No cross-tenant channel or user visibility through the REST or voice APIs.",
+        "Platform owner accounts manage agencies but do not share radio tenants.",
+        "Legacy single-tenant data migrates into a dedicated Default Agency on first boot."
+      ]
+    },
+    {
+      "id": "sessions",
+      "title": "Session control",
+      "summary": "Newest sign-in wins — if a handset is lost or stolen, signing in elsewhere immediately retires the old session so it cannot keep listening or transmitting.",
+      "details": [
+        "Single active handset session per radio account.",
+        "Dispatch and admin sessions use JWT with server-side validation.",
+        "Lost-device mitigation does not require wiping the physical device first."
+      ]
+    },
+    {
+      "id": "retention",
+      "title": "Data retention & logs",
+      "summary": "All plans include 3 days of transmission logs with auto-transcription. Agencies can add unlimited retention for investigations, QA, and after-action review.",
+      "details": [
+        "Retention sweeps run automatically per agency based on subscription settings.",
+        "Unlimited logs add-on: $20/agency/month — indefinite transmission archive.",
+        "Export and search from safeT Command; replay from handsets for recent traffic."
+      ]
+    },
+    {
+      "id": "audit",
+      "title": "Audit & administration",
+      "summary": "Agency administrators provision users, channels, permissions, and integrations from safeT Control. Administrative actions are logged for accountability.",
+      "details": [
+        "Per-channel permission templates for radio and dispatcher roles.",
+        "Billing and subscription changes via Stripe Customer Portal.",
+        "Security questionnaires: contact us for our current security packet."
+      ]
+    },
+    {
+      "id": "payments",
+      "title": "Payments",
+      "summary": "Card data is handled entirely by Stripe. safeT servers never store payment card numbers.",
+      "details": [
+        "PCI scope reduced — billing card entry occurs on Stripe-hosted flows.",
+        "Agency billing status gates service during trial expiry or failed payment.",
+        "Purchase orders and customized billing: contact sales for enterprise terms."
+      ]
+    }
+  ],
+  "compliance": {
+    "title": "Compliance & certifications",
+    "intro": "We are building toward formal third-party attestations common in public safety procurement. Today we provide transparent architecture documentation and a security packet on request.",
+    "items": [
+      {
+        "name": "SOC 2 Type II",
+        "status": "roadmap",
+        "note": "Not yet certified. Request our security packet for current controls documentation."
+      },
+      {
+        "name": "CJIS alignment",
+        "status": "review",
+        "note": "Law enforcement agencies should review our security packet against their CJIS Security Policy requirements. We do not claim CJIS certification today."
+      },
+      {
+        "name": "HIPAA",
+        "status": "review",
+        "note": "Hospital and healthcare security teams should evaluate PHI exposure in voice logs and retention. Business Associate Agreements available on request for qualified deployments."
+      },
+      {
+        "name": "GDPR",
+        "status": "partial",
+        "note": "Agency-scoped data with defined retention windows. Data processing terms available in our Privacy Policy."
+      }
+    ]
+  },
+  "operations": {
+    "title": "Reliability & operations",
+    "intro": "Production runs on managed cloud infrastructure with health monitoring. We design for dispatch continuity — not consumer walkie-talkie uptime claims without measurement.",
+    "items": [
+      {
+        "label": "Health monitoring",
+        "body": "Public /health endpoint for API availability checks and automated platform monitoring."
+      },
+      {
+        "label": "Voice path",
+        "body": "Dedicated WebSocket voice relay outside Express compression for low-latency half-duplex audio."
+      },
+      {
+        "label": "LMR supplement",
+        "body": "safeT supplements — it does not replace — mission-critical Land Mobile Radio. Maintain conventional radio backup for life-safety operations."
+      },
+      {
+        "label": "Incident communication",
+        "body": "Subscribe to product updates at /updates. Dedicated status page available on request for enterprise customers."
+      }
+    ]
+  },
+  "reliabilityStats": [
+    {
+      "value": "TLS",
+      "label": "Encrypted transport on all client connections"
+    },
+    {
+      "value": "1 tenant",
+      "label": "Agency data isolated per customer"
+    },
+    {
+      "value": "1 session",
+      "label": "Active handset session — newest sign-in wins"
+    },
+    {
+      "value": "24/7",
+      "label": "Cloud-hosted voice relay architecture"
+    }
+  ]
+}

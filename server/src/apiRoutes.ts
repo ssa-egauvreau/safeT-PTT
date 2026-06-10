@@ -495,8 +495,6 @@ async function annotateRosterStatus(
 export function createApiRouter(): Router {
   const router = Router();
 
-  router.use(createBillingRouter());
-
   router.get("/webhooks/10-8", handleTen8WebhookGet);
   router.post("/webhooks/10-8", handleTen8Webhook);
 
@@ -600,6 +598,11 @@ export function createApiRouter(): Router {
       fail(res, error);
     }
   });
+
+  // Billing has both public signup endpoints and admin-only billing actions.
+  // Mounting it here ensures authenticated billing requests still pass through
+  // the token-generation / disabled-account enforcement middleware above.
+  router.use(createBillingRouter());
 
   // --- authentication ----------------------------------------------------
 

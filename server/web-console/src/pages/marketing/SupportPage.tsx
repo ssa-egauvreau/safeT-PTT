@@ -33,6 +33,14 @@ export function SupportPage() {
             <h3>Supported devices</h3>
             <p>Inrico IRC590, TM7 Plus, Android, iOS, Windows, browser, and more.</p>
           </Link>
+          <Link to="/trust" className="support-link-card">
+            <h3>Trust Center</h3>
+            <p>Security architecture, compliance status, and security packet requests.</p>
+          </Link>
+          <Link to="/interoperability" className="support-link-card">
+            <h3>Interoperability</h3>
+            <p>LMR bridges, P25 stream ingest, and codec options.</p>
+          </Link>
           <Link to="/security" className="support-link-card">
             <h3>Security</h3>
             <p>Encryption, tenancy, and data retention.</p>

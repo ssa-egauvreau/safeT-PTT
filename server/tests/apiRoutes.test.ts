@@ -213,6 +213,39 @@ test("GET /v1/audio/config: rejects platform-owner tokens (no agencyId) with 403
   }
 });
 
+test("GET /v1/billing/status: superseded admin token is rejected before billing handlers", async () => {
+  // Regression test for billing router ordering: billing endpoints must pass
+  // through the same token-generation enforcement middleware as all other
+  // authenticated routes. If this regresses, a stale admin token can still
+  // open billing actions after a newer login supersedes it.
+  const prevDbUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  clearAuthCache();
+  const adminUserId = 9_999_010;
+  // Cache says current generation is 1 while the token below carries gen=0.
+  setCachedAuth(adminUserId, {
+    tokenGeneration: 1,
+    userDisabled: false,
+    agencyDisabled: false,
+  });
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const token = tokenFor({ id: adminUserId, agencyId: 42, role: "admin", gen: 0 });
+    const res = await fetch(`${baseUrl}/v1/billing/status`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(res.status, 401);
+    const body = (await res.json()) as { error?: string };
+    assert.equal(body.error, "session_superseded");
+  } finally {
+    await close();
+    clearAuthCache();
+    if (prevDbUrl !== undefined) {
+      process.env.DATABASE_URL = prevDbUrl;
+    }
+  }
+});
+
 test("GET /v1/audio/config: agency member with no DATABASE_URL → 503, not a crash", async () => {
   // The handler reads `getGlobalAudioConfig` which throws
   // `database_unavailable` when DATABASE_URL is unset (dev / CI default).
