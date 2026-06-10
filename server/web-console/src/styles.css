@@ -5799,7 +5799,11 @@ button.ch-kbd-chip:hover {
 /* --- hero handset mock --- */
 .lp-hero-art {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 420px;
+  justify-self: center;
 }
 .lp-handset {
   width: 286px;
@@ -8532,7 +8536,11 @@ table.vlt-units tbody tr:hover {
 }
 
 /* --- marketing: screenshots, signup, billing, support --- */
-.screenshot-tabs { width: 100%; max-width: 420px; }
+.screenshot-tabs {
+  width: 100%;
+  max-width: 420px;
+  min-height: 328px;
+}
 .screenshot-tabs-nav {
   display: flex;
   gap: 8px;
@@ -8552,6 +8560,42 @@ table.vlt-units tbody tr:hover {
   background: rgba(13, 148, 136, 0.2);
   border-color: rgba(13, 148, 136, 0.5);
   color: #5eead4;
+}
+.screenshot-tabs-panel {
+  position: relative;
+  width: 100%;
+  height: 280px;
+}
+.screenshot-tabs-slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+.screenshot-tabs-slide.active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+.screenshot-tabs-panel .device-frame {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.screenshot-tabs-panel .device-frame-shot {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .screenshot-tabs-slide {
+    transition: none;
+  }
 }
 .device-frame {
   border-radius: 16px;
