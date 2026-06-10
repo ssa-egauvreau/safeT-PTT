@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG = join(ROOT, "config", "system.json");
 
-const PROFILE = "occcs-countywide-v4";
+const PROFILE = "occcs-countywide-v5";
 const OCCCS_CCS = [860212500, 860462500, 857462500, 856712500];
 const ONE_DONGLE_CENTER = 857350000;
 const ONE_DONGLE_RATE = 2544000; // must be a multiple of 24000 (P25 symbol rate)
@@ -64,10 +64,14 @@ if (!multiDongle) {
     s.centerHz = ONE_DONGLE_CENTER;
     s.rateHz = ONE_DONGLE_RATE;
     if (!s.gain) s.gain = 40; // auto-AGC rarely decodes P25
+    // Field recordings showed consistently NEGATIVE TuningErr (-0.3 to -3.9 kHz
+    // at 857 MHz) with ppm +2 — the correction was overshooting, degrading
+    // decode quality. Zero it; re-tune in Settings if your dongle truly drifts.
+    s.ppm = 0;
   };
   retune(cfg.sdr);
   if (Array.isArray(cfg.sources) && cfg.sources.length === 1) retune(cfg.sources[0]);
-  changes.push("single dongle -> 2.544 MHz window centered 857.35 MHz (both LOW control channels incl. 857.4625, the one observed ACTIVE)");
+  changes.push("single dongle -> 857.35 MHz window, ppm 0 (TuningErr showed the +2 correction overshooting by 1-2 kHz)");
 }
 
 cfg._rfProfile = PROFILE;

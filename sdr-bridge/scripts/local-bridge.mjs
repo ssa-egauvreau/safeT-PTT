@@ -126,7 +126,8 @@ function statusRow(b) {
       scan: false,
       state: "connecting",
       transmitting: false,
-      rxFrames: 0, // frames received FROM the decoder (proves audio reaches us)
+      rxFrames: 0, // datagrams received FROM the decoder (proves audio reaches us)
+      rxBytes: 0,
       lastFrameMs: 0,
       lastTxStartMs: null,
       lastTxEndMs: null,
@@ -392,8 +393,6 @@ function runBridge(bridge, udpPort) {
   // field-proven to receive. No external reader process means no orphaned
   // zombie can ever hold the port, and a blocked port fails LOUDLY
   // (EADDRINUSE) instead of silently stealing packets.
-  const voxThreshold = Number(bridge.vox_threshold ?? 0.02);
-  const voxHang = Number(bridge.vox_hang_ms ?? 1500);
   let stopped = false;
   let backoff = RECONNECT_MIN;
 
@@ -406,8 +405,6 @@ function runBridge(bridge, udpPort) {
       let sock = null;
       let paced = null;
       let carry = Buffer.alloc(0);
-      let lastActive = 0;
-      let gateWas = false;
       let finished = false;
 
       const finish = () => {
@@ -450,26 +447,16 @@ function runBridge(bridge, udpPort) {
           console.warn(`[bridge] ${bridge.name} udp ${udpPort}: ${e.message}`);
           finish();
         });
+        // NO VOX gate: the decoder only ever sends voice (field data showed the
+        // gate eating entire calls — 60 packets in, 0 frames out). Everything
+        // that arrives goes on air; the relay's own TTL un-keys after the call.
         sock.on("message", (msg) => {
-          srow.rxFrames++; // heartbeat write picks this up — no dirty flag needed
+          srow.rxFrames++;
+          srow.rxBytes = (srow.rxBytes || 0) + msg.length;
           carry = carry.length ? Buffer.concat([carry, upsample8to16(msg)]) : upsample8to16(msg);
           while (carry.length >= FRAME_BYTES) {
-            const frame = carry.subarray(0, FRAME_BYTES);
+            paced.push(carry.subarray(0, FRAME_BYTES));
             carry = carry.subarray(FRAME_BYTES);
-            const now = Date.now();
-            if (frameRms(frame) >= voxThreshold) lastActive = now;
-            const open = lastActive !== 0 && now - lastActive < voxHang;
-            if (open) {
-              paced.push(frame);
-            } else if (gateWas && !open && ws.readyState === 1) {
-              try {
-                ws.send(JSON.stringify({ type: "release_air" }));
-              } catch {
-                /* drop */
-              }
-              monitor.release(bridge.name);
-            }
-            gateWas = open;
           }
         });
         sock.bind(udpPort, "127.0.0.1", () =>

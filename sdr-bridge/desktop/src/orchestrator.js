@@ -486,14 +486,22 @@ async function getStatus() {
     status.decoder.locked = logShowsLock(text);
   }
 
-  // Local SafeT bridge: alive = its status file's heartbeat is fresh (the
-  // bridge rewrites it at least every 5s). This measures the process actually
-  // doing its job — pgrep-by-name proved unreliable through wsl.exe.
-  const br = await runWsl(
-    "m=$(stat -c %Y /tmp/sdr-bridge-status.json 2>/dev/null || echo 0); echo \"$m $(date +%s)\"",
-  );
-  const [mtime, nowS] = br.stdout.trim().split(/\s+/).map(Number);
-  status.bridge = { running: mtime > 0 && nowS - mtime < 15, channels: 0 };
+  // Local SafeT bridge: a single source of truth — the status file the bridge
+  // rewrites at least every 5s. Its own updatedAt stamp decides liveness (a
+  // second wsl.exe call for stat/date proved flaky and showed false "Stopped").
+  status.bridge = { running: false, channels: 0 };
+  status.channels = [];
+  const stj = await runWsl("cat /tmp/sdr-bridge-status.json 2>/dev/null || echo '{}'");
+  try {
+    const detail = JSON.parse(stj.stdout);
+    status.bridge.running = Number.isFinite(detail.updatedAt) && Date.now() - detail.updatedAt < 15000;
+    if (status.bridge.running && Array.isArray(detail.bridges)) {
+      status.channels = detail.bridges;
+      status.bridge.channels = detail.bridges.filter((c) => c.state === "on air").length;
+    }
+  } catch {
+    /* partial write — next poll gets it */
+  }
 
   // When the bridge is down, surface WHY on the dashboard card instead of a
   // bare "Stopped" (the cause lives in /tmp/sdr-bridge.log, which nobody reads).
@@ -502,22 +510,6 @@ async function getStatus() {
       "grep -v '^\\s*$' /tmp/sdr-bridge.log 2>/dev/null | tail -1 | cut -c1-140",
     );
     status.bridge.lastLog = t.stdout.trim();
-  }
-
-  // Per-channel detail (state + last transmission pushed to SafeT), written by
-  // local-bridge.mjs once a second. Only meaningful while the bridge runs.
-  status.channels = [];
-  if (status.bridge.running) {
-    const stj = await runWsl("cat /tmp/sdr-bridge-status.json 2>/dev/null || echo '{}'");
-    try {
-      const detail = JSON.parse(stj.stdout);
-      if (Array.isArray(detail.bridges)) {
-        status.channels = detail.bridges;
-        status.bridge.channels = detail.bridges.filter((c) => c.state === "on air").length;
-      }
-    } catch {
-      /* partial write — next poll gets it */
-    }
   }
 
   // cloudflared is a Windows service that rarely changes — cache it ~30s so the
