@@ -33,7 +33,7 @@ export function CommandPage() {
           "Emergency workflow with acknowledge & resolve",
           "Mission Control multi-channel dashboard",
         ]}
-        imageSrc="/marketing/command-console.svg"
+        imageSrc="/marketing/screenshots/command-console.webp"
         imageAlt="safeT Command dispatch console"
         variant="browser"
       />

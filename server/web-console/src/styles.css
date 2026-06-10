@@ -8587,6 +8587,17 @@ table.vlt-units tbody tr:hover {
   width: 100%;
   height: auto;
 }
+.marketing-shot-note {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lp-section-note {
+  max-width: 720px;
+  margin: -24px auto 0;
+  padding: 0 24px 32px;
+  text-align: center;
+}
 .feature-showcase {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -10,6 +10,7 @@ type SetupStep = {
   body: string;
   image?: string | null;
   imageAlt?: string | null;
+  imageVariant?: "phone" | "browser";
   code?: string;
 };
 
@@ -193,11 +194,7 @@ export function AndroidSetupPage() {
                   </div>
                   {step.image ? (
                     <DeviceFrame
-                      variant={
-                        section.device === "tm7" && step.image.includes("tm7-adb")
-                          ? "browser"
-                          : "phone"
-                      }
+                      variant={step.imageVariant === "browser" ? "browser" : "phone"}
                       src={step.image}
                       alt={step.imageAlt ?? step.title}
                     />

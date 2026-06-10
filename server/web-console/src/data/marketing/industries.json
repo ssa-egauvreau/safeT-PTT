@@ -7,7 +7,7 @@
       "kicker": "Law enforcement",
       "headline": "Private PTT built for police operations",
       "intro": "Give patrol, investigations, and special units a encrypted push-to-talk network on Android phones and rugged Inrico handsets — with dispatch oversight, searchable logs, and optional AI-assisted workflows on Pro.",
-      "heroImage": "/marketing/command-console.svg",
+      "heroImage": "/marketing/screenshots/command-console.webp",
       "heroImageVariant": "browser",
       "useCases": [
         {
@@ -46,7 +46,7 @@
       "kicker": "Fire & EMS",
       "headline": "Coordinate fire and EMS on one private network",
       "intro": "Run battalion, EMS, and command talkgroups on a single encrypted platform. Dispatch tone-outs pages, monitors multiple channels, and sees every unit on the map — from the station, the rig, or the field.",
-      "heroImage": "/marketing/mobile-radio.svg",
+      "heroImage": "/marketing/screenshots/mobile-radio-portal.webp",
       "heroImageVariant": "phone",
       "useCases": [
         {
@@ -85,7 +85,7 @@
       "kicker": "Healthcare security",
       "headline": "Hospital and campus security communications",
       "intro": "Hospital security, behavioral health units, and medical campus officers need instant voice, emergency escalation, and documentation — without consumer walkie-talkie apps on personal phones.",
-      "heroImage": "/marketing/mobile-radio.svg",
+      "heroImage": "/marketing/screenshots/mobile-radio-portal.webp",
       "heroImageVariant": "phone",
       "useCases": [
         {
@@ -124,7 +124,7 @@
       "kicker": "SAR & CERT",
       "headline": "Volunteer and disaster response communications",
       "intro": "Search and rescue teams, CERT units, and disaster volunteers need instant voice that works across jurisdictions on everyday Android phones or rugged Inrico handsets — without consumer walkie-talkie apps on public channels.",
-      "heroImage": "/marketing/inrico-irc590.svg",
+      "heroImage": "/marketing/screenshots/mobile-radio-portal.webp",
       "heroImageVariant": "phone",
       "useCases": [
         {

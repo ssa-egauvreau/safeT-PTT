@@ -27,22 +27,22 @@ const HERO_TABS = [
     id: "mobile",
     label: "Mobile",
     variant: "phone" as const,
-    src: "/marketing/mobile-radio.svg",
-    alt: "safeT Mobile handset",
+    src: "/marketing/screenshots/mobile-radio-portal.webp",
+    alt: "Screenshot of safeT radio screen in mobile browser",
   },
   {
     id: "command",
     label: "Command",
     variant: "browser" as const,
-    src: "/marketing/command-console.svg",
-    alt: "safeT Command dispatch console",
+    src: "/marketing/screenshots/command-console.webp",
+    alt: "Screenshot of safeT Command dispatch console",
   },
   {
     id: "control",
     label: "Control",
     variant: "browser" as const,
-    src: "/marketing/control-admin.svg",
-    alt: "safeT Control admin",
+    src: "/marketing/screenshots/control-users.webp",
+    alt: "Screenshot of safeT Control admin panel",
   },
 ];
 
@@ -174,6 +174,10 @@ export function LandingPage() {
           </div>
           <div className="lp-hero-art">
             <ScreenshotTabs tabs={HERO_TABS} />
+            <p className="muted marketing-shot-note">
+              Product screenshots from the live console. Mobile tab shows the browser soft radio;
+              the native Android app uses the same talkgroups and PTT flow.
+            </p>
           </div>
         </div>
       </section>
@@ -340,9 +344,10 @@ export function LandingPage() {
           <h2>Ready to put your team on the air?</h2>
           <p>Start your 7-day free trial today — no credit card required.</p>
           <div className="lp-hero-actions">
-            <Link to="/signup" className="lp-btn lp-btn-primary lp-btn-lg">
-              Start free trial <IconArrowRight size={16} />
-            </Link>
+            <p className="muted marketing-shot-note">
+              Screenshots show the live product interface. The mobile view above is the browser soft
+              radio; the native Android APK uses the same channels and PTT workflow on handsets.
+            </p>
             <a href={`mailto:${SALES_EMAIL}`} className="lp-btn lp-btn-ghost lp-btn-lg">
               Contact sales
             </a>

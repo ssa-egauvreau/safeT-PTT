@@ -33,7 +33,7 @@ export function ControlPage() {
           "Ten-8 CAD & webhook integrations",
           "APK downloads for field deployment",
         ]}
-        imageSrc="/marketing/control-admin.svg"
+        imageSrc="/marketing/screenshots/control-users.webp"
         imageAlt="safeT Control admin"
         variant="browser"
       />

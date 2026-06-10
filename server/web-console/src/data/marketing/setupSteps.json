@@ -3,24 +3,25 @@
     "step": "1",
     "title": "Create your agency",
     "body": "Sign up at safet-ptt.com/signup. Verify your email, pick Basic or Pro, and create your first admin account. You will receive your agency slug for login.",
-    "image": "/marketing/setup-signup.svg"
+    "image": "/marketing/screenshots/signup.webp"
   },
   {
     "step": "2",
     "title": "Build your channel plan",
     "body": "Sign in to safeT Control. Create talkgroups, add radio and dispatcher accounts, and assign channel permissions. Copy the agency radio key for handsets.",
-    "image": "/marketing/setup-control.svg"
+    "image": "/marketing/screenshots/control-channels.webp"
   },
   {
     "step": "3",
     "title": "Install safeT Mobile",
     "body": "Download the signed APK from Control → Downloads (or your admin-provided link). Sideload onto Android phones or Inrico IRC590 / TM7 radios. See /setup/android for illustrated handset steps, Vysor, and TM-7 ADB commands.",
-    "image": "/marketing/setup-mobile.svg"
+    "image": "/marketing/screenshots/control-downloads.webp",
+    "imageVariant": "browser"
   },
   {
     "step": "4",
     "title": "Sign in and go live",
     "body": "On each handset enter your agency slug, username, and password. Open safeT Command on a browser for dispatch. Key up — you are on the air.",
-    "image": "/marketing/setup-live.svg"
+    "image": "/marketing/screenshots/command-console.webp"
   }
 ]

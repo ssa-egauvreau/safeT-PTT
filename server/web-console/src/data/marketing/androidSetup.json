@@ -44,14 +44,15 @@
         {
           "title": "Admin downloads the APK",
           "body": "An agency administrator signs in to safeT Control (the admin website), opens the Downloads tab, and clicks Download APK. They can copy the download link to send to installers.",
-          "image": "/marketing/setup-android/step-control-downloads.svg",
-          "imageAlt": "safeT Control Downloads tab with Download APK button"
+          "image": "/marketing/screenshots/control-downloads.webp",
+          "imageAlt": "Screenshot of safeT Control Downloads tab with Download APK button",
+          "imageVariant": "browser"
         },
         {
           "title": "Copy the APK to the radio",
           "body": "Move the APK file to the device using any method that works for you: USB cable + File Explorer, SD card, email to yourself, Google Drive, or download directly in the radio's browser using the link from Control.",
-          "image": "/marketing/setup-android/step-copy-apk.svg",
-          "imageAlt": "Diagram showing APK copied from PC to phone via USB or cloud"
+          "image": null,
+          "imageAlt": null
         }
       ]
     },
@@ -63,20 +64,20 @@
         {
           "title": "Open Settings → About phone",
           "body": "Scroll to the bottom of Settings and tap About phone (or About device).",
-          "image": "/marketing/setup-android/step-settings-about.svg",
-          "imageAlt": "Android Settings with About phone highlighted"
+          "image": null,
+          "imageAlt": null
         },
         {
           "title": "Tap Build number seven times",
           "body": "Find Build number and tap it quickly seven times. Android will say You are now a developer! On Inrico radios the menu may be labeled slightly differently — look for Build number or Internal version.",
-          "image": "/marketing/setup-android/step-build-number.svg",
-          "imageAlt": "About phone screen with Build number and developer enabled message"
+          "image": null,
+          "imageAlt": null
         },
         {
           "title": "Enable USB debugging",
           "body": "Go back to Settings → System → Developer options (or Settings → Developer options). Turn on USB debugging. When you plug in USB, tap Allow on the Allow USB debugging? prompt and check Always allow from this computer.",
-          "image": "/marketing/setup-android/step-usb-debugging.svg",
-          "imageAlt": "Developer options with USB debugging toggle on"
+          "image": null,
+          "imageAlt": null
         }
       ]
     },
@@ -88,14 +89,14 @@
         {
           "title": "Allow installs from unknown sources",
           "body": "Open the APK from Files or Downloads. If Android blocks it, go to Settings → Apps → Special access → Install unknown apps (wording varies). Enable Allow for Files, Chrome, or whichever app you use to open the APK.",
-          "image": "/marketing/setup-android/step-unknown-sources.svg",
-          "imageAlt": "Install unknown apps permission enabled for Files"
+          "image": null,
+          "imageAlt": null
         },
         {
           "title": "Tap Install",
           "body": "Open the APK again. Review the prompt and tap Install. When finished, tap Open — or find safeT PTT in the app drawer.",
-          "image": "/marketing/setup-android/step-install-apk.svg",
-          "imageAlt": "Android package installer with Install button"
+          "image": null,
+          "imageAlt": null
         }
       ]
     },
@@ -107,20 +108,20 @@
         {
           "title": "Enter agency, username, and password",
           "body": "Agency / network is your agency slug (example: metro-pd). Username and password are the radio account your admin created. Platform owner accounts cannot sign in on handsets — use the web console instead.",
-          "image": "/marketing/setup-android/step-login.svg",
-          "imageAlt": "safeT PTT login screen with agency slug and credentials"
+          "image": null,
+          "imageAlt": null
         },
         {
           "title": "Allow microphone",
           "body": "Push-to-talk needs the microphone. Tap ALLOW MIC or accept the system permission dialog. Without this, transmit will not work.",
-          "image": "/marketing/setup-android/step-mic-permission.svg",
-          "imageAlt": "Microphone permission dialog on Android"
+          "image": null,
+          "imageAlt": null
         },
         {
           "title": "Allow location and notifications",
           "body": "Location lets dispatch see your unit on the map. Notifications keep the radio connected in the background. Accept both when prompted.",
-          "image": "/marketing/setup-android/step-location-notif.svg",
-          "imageAlt": "Location and notification permission prompts"
+          "image": null,
+          "imageAlt": null
         }
       ]
     },
@@ -133,14 +134,14 @@
         {
           "title": "Use the hardware PTT button",
           "body": "Press and hold the orange PTT key to transmit — same as a traditional radio. Release to stop. The on-screen PTT button still works if you prefer.",
-          "image": "/marketing/setup-android/step-irc590-ptt.svg",
-          "imageAlt": "Inrico IRC590 with PTT and emergency keys labeled"
+          "image": null,
+          "imageAlt": null
         },
         {
           "title": "Emergency button",
           "body": "The red EMERGENCY key sends a priority alert to dispatch and clears the channel. Use only for real emergencies.",
-          "image": "/marketing/inrico-irc590.svg",
-          "imageAlt": "IRC590 handset illustration"
+          "image": null,
+          "imageAlt": null
         },
         {
           "title": "Volume check key",
@@ -151,8 +152,8 @@
         {
           "title": "Optional: mirror with Vysor for first-time setup",
           "body": "The IRC590 screen is small. For initial login, connect USB, open Vysor on your PC, and complete sign-in from your computer keyboard. After that, the hardware keys work without the PC.",
-          "image": "/marketing/setup-android/step-vysor.svg",
-          "imageAlt": "PC and IRC590 connected with Vysor mirroring"
+          "image": null,
+          "imageAlt": null
         }
       ]
     },
@@ -165,14 +166,14 @@
         {
           "title": "Try the in-app accessibility shortcut first",
           "body": "Open safeT PTT. If you see a warning about accessibility, tap OPEN ACCESSIBILITY SETTINGS and look for safeT PTT in the list. Turn it ON if it appears.",
-          "image": "/marketing/setup-android/step-accessibility-list.svg",
-          "imageAlt": "Accessibility settings with safeT PTT service toggle"
+          "image": null,
+          "imageAlt": null
         },
         {
           "title": "If the list is empty (common on Android 10 TM-7 Plus)",
           "body": "Inrico sometimes hides sideloaded apps from the on-screen accessibility list. Use ADB from a Windows PC instead: connect USB, confirm USB debugging is on, install Platform Tools, then run the commands below.",
-          "image": "/marketing/setup-android/step-tm7-adb.svg",
-          "imageAlt": "TM-7 Plus connected to PC with adb devices output"
+          "image": null,
+          "imageAlt": null
         },
         {
           "title": "ADB commands (copy and paste)",
@@ -184,8 +185,9 @@
         {
           "title": "Test hardware PTT and Emergency",
           "body": "Close and reopen safeT PTT. Press the hardware PTT key — you should hear the talk-permit tone and see transmitting on screen. Test the red Emergency key in a non-emergency drill channel first.",
-          "image": "/marketing/inrico-tm7-plus.svg",
-          "imageAlt": "TM-7 Plus handset illustration"
+          "image": "/marketing/screenshots/mobile-radio-portal.webp",
+          "imageAlt": "Screenshot of safeT Mobile radio screen after sign-in",
+          "imageVariant": "phone"
         },
         {
           "title": "Volume knob",
@@ -227,8 +229,9 @@
         {
           "title": "Key up on your assigned channel",
           "body": "Select your talkgroup (example: Green 1). Hold PTT and say a radio check. Dispatch should hear you on safeT Command and see your unit on the roster.",
-          "image": "/marketing/mobile-radio.svg",
-          "imageAlt": "safeT Mobile on channel with PTT active"
+          "image": "/marketing/screenshots/mobile-radio-portal.webp",
+          "imageAlt": "Screenshot of safeT Mobile radio screen with channel selected",
+          "imageVariant": "phone"
         },
         {
           "title": "Automatic updates",

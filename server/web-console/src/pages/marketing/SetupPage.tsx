@@ -27,7 +27,11 @@ export function SetupPage() {
                 <h2>{step.title}</h2>
                 <p>{step.body}</p>
               </div>
-              <DeviceFrame variant="browser" src={step.image} alt={step.title} />
+              <DeviceFrame
+                variant={step.imageVariant === "phone" ? "phone" : "browser"}
+                src={step.image}
+                alt={step.title}
+              />
             </li>
           ))}
         </ol>
