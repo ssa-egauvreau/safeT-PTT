@@ -45,6 +45,7 @@ cleanup() {
   for pid in "${PIDS[@]:-}"; do kill "$pid" 2>/dev/null || true; done
   # Reap the local bridge + its UDP-reading ffmpegs (children may outlive the subshell).
   pkill -9 -f local-bridge.mjs 2>/dev/null || true
+  pkill -9 -f cc-watchdog.mjs 2>/dev/null || true
   pkill -9 -f "i udp://127.0.0.1:9" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
@@ -94,6 +95,14 @@ echo "[2/3] local SafeT bridge (pushing audio to your channels)..."
     echo "[bridge] process exited — retrying in 10s"
     sleep 10
   done ) >/tmp/sdr-bridge.log 2>&1 &
+PIDS+=($!)
+
+# A single dongle can't span both of the site's control-channel pairs. When
+# the county rotates the CC out of our window the decoder hunts at 0/sec
+# forever (field outage 2026-06-10) — this watchdog notices and re-centers
+# the dongle onto the other pair. With two+ dongles it exits immediately.
+pkill -9 -f cc-watchdog.mjs 2>/dev/null || true
+( sleep 20; node scripts/cc-watchdog.mjs ) >>/tmp/sdr-cc-watchdog.log 2>&1 &
 PIDS+=($!)
 
 echo "[3/3] trunk-recorder — decoding the system (Ctrl-C to stop everything)"

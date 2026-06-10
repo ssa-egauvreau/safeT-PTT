@@ -686,21 +686,21 @@ async function collectDiagnostics() {
     ["safet bridge log (tail)", "tail -60 /tmp/sdr-bridge.log 2>/dev/null || echo none"],
     ["decoder log (tail)", "docker logs --tail 150 sdr-bridge-trunk-recorder-1 2>&1 | tail -150 || echo none"],
     // The decode-vs-delivery tiebreaker: the decoder writes one audio file per
-    // call. For .wav, bytes/16000 = seconds of actual decoded audio; compare
-    // against the radio airtime in the transmission log. Full-length files =
-    // decode fine, audio lost downstream; tiny files = decode is the bottleneck.
+    // call with its true decoded duration. Compare against the radio airtime
+    // in the transmission log: full-length files = decode fine, audio lost
+    // downstream; tiny files = decode itself is the bottleneck. The script is
+    // base64'd because nested quotes do NOT survive the Windows argv ->
+    // wsl.exe -> bash -> docker chain (field diagnostics came back mangled).
     [
-      "decoder recordings (newest 15)",
-      "docker exec sdr-bridge-trunk-recorder-1 sh -c " +
-        "'find /tmp/trunk-recorder -type f \\( -name \"*.wav\" -o -name \"*.m4a\" \\) -printf \"%T@ %s %p\\n\" 2>/dev/null | sort -rn | head -15' " +
-        "2>/dev/null | awk '{printf \"%10d bytes  %s\\n\", $2, $3}' || echo none",
+      "decoder recordings (newest 12, with ffprobe durations)",
+      `echo ${Buffer.from(
+        "find /tmp/trunk-recorder -type f \\( -name '*.wav' -o -name '*.m4a' \\) -printf '%T@ %s %p\\n' 2>/dev/null | sort -rn | head -12 | while read t s p; do\n" +
+          '  d=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$p" 2>/dev/null)\n' +
+          '  echo "$s bytes  ${d:-?} sec  $p"\n' +
+          "done\n",
+      ).toString("base64")} | base64 -d | docker exec -i sdr-bridge-trunk-recorder-1 sh -s 2>/dev/null || echo none`,
     ],
-    [
-      "decoder recordings — true durations (newest 5, via ffprobe)",
-      "docker exec sdr-bridge-trunk-recorder-1 sh -c " +
-        "'for f in $(find /tmp/trunk-recorder -type f \\( -name \"*.wav\" -o -name \"*.m4a\" \\) -printf \"%T@ %p\\n\" 2>/dev/null | sort -rn | head -5 | cut -d\" \" -f2); do " +
-        "d=$(ffprobe -v error -show_entries format=duration -of csv=p=0 \"$f\" 2>/dev/null); echo \"$d sec  $f\"; done' 2>/dev/null || echo none",
-    ],
+    ["cc-watchdog log (tail)", "tail -25 /tmp/sdr-cc-watchdog.log 2>/dev/null || echo none"],
   ];
   for (const [title, cmd] of cmds) {
     const r = await runWsl(cmd, { timeout: 20000 });
