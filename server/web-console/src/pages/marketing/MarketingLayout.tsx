@@ -42,6 +42,7 @@ export function MarketingLayout({
             <Link to="/mobile">Mobile</Link>
             <Link to="/command">Command</Link>
             <Link to="/control">Control</Link>
+            <Link to="/devices">Devices</Link>
             <Link to="/pricing">Pricing</Link>
             <Link to="/faq">FAQ</Link>
             <Link to="/setup">Setup</Link>
@@ -80,6 +81,7 @@ export function MarketingLayout({
           <nav className="lp-footer-links">
             <Link to="/mobile">Mobile</Link>
             <Link to="/command">Command</Link>
+            <Link to="/devices">Devices</Link>
             <Link to="/pricing">Pricing</Link>
             <Link to="/faq">FAQ</Link>
             <Link to="/setup">Setup</Link>

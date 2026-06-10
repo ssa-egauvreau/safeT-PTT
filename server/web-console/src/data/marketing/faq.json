@@ -37,7 +37,12 @@
   {
     "category": "Hardware",
     "q": "What phones and radios are supported?",
-    "a": "safeT Mobile runs on Android phones (Android 5.0+) and rugged Inrico IRC590 and TM7 handsets with hardware PTT keys."
+    "a": "safeT Mobile runs on Android phones (Android 5.0+), Inrico IRC590, and Inrico TM7 / TM7 Plus handsets. See the full list at /devices."
+  },
+  {
+    "category": "Hardware",
+    "q": "Which devices and platforms does safeT support?",
+    "a": "Android and Inrico hardware for field radios; web browsers for dispatch and admin; Windows, macOS, and Linux desktop shells for comm centers; iOS is in beta. Details at /devices."
   },
   {
     "category": "Hardware",

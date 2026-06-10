@@ -230,6 +230,9 @@ export function LandingPage() {
         <p className="lp-section-cta">
           <Link to="/setup">Read the full setup guide →</Link>
         </p>
+        <p className="lp-section-cta">
+          <Link to="/devices">See supported devices &amp; platforms →</Link>
+        </p>
       </section>
 
       <section className="lp-section lp-section-alt" id="pricing">

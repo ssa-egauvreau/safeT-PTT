@@ -25,6 +25,10 @@ export function SupportPage() {
             <h3>FAQ</h3>
             <p>Billing, hardware, security, and common questions.</p>
           </Link>
+          <Link to="/devices" className="support-link-card">
+            <h3>Supported devices</h3>
+            <p>Inrico IRC590, TM7 Plus, Android, iOS, Windows, browser, and more.</p>
+          </Link>
           <Link to="/security" className="support-link-card">
             <h3>Security</h3>
             <p>Encryption, tenancy, and data retention.</p>

@@ -60,6 +60,9 @@ const CommandPage = lazy(() =>
 const ControlPage = lazy(() =>
   import("./pages/marketing/ControlPage").then((m) => ({ default: m.ControlPage })),
 );
+const DevicesPage = lazy(() =>
+  import("./pages/marketing/DevicesPage").then((m) => ({ default: m.DevicesPage })),
+);
 const NotFoundPage = lazy(() =>
   import("./pages/marketing/NotFoundPage").then((m) => ({ default: m.NotFoundPage })),
 );
@@ -106,6 +109,7 @@ export function App() {
       <Route path="/mobile" element={<MobilePage />} />
       <Route path="/command" element={<CommandPage />} />
       <Route path="/control" element={<ControlPage />} />
+      <Route path="/devices" element={<DevicesPage />} />
       <Route path="/login" element={user ? <Navigate to={home} replace /> : <LoginPage />} />
       <Route
         path="/console"
