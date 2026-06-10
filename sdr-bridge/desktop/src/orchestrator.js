@@ -486,13 +486,14 @@ async function getStatus() {
     status.decoder.locked = logShowsLock(text);
   }
 
-  // Local SafeT bridge: is it running, and how many channels did it put on air?
+  // Local SafeT bridge: alive = its status file's heartbeat is fresh (the
+  // bridge rewrites it at least every 5s). This measures the process actually
+  // doing its job — pgrep-by-name proved unreliable through wsl.exe.
   const br = await runWsl(
-    "r=$(pgrep -f local-bridge.mjs >/dev/null 2>&1 && echo RUN || echo STOP); " +
-      "n=$(grep -oE '> [^:]+: on air' /tmp/sdr-bridge.log 2>/dev/null | sort -u | wc -l); echo \"$r $n\"",
+    "m=$(stat -c %Y /tmp/sdr-bridge-status.json 2>/dev/null || echo 0); echo \"$m $(date +%s)\"",
   );
-  const [run, n] = br.stdout.trim().split(/\s+/);
-  status.bridge = { running: run === "RUN", channels: Number(n) || 0 };
+  const [mtime, nowS] = br.stdout.trim().split(/\s+/).map(Number);
+  status.bridge = { running: mtime > 0 && nowS - mtime < 15, channels: 0 };
 
   // When the bridge is down, surface WHY on the dashboard card instead of a
   // bare "Stopped" (the cause lives in /tmp/sdr-bridge.log, which nobody reads).

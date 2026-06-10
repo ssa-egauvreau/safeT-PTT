@@ -155,6 +155,7 @@ function markTxFrame(b, now, via = null) {
   statusDirty = true;
 }
 
+let heartbeatTick = 0;
 setInterval(() => {
   const now = Date.now();
   for (const r of chanStatus.values()) {
@@ -167,7 +168,9 @@ setInterval(() => {
       statusDirty = true;
     }
   }
-  if (!statusDirty) return;
+  // Write on change, and at least every 5s regardless: the file's mtime is the
+  // desktop app's PROOF OF LIFE for this process (pgrep proved unreliable).
+  if (!statusDirty && ++heartbeatTick % 5 !== 0) return;
   statusDirty = false;
   try {
     writeFileSync(STATUS_FILE, JSON.stringify({ updatedAt: now, bridges: [...chanStatus.values()] }));

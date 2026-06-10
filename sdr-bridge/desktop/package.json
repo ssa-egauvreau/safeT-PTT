@@ -1,6 +1,6 @@
 {
   "name": "safet-sdr-desktop",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "SafeT SDR — one-click control panel for the RTL-SDR P25 bridge into SafeT-PTT.",
   "main": "src/main.js",
   "author": "Sunset Safety Agency",
