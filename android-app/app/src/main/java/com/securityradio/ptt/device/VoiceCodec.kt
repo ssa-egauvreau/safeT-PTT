@@ -20,6 +20,15 @@ enum class VoiceCodec(
     OPUS("opus", 0x4F.toByte(), 0x70.toByte()),
     AMBE_2450("ambe_2450", 0xA2.toByte(), 0x45.toByte());
 
+    /** Compact badge for channel displays ("IMBE", "C2 3200", "OPUS", "AMBE+2"). */
+    val displayLabel: String
+        get() = when (this) {
+            IMBE -> "IMBE"
+            CODEC2_3200 -> "C2 3200"
+            OPUS -> "OPUS"
+            AMBE_2450 -> "AMBE+2"
+        }
+
     companion object {
         /** Fallback for any control message that omits or mangles the codec. */
         val DEFAULT: VoiceCodec = IMBE

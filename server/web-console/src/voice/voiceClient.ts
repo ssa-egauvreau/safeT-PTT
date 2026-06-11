@@ -46,6 +46,11 @@ export interface VoiceCallbacks {
   onReceiving: (receiving: boolean) => void;
   /** Fired when the relay rejects our transmission because the channel is already held. */
   onBusy: (holderUnit: string | null) => void;
+  /** Relay push: another unit keyed this channel — instant talker attribution
+   *  (no wait for the next talk-activity poll). */
+  onAirClaimed?: (unitId: string, displayName: string | null) => void;
+  /** Relay push: the talker on this channel unkeyed — clear the talker line. */
+  onAirReleased?: () => void;
   /** Fired when a dispatcher live-moves this unit to another channel (Live Channel Control). */
   onMove?: (toChannel: string, by: string | null) => void;
   /** Fired when the admin flips the channel's transmit codec, so the UI can
@@ -640,6 +645,7 @@ export class VoiceChannelClient {
       permission?: Permission;
       code?: string;
       unit_id?: string;
+      display_name?: string;
       channel?: string;
       by?: string;
       ai_dispatch_listen_pcm?: boolean;
@@ -689,12 +695,21 @@ export class VoiceChannelClient {
       // A dispatcher live-moved this unit (Live Channel Control). The client
       // re-joins the new channel; the relay does not migrate the socket itself.
       this.callbacks.onMove?.(msg.channel, msg.by ?? null);
+    } else if (msg.type === "air_claimed") {
+      // The relay pushes the talker the moment their first frame claims the
+      // channel — surface it so the console paints attribution immediately
+      // instead of on the next talk-activity poll.
+      const unit = (msg.unit_id ?? "").trim();
+      if (unit) {
+        this.callbacks.onAirClaimed?.(unit, (msg.display_name ?? "").trim() || null);
+      }
     } else if (msg.type === "air_released") {
       // Another unit on this channel just unkeyed. Synthesize the close-side
       // end-of-TX cue (roger beep / squelch tail) locally and inject it into
       // playout. Gated by the agency config flags — does nothing unless at
       // least one of rogerBeepEnabled / squelchTailEnabled is set.
       this.playEndOfTxCue(typeof msg.channel === "string" ? msg.channel : null);
+      this.callbacks.onAirReleased?.();
     } else if (msg.type === "error") {
       this.setState("error", JOIN_ERRORS[msg.code ?? ""] ?? `Join rejected (${msg.code ?? "unknown"}).`);
       this.close();

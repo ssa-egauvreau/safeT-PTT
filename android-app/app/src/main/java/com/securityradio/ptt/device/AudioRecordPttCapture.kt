@@ -53,6 +53,16 @@ class AudioRecordPttCapture(
     @Volatile
     private var captureActive = false
 
+    /** While true, captured PCM is read and discarded — see [PttMicCapture.startCapture]. */
+    @Volatile
+    private var uplinkHeld = false
+
+    override val isCapturing: Boolean get() = captureActive
+
+    override fun setUplinkHold(held: Boolean) {
+        uplinkHeld = held
+    }
+
     private var job: Job? = null
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
@@ -60,9 +70,10 @@ class AudioRecordPttCapture(
     private var echoCanceler: AcousticEchoCanceler? = null
     private var autoGainControl: AutomaticGainControl? = null
 
-    override fun startCapture() {
+    override fun startCapture(holdUplink: Boolean) {
         synchronized(this) {
             stopCaptureInternal()
+            uplinkHeld = holdUplink
             val sampleRate = VoiceAudioSpecs.SAMPLE_RATE_HZ
             val channelConfigIn = AudioFormat.CHANNEL_IN_MONO
             val channelConfigOut = AudioFormat.CHANNEL_OUT_MONO
@@ -143,6 +154,12 @@ class AudioRecordPttCapture(
                 while (isActive && captureActive && record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
                     val read = record.read(buffer, 0, buffer.size)
                     if (read > 0) {
+                        if (uplinkHeld) {
+                            // Pre-warm: keep draining the device buffer so the
+                            // session is hot, but ship and sidetone nothing
+                            // while the talk-permit tone plays.
+                            continue
+                        }
                         if (manualGain != 1.0f) {
                             applyGainInPlace(buffer, read, manualGain)
                         }

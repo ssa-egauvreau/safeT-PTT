@@ -12,12 +12,23 @@ export type LiveTalker = {
   scanChannel?: string;
 };
 
+export type PushedTalker = {
+  unitId: string;
+  displayName: string | null;
+};
+
 export type UseChannelLiveRxOpts = {
   channelName: string | null;
   /** Poll air / talk-activity and latest transmission while true. */
   active: boolean;
   /** Inbound PCM on the tuned (home) channel. */
   homeReceiving: boolean;
+  /** Relay-pushed talker from the voice socket's `air_claimed` /
+   *  `air_released` messages. Applied the moment it changes — the operator
+   *  sees attribution with the first audio frame instead of after the next
+   *  poll tick. Polling keeps running as the authoritative refresher (scan
+   *  attribution, units on older servers). `undefined` = caller not wired. */
+  pushedTalker?: PushedTalker | null;
   /** Scan client reports RX on this channel name (if any). */
   scanRxChannel?: string | null;
   /** Comma-separated scan list for talk-activity (excluding home). */
@@ -34,6 +45,7 @@ export function useChannelLiveRx({
   channelName,
   active,
   homeReceiving,
+  pushedTalker,
   scanRxChannel = null,
   scanWatchList = "",
   localUnitId = null,
@@ -57,6 +69,19 @@ export function useChannelLiveRx({
       scanChannel: scanChannel?.trim() || undefined,
     });
   }
+
+  // Instant attribution from the relay push — fires the moment the talker's
+  // first frame claims the air (or releases it), beating the poll by up to a
+  // full interval in each direction.
+  useEffect(() => {
+    if (pushedTalker === undefined || !active) return;
+    if (pushedTalker === null) {
+      setLiveTalker((prev) => (prev?.scanChannel ? prev : null));
+      return;
+    }
+    applyTalker(pushedTalker.unitId, pushedTalker.displayName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pushedTalker, active]);
 
   useEffect(() => {
     if (!active || !channelName) {

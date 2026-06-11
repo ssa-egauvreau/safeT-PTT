@@ -814,6 +814,45 @@ export const BYPASS_PRESET: AudioLabConfig = {
   },
 };
 
+/** "Codec only (flat)" — every shaping stage off, vocoder active. Pick a codec
+ *  in the dropdown and process with this preset to hear the raw vocoder
+ *  character with nothing in front of or behind it — the fair way to A/B
+ *  IMBE vs Codec2 vs Opus vs AMBE+2. (Contrast with "Bypass", which keeps
+ *  some mic shaping and skips the vocoder entirely.) */
+export const CODEC_ONLY_PRESET: AudioLabConfig = {
+  preImbe: {
+    windGateEnabled: false,
+    windGateThresholdDb: 6,
+    windGateAttenuationDb: -18,
+    windHpfEnabled: false,
+    windHpfHz: 200,
+    windHpfOrder: 4,
+    hpfEnabled: false,
+    hpfHz: 180,
+    lpfEnabled: false,
+    lpfHz: 3400,
+    agcEnabled: false,
+    agcTargetRms: 6000,
+    agcMaxGain: 6,
+  },
+  vocoder: {
+    bypass: false,
+  },
+  postDecode: {
+    upsampleMode: "duplicate",
+    hpfEnabled: false,
+    hpfHz: 250,
+    lpfEnabled: false,
+    lpfHz: 3300,
+    lowShelfEnabled: false,
+    lowShelfHz: 200,
+    lowShelfDb: 0,
+    highShelfEnabled: false,
+    highShelfHz: 2500,
+    highShelfDb: 0,
+  },
+};
+
 /** "Deep P25 mobile" — emulates the chest-thump sound of a real P25 mobile radio
  *  speaker amp. Polyphase upsample kills the duplicate-mode static, no post-decode
  *  HPF lets bass through, and a +6 dB low-shelf around 200 Hz fakes the bass that
@@ -1130,6 +1169,7 @@ export const BUILTIN_PRESETS: Record<string, AudioLabConfig> = {
   "AMBE+2 character (HQ)": AMBE_CHARACTER_HQ_PRESET,
   "Phase 2 voice": PHASE2_PRESET,
   Bypass: BYPASS_PRESET,
+  "Codec only (flat)": CODEC_ONLY_PRESET,
   "Deep P25 mobile": DEEP_MOBILE_PRESET,
   "Crisp dispatcher": CRISP_DISPATCHER_PRESET,
   "Warm portable": WARM_PORTABLE_PRESET,

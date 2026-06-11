@@ -91,6 +91,24 @@ export const VOICE_CODEC_LABEL: Record<VoiceCodec, string> = {
   ambe_2450: "AMBE+2 2450 (P25 Phase 2)",
 };
 
+/** Compact codec tag for channel cards / pickers — full names stay in
+ *  {@link VOICE_CODEC_LABEL} for the admin dropdown. */
+export const VOICE_CODEC_BADGE: Record<VoiceCodec, string> = {
+  imbe: "IMBE",
+  codec2_3200: "C2",
+  opus: "OPUS",
+  ambe_2450: "AMBE+2",
+};
+
+/** Badge text for a channel's codec, or "" when the codec is missing/unknown
+ *  (older cached payloads) so callers can simply skip rendering the tag. */
+export function voiceCodecBadge(codec: unknown): string {
+  if (typeof codec === "string" && (VOICE_CODECS as readonly string[]).includes(codec)) {
+    return VOICE_CODEC_BADGE[codec as VoiceCodec];
+  }
+  return "";
+}
+
 /** Safe label when codec may be missing from an API row (e.g. older cached payloads). */
 export function voiceCodecLabel(codec: unknown): string {
   if (typeof codec === "string" && (VOICE_CODECS as readonly string[]).includes(codec)) {

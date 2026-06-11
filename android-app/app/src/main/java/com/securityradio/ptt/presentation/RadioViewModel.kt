@@ -271,7 +271,10 @@ class RadioViewModel(
         viewModelScope.launch {
             voiceRelay.controlEvents.collect { event ->
                 val hint: String? = when (event) {
-                    is VoiceControlEvent.Joined ->
+                    is VoiceControlEvent.Joined -> {
+                        // The joined ack names the channel's TX codec — drive the
+                        // on-screen codec badge from it.
+                        _uiState.update { it.copy(channelCodecLabel = event.codec.displayLabel) }
                         // A dispatcher move re-joins the target channel immediately after, so the
                         // "VOICE ON" ack would otherwise stomp the "MOVED TO" banner before the
                         // operator can read it. Hold the banner for a short window after a move.
@@ -280,6 +283,7 @@ class RadioViewModel(
                         } else {
                             "VOICE ON ${event.channel.uppercase(Locale.US)}"
                         }
+                    }
                     is VoiceControlEvent.Error -> voiceErrorHint(event.code)
                     is VoiceControlEvent.Busy -> {
                         val peer = event.holderUnit?.trim()?.uppercase(Locale.US)
@@ -301,9 +305,12 @@ class RadioViewModel(
                     // on it directly, so there's no operator-facing banner to show.
                     is VoiceControlEvent.AiDispatchPcm -> null
                     // Channel codec changed (admin flipped IMBE/Codec2/Opus). The transport
-                    // already swapped its TX encoder; no operator-facing banner — the change
-                    // is informational and the talker hears identical audio either way.
-                    is VoiceControlEvent.CodecChanged -> null
+                    // already swapped its TX encoder; refresh the codec badge — no banner,
+                    // the talker hears identical audio either way.
+                    is VoiceControlEvent.CodecChanged -> {
+                        _uiState.update { it.copy(channelCodecLabel = event.codec.displayLabel) }
+                        null
+                    }
                     // Relay pushed the channel's talker the moment their first frame hit
                     // the air — paint the attribution now instead of waiting for the next
                     // talk-activity poll (which lagged the audio by up to ~1.2 s).
@@ -1517,7 +1524,10 @@ class RadioViewModel(
                         if (!micLive) {
                             soundPlayer.playTalkPermitThen(
                                 onFinished = { grantMicrophoneAfterVerification() },
-                                onStarted = { pulsePttTransmitHapticIfEligible() },
+                                onStarted = {
+                                    pulsePttTransmitHapticIfEligible()
+                                    prewarmMicDuringPermitTone()
+                                },
                             )
                         }
                     }
@@ -1604,6 +1614,23 @@ class RadioViewModel(
         }
     }
 
+    /**
+     * Spin the mic up while the talk-permit tone is still playing — capture
+     * starts gated (read-and-discard, no sidetone) so nothing ships during
+     * the tone, but AudioRecord init + voice-effect attach + the first device
+     * buffer fill all complete before the tone ends. Without this, capture
+     * began only after the tone and operators lost the first syllable to
+     * startup latency.
+     */
+    private fun prewarmMicDuringPermitTone() {
+        viewModelScope.launch {
+            val s = _uiState.value
+            if (!s.isPttPressed || s.pttBusyTone || !s.micPermissionGranted) return@launch
+            if (pttMicLiveThisHold) return@launch
+            pttMicCapture.startCapture(holdUplink = true)
+        }
+    }
+
     private fun grantMicrophoneAfterVerification() {
         viewModelScope.launch {
             val s = _uiState.value
@@ -1611,7 +1638,13 @@ class RadioViewModel(
             if (pttMicLiveThisHold) return@launch
             pttMicLiveThisHold = true
             if (s.micPermissionGranted) {
-                pttMicCapture.startCapture()
+                if (pttMicCapture.isCapturing) {
+                    // Pre-warmed during the permit tone — open the gate; audio
+                    // flows from this exact instant.
+                    pttMicCapture.setUplinkHold(false)
+                } else {
+                    pttMicCapture.startCapture()
+                }
             }
             val txReady = voiceRelay.isTransmitPathReady()
             _uiState.update { cur ->

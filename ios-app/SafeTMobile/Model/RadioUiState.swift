@@ -49,6 +49,9 @@ struct RadioUiState {
     var rxFromScan = false
     var activeTalkUnitId = ""
     var activeTalkDisplayName = ""
+    /// Compact codec badge for the tuned channel ("IMBE", "AMBE+2", …), from
+    /// the relay's joined ack / codec_change push. Empty until the first ack.
+    var channelCodecLabel = ""
     /// Dispatcher 10-33 emergency-traffic marker on the tuned channel.
     var channelTen33 = false
 

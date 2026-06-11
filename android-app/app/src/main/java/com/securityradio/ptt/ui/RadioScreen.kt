@@ -624,6 +624,16 @@ private fun UniversalCockpitMainPanel(
                 textAlign = TextAlign.Center,
             )
         }
+        if (state.channelCodecLabel.isNotBlank()) {
+            Text(
+                text = state.channelCodecLabel.uppercase(Locale.US),
+                style = styles.status.copy(fontWeight = FontWeight.SemiBold, fontSize = 13.sp),
+                color = p.textMuted,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         if (statusLine.isNotEmpty()) {
             Text(
                 text = statusLine,
@@ -1537,6 +1547,7 @@ private fun LcdHandsetFillChannelBlock(
                     channelValue = channelValue,
                     deviceProfile = state.resolvedDeviceProfile,
                     styles = styles,
+                    codecLabel = state.channelCodecLabel,
                 )
             }
             val scanRxLive =
@@ -1724,15 +1735,28 @@ private fun LcdHandsetFillChannelBlock(
     }
 }
 
-private fun handsetZonePositionLabel(zoneValue: String, channelValue: String): String {
+private fun handsetZonePositionLabel(
+    zoneValue: String,
+    channelValue: String,
+    codecLabel: String = "",
+): String {
     val zone = zoneValue.trim()
     val channel = channelValue.trim()
-    return when {
+    val base = when {
         zone.isNotEmpty() && channel.isNotEmpty() -> "ZONE $zone · $channel"
         zone.isNotEmpty() -> "ZONE $zone"
         channel.isNotEmpty() -> channel
         else -> ""
-    }.uppercase(Locale.US)
+    }
+    // Codec badge rides the zone/position meta line so operators can see at a
+    // glance which vocoder the tuned channel runs.
+    val codec = codecLabel.trim()
+    val joined = when {
+        base.isNotEmpty() && codec.isNotEmpty() -> "$base · $codec"
+        codec.isNotEmpty() -> codec
+        else -> base
+    }
+    return joined.uppercase(Locale.US)
 }
 
 /** Zone + channel index between the permission badge and the large channel name. */
@@ -1742,9 +1766,10 @@ private fun LcdHandsetZonePositionLine(
     channelValue: String,
     deviceProfile: ResolvedDeviceProfile,
     styles: LcdTextStyles,
+    codecLabel: String = "",
     modifier: Modifier = Modifier,
 ) {
-    val label = handsetZonePositionLabel(zoneValue, channelValue)
+    val label = handsetZonePositionLabel(zoneValue, channelValue, codecLabel)
     if (label.isEmpty()) return
     val p = RadioLcdTheme.palette
     val fontSp =
@@ -1811,6 +1836,7 @@ private fun LcdHandsetIrc590ChannelMetaHeader(
             channelValue = channelValue,
             deviceProfile = ResolvedDeviceProfile.IRC590,
             styles = styles,
+            codecLabel = state.channelCodecLabel,
         )
     }
 }
