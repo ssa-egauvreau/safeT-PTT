@@ -9,13 +9,13 @@
  * IMBE keeps its existing 0xF5 0xAB so older clients that predate this
  * registry stay on-wire compatible without any change.
  *
- * All three codecs (IMBE, Codec2 3200, Opus) are wired end-to-end on the
- * web console: IMBE via the bundled WASM vocoder, Codec2 via the
- * libcodec2 WASM build at vendor/codec2Module.js, and Opus via the
- * browser's built-in WebCodecs.
+ * All four codecs (IMBE, Codec2 3200, Opus, AMBE+2 2450) are wired
+ * end-to-end on the web console: IMBE and AMBE via the bundled dvmvocoder
+ * WASM at vendor/imbeModule.js, Codec2 via the libcodec2 WASM build at
+ * vendor/codec2Module.js, and Opus via the bundled libopus WASM.
  */
 
-export const VOICE_CODECS = ["imbe", "codec2_3200", "opus"] as const;
+export const VOICE_CODECS = ["imbe", "codec2_3200", "opus", "ambe_2450"] as const;
 export type VoiceCodec = (typeof VOICE_CODECS)[number];
 
 export const DEFAULT_VOICE_CODEC: VoiceCodec = "imbe";
@@ -29,6 +29,7 @@ const CODEC_MAGIC: Record<VoiceCodec, CodecMagic> = {
   imbe: { b0: 0xf5, b1: 0xab },
   codec2_3200: { b0: 0xc2, b1: 0x01 },
   opus: { b0: 0x4f, b1: 0x70 },
+  ambe_2450: { b0: 0xa2, b1: 0x45 },
 };
 
 /** First two bytes of an inbound voice frame → which codec they identify. */
@@ -65,7 +66,7 @@ export function isVoiceCodec(value: unknown): value is VoiceCodec {
  *  WebCodecs dependency) and is unconditionally encodeable on every
  *  browser, so the feature-check parameter is gone. */
 export function computeWebEncodeCaps(): readonly VoiceCodec[] {
-  return ["imbe", "codec2_3200", "opus"];
+  return ["imbe", "codec2_3200", "opus", "ambe_2450"];
 }
 
 /** Codecs the web console can currently decode (RX). All three run on
@@ -77,4 +78,5 @@ export const WEB_DECODE_CAPS: readonly VoiceCodec[] = [
   "imbe",
   "codec2_3200",
   "opus",
+  "ambe_2450",
 ];

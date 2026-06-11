@@ -794,6 +794,12 @@ function claimAir(
     }
     // fall through and take over the channel.
   }
+  // A fresh talk-spurt is a slot that didn't exist, had gone stale, or changed
+  // hands — push the talker to the channel's listeners right away so handsets
+  // can attribute the audio immediately instead of waiting (up to ~1.2 s) for
+  // their next /v1/talk-activity poll. Per-frame slot refreshes by the same
+  // socket stay silent.
+  const newHolder = !slot || slot.ws !== ws || now - slot.lastPcmMs > VOICE_AIR_TTL_MS;
   voiceAirByChannel.set(chanKey, {
     ws,
     unitUpper,
@@ -802,6 +808,9 @@ function claimAir(
     priority,
     yields,
   });
+  if (newHolder) {
+    broadcastAirClaimed(ws, chanKey, unitUpper, displayName?.trim() || null);
+  }
   return { ok: true };
 }
 
@@ -834,6 +843,35 @@ function broadcastAirReleased(from: WebSocket, chanKey: string): void {
     if (peer.readyState !== WebSocket.OPEN) continue;
     try {
       peer.send(JSON.stringify({ type: "air_released", channel: meta.channelName }));
+    } catch {
+      /* socket closing */
+    }
+  }
+}
+
+/** Tell every other member of `chanKey` who just took the air. Counterpart of
+ *  `broadcastAirReleased` with the same per-recipient channel personalization;
+ *  fired by `claimAir` once per talk-spurt so clients can paint "RX: UNIT"
+ *  the moment audio starts instead of on their next talk-activity poll. */
+function broadcastAirClaimed(
+  from: WebSocket,
+  chanKey: string,
+  unitUpper: string,
+  displayName: string | null,
+): void {
+  for (const [peer, meta] of clientMeta) {
+    if (peer === from) continue;
+    if (!meta.channelKey || meta.channelKey !== chanKey) continue;
+    if (peer.readyState !== WebSocket.OPEN) continue;
+    try {
+      peer.send(
+        JSON.stringify({
+          type: "air_claimed",
+          channel: meta.channelName,
+          unit_id: unitUpper,
+          display_name: displayName,
+        }),
+      );
     } catch {
       /* socket closing */
     }

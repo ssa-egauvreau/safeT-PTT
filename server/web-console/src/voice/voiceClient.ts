@@ -5,6 +5,7 @@ import { api, getToken, type Permission } from "../api";
 import { ImbeTxConditioner } from "./imbeTxConditioner";
 import { voiceLinkTelemetryReporter } from "./voiceLinkTelemetryReporter";
 import { imbeDecode, imbeEncode, imbeReady, initImbe } from "./imbeVocoder";
+import { ambeDecode, ambeEncode, ambeReady, initAmbe } from "./ambeVocoder";
 import {
   codec2Decode,
   codec2Encode,
@@ -228,6 +229,29 @@ function encodeImbeFrames(pcm16k: Int16Array): ArrayBuffer[] {
     const frame = new Uint8Array(13);
     frame[0] = IMBE_MAGIC_0;
     frame[1] = IMBE_MAGIC_1;
+    frame.set(codeword, 2);
+    frames.push(frame.buffer);
+  }
+  return frames;
+}
+
+/** Encodes 16 kHz mic PCM to AMBE+2 half-rate frames (2-byte marker + 9-byte
+ *  codeword) — the P25 Phase 2 vocoder rate. Same 8 kHz engine cadence as IMBE. */
+function encodeAmbeFrames(pcm16k: Int16Array): ArrayBuffer[] {
+  // 16 kHz -> 8 kHz by averaging sample pairs (the AMBE engine runs at 8 kHz).
+  const pcm8k = new Int16Array(pcm16k.length >> 1);
+  for (let i = 0; i < pcm8k.length; i++) {
+    pcm8k[i] = (pcm16k[2 * i] + pcm16k[2 * i + 1]) >> 1;
+  }
+  const frames: ArrayBuffer[] = [];
+  for (let offset = 0; offset + 160 <= pcm8k.length; offset += 160) {
+    const codeword = ambeEncode(pcm8k.subarray(offset, offset + 160));
+    if (!codeword) {
+      continue;
+    }
+    const frame = new Uint8Array(11);
+    frame[0] = 0xa2;
+    frame[1] = 0x45;
     frame.set(codeword, 2);
     frames.push(frame.buffer);
   }
@@ -524,6 +548,7 @@ export class VoiceChannelClient {
     void initImbe(); // load the IMBE vocoder in the background for digital RX
     void initCodec2(); // libcodec2 WASM — ~270 KB, lazy single-shot load
     void initOpus(); // libopus WASM — ~350 KB, lazy single-shot load with FEC
+    void initAmbe(); // AMBE+2 half-rate (P25 Phase 2) — shares the dvmvocoder WASM with IMBE
     // Reset client-side audio policy to defaults at the start of every
     // connect so a stale value from a previous session can't leak into the
     // first PTT before refreshAudioConfig settles.
@@ -750,6 +775,31 @@ export class VoiceChannelClient {
       if (pcm) {
         voiceLinkTelemetryReporter.recordFrameDecoded(telemetryCodec);
         this.playOpusPcm(pcm);
+      } else {
+        voiceLinkTelemetryReporter.recordDecodeFailure(telemetryCodec);
+      }
+      return;
+    }
+    if (codec === "ambe_2450") {
+      if (!ambeReady()) {
+        voiceLinkTelemetryReporter.recordDecodeFailure(telemetryCodec);
+        // Same lazy-load story as Codec2/Opus below: kick off the WASM
+        // load and drop this frame; the 20 ms cadence catches up.
+        void initAmbe();
+        this.warnUnsupportedCodecOnce(codec);
+        return;
+      }
+      const pcm8k = ambeDecode(bytes.subarray(2));
+      if (pcm8k) {
+        voiceLinkTelemetryReporter.recordFrameDecoded(telemetryCodec);
+        // Same 8 → 16 kHz path IMBE uses: through the agency post-decode
+        // chain when configured, otherwise the legacy duplicate upsample.
+        if (this.postDecodeProcessor) {
+          const shaped = this.postDecodeProcessor.process(pcm8k);
+          this.schedulePcm(shaped, { sampleRate: this.postDecodeProcessor.rate() });
+        } else {
+          this.schedulePcm(upsample8kTo16k(pcm8k));
+        }
       } else {
         voiceLinkTelemetryReporter.recordDecodeFailure(telemetryCodec);
       }
@@ -1087,6 +1137,7 @@ export class VoiceChannelClient {
         // codec so a vocoded talk-spurt is still transcribable.
         if (this.listenPcmSidebandRequired()) {
           ws.send(wrapListenPcm(pcmBuf));
+          voiceLinkTelemetryReporter.recordBytesSent(2 + pcmBuf.byteLength);
         }
 
         // Codec dispatch on TX. In order: Opus (if libopus WASM loaded),
@@ -1107,6 +1158,7 @@ export class VoiceChannelClient {
               frame[1] = 0x70;
               frame.set(packet, 2);
               ws.send(frame.buffer);
+              voiceLinkTelemetryReporter.recordBytesSent(frame.length);
             }
             return;
           }
@@ -1130,6 +1182,7 @@ export class VoiceChannelClient {
               frame[1] = 0x01;
               frame.set(codeword, 2);
               ws.send(frame.buffer);
+              voiceLinkTelemetryReporter.recordBytesSent(frame.length);
             }
             return;
           }
@@ -1137,9 +1190,25 @@ export class VoiceChannelClient {
           // for next time and fall through to IMBE for this frame.
           void initCodec2();
         }
+        if (this.currentTxCodec === "ambe_2450") {
+          if (ambeReady()) {
+            // AMBE+2 half-rate (P25 Phase 2 vocoder): 16 kHz → 8 kHz,
+            // 160 samples → 9-byte codeword. Wire frame = 2-byte magic +
+            // 9-byte codeword = 11 bytes per 20 ms.
+            for (const frame of encodeAmbeFrames(pcm)) {
+              ws.send(frame);
+              voiceLinkTelemetryReporter.recordBytesSent(frame.byteLength);
+            }
+            return;
+          }
+          // AMBE asked for but WASM not yet loaded — kick off the load
+          // for next time and fall through to IMBE for this frame.
+          void initAmbe();
+        }
         if (imbeReady()) {
           for (const frame of encodeImbeFrames(pcm)) {
             ws.send(frame);
+            voiceLinkTelemetryReporter.recordBytesSent(frame.byteLength);
           }
           return;
         }
@@ -1152,6 +1221,7 @@ export class VoiceChannelClient {
         );
       }
       ws.send(pcmBuf);
+      voiceLinkTelemetryReporter.recordBytesSent(pcmBuf.byteLength);
     };
     this.capSource.connect(this.capNode);
     // A silent sink keeps the worklet pulled without echoing the mic locally.

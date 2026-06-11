@@ -55,6 +55,8 @@ interface WindowCounters {
   talkSpurtsStarted: number;
   talkSpurtsEnded: number;
   bytesReceived: number;
+  /** Uplink bytes — voice frames + recorder sideband sent on the socket. */
+  bytesSent: number;
   /** Wall-clock duration the counters cover. Set when the window opens. */
   windowOpenedAtMs: number;
   codecBreakdown: Map<string, CodecCounters>;
@@ -78,6 +80,7 @@ function emptyWindow(now: number): WindowCounters {
     talkSpurtsStarted: 0,
     talkSpurtsEnded: 0,
     bytesReceived: 0,
+    bytesSent: 0,
     windowOpenedAtMs: now,
     codecBreakdown: new Map(),
   };
@@ -132,6 +135,13 @@ export class VoiceLinkTelemetryReporter {
     const entry = this.window.codecBreakdown.get(codec) ?? { framesReceived: 0, framesDecoded: 0 };
     entry.framesReceived += 1;
     this.window.codecBreakdown.set(codec, entry);
+  }
+
+  /** Uplink accounting — counts every app-level byte this client puts on the
+   *  voice socket (vocoded frames, clear PCM, recorder sideband) so the admin
+   *  data-usage column reflects both directions. */
+  recordBytesSent(bytes: number): void {
+    this.window.bytesSent += Math.max(0, Math.floor(bytes));
   }
 
   recordFrameDecoded(codec: string): void {
@@ -262,6 +272,7 @@ export function buildReportBody(w: QueuedWindow): VoiceLinkTelemetryReport {
       talkSpurtsStarted: counters.talkSpurtsStarted,
       talkSpurtsEnded: counters.talkSpurtsEnded,
       bytesReceived: counters.bytesReceived,
+      bytesSent: counters.bytesSent,
       wallMsObservation: Math.max(0, w.closedAtMs - counters.windowOpenedAtMs),
     },
     codecBreakdown,

@@ -156,6 +156,12 @@ class RadioViewModel(
     @Volatile
     private var pttMicLiveThisHold: Boolean = false
 
+    /** Post-release capture drain (see [onPttReleased]); cancelled by a re-key. */
+    private var pttReleaseDrainJob: Job? = null
+
+    /** Monotonic key-up counter so a stale release-drain can't stop a newer hold's mic. */
+    private var pttHoldGeneration: Long = 0L
+
     /** API 21–25 path: avoids java.time (`LocalTime`), which requires desugaring below API 26. */
     private val clockFormat = SimpleDateFormat("HH:mm", Locale.US)
 
@@ -298,6 +304,17 @@ class RadioViewModel(
                     // already swapped its TX encoder; no operator-facing banner — the change
                     // is informational and the talker hears identical audio either way.
                     is VoiceControlEvent.CodecChanged -> null
+                    // Relay pushed the channel's talker the moment their first frame hit
+                    // the air — paint the attribution now instead of waiting for the next
+                    // talk-activity poll (which lagged the audio by up to ~1.2 s).
+                    is VoiceControlEvent.AirClaimed -> {
+                        onRemoteAirClaimed(event)
+                        null
+                    }
+                    is VoiceControlEvent.AirReleased -> {
+                        onRemoteAirReleased(event)
+                        null
+                    }
                 }
                 if (hint != null) {
                     _uiState.update { it.copy(statusMessage = hint) }
@@ -1399,6 +1416,7 @@ class RadioViewModel(
             _uiState.update { snap ->
                 snap.copy(
                     isPttPressed = true,
+                    pttOnAir = false,
                     pttBusyTone = true,
                     statusMessage = "LISTEN ONLY",
                     micHint = "MIC: LISTEN ONLY",
@@ -1408,12 +1426,18 @@ class RadioViewModel(
             }
             return
         }
+        // A re-key during the post-release drain window owns the mic again —
+        // invalidate the pending drain so it can't stop the new hold's capture.
+        pttHoldGeneration += 1
+        pttReleaseDrainJob?.cancel()
+        pttReleaseDrainJob = null
         pttMicCapture.stopCapture()
         pttMicLiveThisHold = false
         _uiState.update { snap ->
             val (talkUnit, talkName) = localTalkAttribution(snap)
             snap.copy(
                 isPttPressed = true,
+                pttOnAir = false,
                 pttBusyTone = false,
                 statusMessage = "AIR: CHECKING",
                 micHint = "MIC: STANDBY",
@@ -1446,12 +1470,14 @@ class RadioViewModel(
                 val busyPeerHighlight = peerUnitIfBusyDueToVoice(online, air, occupiedForTransmit)
                 val mic = snapshot.micPermissionGranted
                 val micLive = pttMicLiveThisHold
+                val txReady = voiceRelay.isTransmitPathReady()
 
                 val statusHint = computePttStatus(
                     online = online,
                     useBusy = useBusy,
                     micGranted = mic,
                     micLive = micLive,
+                    txReady = txReady,
                     stableEnough = audioStableCount >= AIR_AUDIO_STABLE_POLLS,
                     busyPeerUnit = busyPeerHighlight,
                 )
@@ -1460,6 +1486,9 @@ class RadioViewModel(
                     val nextMicHint = micHintForPtt(micGranted = mic, micLive = micLive)
                     s.copy(
                         pttBusyTone = useBusy,
+                        // Green only when audio is genuinely leaving the radio:
+                        // permit verified, mic capturing, and the socket ready.
+                        pttOnAir = micLive && mic && !useBusy && txReady,
                         statusMessage = statusHint,
                         micHint = nextMicHint,
                     )
@@ -1477,6 +1506,7 @@ class RadioViewModel(
                         pttMicCapture.stopCapture()
                         voiceRelay.releaseTransmitHold()
                         pttMicLiveThisHold = false
+                        _uiState.update { it.copy(pttOnAir = false) }
                         if (online) {
                             soundPlayer.startBusyLoop()
                         } else {
@@ -1503,6 +1533,7 @@ class RadioViewModel(
         useBusy: Boolean,
         micGranted: Boolean,
         micLive: Boolean,
+        txReady: Boolean,
         stableEnough: Boolean,
         busyPeerUnit: String? = null,
     ): String {
@@ -1512,6 +1543,10 @@ class RadioViewModel(
                 val peer = busyPeerUnit?.trim()?.takeIf { it.isNotEmpty() }?.uppercase(Locale.US)
                 if (peer != null) "CHANNEL BUSY — $peer" else "CHANNEL BUSY"
             }
+            // Mic is live but the voice socket can't carry frames — the REST
+            // air probe and the relay WebSocket are separate paths, so call
+            // this state out instead of letting it read as on-air.
+            micLive && !txReady -> "LINK CONNECTING"
             micLive && micGranted -> "TX + MIC"
             micLive -> "TX (NO MIC)"
             stableEnough -> "AIR: OK — PERMIT"
@@ -1578,9 +1613,15 @@ class RadioViewModel(
             if (s.micPermissionGranted) {
                 pttMicCapture.startCapture()
             }
+            val txReady = voiceRelay.isTransmitPathReady()
             _uiState.update { cur ->
                 cur.copy(
-                    statusMessage = if (cur.micPermissionGranted) "TX + MIC" else "TX (NO MIC)",
+                    pttOnAir = txReady && cur.micPermissionGranted,
+                    statusMessage = when {
+                        !txReady -> "LINK CONNECTING"
+                        cur.micPermissionGranted -> "TX + MIC"
+                        else -> "TX (NO MIC)"
+                    },
                     micHint = if (cur.micPermissionGranted) "MIC: MONITOR ON" else "MIC: ALLOW MIC",
                 )
             }
@@ -1588,23 +1629,43 @@ class RadioViewModel(
     }
 
     private fun onPttReleased() {
+        val micWasLive = pttMicLiveThisHold
         pttMicLiveThisHold = false
         pttToneJob?.cancel()
         pttToneJob = null
-        pttMicCapture.stopCapture()
-        voiceRelay.releaseTransmitHold()
         soundPlayer.stopTalkPermitLoop()
         soundPlayer.stopBusyLoop()
         val granted = _uiState.value.micPermissionGranted
         _uiState.update {
             it.copy(
                 isPttPressed = false,
+                pttOnAir = false,
                 pttBusyTone = false,
                 statusMessage = "RX IDLE",
                 micHint = if (granted) "MIC: READY" else "MIC: ALLOW MIC",
                 activeTalkUnitId = "",
                 activeTalkDisplayName = "",
             )
+        }
+        if (!micWasLive) {
+            // Never made the air this hold — nothing buffered worth draining.
+            pttMicCapture.stopCapture()
+            voiceRelay.releaseTransmitHold()
+            return
+        }
+        // Operators were losing the last ~0.5 s of every transmission: the
+        // word spoken at release is still in the AudioRecord pipeline, and the
+        // old immediate stop discarded it (plus the staged fractional frame).
+        // Keep capturing briefly so it drains through the encoder, then flush
+        // the partial frame and release the air. A re-key bumps the
+        // generation and cancels this job, so it can't stop a newer hold's mic.
+        val generation = pttHoldGeneration
+        pttReleaseDrainJob?.cancel()
+        pttReleaseDrainJob = viewModelScope.launch {
+            delay(TX_RELEASE_TAIL_MS)
+            if (generation != pttHoldGeneration) return@launch
+            pttMicCapture.stopCapture()
+            voiceRelay.finishTransmitHold()
         }
     }
 
@@ -2225,6 +2286,55 @@ class RadioViewModel(
         }
     }
 
+    /** Relay push: another unit keyed our channel — show the talker immediately.
+     *  The talk-activity poll stays running as the fallback/refresher (scan
+     *  channels, units on older servers, missed frames). */
+    private fun onRemoteAirClaimed(event: VoiceControlEvent.AirClaimed) {
+        val snap = _uiState.value
+        if (snap.isPttPressed || snap.isEmergencyActive) return
+        if (event.channel.isNotEmpty() && !channelNamesMatch(event.channel, snap.channelLabel)) return
+        val unit = event.unitId.trim().uppercase(Locale.US)
+        if (unit.isEmpty() || unit == snap.localShortUnitId.trim().uppercase(Locale.US)) return
+        val name = event.displayName?.trim().orEmpty()
+        val line = if (name.isNotEmpty()) "RX: $unit • $name" else "RX: $unit • VOICE"
+        if (snap.rxAttributedLine.isEmpty() && snap.activeTalkUnitId.isEmpty()) {
+            enqueueBackgroundWakeIfNeeded("rx_air_claimed")
+        }
+        lastRxAudioRecorder.noteRxContext(
+            channelName = snap.channelLabel,
+            caption = line,
+            unitId = unit,
+            displayName = name,
+        )
+        _uiState.update {
+            it.copy(
+                rxAttributedLine = line,
+                rxFromScan = false,
+                activeTalkUnitId = unit,
+                activeTalkDisplayName = name,
+            )
+        }
+    }
+
+    /** Relay push: the talker on our channel unkeyed — clear the talker line
+     *  immediately instead of letting it linger (~0.9 s TTL + up to ~1.2 s
+     *  poll) after the audio stopped. */
+    private fun onRemoteAirReleased(event: VoiceControlEvent.AirReleased) {
+        val snap = _uiState.value
+        if (snap.isPttPressed || snap.isEmergencyActive) return
+        // Attribution currently shown came from a scan channel, not this one.
+        if (snap.rxFromScan) return
+        if (event.channel.isNotEmpty() && !channelNamesMatch(event.channel, snap.channelLabel)) return
+        if (snap.activeTalkUnitId.isEmpty() && snap.rxAttributedLine.isEmpty()) return
+        _uiState.update {
+            it.copy(
+                rxAttributedLine = "",
+                activeTalkUnitId = "",
+                activeTalkDisplayName = "",
+            )
+        }
+    }
+
     private fun localTalkAttribution(snap: RadioUiState): Pair<String, String> {
         val unit = snap.localShortUnitId.trim().uppercase(Locale.US)
         val name = snap.sessionDisplayName.trim()
@@ -2410,6 +2520,7 @@ class RadioViewModel(
         // left a later Activity unable to capture or transmit. Only stop any
         // in-progress capture — never tear the shared singletons down.
         pttToneJob?.cancel()
+        pttReleaseDrainJob?.cancel()
         pttMicCapture.stopCapture()
         super.onCleared()
     }
@@ -2421,6 +2532,12 @@ class RadioViewModel(
         const val MOVE_BANNER_MS = 6_000L
         const val AIR_POLL_MS = 250L
         const val AIR_AUDIO_STABLE_POLLS = 1
+
+        /** Post-release mic drain: keeps capturing briefly so the final word's
+         *  buffered audio reaches the relay instead of being cut off. Sized to
+         *  cover AudioRecord's internal buffer (~40–80 ms) plus the syllable
+         *  still being voiced as the thumb comes off the button. */
+        const val TX_RELEASE_TAIL_MS = 400L
         const val TALK_ACTIVITY_POLL_MS = 1200L
         /** Faster refresh while someone appears on air (clears stale talker sooner). */
         const val TALK_ACTIVITY_FAST_POLL_MS = 400L

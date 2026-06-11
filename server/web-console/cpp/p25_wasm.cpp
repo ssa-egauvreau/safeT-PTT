@@ -15,6 +15,11 @@ using namespace vocoder;
 namespace {
 MBEEncoder* gEncoder = nullptr;
 MBEDecoder* gDecoder = nullptr;
+// AMBE+2 half-rate (P25 Phase 2 / DMR vocoder rate): 49 voice bits @ 2450 bps
+// carried in dvmvocoder's 9-byte DMR-interleaved codeword. Separate instances
+// from IMBE — both vocoders keep frame-to-frame state.
+MBEEncoder* gAmbeEncoder = nullptr;
+MBEDecoder* gAmbeDecoder = nullptr;
 } // namespace
 
 extern "C" {
@@ -79,6 +84,67 @@ int imbe_decoder_decode(MBEDecoder* decoder, uint8_t* codeword11, int16_t* sampl
     return 0;
   }
   decoder->decode(codeword11, samples160);
+  return 1;
+}
+
+// --- AMBE+2 half-rate (P25 Phase 2 vocoder rate) --------------------------
+// Same shape as the IMBE entry points, but on dvmvocoder's DMR_AMBE mode:
+// 160 PCM samples (8 kHz, 20 ms) <-> 9-byte DMR-interleaved AMBE codeword
+// carrying 49 voice bits @ 2450 bps. This is the vocoder frame sdrtrunk's
+// jmbe decodes as "AMBE 3600x2450" on P25 Phase 2 / DMR systems.
+
+/** Allocates the AMBE encoder/decoder. Returns 1 on success. */
+EMSCRIPTEN_KEEPALIVE
+int ambe_init() {
+  delete gAmbeEncoder;
+  delete gAmbeDecoder;
+  gAmbeEncoder = new (std::nothrow) MBEEncoder(ENCODE_DMR_AMBE);
+  gAmbeDecoder = new (std::nothrow) MBEDecoder(DECODE_DMR_AMBE);
+  // Like IMBE above: leave autoGain off — web + server run ImbeAgc on the
+  // decoded PCM instead, so the native ramp would stack a second compressor.
+  return (gAmbeEncoder != nullptr && gAmbeDecoder != nullptr) ? 1 : 0;
+}
+
+/** 160 PCM samples (8 kHz, int16) -> 9-byte AMBE codeword. */
+EMSCRIPTEN_KEEPALIVE
+int ambe_encode(int16_t* samples160, uint8_t* codeword9) {
+  if (gAmbeEncoder == nullptr) {
+    return 0;
+  }
+  gAmbeEncoder->encode(samples160, codeword9);
+  return 1;
+}
+
+/** 9-byte AMBE codeword -> 160 PCM samples (8 kHz, int16). */
+EMSCRIPTEN_KEEPALIVE
+int ambe_decode(uint8_t* codeword9, int16_t* samples160) {
+  if (gAmbeDecoder == nullptr) {
+    return 0;
+  }
+  gAmbeDecoder->decode(codeword9, samples160);
+  return 1;
+}
+
+// Per-stream AMBE decoders for the server recording path — AMBE decoding
+// keeps frame-to-frame history exactly like IMBE, so each concurrent digital
+// stream needs its own decoder.
+
+EMSCRIPTEN_KEEPALIVE
+MBEDecoder* ambe_decoder_create() {
+  return new (std::nothrow) MBEDecoder(DECODE_DMR_AMBE);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ambe_decoder_free(MBEDecoder* decoder) {
+  delete decoder;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ambe_decoder_decode(MBEDecoder* decoder, uint8_t* codeword9, int16_t* samples160) {
+  if (decoder == nullptr) {
+    return 0;
+  }
+  decoder->decode(codeword9, samples160);
   return 1;
 }
 

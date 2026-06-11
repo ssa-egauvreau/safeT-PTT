@@ -67,6 +67,10 @@ sealed interface VoiceControlEvent {
     data class Moved(val channel: String, val by: String?) : VoiceControlEvent
     /** Admin flipped the channel's transmit codec; the encoder swaps on the next frame. */
     data class CodecChanged(val codec: VoiceCodec) : VoiceControlEvent
+    /** Another unit keyed this channel — show the talker immediately, no poll wait. */
+    data class AirClaimed(val channel: String, val unitId: String, val displayName: String?) : VoiceControlEvent
+    /** The talker on this channel unkeyed — clear the talker line immediately. */
+    data class AirReleased(val channel: String) : VoiceControlEvent
 }
 
 class VoiceRelayTransport(
@@ -144,6 +148,8 @@ class VoiceRelayTransport(
         .registerDecoder(Codec2Decoder())
         .registerEncoder(OpusEncoder())
         .registerDecoder(OpusDecoder())
+        .registerEncoder(AmbeEncoder())
+        .registerDecoder(AmbeDecoder())
 
     /** Codec the channel asked us to TX with. Updated by the joined reply and
      *  by codec_change push messages; the registry resolves it to an actual
@@ -244,12 +250,30 @@ class VoiceRelayTransport(
                         _controlEvents.tryEmit(VoiceControlEvent.Moved(channel = channel, by = by))
                     }
                 }
+                "air_claimed" -> {
+                    // The relay pushes the talker the moment their first frame
+                    // claims the channel, so the UI can attribute the audio
+                    // immediately instead of waiting (up to ~1.2 s) for its next
+                    // talk-activity poll.
+                    val unit = json.optString("unit_id").trim()
+                    if (unit.isNotEmpty()) {
+                        _controlEvents.tryEmit(
+                            VoiceControlEvent.AirClaimed(
+                                channel = json.optString("channel").trim(),
+                                unitId = unit,
+                                displayName = json.optString("display_name").trim().takeIf { it.isNotEmpty() },
+                            ),
+                        )
+                    }
+                }
                 "air_released" -> {
                     // Another unit on this channel just unkeyed. Synthesize the
                     // close-side end-of-TX cue (roger beep / squelch tail)
                     // locally and inject it into playout. No-op unless the
                     // agency enabled at least one of the cue flags.
-                    playEndOfTxCue(json.optString("channel").trim())
+                    val releasedChannel = json.optString("channel").trim()
+                    playEndOfTxCue(releasedChannel)
+                    _controlEvents.tryEmit(VoiceControlEvent.AirReleased(channel = releasedChannel))
                 }
             }
         } catch (e: Exception) {
@@ -485,6 +509,9 @@ class VoiceRelayTransport(
             .write(payload, 0, payload.size)
             .readByteString(payload.size.toLong())
         ws.send(bs)
+        // Uplink data-usage accounting — every voice/sideband byte this handset
+        // puts on the socket, reported in the 30 s telemetry windows.
+        VoiceLinkTelemetryReporter.recordBytesSent(payload.size)
     }
 
     /**
@@ -509,6 +536,57 @@ class VoiceRelayTransport(
         } catch (_: Exception) {
         }
     }
+
+    /**
+     * Orderly end of a talk-spurt: encode + ship the staged fractional frame
+     * (zero-padded to a full 20 ms) instead of discarding it, then release the
+     * air. [releaseTransmitHold] stays the discard path for busy-deny /
+     * teardown, where the staged audio never made the air to begin with.
+     */
+    fun finishTransmitHold() {
+        flushUplinkTail()
+        releaseTransmitHoldKeepingTail()
+    }
+
+    private fun releaseTransmitHoldKeepingTail() {
+        codecRegistry.encoderFor(currentTxCodec)?.resetForTalkSpurt()
+        val ws = webSocketRef.get() ?: return
+        if (!socketReady.get()) return
+        try {
+            ws.send("""{"type":"release_air"}""")
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Encode whatever PCM is staged short of a frame boundary, padded with
+     *  silence, so the operator's final syllable makes the air. */
+    private fun flushUplinkTail() {
+        val len = pcmAccLen
+        pcmAccLen = 0
+        if (len <= 0) return
+        val encoder = codecRegistry.txEncoderFor(currentTxCodec) ?: return
+        val ws = webSocketRef.get() ?: return
+        if (!socketReady.get() || !wantOnline.get()) return
+        val copied = minOf(len, pcmFrameScratch.size)
+        System.arraycopy(pcmAcc, 0, pcmFrameScratch, 0, copied)
+        pcmFrameScratch.fill(0, copied, pcmFrameScratch.size)
+        txConditioner.conditionLe16(
+            pcmFrameScratch,
+            pcmFrameScratch.size,
+            bypassExpanderAgc = bypassMicProcessingProvider(),
+        )
+        val packet = encoder.encodeFrame(pcmFrameScratch) ?: return
+        sendBinaryWs(ws, packet)
+    }
+
+    /**
+     * True when the voice socket is open and joined to a channel — i.e. an
+     * encoded frame handed to [consumePcm] right now would actually reach the
+     * relay. The PTT UI gates its green "TRANSMITTING" state on this so a dead
+     * link can't show the operator as on-air.
+     */
+    fun isTransmitPathReady(): Boolean =
+        wantOnline.get() && socketReady.get() && webSocketRef.get() != null
 
     /**
      * @param channelLabel current tuner label (must match REST channel names)

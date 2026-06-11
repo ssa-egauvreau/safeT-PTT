@@ -139,6 +139,17 @@ object VoiceLinkTelemetryReporter {
         }
     }
 
+    /**
+     * Uplink accounting — every app-level byte this handset puts on the voice
+     * socket (vocoded frames, clear PCM, recorder sideband) so the admin
+     * data-usage column reflects both directions.
+     */
+    fun recordBytesSent(bytes: Int) {
+        lock.withLock {
+            window.bytesSent += bytes.coerceAtLeast(0)
+        }
+    }
+
     fun recordFrameDecoded(codec: String) {
         lock.withLock {
             window.framesDecoded += 1
@@ -285,6 +296,7 @@ object VoiceLinkTelemetryReporter {
         counters.put("talkSpurtsStarted", w.counters.talkSpurtsStarted)
         counters.put("talkSpurtsEnded", w.counters.talkSpurtsEnded)
         counters.put("bytesReceived", w.counters.bytesReceived)
+        counters.put("bytesSent", w.counters.bytesSent)
         counters.put("wallMsObservation", (w.closedAtMs - w.counters.windowOpenedAtMs).coerceAtLeast(0))
         obj.put("counters", counters)
         val codecBreakdown = JSONObject()
@@ -321,6 +333,7 @@ object VoiceLinkTelemetryReporter {
         var talkSpurtsStarted: Int = 0
         var talkSpurtsEnded: Int = 0
         var bytesReceived: Int = 0
+        var bytesSent: Int = 0
         val codecBreakdown: MutableMap<String, CodecCounters> = LinkedHashMap()
     }
 

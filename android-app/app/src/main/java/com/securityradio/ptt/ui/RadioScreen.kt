@@ -580,6 +580,9 @@ private fun UniversalCockpitMainPanel(
     val statusLine = when {
         state.isEmergencyActive -> "EMERGENCY ACTIVE"
         state.isPttPressed && state.pttBusyTone -> "CHANNEL BUSY"
+        // Keyed but not on the air yet (air check / permit tone / link not
+        // ready) — say so instead of green-lighting a dead transmission.
+        state.isPttPressed && !state.pttOnAir -> "WAITING FOR AIR"
         state.isPttPressed -> "TRANSMITTING"
         state.remoteEmergencyUnit != null -> "EMERGENCY · ${state.remoteEmergencyUnit}"
         talker.isNotEmpty() -> talker
@@ -588,6 +591,7 @@ private fun UniversalCockpitMainPanel(
     val statusColor = when {
         state.isEmergencyActive || state.remoteEmergencyUnit != null -> p.statusEmergency
         state.isPttPressed && state.pttBusyTone -> p.statusRed
+        state.isPttPressed && !state.pttOnAir -> p.statusAmber
         state.isPttPressed -> p.statusGreen
         else -> p.rxHighlight
     }
@@ -644,6 +648,7 @@ private fun UniversalCockpitPttCircle(
     val p = RadioLcdTheme.palette
     val fill = when {
         state.isPttPressed && state.pttBusyTone -> p.statusRed
+        state.isPttPressed && !state.pttOnAir -> p.statusAmber
         state.isPttPressed -> p.statusGreen
         else -> p.pttIdleFill
     }
@@ -654,6 +659,7 @@ private fun UniversalCockpitPttCircle(
     }
     val label = when {
         state.isPttPressed && state.pttBusyTone -> "BUSY"
+        state.isPttPressed && !state.pttOnAir -> "WAIT"
         state.isPttPressed -> "TX"
         else -> "PTT"
     }
@@ -1701,6 +1707,7 @@ private fun LcdHandsetFillChannelBlock(
                     unitId = talkUnit.ifBlank { state.localShortUnitId.trim().uppercase(Locale.US) },
                     displayName = when {
                         talkName.isNotBlank() -> talkName
+                        state.isPttPressed && !state.pttOnAir -> "WAITING FOR AIR"
                         state.isPttPressed -> "TRANSMITTING"
                         else -> ""
                     },
@@ -2697,6 +2704,13 @@ private fun channelDisplayChrome(
             channelTextColor = p.statusRed,
             talkLineColor = p.statusRed,
         )
+        state.isPttPressed && !state.pttOnAir -> ChannelDisplayChrome(
+            borderColor = p.statusAmber,
+            borderWidth = 3.dp,
+            washColor = p.statusAmber.copy(alpha = 0.12f),
+            channelTextColor = p.statusAmber,
+            talkLineColor = p.statusAmber,
+        )
         state.isPttPressed -> ChannelDisplayChrome(
             borderColor = p.statusGreen,
             borderWidth = 3.dp,
@@ -2925,6 +2939,11 @@ private fun deriveBanner(state: RadioUiState, p: RadioLcdPalette): Triple<String
             if (state.micPermissionGranted) "MIC ON" else "MIC OFF",
             p.statusRed,
         )
+        state.isPttPressed && !state.pttOnAir -> Triple(
+            "WAITING FOR AIR",
+            state.statusMessage.uppercase(Locale.US),
+            p.statusAmber,
+        )
         state.isPttPressed -> Triple(
             "TRANSMITTING",
             if (state.micPermissionGranted) "MIC LIVE" else "MIC BLOCKED",
@@ -2966,6 +2985,7 @@ private fun LcdPttBar(
     val p = RadioLcdTheme.palette
     val fill = when {
         state.isPttPressed && state.pttBusyTone -> p.statusRed
+        state.isPttPressed && !state.pttOnAir -> p.statusAmber
         state.isPttPressed -> p.pttTransmitFill
         else -> p.pttIdleFill
     }

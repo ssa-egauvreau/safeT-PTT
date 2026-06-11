@@ -20,8 +20,8 @@ import {
   isVoiceCodec,
 } from "../src/voiceCodecs.js";
 
-test("VOICE_CODECS includes the three codecs the platform ships", () => {
-  assert.deepEqual([...VOICE_CODECS].sort(), ["codec2_3200", "imbe", "opus"]);
+test("VOICE_CODECS includes the four codecs the platform ships", () => {
+  assert.deepEqual([...VOICE_CODECS].sort(), ["ambe_2450", "codec2_3200", "imbe", "opus"]);
 });
 
 test("DEFAULT_VOICE_CODEC is IMBE — the only codec older clients can speak", () => {

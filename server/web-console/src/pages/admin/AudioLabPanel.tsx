@@ -12,6 +12,7 @@ import {
 } from "../../api";
 import { codec2Decode, codec2Encode, codec2Ready, initCodec2 } from "../../voice/codec2Vocoder";
 import { imbeDecode, imbeEncode, imbeReady, initImbe } from "../../voice/imbeVocoder";
+import { ambeDecode, ambeEncode, ambeReady, initAmbe } from "../../voice/ambeVocoder";
 import { opusDecode, opusEncode, opusReady, initOpus } from "../../voice/opusWasmCodec";
 import {
   DEFAULT_PRESET,
@@ -126,6 +127,26 @@ async function measureCodecRoundtrip(
       const t1 = performance.now();
       if (!cw) continue;
       codec2Decode(cw);
+      const t2 = performance.now();
+      encodeTotal += t1 - t0;
+      decodeTotal += t2 - t1;
+      samples += 1;
+    }
+  } else if (codec === "ambe_2450") {
+    if (!ambeReady()) {
+      const ok = await initAmbe();
+      if (!ok) throw new Error("AMBE WASM is not loaded");
+    }
+    const probe = new Int16Array(160);
+    for (let i = 0; i < 160; i++) {
+      probe[i] = Math.round(Math.sin((2 * Math.PI * 500 * i) / 8000) * 8000);
+    }
+    for (let i = 0; i < ITER; i++) {
+      const t0 = performance.now();
+      const cw = ambeEncode(probe);
+      const t1 = performance.now();
+      if (!cw) continue;
+      ambeDecode(cw);
       const t2 = performance.now();
       encodeTotal += t1 - t0;
       decodeTotal += t2 - t1;

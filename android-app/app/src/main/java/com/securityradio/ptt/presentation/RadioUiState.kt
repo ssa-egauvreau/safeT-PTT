@@ -39,6 +39,13 @@ data class RadioUiState(
     val displayLine3: String,
     val softKeyLabels: List<String>,
     val isPttPressed: Boolean,
+    /**
+     * True only while keyed AND actually on the air: talk-permit verified, mic
+     * capture running, and the voice socket ready to carry frames. The green
+     * "TRANSMITTING" UI keys off this, not [isPttPressed], so the operator
+     * can't read a dead link or the pre-permit gap as "I'm on the air".
+     */
+    val pttOnAir: Boolean = false,
     val isEmergencyActive: Boolean,
     val pttBusyTone: Boolean,
     val statusMessage: String,

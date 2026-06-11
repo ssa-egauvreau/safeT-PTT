@@ -34,6 +34,7 @@ final class ScanVoiceListenTransport {
         registry.registerDecoder(ImbeDecoder())
         registry.registerDecoder(Codec2Decoder())
         registry.registerDecoder(OpusDecoder())
+        registry.registerDecoder(AmbeDecoder())
         return registry
     }()
 
@@ -256,6 +257,10 @@ final class ScanVoiceListenTransport {
                ) {
                 if decoder.codec == .imbe, !P25ImbeNative.isAvailable, !P25ImbeNative.initialize() {
                     logger.warning("scan IMBE frame discarded — vocoder not loaded")
+                    return
+                }
+                if decoder.codec == .ambe_2450, !P25AmbeNative.isAvailable, !P25AmbeNative.initialize() {
+                    logger.warning("scan AMBE frame discarded — vocoder not loaded")
                     return
                 }
                 guard decoder.isReady else { return }

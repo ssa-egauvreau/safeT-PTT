@@ -1,6 +1,7 @@
-// Audio Lab vocoder round-trip — IMBE, Codec2 3200, or Opus (same wire format as live voice).
+// Audio Lab vocoder round-trip — IMBE, Codec2 3200, Opus, or AMBE+2 2450 (same wire format as live voice).
 
 import type { VoiceCodec } from "../../../api";
+import { ambeDecode, ambeEncode, ambeReady, initAmbe } from "../../../voice/ambeVocoder";
 import { codec2Decode, codec2Encode, codec2Ready, initCodec2 } from "../../../voice/codec2Vocoder";
 import { imbeDecode, imbeEncode, imbeReady, initImbe } from "../../../voice/imbeVocoder";
 import { opusDecode, opusEncode, opusReady, initOpus } from "../../../voice/opusWasmCodec";
@@ -36,6 +37,13 @@ async function ensureCodecReady(codec: VoiceCodec): Promise<void> {
     if (!codec2Ready()) {
       const ok = await initCodec2();
       if (!ok) throw new Error("Codec2 vocoder unavailable — WASM failed to load");
+    }
+    return;
+  }
+  if (codec === "ambe_2450") {
+    if (!ambeReady()) {
+      const ok = await initAmbe();
+      if (!ok) throw new Error("AMBE vocoder unavailable — WASM failed to load");
     }
     return;
   }
@@ -76,6 +84,15 @@ export async function runLabCodecRoundtrip(
       const cw = imbeEncode(pcm8k.subarray(off, off + 160));
       if (!cw) continue;
       const dec = imbeDecode(cw);
+      if (!dec) continue;
+      decoded8k.set(dec, outOff);
+      outOff += 160;
+    }
+  } else if (codec === "ambe_2450") {
+    for (let off = 0; off + 160 <= pcm8k.length; off += 160) {
+      const cw = ambeEncode(pcm8k.subarray(off, off + 160));
+      if (!cw) continue;
+      const dec = ambeDecode(cw);
       if (!dec) continue;
       decoded8k.set(dec, outOff);
       outOff += 160;
@@ -124,6 +141,15 @@ export async function runLabCodecRoundtripProduction(
       const cw = imbeEncode(pcm8k.subarray(off, off + 160));
       if (!cw) continue;
       const dec = imbeDecode(cw);
+      if (!dec) continue;
+      decoded8k.set(dec, outOff);
+      outOff += 160;
+    }
+  } else if (codec === "ambe_2450") {
+    for (let off = 0; off + 160 <= pcm8k.length; off += 160) {
+      const cw = ambeEncode(pcm8k.subarray(off, off + 160));
+      if (!cw) continue;
+      const dec = ambeDecode(cw);
       if (!dec) continue;
       decoded8k.set(dec, outOff);
       outOff += 160;

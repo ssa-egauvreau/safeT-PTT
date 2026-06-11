@@ -110,3 +110,107 @@ extern "C" JNIEXPORT jshortArray JNICALL Java_com_securityradio_ptt_device_P25Im
     env->SetShortArrayRegion(out, 0, 160, reinterpret_cast<const jshort*>(samples));
     return out;
 }
+
+// --- AMBE+2 half-rate (P25 Phase 2 / DMR vocoder rate) ----------------------
+// Same shape as the IMBE bridge above, on dvmvocoder's DMR_AMBE mode:
+// 160 PCM samples (8 kHz, 20 ms) <-> 9-byte DMR-interleaved codeword carrying
+// 49 voice bits @ 2450 bps. Separate encoder/decoder instances — both MBE
+// vocoders keep frame-to-frame history.
+
+namespace {
+
+std::mutex gAmbeCodecMutex;
+
+MBEEncoder* gAmbeEncoder = nullptr;
+MBEDecoder* gAmbeDecoder = nullptr;
+
+/** Allocate AMBE encoder / decoder instances (caller holds gAmbeCodecMutex). */
+void ensureAmbeAllocatedLocked() {
+    if (gAmbeEncoder != nullptr && gAmbeDecoder != nullptr) {
+        return;
+    }
+
+    delete gAmbeEncoder;
+    delete gAmbeDecoder;
+    gAmbeEncoder = nullptr;
+    gAmbeDecoder = nullptr;
+
+    gAmbeEncoder = new (std::nothrow) MBEEncoder(ENCODE_DMR_AMBE);
+    if (gAmbeEncoder == nullptr) {
+        return;
+    }
+    gAmbeEncoder->setGainAdjust(1.0f);
+
+    gAmbeDecoder = new (std::nothrow) MBEDecoder(DECODE_DMR_AMBE);
+    if (gAmbeDecoder == nullptr) {
+        delete gAmbeEncoder;
+        gAmbeEncoder = nullptr;
+        return;
+    }
+    // Same receive-AGC rationale as the IMBE decoder above.
+    gAmbeDecoder->setAutoGain(true);
+}
+
+} // namespace
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_securityradio_ptt_device_P25AmbeNative_nativeInit(JNIEnv* /*env*/, jclass /*cls*/) {
+    std::lock_guard<std::mutex> lock(gAmbeCodecMutex);
+    delete gAmbeEncoder;
+    delete gAmbeDecoder;
+    gAmbeEncoder = nullptr;
+    gAmbeDecoder = nullptr;
+    ensureAmbeAllocatedLocked();
+    return gAmbeEncoder != nullptr && gAmbeDecoder != nullptr ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL Java_com_securityradio_ptt_device_P25AmbeNative_nativeEncode(JNIEnv* env,
+                                                                                                     jclass /*cls*/,
+                                                                                                     jshortArray jSamples8k160) {
+    if (jSamples8k160 == nullptr) return nullptr;
+    const jsize n = env->GetArrayLength(jSamples8k160);
+    if (n != 160) return nullptr;
+
+    int16_t samples[160];
+    env->GetShortArrayRegion(jSamples8k160, 0, 160, reinterpret_cast<jshort*>(samples));
+
+    uint8_t codeword[9]{};
+
+    std::lock_guard<std::mutex> lock(gAmbeCodecMutex);
+    if (gAmbeEncoder == nullptr) {
+        ensureAmbeAllocatedLocked();
+    }
+    if (gAmbeEncoder == nullptr) return nullptr;
+
+    gAmbeEncoder->encode(samples, codeword);
+
+    jbyteArray out = env->NewByteArray(9);
+    if (out == nullptr) return nullptr;
+    env->SetByteArrayRegion(out, 0, 9, reinterpret_cast<const jbyte*>(codeword));
+    return out;
+}
+
+extern "C" JNIEXPORT jshortArray JNICALL Java_com_securityradio_ptt_device_P25AmbeNative_nativeDecode(JNIEnv* env,
+                                                                                                      jclass /*cls*/,
+                                                                                                      jbyteArray jCodeword) {
+    if (jCodeword == nullptr) return nullptr;
+    if (env->GetArrayLength(jCodeword) != 9) return nullptr;
+
+    uint8_t codeword[9]{};
+    env->GetByteArrayRegion(jCodeword, 0, 9, reinterpret_cast<jbyte*>(codeword));
+
+    int16_t samples[160];
+
+    std::lock_guard<std::mutex> lock(gAmbeCodecMutex);
+    if (gAmbeDecoder == nullptr) {
+        ensureAmbeAllocatedLocked();
+    }
+    if (gAmbeDecoder == nullptr) return nullptr;
+
+    gAmbeDecoder->decode(codeword, samples);
+
+    jshortArray out = env->NewShortArray(160);
+    if (out == nullptr) return nullptr;
+    env->SetShortArrayRegion(out, 0, 160, reinterpret_cast<const jshort*>(samples));
+    return out;
+}
