@@ -113,6 +113,23 @@ test("parseVoiceLinkTelemetryBody: clamps huge counters at INT4 ceiling", () => 
   }
 });
 
+test("parseVoiceLinkTelemetryBody: bytesSent is optional and defaults to 0 for older clients", () => {
+  const withoutField = parseVoiceLinkTelemetryBody({
+    counters: { framesReceived: 10, bytesReceived: 4_000 },
+  });
+  assert.equal(withoutField.ok, true);
+  if (withoutField.ok) {
+    assert.equal(withoutField.counters.bytesSent, 0);
+  }
+  const withField = parseVoiceLinkTelemetryBody({
+    counters: { bytesSent: 12_345 },
+  });
+  assert.equal(withField.ok, true);
+  if (withField.ok) {
+    assert.equal(withField.counters.bytesSent, 12_345);
+  }
+});
+
 test("parseVoiceLinkTelemetryBody: drops unknown counter keys silently", () => {
   const res = parseVoiceLinkTelemetryBody({
     counters: { framesReceived: 5, suspiciousNewKey: 999 },
@@ -472,6 +489,7 @@ function makeWindow(
     talk_spurts_started: 1,
     talk_spurts_ended: 1,
     bytes_received: 4000,
+    bytes_sent: 1500,
     wall_ms_observation: 30_000,
     codec_breakdown: { imbe: { framesReceived: 100, framesDecoded: 100 } },
     ...overrides,

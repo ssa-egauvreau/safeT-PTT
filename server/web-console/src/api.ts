@@ -589,6 +589,8 @@ export interface VoiceLinkTelemetryReport {
     talkSpurtsStarted: number;
     talkSpurtsEnded: number;
     bytesReceived: number;
+    /** Uplink bytes — optional for older clients; the server defaults it to 0. */
+    bytesSent?: number;
     wallMsObservation: number;
   };
   codecBreakdown: Record<string, VoiceLinkCodecEntry>;
@@ -608,6 +610,8 @@ export interface VoiceLinkUnitSummary {
   talk_spurts_started: number;
   talk_spurts_ended: number;
   bytes_received: number;
+  /** Uplink bytes (0 from clients that predate the data-usage column). */
+  bytes_sent: number;
   wall_ms_observation: number;
   codec_mix: Record<string, VoiceLinkCodecEntry>;
   channels: string[];
@@ -632,6 +636,7 @@ export interface VoiceLinkTimeseriesPoint {
   talk_spurts_started: number;
   talk_spurts_ended: number;
   bytes_received: number;
+  bytes_sent: number;
   wall_ms_observation: number;
   codec_breakdown: Record<string, VoiceLinkCodecEntry>;
 }

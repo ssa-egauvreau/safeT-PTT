@@ -623,6 +623,11 @@ export async function ensureSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_vlt_agency_ts
       ON voice_link_telemetry (agency_id, server_ts DESC);
   `);
+  // Uplink byte counter for the admin "data usage" column. Older clients don't
+  // report it; the DEFAULT 0 keeps their windows valid.
+  await p.query(
+    `ALTER TABLE voice_link_telemetry ADD COLUMN IF NOT EXISTS bytes_sent INT NOT NULL DEFAULT 0;`,
+  );
 
   // Per-agency saved Audio Lab presets — admin operators store the current
   // full AudioLabConfig under a human name ("Patrol", "Detective", "EMS-loud")

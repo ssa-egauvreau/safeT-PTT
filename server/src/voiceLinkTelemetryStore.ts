@@ -19,6 +19,8 @@ export interface VoiceLinkTelemetryCounters {
   talkSpurtsStarted: number;
   talkSpurtsEnded: number;
   bytesReceived: number;
+  /** Uplink bytes (voice frames + sideband) — 0 from clients that predate the data-usage column. */
+  bytesSent: number;
   wallMsObservation: number;
 }
 
@@ -55,6 +57,7 @@ export interface VoiceLinkUnitSummaryRow {
   talk_spurts_started: number;
   talk_spurts_ended: number;
   bytes_received: number;
+  bytes_sent: number;
   wall_ms_observation: number;
   codec_mix: CodecBreakdown;
   channels: string[];
@@ -74,6 +77,7 @@ export interface VoiceLinkTimeseriesPoint {
   talk_spurts_started: number;
   talk_spurts_ended: number;
   bytes_received: number;
+  bytes_sent: number;
   wall_ms_observation: number;
   codec_breakdown: CodecBreakdown;
 }
@@ -96,15 +100,15 @@ export async function insertVoiceLinkTelemetry(
        frames_received, frames_decoded, decode_failures, plc_frames_synthesized,
        buffer_underruns, max_buffer_depth_frames,
        talk_spurts_started, talk_spurts_ended,
-       bytes_received, wall_ms_observation,
+       bytes_received, bytes_sent, wall_ms_observation,
        codec_breakdown, client_ts
      ) VALUES (
        $1, $2, $3, $4,
        $5, $6, $7, $8,
        $9, $10,
        $11, $12,
-       $13, $14,
-       $15::jsonb, $16
+       $13, $14, $15,
+       $16::jsonb, $17
      );`,
     [
       input.agencyId,
@@ -120,6 +124,7 @@ export async function insertVoiceLinkTelemetry(
       input.counters.talkSpurtsStarted,
       input.counters.talkSpurtsEnded,
       input.counters.bytesReceived,
+      input.counters.bytesSent,
       input.counters.wallMsObservation,
       JSON.stringify(input.codecBreakdown ?? {}),
       input.clientTs,
@@ -166,6 +171,7 @@ export async function listVoiceLinkUnitSummaries(
     talk_spurts_started: string;
     talk_spurts_ended: string;
     bytes_received: string;
+    bytes_sent: string;
     wall_ms_observation: string;
     channels: string[];
     client_types: string[];
@@ -182,6 +188,7 @@ export async function listVoiceLinkUnitSummaries(
             COALESCE(SUM(talk_spurts_started),0)::text AS talk_spurts_started,
             COALESCE(SUM(talk_spurts_ended),0)::text AS talk_spurts_ended,
             COALESCE(SUM(bytes_received),0)::text AS bytes_received,
+            COALESCE(SUM(bytes_sent),0)::text AS bytes_sent,
             COALESCE(SUM(wall_ms_observation),0)::text AS wall_ms_observation,
             COALESCE(ARRAY_AGG(DISTINCT channel) FILTER (WHERE channel IS NOT NULL), ARRAY[]::text[]) AS channels,
             COALESCE(ARRAY_AGG(DISTINCT client_type) FILTER (WHERE client_type IS NOT NULL), ARRAY[]::text[]) AS client_types
@@ -236,6 +243,7 @@ export async function listVoiceLinkUnitSummaries(
     talk_spurts_started: Number(r.talk_spurts_started),
     talk_spurts_ended: Number(r.talk_spurts_ended),
     bytes_received: Number(r.bytes_received),
+    bytes_sent: Number(r.bytes_sent),
     wall_ms_observation: Number(r.wall_ms_observation),
     codec_mix: codecByUnit.get(r.unit_id) ?? {},
     channels: Array.isArray(r.channels) ? r.channels : [],
@@ -275,6 +283,7 @@ export async function listVoiceLinkUnitTimeseries(
     talk_spurts_started: number;
     talk_spurts_ended: number;
     bytes_received: number;
+    bytes_sent: number;
     wall_ms_observation: number;
     codec_breakdown: unknown;
   }>(
@@ -282,7 +291,7 @@ export async function listVoiceLinkUnitTimeseries(
             frames_received, frames_decoded, decode_failures,
             plc_frames_synthesized, buffer_underruns, max_buffer_depth_frames,
             talk_spurts_started, talk_spurts_ended,
-            bytes_received, wall_ms_observation, codec_breakdown
+            bytes_received, bytes_sent, wall_ms_observation, codec_breakdown
        FROM voice_link_telemetry
       WHERE agency_id = $1 AND unit_id = $2 AND server_ts >= $3${channelClause}
       ORDER BY server_ts DESC
@@ -302,6 +311,7 @@ export async function listVoiceLinkUnitTimeseries(
     talk_spurts_started: Number(r.talk_spurts_started),
     talk_spurts_ended: Number(r.talk_spurts_ended),
     bytes_received: Number(r.bytes_received),
+    bytes_sent: Number(r.bytes_sent),
     wall_ms_observation: Number(r.wall_ms_observation),
     codec_breakdown: coerceCodecMix(r.codec_breakdown),
   }));
@@ -344,6 +354,7 @@ export interface AggregatedUnitSummary {
   talkSpurtsStarted: number;
   talkSpurtsEnded: number;
   bytesReceived: number;
+  bytesSent: number;
   wallMsObservation: number;
   codecMix: CodecBreakdown;
   channels: string[];
@@ -370,6 +381,7 @@ export interface AggregatableWindow {
   talk_spurts_started: number;
   talk_spurts_ended: number;
   bytes_received: number;
+  bytes_sent: number;
   wall_ms_observation: number;
   codec_breakdown: CodecBreakdown;
 }
@@ -400,6 +412,7 @@ export function aggregateWindowsByUnit(
         talkSpurtsStarted: row.talk_spurts_started,
         talkSpurtsEnded: row.talk_spurts_ended,
         bytesReceived: row.bytes_received,
+        bytesSent: row.bytes_sent,
         wallMsObservation: row.wall_ms_observation,
         codecMix: cloneCodecMix(row.codec_breakdown),
         channels: row.channel ? [row.channel] : [],
@@ -419,6 +432,7 @@ export function aggregateWindowsByUnit(
       existing.talkSpurtsStarted += row.talk_spurts_started;
       existing.talkSpurtsEnded += row.talk_spurts_ended;
       existing.bytesReceived += row.bytes_received;
+      existing.bytesSent += row.bytes_sent;
       existing.wallMsObservation += row.wall_ms_observation;
       mergeCodecMixInto(existing.codecMix, row.codec_breakdown);
       if (row.channel && !existing.channels.includes(row.channel)) {

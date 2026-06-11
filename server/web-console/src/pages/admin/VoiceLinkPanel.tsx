@@ -151,6 +151,23 @@ function bucketLabel(iso: string): string {
   return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
+/** "512 B" / "3.4 KB" / "12.7 MB" / "1.2 GB" — for the per-unit data-usage column. */
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0 B";
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/** Voice data used over the window: app-level voice bytes down + up. Older
+ *  handset builds report only the download side (`bytes_sent` arrives as 0),
+ *  so the cell shows the split rather than a single total that would silently
+ *  under-count for them. */
+function dataUsedLabel(t: VoiceLinkUnitSummary): string {
+  return `↓ ${formatBytes(t.bytes_received)} · ↑ ${formatBytes(t.bytes_sent ?? 0)}`;
+}
+
 export function VoiceLinkPanel() {
   const [range, setRange] = useState<AnalyticsRange>("24h");
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -327,7 +344,8 @@ export function VoiceLinkPanel() {
       </div>
       <p className="panel-desc">
         Inbound voice quality per unit — jitter buffer underruns, PLC frames synthesised,
-        decode failures, and frames received per codec. The table lists everyone currently
+        decode failures, frames received per codec, and voice data usage (downloaded /
+        uploaded) over the range. The table lists everyone currently
         on a voice channel plus any unit that posted stats in the time range (about every
         30 s from the handset app). This is not the same as GPS/map &ldquo;online&rdquo; —
         a radio must be tuned to a channel here. Click a unit for trend charts when stats
@@ -392,6 +410,7 @@ export function VoiceLinkPanel() {
               <th>Underruns</th>
               <th>Decode fail</th>
               <th>Decoded</th>
+              <th>Data used</th>
               <th>Codec mix</th>
               <th>Health</th>
             </tr>
@@ -431,6 +450,9 @@ export function VoiceLinkPanel() {
                   <td>{t != null ? t.buffer_underruns : "—"}</td>
                   <td>{t != null ? t.decode_failures : "—"}</td>
                   <td>{t != null ? t.frames_decoded.toLocaleString() : "—"}</td>
+                  <td title="Voice data over the selected range — ↓ received by the device, ↑ transmitted from it (app-level voice frames + recorder sideband, not total cellular usage).">
+                    {t != null ? dataUsedLabel(t) : "—"}
+                  </td>
                   <td>{t != null ? codecMixLabel(t.codec_mix) : "—"}</td>
                   <td>
                     <span

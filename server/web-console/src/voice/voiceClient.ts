@@ -1137,6 +1137,7 @@ export class VoiceChannelClient {
         // codec so a vocoded talk-spurt is still transcribable.
         if (this.listenPcmSidebandRequired()) {
           ws.send(wrapListenPcm(pcmBuf));
+          voiceLinkTelemetryReporter.recordBytesSent(2 + pcmBuf.byteLength);
         }
 
         // Codec dispatch on TX. In order: Opus (if libopus WASM loaded),
@@ -1157,6 +1158,7 @@ export class VoiceChannelClient {
               frame[1] = 0x70;
               frame.set(packet, 2);
               ws.send(frame.buffer);
+              voiceLinkTelemetryReporter.recordBytesSent(frame.length);
             }
             return;
           }
@@ -1180,6 +1182,7 @@ export class VoiceChannelClient {
               frame[1] = 0x01;
               frame.set(codeword, 2);
               ws.send(frame.buffer);
+              voiceLinkTelemetryReporter.recordBytesSent(frame.length);
             }
             return;
           }
@@ -1194,6 +1197,7 @@ export class VoiceChannelClient {
             // 9-byte codeword = 11 bytes per 20 ms.
             for (const frame of encodeAmbeFrames(pcm)) {
               ws.send(frame);
+              voiceLinkTelemetryReporter.recordBytesSent(frame.byteLength);
             }
             return;
           }
@@ -1204,6 +1208,7 @@ export class VoiceChannelClient {
         if (imbeReady()) {
           for (const frame of encodeImbeFrames(pcm)) {
             ws.send(frame);
+            voiceLinkTelemetryReporter.recordBytesSent(frame.byteLength);
           }
           return;
         }
@@ -1216,6 +1221,7 @@ export class VoiceChannelClient {
         );
       }
       ws.send(pcmBuf);
+      voiceLinkTelemetryReporter.recordBytesSent(pcmBuf.byteLength);
     };
     this.capSource.connect(this.capNode);
     // A silent sink keeps the worklet pulled without echoing the mic locally.

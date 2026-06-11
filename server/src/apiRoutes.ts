@@ -331,6 +331,7 @@ export function parseVoiceLinkTelemetryBody(body: Record<string, unknown>): {
     talkSpurtsStarted: number;
     talkSpurtsEnded: number;
     bytesReceived: number;
+    bytesSent: number;
     wallMsObservation: number;
   };
   codecBreakdown: Record<string, { framesReceived: number; framesDecoded: number }>;
@@ -363,6 +364,9 @@ export function parseVoiceLinkTelemetryBody(body: Record<string, unknown>): {
     talkSpurtsStarted: clampCounter(c.talkSpurtsStarted),
     talkSpurtsEnded: clampCounter(c.talkSpurtsEnded),
     bytesReceived: clampCounter(c.bytesReceived),
+    // Uplink bytes — optional; clients that predate the data-usage column
+    // simply don't send it and clampCounter coerces the undefined to 0.
+    bytesSent: clampCounter(c.bytesSent),
     wallMsObservation: clampCounter(c.wallMsObservation),
   };
   const codecBreakdown: Record<string, { framesReceived: number; framesDecoded: number }> = {};
