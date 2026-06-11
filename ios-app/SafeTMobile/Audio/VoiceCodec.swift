@@ -38,6 +38,16 @@ enum VoiceCodec: String, CaseIterable {
     /// Server-side identifier used in REST + WebSocket control messages.
     var wireId: String { rawValue }
 
+    /// Compact badge for channel displays ("IMBE", "C2 3200", "OPUS", "AMBE+2").
+    var displayLabel: String {
+        switch self {
+        case .imbe: return "IMBE"
+        case .codec2_3200: return "C2 3200"
+        case .opus: return "OPUS"
+        case .ambe_2450: return "AMBE+2"
+        }
+    }
+
     /// Resolve a codec from the `codec` / `caps` strings the server sends.
     static func fromWireId(_ value: String?) -> VoiceCodec? {
         guard let value, !value.isEmpty else { return nil }

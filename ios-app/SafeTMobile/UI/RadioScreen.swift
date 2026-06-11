@@ -390,6 +390,16 @@ struct RadioScreen: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
 
+                if !state.channelCodecLabel.isEmpty {
+                    Text(state.channelCodecLabel)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundColor(.safetTextDim)
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 6)
+                        .background(Color.safetTextDim.opacity(0.12))
+                        .cornerRadius(4)
+                }
+
                 if !state.unitsOnChannel.isEmpty {
                     let maxVisible = 4
                     let displayed = Array(state.unitsOnChannel.prefix(maxVisible))

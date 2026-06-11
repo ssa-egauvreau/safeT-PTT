@@ -315,6 +315,8 @@ final class RadioViewModel: ObservableObject {
             .sink { AudioSessionManager.applyRoute($0) }
         voiceTransport.onJoined = { [weak self] joined in
             guard let self else { return }
+            // The joined ack names the channel's TX codec — drive the badge.
+            self.uiState.channelCodecLabel = joined.codec.displayLabel
             self.uiState.canTransmit = joined.permission != .listenOnly
             self.uiState.statusMessage = joined.permission == .listenOnly ? "MONITOR ONLY" : "READY"
             // Only stamp the connection start on (re)connect — set it when
@@ -336,6 +338,11 @@ final class RadioViewModel: ObservableObject {
         }
         voiceTransport.onLinkLost = { [weak self] in
             self?.uiState.isReconnecting = true
+        }
+        // Admin flipped the channel's codec while we were connected — refresh
+        // the badge. The transport already swapped its TX encoder.
+        voiceTransport.onCodecChange = { [weak self] codec in
+            self?.uiState.channelCodecLabel = codec.displayLabel
         }
         voiceTransport.onReceivingChange = { [weak self] receiving in
             guard let self else { return }

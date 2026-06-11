@@ -271,7 +271,10 @@ class RadioViewModel(
         viewModelScope.launch {
             voiceRelay.controlEvents.collect { event ->
                 val hint: String? = when (event) {
-                    is VoiceControlEvent.Joined ->
+                    is VoiceControlEvent.Joined -> {
+                        // The joined ack names the channel's TX codec — drive the
+                        // on-screen codec badge from it.
+                        _uiState.update { it.copy(channelCodecLabel = event.codec.displayLabel) }
                         // A dispatcher move re-joins the target channel immediately after, so the
                         // "VOICE ON" ack would otherwise stomp the "MOVED TO" banner before the
                         // operator can read it. Hold the banner for a short window after a move.
@@ -280,6 +283,7 @@ class RadioViewModel(
                         } else {
                             "VOICE ON ${event.channel.uppercase(Locale.US)}"
                         }
+                    }
                     is VoiceControlEvent.Error -> voiceErrorHint(event.code)
                     is VoiceControlEvent.Busy -> {
                         val peer = event.holderUnit?.trim()?.uppercase(Locale.US)
@@ -301,9 +305,12 @@ class RadioViewModel(
                     // on it directly, so there's no operator-facing banner to show.
                     is VoiceControlEvent.AiDispatchPcm -> null
                     // Channel codec changed (admin flipped IMBE/Codec2/Opus). The transport
-                    // already swapped its TX encoder; no operator-facing banner — the change
-                    // is informational and the talker hears identical audio either way.
-                    is VoiceControlEvent.CodecChanged -> null
+                    // already swapped its TX encoder; refresh the codec badge — no banner,
+                    // the talker hears identical audio either way.
+                    is VoiceControlEvent.CodecChanged -> {
+                        _uiState.update { it.copy(channelCodecLabel = event.codec.displayLabel) }
+                        null
+                    }
                     // Relay pushed the channel's talker the moment their first frame hit
                     // the air — paint the attribution now instead of waiting for the next
                     // talk-activity poll (which lagged the audio by up to ~1.2 s).

@@ -38,6 +38,11 @@ data class RadioUiState(
     val displayLine2: String,
     val displayLine3: String,
     val softKeyLabels: List<String>,
+    /**
+     * Compact codec badge for the tuned channel ("IMBE", "AMBE+2", …), from the
+     * relay's joined ack / codec_change push. Empty until the first join ack.
+     */
+    val channelCodecLabel: String = "",
     val isPttPressed: Boolean,
     /**
      * True only while keyed AND actually on the air: talk-permit verified, mic

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   describeError,
+  voiceCodecBadge,
+  voiceCodecLabel,
   type ChannelMember,
   type Permission,
   type UserChannel,
@@ -521,6 +523,11 @@ export function RadioPortal() {
                     }}
                   >
                     <span className="rp-channel-name">{c.name}</span>
+                    {voiceCodecBadge(c.codec) && (
+                      <span className="rp-channel-tag" title={voiceCodecLabel(c.codec)}>
+                        {voiceCodecBadge(c.codec)}
+                      </span>
+                    )}
                     {c.permission === "listen_only" && (
                       <span className="rp-channel-tag">listen only</span>
                     )}

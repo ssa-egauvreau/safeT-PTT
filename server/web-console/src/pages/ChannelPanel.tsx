@@ -6,7 +6,7 @@ import {
   type PointerEvent,
 } from "react";
 import type { Permission, ToneOut, UserChannel } from "../api";
-import { api } from "../api";
+import { api, voiceCodecBadge, voiceCodecLabel } from "../api";
 import { VoiceChannelClient, type VoiceState, type ToneOutKind } from "../voice/voiceClient";
 import { scheduleConnect } from "../voice/connectScheduler";
 import { AudioLevelMeter } from "../voice/AudioLevelMeter";
@@ -675,6 +675,11 @@ export function ChannelPanel({
                   <IconRadio size={wsIcon?.radio ?? 14} />
                   <span className="ch-card-label">{channel.name}</span>
                   {channel.simulcast && <span className="chan-sim-tag">SIM</span>}
+                  {voiceCodecBadge(channel.codec) && (
+                    <span className="chan-sim-tag" title={voiceCodecLabel(channel.codec)}>
+                      {voiceCodecBadge(channel.codec)}
+                    </span>
+                  )}
                 </div>
                 {showMemberCount && (
                   <ChannelMemberCount
