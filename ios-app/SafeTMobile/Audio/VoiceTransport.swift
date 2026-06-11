@@ -20,6 +20,10 @@ final class VoiceTransport {
     var onJoined: ((Joined) -> Void)?
     var onError: ((String) -> Void)?
     var onBusy: ((String?) -> Void)?
+    /// Relay push: another unit keyed this channel — instant talker attribution.
+    var onAirClaimed: ((_ channel: String, _ unitId: String, _ displayName: String?) -> Void)?
+    /// Relay push: the talker on this channel unkeyed — clear the talker line.
+    var onAirReleased: ((_ channel: String) -> Void)?
     var onReceivingChange: ((Bool) -> Void)?
     /// Fires only when the underlying socket link actually dropped (i.e.
     /// we're about to schedule a reconnect). UI uses this to enter the
@@ -184,6 +188,45 @@ final class VoiceTransport {
         resetUplinkState()
     }
 
+    /// Orderly end of a talk-spurt: encode + ship the staged fractional frame
+    /// (zero-padded to a full 20 ms) instead of discarding it, then release
+    /// the air. `stopUplinkCapture` stays the discard path for busy-deny /
+    /// teardown, where the staged audio never made the air to begin with.
+    func finishUplinkCapture() {
+        activeCaptureSessionId = nil
+        flushUplinkTail()
+        codecRegistry.txEncoder(for: currentTxCodec)?.resetForTalkSpurt()
+        if let task {
+            task.send(.string("{\"type\":\"release_air\"}")) { _ in }
+        }
+        resetUplinkState()
+    }
+
+    /// Encode whatever PCM is staged short of a frame boundary, padded with
+    /// silence, so the operator's final syllable makes the air.
+    private func flushUplinkTail() {
+        let staged = pcmAcc
+        pcmAcc.removeAll(keepingCapacity: true)
+        guard !staged.isEmpty, let task else { return }
+        guard let encoder = codecRegistry.txEncoder(for: currentTxCodec) else { return }
+        let frameBytes = P25ImbeNative.Frames.pcm16kFrameBytes
+        var padded = Data(staged.prefix(frameBytes))
+        if padded.count < frameBytes {
+            padded.append(Data(count: frameBytes - padded.count))
+        }
+        pcmFrameScratch = padded
+        txConditioner.conditionLe16(frame: &pcmFrameScratch, bypassExpanderAgc: bypassMicProcessing)
+        guard let packet = encoder.encodeFrame(pcmFrameScratch) else { return }
+        task.send(.data(packet)) { _ in }
+        VoiceLinkTelemetryReporter.shared.recordBytesSent(packet.count)
+    }
+
+    /// True when the voice socket exists and a channel is joined — i.e. a
+    /// frame handed to `sendCaptured` right now would actually reach the
+    /// relay. The PTT UI gates its green "ON AIR" state on this so a dead
+    /// link can't show the operator as transmitting.
+    var isTransmitPathReady: Bool { task != nil && currentChannel != nil }
+
     /// PTT released — clear `/v1/air` immediately for peers (Android/web parity).
     func releaseTransmitHold() {
         pcmAcc.removeAll(keepingCapacity: true)
@@ -222,6 +265,7 @@ final class VoiceTransport {
             }
             pcmAcc.removeAll(keepingCapacity: true)
             task.send(.data(frame)) { _ in }
+            VoiceLinkTelemetryReporter.shared.recordBytesSent(frame.count)
             return
         }
 
@@ -230,6 +274,7 @@ final class VoiceTransport {
         side.append(listenPcmMagic[1])
         side.append(frame)
         task.send(.data(side)) { _ in }
+        VoiceLinkTelemetryReporter.shared.recordBytesSent(side.count)
 
         let now = DispatchTime.now().uptimeNanoseconds
         if lastConsumeNs > 0, now - lastConsumeNs > 300_000_000 {
@@ -247,6 +292,7 @@ final class VoiceTransport {
             txConditioner.conditionLe16(frame: &pcmFrameScratch, bypassExpanderAgc: bypassMicProcessing)
             guard let packet = encoder.encodeFrame(pcmFrameScratch) else { continue }
             task.send(.data(packet)) { _ in }
+            VoiceLinkTelemetryReporter.shared.recordBytesSent(packet.count)
         }
     }
 
@@ -541,12 +587,22 @@ final class VoiceTransport {
         case "busy":
             let holder = (object["unit_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             onBusy?(holder?.isEmpty == true ? nil : holder)
+        case "air_claimed":
+            // The relay pushes the talker the moment their first frame claims
+            // the channel, so the UI can attribute the audio immediately
+            // instead of waiting (up to ~1.2 s) for its next talk-activity poll.
+            let claimUnit = ((object["unit_id"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !claimUnit.isEmpty {
+                let claimName = ((object["display_name"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                onAirClaimed?((object["channel"] as? String) ?? "", claimUnit, claimName.isEmpty ? nil : claimName)
+            }
         case "air_released":
             // Another unit on this channel just unkeyed. Synthesize the
             // close-side end-of-TX cue (roger beep / squelch tail) locally and
             // inject it into playout. No-op unless the agency enabled at least
             // one of the cue flags.
             playEndOfTxCue(messageChannel: object["channel"] as? String)
+            onAirReleased?((object["channel"] as? String) ?? "")
         case "error":
             let code = (object["code"] as? String) ?? "unknown"
             onError?(code)

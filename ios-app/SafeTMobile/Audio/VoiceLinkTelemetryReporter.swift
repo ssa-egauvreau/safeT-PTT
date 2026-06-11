@@ -134,6 +134,15 @@ final class VoiceLinkTelemetryReporter {
         lock.unlock()
     }
 
+    /// Uplink accounting — every app-level byte this handset puts on the voice
+    /// socket (vocoded frames, clear PCM, recorder sideband) so the admin
+    /// data-usage column reflects both directions.
+    func recordBytesSent(_ bytes: Int) {
+        lock.lock()
+        window.bytesSent += max(0, bytes)
+        lock.unlock()
+    }
+
     func recordFrameDecoded(codec: String) {
         lock.lock()
         window.framesDecoded += 1
@@ -295,6 +304,8 @@ final class VoiceLinkTelemetryReporter {
         var talkSpurtsStarted: Int = 0
         var talkSpurtsEnded: Int = 0
         var bytesReceived: Int = 0
+        /// Uplink bytes — voice frames + recorder sideband sent on the socket.
+        var bytesSent: Int = 0
         var codecBreakdown: [String: CodecCounters] = [:]
     }
 
@@ -320,6 +331,7 @@ final class VoiceLinkTelemetryReporter {
                 "talkSpurtsStarted": w.counters.talkSpurtsStarted,
                 "talkSpurtsEnded": w.counters.talkSpurtsEnded,
                 "bytesReceived": w.counters.bytesReceived,
+            "bytesSent": w.counters.bytesSent,
                 "wallMsObservation": max(0, Int(w.closedAtMs - w.counters.openedAtMs)),
             ] as [String: Any],
             "clientTs": Self.isoFormat(ms: w.closedAtMs),

@@ -33,6 +33,12 @@ final class RadioViewModel: ObservableObject {
     private var inboxPrimed = false
     private var voiceStarted = false
     private var pttAirPollTask: Task<Void, Never>?
+
+    /// Post-release capture drain (see `onPttReleased`); cancelled by a re-key.
+    private var pttReleaseDrainTask: Task<Void, Never>?
+
+    /// Monotonic key-up counter so a stale release-drain can't stop a newer hold's mic.
+    private var pttHoldGeneration: UInt64 = 0
     private var hardwarePtt: HardwarePttController?
     private var hardwarePttCancellable: AnyCancellable?
     private var volumeCancellable: AnyCancellable?
@@ -41,6 +47,10 @@ final class RadioViewModel: ObservableObject {
     private var lastReceivedAudio = Data()
 
     private static let widgetDefaults = UserDefaults(suiteName: "group.com.safetptt.mobile")
+
+    /// Post-release mic drain (Android parity): keeps capturing briefly so the
+    /// final word's buffered audio reaches the relay instead of being cut off.
+    private static let txReleaseTailNanoseconds: UInt64 = 400_000_000
 
     private static let isoFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
@@ -359,6 +369,28 @@ final class RadioViewModel: ObservableObject {
                 self.uiState.isTransmitting = false
             }
         }
+        // Relay pushed the channel's talker the moment their first frame hit
+        // the air — paint the attribution now instead of waiting for the next
+        // talk-activity poll (which lagged the audio by up to ~1.2 s). The
+        // poll stays running as the fallback/refresher.
+        voiceTransport.onAirClaimed = { [weak self] channel, unit, displayName in
+            guard let self else { return }
+            if self.uiState.isPttPressed || self.uiState.isEmergencyActive { return }
+            if let cur = self.currentChannel, !channel.isEmpty,
+               channel.caseInsensitiveCompare(cur) != .orderedSame { return }
+            let unitUpper = unit.uppercased()
+            if unitUpper.isEmpty || unitUpper == self.unitId { return }
+            self.uiState.activeTalkUnitId = unitUpper
+            self.uiState.activeTalkDisplayName = displayName ?? ""
+        }
+        voiceTransport.onAirReleased = { [weak self] channel in
+            guard let self else { return }
+            if self.uiState.isPttPressed || self.uiState.isEmergencyActive { return }
+            if let cur = self.currentChannel, !channel.isEmpty,
+               channel.caseInsensitiveCompare(cur) != .orderedSame { return }
+            self.uiState.activeTalkUnitId = ""
+            self.uiState.activeTalkDisplayName = ""
+        }
     }
 
     private func startVoiceIfNeeded() async {
@@ -379,6 +411,11 @@ final class RadioViewModel: ObservableObject {
     // MARK: - PTT
 
     private func onPttPressed() async {
+        // A re-key during the post-release drain window owns the mic again —
+        // invalidate the pending drain so it can't stop the new hold's capture.
+        pttHoldGeneration &+= 1
+        pttReleaseDrainTask?.cancel()
+        pttReleaseDrainTask = nil
         uiState.isPttPressed = true
         guard uiState.networkLabel == "ONLINE" else {
             enterBusy("NO CONNECTION")
@@ -407,10 +444,24 @@ final class RadioViewModel: ObservableObject {
                 enterBusy(peer.isEmpty ? "CHANNEL BUSY" : "CHANNEL BUSY — \(peer)")
                 return
             }
+            // The REST air probe rides plain HTTPS — it can succeed while the
+            // voice WebSocket is still reconnecting, in which case captured
+            // frames would silently drop. Don't go green on a dead link.
+            guard voiceTransport.isTransmitPathReady else {
+                enterBusy("LINK CONNECTING")
+                return
+            }
             // Air is clear — play the permit beep, then start capturing. The beep
             // overlaps the first ~250 ms of mic capture; that's how Android does
             // it too, and the listener side hasn't started decoding yet anyway.
             sounds.play(.pttPermit)
+            guard let captureSessionId = voiceAudio.startCapture() else {
+                enterBusy("VOICE UNAVAILABLE")
+                voiceTransport.stopUplinkCapture()
+                return
+            }
+            voiceTransport.startUplinkCapture(sessionId: captureSessionId)
+            // Green only now — capture running and the uplink actually live.
             uiState.statusMessage = P25ImbeNative.isAvailable ? "ON AIR · IMBE" : "ON AIR · CLEAR PCM"
             uiState.isTransmitting = true
             updateWidgetData()
@@ -421,13 +472,6 @@ final class RadioViewModel: ObservableObject {
                     stateLabel: "TX"
                 )
             }
-            guard let captureSessionId = voiceAudio.startCapture() else {
-                uiState.isTransmitting = false
-                enterBusy("VOICE UNAVAILABLE")
-                voiceTransport.stopUplinkCapture()
-                return
-            }
-            voiceTransport.startUplinkCapture(sessionId: captureSessionId)
         } catch {
             guard uiState.isPttPressed else { return }
             enterBusy("AIR CHECK FAILED")
@@ -457,13 +501,29 @@ final class RadioViewModel: ObservableObject {
         // cue isn't playing.
         sounds.stop(.busy)
         if uiState.isTransmitting {
-            voiceAudio.stopCapture()
             uiState.isTransmitting = false
             updateWidgetData()
+            // Operators were losing the last ~0.5 s of every transmission: the
+            // word spoken at release is still in the capture pipeline, and the
+            // old immediate stop discarded it (plus the staged fractional
+            // frame). Keep capturing briefly so it drains through the encoder,
+            // then flush the partial frame and release the air. A re-key bumps
+            // the generation and cancels this task.
+            pttHoldGeneration &+= 1
+            let generation = pttHoldGeneration
+            pttReleaseDrainTask?.cancel()
+            pttReleaseDrainTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: Self.txReleaseTailNanoseconds)
+                guard let self, !Task.isCancelled, generation == self.pttHoldGeneration else { return }
+                self.voiceAudio.stopCapture()
+                self.voiceTransport.finishUplinkCapture()
+            }
+        } else {
+            // Denied/aborted key-up — tear down immediately so stale PCM/IMBE
+            // data can't leak into the next transmission.
+            voiceAudio.stopCapture()
+            voiceTransport.stopUplinkCapture()
         }
-        // Always tear down uplink state so a denied/aborted key-up cannot leak
-        // stale PCM/IMBE data into the next transmission.
-        voiceTransport.stopUplinkCapture()
         uiState.statusMessage = "RX IDLE"
         if #available(iOS 16.2, *), let channel = currentChannel {
             RadioLiveActivityController.shared.startOrUpdate(

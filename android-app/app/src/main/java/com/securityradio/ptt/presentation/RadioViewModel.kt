@@ -1517,7 +1517,10 @@ class RadioViewModel(
                         if (!micLive) {
                             soundPlayer.playTalkPermitThen(
                                 onFinished = { grantMicrophoneAfterVerification() },
-                                onStarted = { pulsePttTransmitHapticIfEligible() },
+                                onStarted = {
+                                    pulsePttTransmitHapticIfEligible()
+                                    prewarmMicDuringPermitTone()
+                                },
                             )
                         }
                     }
@@ -1604,6 +1607,23 @@ class RadioViewModel(
         }
     }
 
+    /**
+     * Spin the mic up while the talk-permit tone is still playing — capture
+     * starts gated (read-and-discard, no sidetone) so nothing ships during
+     * the tone, but AudioRecord init + voice-effect attach + the first device
+     * buffer fill all complete before the tone ends. Without this, capture
+     * began only after the tone and operators lost the first syllable to
+     * startup latency.
+     */
+    private fun prewarmMicDuringPermitTone() {
+        viewModelScope.launch {
+            val s = _uiState.value
+            if (!s.isPttPressed || s.pttBusyTone || !s.micPermissionGranted) return@launch
+            if (pttMicLiveThisHold) return@launch
+            pttMicCapture.startCapture(holdUplink = true)
+        }
+    }
+
     private fun grantMicrophoneAfterVerification() {
         viewModelScope.launch {
             val s = _uiState.value
@@ -1611,7 +1631,13 @@ class RadioViewModel(
             if (pttMicLiveThisHold) return@launch
             pttMicLiveThisHold = true
             if (s.micPermissionGranted) {
-                pttMicCapture.startCapture()
+                if (pttMicCapture.isCapturing) {
+                    // Pre-warmed during the permit tone — open the gate; audio
+                    // flows from this exact instant.
+                    pttMicCapture.setUplinkHold(false)
+                } else {
+                    pttMicCapture.startCapture()
+                }
             }
             val txReady = voiceRelay.isTransmitPathReady()
             _uiState.update { cur ->
