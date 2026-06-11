@@ -78,13 +78,15 @@ test("server: a real upload reaches onCall and answers the success string", asyn
   }
 });
 
-test("server: a test ping does not invoke onCall and still answers 200", async () => {
+test("server: a test ping does not invoke onCall and answers the string sdrtrunk's testConnection() requires", async () => {
   let calls = 0;
   const server = await createCallUploadServer({ port: 0, onCall: () => calls++ });
   const { port } = server.address();
   try {
     const r = await post(port, multipart({ key: "safet", system: "1", test: "1" }, null), CT);
     assert.equal(r.status, 200);
+    // sdrtrunk: response.toLowerCase().startsWith("incomplete call data: no talkgroup")
+    assert.ok(r.text.toLowerCase().startsWith("incomplete call data: no talkgroup"), `got "${r.text}"`);
     assert.equal(calls, 0);
   } finally {
     server.close();

@@ -67,10 +67,12 @@ export function callFromUpload({ fields, file }) {
   };
 }
 
-// RdioScanner response contract sdrtrunk checks for. A connection test gets
-// "incompleteCallData" (sdrtrunk treats it as a reachable endpoint); a real
-// upload gets the success string so the stream isn't flagged as failing.
-const TEST_REPLY = "incompleteCallData";
+// RdioScanner response contract sdrtrunk checks for. Its testConnection()
+// only sets the stream CONNECTED when the reply STARTS WITH the exact string
+// "incomplete call data: no talkgroup" (case-insensitive) — anything else
+// shows the stream as Error. Real uploads must contain
+// "Call imported successfully.".
+const TEST_REPLY = "incomplete call data: no talkgroup";
 const OK_REPLY = "Call imported successfully.";
 
 /**
