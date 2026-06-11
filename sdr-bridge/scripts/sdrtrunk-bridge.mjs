@@ -240,10 +240,11 @@ async function main() {
       const frames = frameify(pcm);
       if (!frames.length) return;
       const label = call.talkgroupLabel || (call.talkgroupId != null ? `TG ${call.talkgroupId}` : "SDR");
+      const sourceLabel = call.source ? `${label} [${call.source}]` : label;
       const dest = call.talkgroupId != null ? tgToChannel.get(call.talkgroupId) : null;
-      if (dest) dest.enqueue(frames, null);
-      for (const sc of scanChannels) sc.enqueue(frames, label); // Scan All gets every call
-      console.log(`[sdrtrunk] call TG ${call.talkgroupId} "${label}" ${(frames.length * FRAME_MS) / 1000}s -> ${dest ? dest.channelName : "(scan only)"}`);
+      if (dest) dest.enqueue(frames, sourceLabel);
+      for (const sc of scanChannels) sc.enqueue(frames, sourceLabel); // Scan All gets every call
+      console.log(`[sdrtrunk] call TG ${call.talkgroupId} "${label}" src=${call.source ?? "?"} ${(frames.length * FRAME_MS) / 1000}s -> ${dest ? dest.channelName : "(scan only)"}`);
     },
     log: (m) => console.log(`[sdrtrunk] ${m}`),
   });
