@@ -13,6 +13,7 @@ import { AudioLevelMeter } from "../voice/AudioLevelMeter";
 import { ChannelMemberCount } from "../components/ChannelMemberCount";
 import { ChannelRoster } from "./ChannelRoster";
 import { LatestChannelTransmission } from "../components/LatestChannelTransmission";
+import type { PushedTalker } from "../hooks/useChannelLiveRx";
 import { useChannelRoster } from "../hooks/useChannelRoster";
 import type { WorkspaceWidgetSize } from "../consoleStore";
 import { sounds } from "../sounds";
@@ -111,6 +112,8 @@ export function ChannelPanel({
   const [audioOutputId, setAudioOutputId] = useState(() => loadAudioOutputId(channel.id));
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([]);
   const [receiving, setReceiving] = useState(false);
+  /** Relay-pushed talker (air_claimed/air_released) for instant attribution. */
+  const [pushedTalker, setPushedTalker] = useState<PushedTalker | null>(null);
   /** Custom soundboard tone-outs currently looping on this channel. */
   const [loopingIds, setLoopingIds] = useState<Set<number>>(new Set());
   const toneOuts = useToneOuts();
@@ -163,6 +166,8 @@ export function ChannelPanel({
       },
       onPermission: (perm) => setPermission(perm),
       onReceiving: (rx) => setReceiving(rx),
+      onAirClaimed: (unitId, displayName) => setPushedTalker({ unitId, displayName }),
+      onAirReleased: () => setPushedTalker(null),
       onBusy: (unit) => {
         // Keep the busy tone going while the operator still holds the key.
         if (pttHeldRef.current) {
@@ -966,6 +971,7 @@ export function ChannelPanel({
             channelName={channel.name}
             active={monitoring && connected}
             homeReceiving={receiving && !transmitting}
+            pushedTalker={pushedTalker}
             workspaceSize={workspace ? wsSize : undefined}
             logHint={
               wsSize === "large"

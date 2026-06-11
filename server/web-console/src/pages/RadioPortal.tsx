@@ -7,6 +7,7 @@ import {
   type UserChannel,
 } from "../api";
 import { LatestChannelTransmission } from "../components/LatestChannelTransmission";
+import type { PushedTalker } from "../hooks/useChannelLiveRx";
 import { useAuth } from "../auth";
 import { Topbar } from "../Topbar";
 import { VoiceChannelClient, type VoiceState } from "../voice/voiceClient";
@@ -32,6 +33,8 @@ export function RadioPortal() {
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [permission, setPermission] = useState<Permission>("listen_only");
   const [receiving, setReceiving] = useState(false);
+  /** Relay-pushed talker (air_claimed/air_released) for instant attribution. */
+  const [pushedTalker, setPushedTalker] = useState<PushedTalker | null>(null);
   const [transmitting, setTransmitting] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [movedNotice, setMovedNotice] = useState<{ channel: string; by: string | null } | null>(null);
@@ -171,6 +174,8 @@ export function RadioPortal() {
       },
       onPermission: (p) => setPermission(p),
       onReceiving: (r) => setReceiving(r),
+      onAirClaimed: (unitId, displayName) => setPushedTalker({ unitId, displayName }),
+      onAirReleased: () => setPushedTalker(null),
       onMove: (toChannel, by) => {
         setMovedNotice({ channel: toChannel, by });
         sounds.channelSwitch();
@@ -602,6 +607,7 @@ export function RadioPortal() {
             channelName={selectedChannel}
             active={!!selectedChannel && voiceConnected}
             homeReceiving={receiving}
+            pushedTalker={pushedTalker}
             scanRxChannel={scanActiveChannel}
             scanWatchList={scanWatchList}
             localUnitId={user?.unitId ?? user?.username ?? null}

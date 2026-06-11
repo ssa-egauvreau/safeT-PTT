@@ -4,6 +4,7 @@
 // on the machine physically wired to the external radio.
 
 import { getToken } from "../api";
+import { ambeDecode, initAmbe } from "./ambeVocoder";
 import { imbeDecode, initImbe } from "./imbeVocoder";
 
 export type BridgeRunState = "idle" | "connecting" | "running" | "error" | "closed";
@@ -105,6 +106,7 @@ export class BridgeRunnerClient {
     }
     this.setState("connecting");
     void initImbe(); // decoder for digital RX on bidirectional bridges
+    void initAmbe(); // AMBE+2 (P25 Phase 2) — shares the dvmvocoder WASM with IMBE
 
     try {
       // A line feed wants the raw signal — no mic processing.
@@ -295,6 +297,16 @@ export class BridgeRunnerClient {
     const bytes = new Uint8Array(buffer);
     if (bytes.byteLength === 13 && bytes[0] === IMBE_MAGIC_0 && bytes[1] === IMBE_MAGIC_1) {
       const pcm8k = imbeDecode(bytes.subarray(2));
+      if (pcm8k) {
+        this.schedulePcm(upsample8kTo16k(pcm8k));
+      }
+      return;
+    }
+    // AMBE+2 2450 (P25 Phase 2): 2-byte magic + 9-byte codeword. Decoded the
+    // same way as IMBE so a bridge on an AMBE channel plays voice, not the
+    // static that falling through to the raw-PCM branch would produce.
+    if (bytes.byteLength === 11 && bytes[0] === 0xa2 && bytes[1] === 0x45) {
+      const pcm8k = ambeDecode(bytes.subarray(2));
       if (pcm8k) {
         this.schedulePcm(upsample8kTo16k(pcm8k));
       }

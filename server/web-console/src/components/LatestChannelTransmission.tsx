@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchTransmissionAudio } from "../api";
 import type { WorkspaceWidgetSize } from "../consoleStore";
-import { useChannelLiveRx } from "../hooks/useChannelLiveRx";
+import { useChannelLiveRx, type PushedTalker } from "../hooks/useChannelLiveRx";
 import { useUnitAliasResolver } from "../unitAliases";
 import { formatDuration, formatTime, transcriptOf } from "../pages/TransmissionLog";
 import { formatUnitSpeakerLabel } from "../pages/consoleShared";
@@ -11,6 +11,8 @@ export type LatestChannelTransmissionProps = {
   channelName: string | null;
   active: boolean;
   homeReceiving: boolean;
+  /** Relay-pushed talker (`air_claimed` / `air_released`) for instant attribution. */
+  pushedTalker?: PushedTalker | null;
   scanRxChannel?: string | null;
   scanWatchList?: string;
   localUnitId?: string | null;
@@ -29,6 +31,7 @@ export function LatestChannelTransmission({
   channelName,
   active,
   homeReceiving,
+  pushedTalker,
   scanRxChannel = null,
   scanWatchList = "",
   localUnitId = null,
@@ -41,6 +44,7 @@ export function LatestChannelTransmission({
     channelName,
     active,
     homeReceiving,
+    pushedTalker,
     scanRxChannel,
     scanWatchList,
     localUnitId,
