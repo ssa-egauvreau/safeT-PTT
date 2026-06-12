@@ -255,6 +255,52 @@ function talkerAttribution(meta: ClientMeta): { unitId: string; displayName: str
   };
 }
 
+/**
+ * A simulcast channel was edited or deleted: re-resolve the cached fan-out
+ * targets on every socket still joined to it. Each socket caches its member
+ * channels at join time (`meta.simulcastTargets`), so without this a console
+ * or bridge that joined earlier keeps transmitting onto the OLD member
+ * channels until it reconnects — a deleted simulcast kept "talking" on its
+ * members. Live air claims on the old members are released immediately.
+ */
+export async function refreshSimulcastSockets(agencyId: number, channelName: string): Promise<void> {
+  const chNorm = normalizedChannel(channelName);
+  const key = channelKey(agencyId, chNorm);
+  let targets: SimTarget[] | null = null;
+  try {
+    const sim = await getSimulcastByName(agencyId, channelName);
+    targets = sim
+      ? sim.memberChannels.map((c) => {
+          const norm = normalizedChannel(c.name);
+          return {
+            channelKey: channelKey(agencyId, norm),
+            channelName: c.name,
+            channelNorm: norm,
+            channelId: c.id,
+          };
+        })
+      : null;
+  } catch {
+    targets = null; // resolution failed — stop the fan-out rather than leak audio
+  }
+  for (const [ws, meta] of clientMeta) {
+    if (meta.channelKey !== key || !meta.simulcastTargets) {
+      continue;
+    }
+    releaseAir(ws);
+    meta.simulcastTargets = targets;
+    if (!targets) {
+      // The simulcast no longer exists (deleted or renamed): tell the client
+      // so the console shows the join as dead instead of silently eating audio.
+      try {
+        ws.send(JSON.stringify({ type: "error", code: "unknown_channel" }));
+      } catch {
+        /* socket closing */
+      }
+    }
+  }
+}
+
 /** Tell connected voice clients on a channel to uplink clear PCM (AI dispatch listening). */
 export function notifyChannelAiDispatchListenPcm(
   agencyId: number,
@@ -653,6 +699,8 @@ export function __registerVoiceMemberForTest(opts: {
   unitId?: string;
   displayName?: string | null;
   permission?: Permission;
+  /** Member channels when the registered socket joined a simulcast channel. */
+  simulcastMemberChannels?: string[];
 }): void {
   const chNorm = normalizedChannel(opts.channel);
   clientMeta.set(opts.ws, {
@@ -669,7 +717,16 @@ export function __registerVoiceMemberForTest(opts: {
     txDisplayName: null,
     permission: opts.permission ?? "talk",
     joined: true,
-    simulcastTargets: null,
+    simulcastTargets:
+      opts.simulcastMemberChannels?.map((name, i) => {
+        const norm = normalizedChannel(name);
+        return {
+          channelKey: channelKey(opts.agencyId, norm),
+          channelName: name,
+          channelNorm: norm,
+          channelId: i + 1,
+        };
+      }) ?? null,
     yields: false,
     lastBusyMs: 0,
     markerToneUntilMs: 0,
