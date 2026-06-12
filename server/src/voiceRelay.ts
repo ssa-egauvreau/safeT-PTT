@@ -1107,6 +1107,11 @@ export function attachVoiceRelay(
           return;
         }
 
+        // Voice frames are tiny (10–13 B vocoded at 50/s) and latency-critical:
+        // disable Nagle explicitly so no Node-version or proxy default can hold
+        // a frame back waiting to coalesce it with the next one.
+        (socket as import("node:net").Socket).setNoDelay?.(true);
+
         let identity: Identity;
         const bridgeParam = url.searchParams.get("bridge");
         const token = url.searchParams.get("token");

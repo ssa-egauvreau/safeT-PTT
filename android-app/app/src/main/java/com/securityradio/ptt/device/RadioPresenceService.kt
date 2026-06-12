@@ -7,7 +7,9 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.securityradio.ptt.DisplayRouterActivity
@@ -16,8 +18,20 @@ import com.securityradio.ptt.R
 /**
  * Low-profile foreground anchor so OEM task killers are less likely to suspend the accessibility
  * PTT routing while another app is on screen.
+ *
+ * Also pins the radio link while running: a partial wake lock keeps the CPU
+ * servicing the voice WebSocket with the screen off, and a low-latency Wi-Fi
+ * lock opts out of Wi-Fi power-save batching. Without these, screen-off
+ * handsets receive voice frames in power-managed bursts — heard as choppy RX
+ * and counted as buffer underruns / PLC on the Link Health dashboard — and
+ * the dedicated-handset deployments this app targets expect always-on radio
+ * behaviour over standby battery life (the same trade commercial PTT apps
+ * make with their "keep awake" mode).
  */
 class RadioPresenceService : Service() {
+
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onBind(intent: Intent?) = null
 
@@ -37,7 +51,54 @@ class RadioPresenceService : Service() {
         } else {
             startForeground(NOTIFY_ID, notification)
         }
+        acquireRadioLocks()
         return START_STICKY
+    }
+
+    override fun onDestroy() {
+        releaseRadioLocks()
+        super.onDestroy()
+    }
+
+    private fun acquireRadioLocks() {
+        if (wakeLock == null) {
+            // String-keyed getSystemService: the Class-keyed overload needs API 23
+            // and minSdk is 21.
+            wakeLock = runCatching {
+                (getSystemService(Context.POWER_SERVICE) as? PowerManager)
+                    ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "safeT:radioPresence")
+                    ?.also {
+                        it.setReferenceCounted(false)
+                        // Held for the life of the service by design (no timeout):
+                        // a sleeping CPU between voice frames is exactly the
+                        // screen-off RX chop this lock exists to prevent.
+                        it.acquire()
+                    }
+            }.getOrNull()
+        }
+        if (wifiLock == null) {
+            wifiLock = runCatching {
+                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
+                (applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager)
+                    ?.createWifiLock(mode, "safeT:radioPresence")
+                    ?.also {
+                        it.setReferenceCounted(false)
+                        it.acquire()
+                    }
+            }.getOrNull()
+        }
+    }
+
+    private fun releaseRadioLocks() {
+        runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        wakeLock = null
+        runCatching { wifiLock?.takeIf { it.isHeld }?.release() }
+        wifiLock = null
     }
 
     private fun ensureNotificationChannel() {
