@@ -5,7 +5,9 @@
  * call, then uploads the whole recording), so we accept its RdioScanner
  * broadcaster POSTs instead of pulling a live/continuous stream. Each POST is
  * one finished call: multipart/form-data carrying the audio file plus
- * `talkgroup_id`, `talkgroup_label`, `source`, `frequency`, `date_time`.
+ * `talkgroup`, `talkgroupLabel`, `source` (radio ID), `talkerAlias`,
+ * `frequency`, `dateTime` (sdrtrunk FormField.java names; rdio-scanner-style
+ * `talkgroup_id`/`talkgroup_label`/`date_time` are accepted as fallbacks).
  *
  * This module is transport-only: it parses the upload and hands a clean call
  * object to `onCall`. Audio decoding (ffmpeg) and SafeT routing live in the
@@ -55,13 +57,14 @@ export function parseMultipart(body, contentType) {
 export function callFromUpload({ fields, file }) {
   if (fields.test != null && fields.test !== "" && fields.test !== "0") return null; // connection test
   if (!file || !file.data?.length) return null;
-  const tgid = Number(fields.talkgroup_id ?? fields.talkgroupId);
+  const tgid = Number(fields.talkgroup ?? fields.talkgroup_id ?? fields.talkgroupId);
   return {
     talkgroupId: Number.isFinite(tgid) ? tgid : null,
-    talkgroupLabel: (fields.talkgroup_label || fields.talkgroupLabel || "").trim() || null,
+    talkgroupLabel: (fields.talkgroupLabel || fields.talkgroup_label || "").trim() || null,
     source: (fields.source || "").trim() || null,
+    talkerAlias: (fields.talkerAlias || fields.talker_alias || "").trim() || null,
     frequency: Number(fields.frequency) || null,
-    dateTimeSec: Number(fields.date_time) || null,
+    dateTimeSec: Number(fields.dateTime ?? fields.date_time) || null,
     filename: file.filename || "call.mp3",
     audio: file.data,
   };

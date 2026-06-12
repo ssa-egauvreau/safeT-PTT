@@ -71,6 +71,27 @@ In SafeT SDR → **Settings → Decoder**:
 On Start, SafeT SDR detaches the dongle from WSL (so Windows/sdrtrunk owns it),
 launches sdrtrunk, and runs the call-upload bridge. Stop closes both.
 
+## P25 Phase 2 (OC CCCS is Phase 2)
+
+Nothing extra to configure. OC CCCS runs **P25 Phase 2 (TDMA)** voice on a
+**Phase 1 (FDMA) control channel** — which is how every Phase 2 system works.
+In sdrtrunk you still configure the channel as a trunked **P25 Phase 1**
+decoder on the control channel; when the system grants a TDMA voice channel,
+sdrtrunk creates the **P25 Phase 2** traffic-channel decoder automatically
+(grab the scramble/randomizer parameters from the control channel too). The
+Phase 2 vocoder (AMBE+2 half-rate, vs Phase 1's full-rate IMBE) is handled by
+the same JMBE library that's already decoding your audio — if calls play in
+sdrtrunk, Phase 2 audio is working.
+
+The SafeT side never sees the vocoder at all: sdrtrunk uploads each call as an
+already-decoded MP3, and the bridge ffmpeg-decodes that to PCM. Phase 1 and
+Phase 2 calls arrive identically.
+
+If specific talkgroups are silent while others work, check sdrtrunk's
+**Traffic Channel Pool** size on the channel config (every concurrent call
+needs a slot — Phase 2 carries two calls per frequency) and that you're on a
+recent sdrtrunk (0.6.x) build, which has the current Phase 2 decoder fixes.
+
 ## Verifying
 
 - sdrtrunk's **Streaming** tab shows the `SafeT` stream connected with a

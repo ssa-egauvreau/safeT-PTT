@@ -243,7 +243,8 @@ async function main() {
       const dest = call.talkgroupId != null ? tgToChannel.get(call.talkgroupId) : null;
       if (dest) dest.enqueue(frames, null);
       for (const sc of scanChannels) sc.enqueue(frames, label); // Scan All gets every call
-      console.log(`[sdrtrunk] call TG ${call.talkgroupId} "${label}" ${(frames.length * FRAME_MS) / 1000}s -> ${dest ? dest.channelName : "(scan only)"}`);
+      const who = call.talkerAlias || call.source; // radio that keyed up, when the system sent it
+      console.log(`[sdrtrunk] call TG ${call.talkgroupId} "${label}"${who ? ` from ${who}` : ""} ${(frames.length * FRAME_MS) / 1000}s -> ${dest ? dest.channelName : "(scan only)"}`);
     },
     log: (m) => console.log(`[sdrtrunk] ${m}`),
   });

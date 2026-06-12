@@ -36,13 +36,30 @@ test("parseMultipart: fields + binary file survive intact (incl. NUL/CRLF bytes)
   assert.deepEqual([...file.data], [...audio]);
 });
 
-test("callFromUpload: maps fields and parses the talkgroup id", () => {
+test("callFromUpload: maps sdrtrunk's FormField names (talkgroup/dateTime/talkerAlias)", () => {
+  const body = multipart(
+    { talkgroup: "391", talkgroupLabel: "TAN-CALL", source: "5921719", talkerAlias: "ENG 61", frequency: "856212500", dateTime: "1781131741" },
+    { field: "audio", filename: "c.mp3", data: Buffer.from([1, 2, 3, 4]) },
+  );
+  const call = callFromUpload(parseMultipart(body, CT));
+  assert.equal(call.talkgroupId, 391);
+  assert.equal(call.talkgroupLabel, "TAN-CALL");
+  assert.equal(call.source, "5921719");
+  assert.equal(call.talkerAlias, "ENG 61");
+  assert.equal(call.frequency, 856212500);
+  assert.equal(call.dateTimeSec, 1781131741);
+  assert.equal(call.audio.length, 4);
+});
+
+test("callFromUpload: rdio-scanner-style underscore field names still map", () => {
   const body = multipart({ talkgroup_id: "391", talkgroup_label: "TAN-CALL", source: "5921719", frequency: "856212500", date_time: "1781131741" }, { field: "audio", filename: "c.mp3", data: Buffer.from([1, 2, 3, 4]) });
   const call = callFromUpload(parseMultipart(body, CT));
   assert.equal(call.talkgroupId, 391);
   assert.equal(call.talkgroupLabel, "TAN-CALL");
   assert.equal(call.source, "5921719");
+  assert.equal(call.talkerAlias, null);
   assert.equal(call.frequency, 856212500);
+  assert.equal(call.dateTimeSec, 1781131741);
   assert.equal(call.audio.length, 4);
 });
 
