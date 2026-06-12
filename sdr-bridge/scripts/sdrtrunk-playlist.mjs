@@ -50,7 +50,9 @@ export function buildAliasList(talkgroups, { listName = "OCCCS", streamName = "S
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<playlist version="${PLAYLIST_VERSION}">\n${aliases.join("\n")}\n</playlist>\n`;
 }
 
-/** tgid -> { label, group } from config/occcs-talkgroups.csv (Decimal,Hex,Alpha Tag,Mode,Description,Tag,Category). */
+/** tgid -> { label, group } from config/occcs-talkgroups.csv (Decimal,Hex,Alpha Tag,Mode,Description,Tag,Category).
+ *  Labels read "Alpha Tag - Description" (e.g. "DUKECALL - OCSD ACCESS") so
+ *  Scan All and the handset talker line show what a talkgroup IS, not just its tag. */
 function loadReferenceTalkgroups(root) {
   const out = new Map();
   try {
@@ -58,7 +60,7 @@ function loadReferenceTalkgroups(root) {
     for (const line of lines.slice(1)) {
       const c = line.split(",");
       const id = Number((c[0] ?? "").trim());
-      if (Number.isFinite(id) && id > 0 && c[2]) out.set(id, { label: c[2].trim(), group: (c[6] ?? "").trim() || "OC CCCS" });
+      if (Number.isFinite(id) && id > 0 && c[2]) out.set(id, { label: [c[2].trim(), (c[4] ?? "").trim()].filter(Boolean).join(" - "), group: (c[6] ?? "").trim() || "OC CCCS" });
     }
   } catch {
     /* reference list is optional */
