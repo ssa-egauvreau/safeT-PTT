@@ -247,13 +247,14 @@ async function main() {
       const frames = frameify(pcm);
       if (!frames.length) return;
       const label = call.talkgroupLabel || (call.talkgroupId != null ? `TG ${call.talkgroupId}` : "SDR");
+      const sourceLabel = call.source ? `${label} [${call.source}]` : label;
       const dest = call.talkgroupId != null ? tgToChannel.get(call.talkgroupId) : null;
       // Real talker for the handset display: radio ID as the unit number,
       // talkgroup alias as the name (talker alias fills in when the system
       // sent one and the talkgroup has no label).
       const talker = { unit: call.source, name: call.talkgroupLabel || call.talkerAlias };
-      if (dest) dest.enqueue(frames, null, talker);
-      for (const sc of scanChannels) sc.enqueue(frames, label, talker); // Scan All gets every call
+      if (dest) dest.enqueue(frames, sourceLabel, talker);
+      for (const sc of scanChannels) sc.enqueue(frames, sourceLabel, talker); // Scan All gets every call
       const who = call.talkerAlias || call.source; // radio that keyed up, when the system sent it
       console.log(`[sdrtrunk] call TG ${call.talkgroupId} "${label}"${who ? ` from ${who}` : ""} ${(frames.length * FRAME_MS) / 1000}s -> ${dest ? dest.channelName : "(scan only)"}`);
     },
