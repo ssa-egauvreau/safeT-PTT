@@ -147,8 +147,16 @@ class Channel {
         statusDirty = true;
       }
     };
+    // A failing socket fires BOTH onerror and onclose. Without the once-guard
+    // each firing scheduled its own reconnect, so live connections doubled on
+    // every blip (1 → 2 → 4 → 8 …) and the roster showed the bridge joined to
+    // each channel many times over.
+    let dropped = false;
     const drop = () => {
+      if (dropped) return;
+      dropped = true;
       clearInterval(ka);
+      try { ws.close(); } catch { /* already dead */ }
       if (this.ws === ws) {
         this.ws = null;
         if (this.row.state === "on air") { this.row.state = "reconnecting"; statusDirty = true; }

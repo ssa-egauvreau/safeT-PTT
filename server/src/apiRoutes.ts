@@ -21,6 +21,7 @@ import {
   peekVoiceTransmittingUnit,
   sendMoveCommand,
   notifyChannelCodec,
+  refreshSimulcastSockets,
   type PresenceStatus,
   type RosterMember,
 } from "./voiceRelay.js";
@@ -1423,10 +1424,20 @@ export function createApiRouter(): Router {
           .map((v) => Number(v))
           .filter((n) => Number.isFinite(n));
       }
+      const prior = (await listSimulcasts(agencyId)).find((s) => s.id === id);
       const ok = await updateSimulcast(id, agencyId, patch);
       if (!ok) {
         res.status(404).json({ error: "not_found" });
         return;
+      }
+      // Re-resolve cached fan-out targets on sockets already joined to this
+      // simulcast — member-list edits and renames must take effect live, not
+      // on the next reconnect.
+      if (prior) {
+        await refreshSimulcastSockets(agencyId, prior.name);
+        if (patch.name && patch.name !== prior.name) {
+          await refreshSimulcastSockets(agencyId, patch.name);
+        }
       }
       await writeAudit({
         agencyId,
@@ -1446,10 +1457,17 @@ export function createApiRouter(): Router {
     try {
       const agencyId = req.authUser!.agencyId!;
       const id = Number(req.params.id);
+      const prior = (await listSimulcasts(agencyId)).find((s) => s.id === id);
       const ok = await deleteSimulcast(id, agencyId);
       if (!ok) {
         res.status(404).json({ error: "not_found" });
         return;
+      }
+      // Sockets joined to the deleted simulcast cached its member channels at
+      // join time and would keep transmitting onto them forever — clear the
+      // fan-out now and tell those clients the channel is gone.
+      if (prior) {
+        await refreshSimulcastSockets(agencyId, prior.name);
       }
       await writeAudit({
         agencyId,
