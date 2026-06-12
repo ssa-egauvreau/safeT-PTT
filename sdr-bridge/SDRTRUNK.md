@@ -100,6 +100,10 @@ recent sdrtrunk (0.6.x) build, which has the current Phase 2 decoder fixes.
   seconds after each transmission ends.
 - A call that decodes in sdrtrunk should arrive whole on SafeT with the
   talkgroup name on **Scan All**.
+- Handsets show the real talker while a call plays: the receive line reads
+  `RX: <radio ID> • <talkgroup alias>` (e.g. `RX: 5921719 • TAN-CALL`), taken
+  from the call metadata sdrtrunk uploads, and the Transmission Log attributes
+  each call the same way.
 
 If sdrtrunk's stream shows errors, re-check the Host URL and that
 `127.0.0.1:8765` is reachable from Windows (mirrored networking, or the WSL IP).
