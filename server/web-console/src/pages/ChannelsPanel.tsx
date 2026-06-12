@@ -223,9 +223,11 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
             </div>
           {channels.map((channel, index) => {
             const showZone = !!channel.zone && channel.zone !== (channels[index - 1]?.zone ?? null);
+            const zoneHeader =
+              channel.zone_number != null ? `${channel.zone_number} · ${channel.zone}` : channel.zone;
             return (
               <Fragment key={channel.id}>
-                {showZone && <div className="zone-header">{channel.zone}</div>}
+                {showZone && <div className="zone-header">{zoneHeader}</div>}
                 <ChannelRailTile
                   channel={channel}
                   monitoring={open.includes(channel.id)}

@@ -28,12 +28,15 @@ enum class ChannelPermission {
     }
 }
 
+/** A numbered channel bank from the portal; [number] prefixes the channel name on the display. */
+data class ChannelZone(val name: String, val number: Int? = null)
+
 data class RadioChannelCatalog(
     val channels: List<String>,
     /** Lookup by lowercased channel name; missing entries default to [ChannelPermission.TALK]. */
     val permissions: Map<String, ChannelPermission>,
-    /** Zone label by lowercased channel name; channels missing here fall into the default zone. */
-    val zones: Map<String, String> = emptyMap(),
+    /** Zone by lowercased channel name; channels missing here fall into the default zone. */
+    val zones: Map<String, ChannelZone> = emptyMap(),
     val origin: ChannelCatalogOrigin,
     val errorMessage: String?,
 )
