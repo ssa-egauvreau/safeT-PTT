@@ -70,6 +70,11 @@ import {
   listAudit,
   listChannels,
   listChannelsForUser,
+  listZones,
+  createZone,
+  updateZone,
+  deleteZone,
+  getZoneById,
   listInboxAlerts,
   listTen33Channels,
   getChannelTen33Active,
@@ -804,6 +809,7 @@ export function createApiRouter(): Router {
               name: c.name,
               color: c.color,
               zone: c.zone,
+              zone_number: c.zone_number,
               codec: c.codec,
               permission: "talk_priority",
               simulcast: false,
@@ -816,6 +822,7 @@ export function createApiRouter(): Router {
               name: s.name,
               color: null,
               zone: "Simulcast",
+              zone_number: null,
               codec: simulcastCodec,
               permission: "talk_priority",
               simulcast: true,
@@ -1235,6 +1242,110 @@ export function createApiRouter(): Router {
     }
   });
 
+  // --- admin: zones --------------------------------------------------------
+  // Numbered channel banks (zone 1, zone 2, …). The number is what radios show
+  // in front of the channel name ("1 GREEN 1"); the name is the description.
+
+  router.get("/admin/zones", requireAdmin, async (req, res) => {
+    try {
+      res.json({ zones: await listZones(req.authUser!.agencyId!) });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.post("/admin/zones", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const zoneNumber = Number(req.body?.zone_number);
+      const name = String(req.body?.name ?? "").trim();
+      if (!Number.isInteger(zoneNumber) || zoneNumber < 1 || zoneNumber > 999) {
+        res.status(400).json({ error: "bad_zone_number" });
+        return;
+      }
+      if (!name) {
+        res.status(400).json({ error: "missing_name" });
+        return;
+      }
+      const zone = await createZone(agencyId, zoneNumber, name);
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "zone_create",
+        target: `${zoneNumber} ${name}`,
+        ip: clientIp(req),
+      });
+      res.status(201).json({ zone });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.patch("/admin/zones/:id", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const id = Number(req.params.id);
+      const patch: { zoneNumber?: number; name?: string } = {};
+      if (req.body?.zone_number !== undefined) {
+        const zoneNumber = Number(req.body.zone_number);
+        if (!Number.isInteger(zoneNumber) || zoneNumber < 1 || zoneNumber > 999) {
+          res.status(400).json({ error: "bad_zone_number" });
+          return;
+        }
+        patch.zoneNumber = zoneNumber;
+      }
+      if (req.body?.name !== undefined) {
+        const name = String(req.body.name).trim();
+        if (!name) {
+          res.status(400).json({ error: "missing_name" });
+          return;
+        }
+        patch.name = name;
+      }
+      const zone = await updateZone(id, agencyId, patch);
+      if (!zone) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "zone_update",
+        target: `${zone.zone_number} ${zone.name}`,
+        detail: { id, fields: Object.keys(patch) },
+        ip: clientIp(req),
+      });
+      res.json({ zone });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  router.delete("/admin/zones/:id", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const id = Number(req.params.id);
+      const ok = await deleteZone(id, agencyId);
+      if (!ok) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "zone_delete",
+        target: String(id),
+        ip: clientIp(req),
+      });
+      res.json({ ok: true });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
   // --- admin: channels ---------------------------------------------------
 
   router.get("/admin/channels", requireAdmin, async (req, res) => {
@@ -1280,7 +1391,7 @@ export function createApiRouter(): Router {
       const patch: {
         name?: string;
         color?: string | null;
-        zone?: string | null;
+        zoneId?: number | null;
         codec?: VoiceCodec;
       } = {};
       if (req.body?.name !== undefined) {
@@ -1299,8 +1410,18 @@ export function createApiRouter(): Router {
       if (req.body?.color !== undefined) {
         patch.color = req.body.color ? String(req.body.color) : null;
       }
-      if (req.body?.zone !== undefined) {
-        patch.zone = req.body.zone ? String(req.body.zone).trim() : null;
+      if (req.body?.zone_id !== undefined) {
+        if (req.body.zone_id === null) {
+          patch.zoneId = null;
+        } else {
+          const zoneId = Number(req.body.zone_id);
+          // The FK is global — confirm the zone belongs to this agency before linking.
+          if (!Number.isInteger(zoneId) || !(await getZoneById(zoneId, agencyId))) {
+            res.status(400).json({ error: "bad_zone" });
+            return;
+          }
+          patch.zoneId = zoneId;
+        }
       }
       if (req.body?.codec !== undefined) {
         if (!isVoiceCodec(req.body.codec)) {

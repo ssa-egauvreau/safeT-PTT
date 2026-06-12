@@ -6,23 +6,30 @@ import {
   VOICE_CODEC_LABEL,
   type Channel,
   type VoiceCodec,
+  type Zone,
 } from "../../api";
 
 export function ChannelsPanel() {
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [defaultCodec, setDefaultCodec] = useState<VoiceCodec | null>(null);
+  const [zoneNumber, setZoneNumber] = useState("");
+  const [zoneName, setZoneName] = useState("");
+  const [zoneCreating, setZoneCreating] = useState(false);
 
   async function reload() {
     try {
-      const [chRes, agRes] = await Promise.all([
+      const [chRes, zoneRes, agRes] = await Promise.all([
         api.listChannels(),
+        api.listZones().catch(() => ({ zones: [] as Zone[] })),
         api.getAdminAgency().catch(() => null),
       ]);
       setChannels(chRes.channels);
+      setZones(zoneRes.zones);
       if (agRes) {
         setDefaultCodec(agRes.agency.defaultCodec);
       }
@@ -99,6 +106,76 @@ export function ChannelsPanel() {
     }
   }
 
+  async function onCreateZone(event: FormEvent) {
+    event.preventDefault();
+    const num = Number(zoneNumber);
+    if (!Number.isInteger(num) || num < 1 || !zoneName.trim()) {
+      return;
+    }
+    setZoneCreating(true);
+    setError(null);
+    try {
+      await api.createZone(num, zoneName.trim());
+      setZoneNumber("");
+      setZoneName("");
+      await reload();
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setZoneCreating(false);
+    }
+  }
+
+  function renameZone(zone: Zone) {
+    const next = window.prompt(`Zone ${zone.zone_number} description`, zone.name);
+    if (next != null && next.trim() && next.trim() !== zone.name) {
+      void (async () => {
+        setError(null);
+        try {
+          await api.updateZone(zone.id, { name: next.trim() });
+          await reload();
+        } catch (err) {
+          setError(describeError(err));
+        }
+      })();
+    }
+  }
+
+  function renumberZone(zone: Zone) {
+    const next = window.prompt(`Zone number for "${zone.name}"`, String(zone.zone_number));
+    const num = next == null ? NaN : Number(next.trim());
+    if (Number.isInteger(num) && num >= 1 && num !== zone.zone_number) {
+      void (async () => {
+        setError(null);
+        try {
+          await api.updateZone(zone.id, { zone_number: num });
+          await reload();
+        } catch (err) {
+          setError(describeError(err));
+        }
+      })();
+    }
+  }
+
+  async function removeZone(zone: Zone) {
+    const members = channels.filter((c) => c.zone_id === zone.id).length;
+    if (
+      !window.confirm(
+        `Delete zone ${zone.zone_number} "${zone.name}"?` +
+          (members ? ` ${members} channel(s) become unzoned.` : ""),
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    try {
+      await api.deleteZone(zone.id);
+      await reload();
+    } catch (err) {
+      setError(describeError(err));
+    }
+  }
+
   return (
     <div>
       <div className="panel-head">
@@ -106,11 +183,78 @@ export function ChannelsPanel() {
         <span className="count">{channels.length} total</span>
       </div>
       <p className="panel-desc">
-        Channels radios and the console can tune. A color and zone are shown on the console; handsets
-        read the channel list from <code className="mono">/v1/channels</code>.
+        Channels radios and the console can tune. Group channels into numbered <strong>zones</strong> below —
+        radios cycle one zone at a time and show the zone number in front of the channel name
+        (zone 1's "Green 1" displays as <code className="mono">1 GREEN 1</code>).
       </p>
 
       {error && <div className="banner error">{error}</div>}
+
+      <form className="card" onSubmit={onCreateZone}>
+        <h3>Zones</h3>
+        {zones.length > 0 && (
+          <table>
+            <thead>
+              <tr>
+                <th>Zone</th>
+                <th>Description</th>
+                <th>Channels</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {zones.map((zone) => (
+                <tr key={zone.id}>
+                  <td>
+                    <code className="mono">{zone.zone_number}</code>
+                  </td>
+                  <td>{zone.name}</td>
+                  <td>{channels.filter((c) => c.zone_id === zone.id).length}</td>
+                  <td>
+                    <div className="cell-actions">
+                      <button type="button" className="btn sm" onClick={() => renumberZone(zone)}>
+                        Renumber
+                      </button>
+                      <button type="button" className="btn sm" onClick={() => renameZone(zone)}>
+                        Rename
+                      </button>
+                      <button type="button" className="btn sm danger" onClick={() => void removeZone(zone)}>
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div className="form-row">
+          <div className="field">
+            <label>Zone number</label>
+            <input
+              type="number"
+              min={1}
+              max={999}
+              value={zoneNumber}
+              onChange={(e) => setZoneNumber(e.target.value)}
+              placeholder="1"
+              required
+            />
+          </div>
+          <div className="field">
+            <label>Description</label>
+            <input
+              value={zoneName}
+              onChange={(e) => setZoneName(e.target.value)}
+              placeholder="e.g. Patrol"
+              required
+            />
+          </div>
+          <button className="btn primary" type="submit" disabled={zoneCreating}>
+            {zoneCreating ? "Adding…" : "Add zone"}
+          </button>
+        </div>
+      </form>
 
       <form className="card" onSubmit={onCreate}>
         <h3>Add channel</h3>
@@ -179,17 +323,23 @@ export function ChannelsPanel() {
                   </div>
                 </td>
                 <td>
-                  <input
-                    key={`zone-${channel.id}-${channel.zone ?? ""}`}
-                    defaultValue={channel.zone ?? ""}
-                    placeholder="—"
-                    onBlur={(e) => {
-                      const zone = e.target.value.trim();
-                      if (zone !== (channel.zone ?? "")) {
-                        void patch(channel, { zone: zone || null });
+                  <select
+                    value={channel.zone_id ?? ""}
+                    onChange={(e) => {
+                      const next = e.target.value === "" ? null : Number(e.target.value);
+                      if (next !== channel.zone_id) {
+                        void patch(channel, { zone_id: next });
                       }
                     }}
-                  />
+                    title="Zone this channel belongs to. Radios scroll within one zone and show the zone number before the channel name."
+                  >
+                    <option value="">— no zone —</option>
+                    {zones.map((zone) => (
+                      <option key={zone.id} value={zone.id}>
+                        {zone.zone_number} — {zone.name}
+                      </option>
+                    ))}
+                  </select>
                 </td>
                 <td>
                   <select

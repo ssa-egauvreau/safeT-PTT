@@ -71,6 +71,8 @@ data class ChannelDto(
     @SerializedName("permission") val permission: String? = null,
     /** Zone label from the portal (safeT Control → Channels); null/blank = ungrouped. */
     @SerializedName("zone") val zone: String? = null,
+    /** Zone bank number; shown in front of the channel name on the display ("1 GREEN 1"). */
+    @SerializedName("zone_number") val zoneNumber: Int? = null,
 )
 
 data class AirStateDto(
