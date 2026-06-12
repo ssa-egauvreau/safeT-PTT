@@ -16,7 +16,7 @@ struct ScanPickerScreen: View {
                 }
             } header: {
                 Text("Tap a channel to include it in scan. The currently tuned channel is always heard.")
-                    .font(.system(size: 12))
+                    .font(.safet(size: 12))
                     .foregroundColor(.safetTextDim)
                     .textCase(nil)
             }
@@ -44,11 +44,11 @@ struct ScanPickerScreen: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.safet(size: 15, weight: .semibold))
                         .foregroundColor(isHome ? .safetTextDim : .safetText)
                     if isHome {
                         Text("HOME — ALWAYS LIVE")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(.safet(size: 10, weight: .bold, design: .monospaced))
                             .foregroundColor(.safetSignal)
                     }
                 }

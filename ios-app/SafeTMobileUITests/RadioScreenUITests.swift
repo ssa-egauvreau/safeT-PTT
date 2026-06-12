@@ -25,9 +25,7 @@ final class RadioScreenUITests: XCTestCase {
 
     func test_radio_launchesAndShowsCoreControls() {
         let app = XCUIApplication()
-        // Force the legacy PTT bar so HOLD TO TALK is rendered (the big PTT
-        // button has its own coverage in PttControlsRegressionUITests).
-        app.launchArguments += ["-uitest-logged-in", "-uitest-big-ptt-off"]
+        app.launchArguments += ["-uitest-logged-in"]
         app.launch()
 
         // Status strip shows the stubbed unit id.
@@ -48,10 +46,7 @@ final class RadioScreenUITests: XCTestCase {
 
     func test_radio_signOut_returnsToLogin() throws {
         let app = XCUIApplication()
-        // -uitest-big-ptt-off forces the legacy PTT bar so the big always-
-        // thumbable PTT button does not overlap the SETTINGS tab strip. The
-        // big-PTT layout is covered separately in PttControlsRegressionUITests.
-        app.launchArguments += ["-uitest-logged-in", "-uitest-big-ptt-off"]
+        app.launchArguments += ["-uitest-logged-in"]
         app.launch()
 
         let settings = app.buttons["SETTINGS"]

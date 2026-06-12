@@ -5,6 +5,16 @@ import Foundation
 struct ChannelDTO: Decodable, Identifiable {
     let id: Int
     let name: String
+    /// Zone bank name from the portal ("PATROL", "Simulcast", …); nil/blank when
+    /// the channel isn't grouped into a zone.
+    let zone: String?
+    /// Zone bank number shown in front of the channel name on the display
+    /// ("1 GREEN 1"). nil when ungrouped. Decoded from JSON `zone_number` via
+    /// the client's `convertFromSnakeCase` strategy.
+    let zoneNumber: Int?
+    /// Server permission grant for this channel — "listen_only" | "talk" |
+    /// "talk_priority". Drives the PTT gate (listen-only channels can't key).
+    let permission: String?
 }
 
 struct AirState: Decodable {

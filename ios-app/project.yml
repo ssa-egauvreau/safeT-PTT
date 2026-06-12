@@ -189,6 +189,12 @@ targets:
         NSLocationWhenInUseUsageDescription: "Your location is shared with dispatch so your unit appears on the live map."
         NSMicrophoneUsageDescription: "Microphone access is required to transmit voice on the radio channel."
         NSSupportsLiveActivities: true
+        # Roboto Condensed — bundled from android-app/res/font so the iOS shell
+        # matches the Android handset typography. Files live in
+        # SafeTMobile/Resources/Fonts and are referenced here by filename.
+        UIAppFonts:
+          - RobotoCondensed-Regular.ttf
+          - RobotoCondensed-Bold.ttf
         UIBackgroundModes:
           - audio
         UILaunchScreen: {}

@@ -17,15 +17,6 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertTrue(reloaded.hardwarePttEnabled)
     }
 
-    func test_bigPtt_defaultsToTrue_andRoundTrips() {
-        let defaults = freshDefaults()
-        let store = SettingsStore(defaults: defaults)
-        XCTAssertTrue(store.bigPttButtonEnabled)
-        store.bigPttButtonEnabled = false
-        let reloaded = SettingsStore(defaults: defaults)
-        XCTAssertFalse(reloaded.bigPttButtonEnabled)
-    }
-
     func test_audioRoute_roundTripsAsRawValue() {
         let defaults = freshDefaults()
         let store = SettingsStore(defaults: defaults)

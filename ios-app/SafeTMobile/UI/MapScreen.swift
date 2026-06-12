@@ -34,7 +34,7 @@ struct MapScreen: View {
             .overlay(alignment: .top) {
                 if let loadError {
                     Text(loadError)
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.safet(size: 11, weight: .bold))
                         .foregroundColor(.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
@@ -83,11 +83,11 @@ struct MapScreen: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(position.unitId)
-                        .font(.system(size: 14, weight: .heavy, design: .monospaced))
+                        .font(.safet(size: 14, weight: .heavy, design: .monospaced))
                         .foregroundColor(.safetText)
                     if let name = position.displayName, !name.isEmpty {
                         Text("• \(name)")
-                            .font(.system(size: 12))
+                            .font(.safet(size: 12))
                             .foregroundColor(.safetTextDim)
                     }
                     Spacer()
@@ -100,15 +100,15 @@ struct MapScreen: View {
                 HStack(spacing: 12) {
                     if let channel = position.channelName, !channel.isEmpty {
                         Text("CH \(channel)")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .font(.safet(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundColor(.safetSignal)
                     }
                     Text(formatAgo(position.updatedAt))
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .font(.safet(size: 11, weight: .medium, design: .monospaced))
                         .foregroundColor(.safetTextDim)
                     if let speed = position.speedMps {
                         Text(String(format: "%.0f m/s", speed))
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.safet(size: 11, weight: .medium, design: .monospaced))
                             .foregroundColor(.safetTextDim)
                     }
                 }
@@ -121,7 +121,7 @@ struct MapScreen: View {
             .padding(.bottom, 10)
         } else if positions.isEmpty {
             Text("NO UNITS REPORTING")
-                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                .font(.safet(size: 11, weight: .heavy, design: .monospaced))
                 .foregroundColor(.safetTextDim)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
