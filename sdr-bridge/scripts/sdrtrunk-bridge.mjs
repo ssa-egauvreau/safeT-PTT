@@ -158,20 +158,20 @@ class Channel {
     ws.onerror = drop;
     ws.onclose = drop;
   }
-  enqueue(frames, label) {
-    this.queue.push({ frames, label });
+  enqueue(frames, label, talker = null) {
+    this.queue.push({ frames, label, talker });
     if (this.queue.length > 50) this.queue.splice(0, this.queue.length - 50); // never backlog forever
     if (!this.draining) void this.drain();
   }
   async drain() {
     this.draining = true;
     while (this.queue.length) {
-      const { frames, label } = this.queue.shift();
-      await this.play(frames, label);
+      const { frames, label, talker } = this.queue.shift();
+      await this.play(frames, label, talker);
     }
     this.draining = false;
   }
-  async play(frames, label) {
+  async play(frames, label, talker = null) {
     if (!frames.length) return;
     const r = this.row;
     r.transmitting = true;
@@ -179,6 +179,13 @@ class Channel {
     r.txCount++;
     if (label) r.via = label;
     statusDirty = true;
+    // Attribute this call to the real over-the-air talker before the first
+    // frame claims the channel: radio ID as the unit, talkgroup alias as the
+    // display name. Handsets then paint "RX: 5921719 • TAN-CALL" instead of
+    // the bridge's own identity. release_air (below) clears it server-side.
+    if (talker && (talker.unit || talker.name) && this.ws && this.ws.readyState === 1) {
+      try { this.ws.send(JSON.stringify({ type: "tx_meta", unit_id: talker.unit ?? "", display_name: talker.name ?? "" })); } catch { /* closing */ }
+    }
     const start = Date.now();
     for (let i = 0; i < frames.length; i++) {
       if (this.ws && this.ws.readyState === 1) {
@@ -242,9 +249,14 @@ async function main() {
       const label = call.talkgroupLabel || (call.talkgroupId != null ? `TG ${call.talkgroupId}` : "SDR");
       const sourceLabel = call.source ? `${label} [${call.source}]` : label;
       const dest = call.talkgroupId != null ? tgToChannel.get(call.talkgroupId) : null;
-      if (dest) dest.enqueue(frames, sourceLabel);
-      for (const sc of scanChannels) sc.enqueue(frames, sourceLabel); // Scan All gets every call
-      console.log(`[sdrtrunk] call TG ${call.talkgroupId} "${label}" src=${call.source ?? "?"} ${(frames.length * FRAME_MS) / 1000}s -> ${dest ? dest.channelName : "(scan only)"}`);
+      // Real talker for the handset display: radio ID as the unit number,
+      // talkgroup alias as the name (talker alias fills in when the system
+      // sent one and the talkgroup has no label).
+      const talker = { unit: call.source, name: call.talkgroupLabel || call.talkerAlias };
+      if (dest) dest.enqueue(frames, sourceLabel, talker);
+      for (const sc of scanChannels) sc.enqueue(frames, sourceLabel, talker); // Scan All gets every call
+      const who = call.talkerAlias || call.source; // radio that keyed up, when the system sent it
+      console.log(`[sdrtrunk] call TG ${call.talkgroupId} "${label}"${who ? ` from ${who}` : ""} ${(frames.length * FRAME_MS) / 1000}s -> ${dest ? dest.channelName : "(scan only)"}`);
     },
     log: (m) => console.log(`[sdrtrunk] ${m}`),
   });

@@ -113,6 +113,8 @@ class InricoHardwareService : AccessibilityService() {
                             HardwareButtonRelay.sendEvent(HardwareButtonEvent.ToggleDayNightReleased)
                         isPlayLast ->
                             HardwareButtonRelay.sendEvent(HardwareButtonEvent.PlayLastTransmissionReleased)
+                        isChanUp ->
+                            HardwareButtonRelay.sendEvent(HardwareButtonEvent.ChannelUpReleased)
                     }
                 }
             }

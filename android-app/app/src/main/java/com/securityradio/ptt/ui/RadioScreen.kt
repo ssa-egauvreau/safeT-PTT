@@ -226,6 +226,30 @@ fun RadioScreen(
         val handsetEmergencyFlashColor =
             rememberHandsetLocalEmergencyFlashColor(handsetLocalEmergencyActive)
 
+        // The rugged handsets (IRC590 / TM-7 Plus) render their main display at 24–82 sp; the
+        // shared LCD chrome styles (10.5–30 sp) are unreadably small on them, so the full-screen
+        // update overlays scale up on those profiles. The progress line is the one the operator
+        // actually watches ("DOWNLOADING 45%"), so it gets the larger bump.
+        val overlayLarge = layout.handsetStatusDisplay
+        val overlayTitleStyle =
+            if (overlayLarge) {
+                styles.channel.copy(fontWeight = FontWeight.Bold, fontSize = 36.sp, lineHeight = 40.sp)
+            } else {
+                styles.channel.copy(fontWeight = FontWeight.Bold)
+            }
+        val overlaySubtitleStyle =
+            if (overlayLarge) {
+                styles.zone.copy(fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 26.sp)
+            } else {
+                styles.zone.copy(fontWeight = FontWeight.Bold)
+            }
+        val overlayDetailStyle =
+            if (overlayLarge) {
+                styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 28.sp, lineHeight = 32.sp)
+            } else {
+                styles.status
+            }
+
         Box(modifier = Modifier.fillMaxSize()) {
             if (state.updateInstalling) {
                 Box(
@@ -242,21 +266,21 @@ fun RadioScreen(
                     ) {
                         Text(
                             text = "DOWNLOADING UPDATE",
-                            style = styles.channel.copy(fontWeight = FontWeight.Bold),
+                            style = overlayTitleStyle,
                             color = Color.Black,
                             textAlign = TextAlign.Center,
                         )
                         Text(
                             text = "DO NOT TURN OFF DEVICE",
-                            style = styles.zone.copy(fontWeight = FontWeight.Bold),
+                            style = overlaySubtitleStyle,
                             color = Color.Black,
                             textAlign = TextAlign.Center,
                         )
                         if (state.appUpdateBanner.isNotEmpty()) {
                             Text(
                                 text = state.appUpdateBanner,
-                                style = styles.status,
-                                color = Color.Black.copy(alpha = 0.75f),
+                                style = overlayDetailStyle,
+                                color = Color.Black.copy(alpha = 0.8f),
                                 textAlign = TextAlign.Center,
                             )
                         }
@@ -289,19 +313,19 @@ fun RadioScreen(
                     ) {
                         Text(
                             text = "UPDATE INSTALLED SUCCESSFULLY",
-                            style = styles.channel.copy(fontWeight = FontWeight.Bold),
+                            style = overlayTitleStyle,
                             color = Color.Black,
                             textAlign = TextAlign.Center,
                         )
                         Text(
                             text = "v$version",
-                            style = styles.zone.copy(fontWeight = FontWeight.Bold),
+                            style = overlayDetailStyle,
                             color = Color.Black,
                             textAlign = TextAlign.Center,
                         )
                         Text(
                             text = "PUSH ANY BUTTON TO CLOSE THIS MESSAGE",
-                            style = styles.status,
+                            style = overlaySubtitleStyle,
                             color = Color.Black.copy(alpha = 0.8f),
                             textAlign = TextAlign.Center,
                         )
@@ -344,6 +368,7 @@ fun RadioScreen(
                         palette.statusRed
                     },
                     styles = styles,
+                    large = layout.handsetStatusDisplay,
                 )
             }
             if (state.appUpdateBanner.isNotEmpty()) {
@@ -351,6 +376,7 @@ fun RadioScreen(
                     text = state.appUpdateBanner,
                     accent = palette.statusAmber,
                     styles = styles,
+                    large = layout.handsetStatusDisplay,
                 )
             }
             if (state.replayBanner.isNotEmpty()) {
@@ -362,6 +388,7 @@ fun RadioScreen(
                         text = state.replayBanner,
                         accent = palette.statusAmber,
                         styles = styles,
+                        large = layout.handsetStatusDisplay,
                     )
                     if (state.replayTranscript.isNotBlank()) {
                         LcdReplayTranscriptBanner(
@@ -600,6 +627,20 @@ private fun UniversalCockpitMainPanel(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
     ) {
+        if (state.zoneCount > 1) {
+            // Zone chip: tap to enter zone-select (CH +/- then steps zones), tap again to commit.
+            Text(
+                text = state.zoneLabel.uppercase(Locale.US),
+                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 16.sp),
+                color = if (state.zoneSelectActive) p.statusAmber else p.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onEvent(RadioUiEvent.ToggleZoneSelect) },
+            )
+        }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1270,12 +1311,17 @@ private fun LcdMainChannelBlock(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = if (state.zoneCount > 1) {
+                        Modifier.clickable { onEvent(RadioUiEvent.ToggleZoneSelect) }
+                    } else {
+                        Modifier
+                    },
                 ) {
                     LcdListChannelIcon(color = p.textMuted, modifier = Modifier.size(14.dp))
                     Text(
                         text = state.zoneLabel.uppercase(Locale.US),
                         style = styles.zone,
-                        color = p.textSecondary,
+                        color = if (state.zoneSelectActive) p.statusAmber else p.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1297,10 +1343,18 @@ private fun LcdMainChannelBlock(
                 Text(
                     text = "${state.zoneLabel} · ${state.channelPosition}".uppercase(Locale.US),
                     style = zoneStyle,
-                    color = p.textMuted,
+                    color = if (state.zoneSelectActive) p.statusAmber else p.textMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (state.zoneCount > 1) {
+                                Modifier.clickable { onEvent(RadioUiEvent.ToggleZoneSelect) }
+                            } else {
+                                Modifier
+                            },
+                        ),
                     textAlign = TextAlign.Center,
                 )
             }
@@ -1548,6 +1602,12 @@ private fun LcdHandsetFillChannelBlock(
                     deviceProfile = state.resolvedDeviceProfile,
                     styles = styles,
                     codecLabel = state.channelCodecLabel,
+                    zoneSelectActive = state.zoneSelectActive,
+                    onZoneTap = if (state.zoneCount > 1) {
+                        { onEvent(RadioUiEvent.ToggleZoneSelect) }
+                    } else {
+                        null
+                    },
                 )
             }
             val scanRxLive =
@@ -1607,6 +1667,11 @@ private fun LcdHandsetFillChannelBlock(
                                 zoneValue = zoneValue,
                                 channelValue = channelValue,
                                 styles = styles,
+                                onZoneTap = if (state.zoneCount > 1) {
+                                    { onEvent(RadioUiEvent.ToggleZoneSelect) }
+                                } else {
+                                    null
+                                },
                             )
                         }
                         val ten33Alpha = rememberTen33PulseAlpha(state.channelTen33)
@@ -1767,6 +1832,8 @@ private fun LcdHandsetZonePositionLine(
     deviceProfile: ResolvedDeviceProfile,
     styles: LcdTextStyles,
     codecLabel: String = "",
+    zoneSelectActive: Boolean = false,
+    onZoneTap: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val label = handsetZonePositionLabel(zoneValue, channelValue, codecLabel)
@@ -1784,12 +1851,13 @@ private fun LcdHandsetZonePositionLine(
             fontSize = fontSp,
             lineHeight = (fontSp.value * 1.12f).sp,
         ),
-        color = p.textSecondary,
+        color = if (zoneSelectActive) p.statusAmber else p.textSecondary,
         textAlign = TextAlign.Center,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .fillMaxWidth()
+            .then(if (onZoneTap != null) Modifier.clickable(onClick = onZoneTap) else Modifier)
             .padding(
                 top = 0.dp,
                 bottom = if (deviceProfile == ResolvedDeviceProfile.IRC590) 0.dp else 2.dp,
@@ -1804,6 +1872,7 @@ private fun LcdHandsetIrc590ChannelMetaHeader(
     zoneValue: String,
     channelValue: String,
     styles: LcdTextStyles,
+    onZoneTap: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val p = RadioLcdTheme.palette
@@ -1837,6 +1906,8 @@ private fun LcdHandsetIrc590ChannelMetaHeader(
             deviceProfile = ResolvedDeviceProfile.IRC590,
             styles = styles,
             codecLabel = state.channelCodecLabel,
+            zoneSelectActive = state.zoneSelectActive,
+            onZoneTap = onZoneTap,
         )
     }
 }
@@ -2360,7 +2431,8 @@ private fun LcdHandsetToolbarScanBanner(
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = "SCAN RX · ${state.scanBackgroundChannel}",
-                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp),
+                // Handset-only strip: match the handsets' display scale, not the 10.5 sp chrome.
+                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = 24.sp),
                 color = p.statusAmber,
                 maxLines = 1,
             )
@@ -2382,20 +2454,26 @@ private fun LcdHandsetWarningRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Handset-only row: these are tap targets on small rugged screens — the 11.5 sp
+        // soft-key style was both unreadable and nearly untappable there.
         if (!state.micPermissionGranted) {
             Text(
                 text = "ALLOW MIC",
-                style = styles.softKey,
+                style = styles.softKey.copy(fontSize = 20.sp, lineHeight = 24.sp),
                 color = p.statusBlue,
-                modifier = Modifier.clickable { onRequestMicPermission() },
+                modifier = Modifier
+                    .clickable { onRequestMicPermission() }
+                    .padding(vertical = 4.dp),
             )
         }
         if (state.channelSyncError != null) {
             Text(
                 text = "RETRY SYNC",
-                style = styles.softKey,
+                style = styles.softKey.copy(fontSize = 20.sp, lineHeight = 24.sp),
                 color = p.statusAmber,
-                modifier = Modifier.clickable { onEvent(RadioUiEvent.RetryChannelSync) },
+                modifier = Modifier
+                    .clickable { onEvent(RadioUiEvent.RetryChannelSync) }
+                    .padding(vertical = 4.dp),
             )
         }
     }
@@ -2838,6 +2916,9 @@ private fun LcdAlertBanner(
     text: String,
     accent: Color,
     styles: LcdTextStyles,
+    // IRC590 / TM-7 Plus: the 14 sp chrome banner is unreadable next to their 24–82 sp
+    // display text, so handset layouts render the strip at handset scale.
+    large: Boolean = false,
 ) {
     Row(
         modifier = Modifier
@@ -2845,13 +2926,13 @@ private fun LcdAlertBanner(
             .clip(RoundedCornerShape(2.dp))
             .background(accent.copy(alpha = 0.14f))
             .border(1.dp, accent, RoundedCornerShape(2.dp))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 10.dp, vertical = if (large) 8.dp else 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
         Text(
             text = text,
-            style = styles.banner,
+            style = if (large) styles.banner.copy(fontSize = 22.sp, lineHeight = 26.sp) else styles.banner,
             color = accent,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -3235,7 +3316,11 @@ private fun LcdHardwareKeyLegend(
             LcdLegendLabel(text = "CH-", styles = styles, color = p.textOnButton)
         }
         LcdLegendSeparator(p.divider)
-        LcdLegendKey(onClick = { onEvent(RadioUiEvent.ChannelUp) }) {
+        LcdLegendKey(
+            onClick = { onEvent(RadioUiEvent.ChannelUp) },
+            // Mirrors the physical channel-up key: hold toggles zone-select mode.
+            onLongClick = { onEvent(RadioUiEvent.ToggleZoneSelect) },
+        ) {
             LcdLegendLabel(text = "CH+", styles = styles, color = p.textOnButton)
         }
         LcdLegendSeparator(p.divider)
@@ -3641,12 +3726,12 @@ private fun MessageHistoryRow(
                 ) {
                     Text(
                         text = item.timeLabel,
-                        style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp),
+                        style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 19.sp),
                         color = p.textSecondary,
                     )
                     Text(
                         text = item.channelName.uppercase(Locale.US),
-                        style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp),
+                        style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 19.sp),
                         color = p.statusBlue,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -3659,7 +3744,7 @@ private fun MessageHistoryRow(
                 if (talker.isNotEmpty()) {
                     Text(
                         text = talker,
-                        style = styles.status.copy(fontWeight = FontWeight.SemiBold, fontSize = 14.sp),
+                        style = styles.status.copy(fontWeight = FontWeight.SemiBold, fontSize = 18.sp, lineHeight = 22.sp),
                         color = p.textPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

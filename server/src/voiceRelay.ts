@@ -124,6 +124,12 @@ interface ClientMeta {
   channelId: number | null;
   userId: number | null;
   displayName: string | null;
+  /** Per-transmission talker attribution override (`tx_meta` control frame):
+   *  an SDR/radio bridge relaying a decoded P25 call names the real
+   *  over-the-air talker (radio ID + talkgroup alias) instead of its own
+   *  identity. Cleared by `release_air` and on (re)join. */
+  txUnitId: string | null;
+  txDisplayName: string | null;
   permission: Permission;
   joined: boolean;
   /** Set when the client joined a simulcast channel — every frame fans to these. */
@@ -225,16 +231,27 @@ const voiceRoster = new Map<WebSocket, RosterRecord>();
 const clientMeta = new Map<WebSocket, ClientMeta>();
 
 function frameAttribution(meta: ClientMeta): FrameAttribution {
+  const talker = talkerAttribution(meta);
   return {
     agencyId: meta.agencyId,
     channelNorm: meta.channelNorm!,
     channelName: meta.channelName,
     channelId: meta.channelId,
     userId: meta.userId,
-    unitId: meta.unitId,
-    displayName: meta.displayName,
+    unitId: talker.unitId,
+    displayName: talker.displayName,
     aiDispatchListenPcm: meta.aiDispatchListenPcm,
     recordListenPcm: meta.recordListenPcm,
+  };
+}
+
+/** The identity a talk-spurt is attributed to — on `/v1/air`, in `air_claimed`
+ *  pushes, and in the recorder — honoring any per-transmission `tx_meta`
+ *  override before falling back to the connection's join identity. */
+function talkerAttribution(meta: ClientMeta): { unitId: string; displayName: string | null } {
+  return {
+    unitId: meta.txUnitId || meta.unitId,
+    displayName: meta.txDisplayName ?? meta.displayName,
   };
 }
 
@@ -633,19 +650,24 @@ export function __registerVoiceMemberForTest(opts: {
   ws: WebSocket;
   agencyId: number;
   channel: string;
+  unitId?: string;
+  displayName?: string | null;
+  permission?: Permission;
 }): void {
   const chNorm = normalizedChannel(opts.channel);
   clientMeta.set(opts.ws, {
     identity: { kind: "legacy", agencyId: opts.agencyId },
     agencyId: opts.agencyId,
-    unitId: "",
+    unitId: opts.unitId ?? "",
     channelNorm: chNorm,
     channelKey: channelKey(opts.agencyId, chNorm),
     channelName: opts.channel,
     channelId: null,
     userId: null,
-    displayName: null,
-    permission: "talk",
+    displayName: opts.displayName ?? null,
+    txUnitId: null,
+    txDisplayName: null,
+    permission: opts.permission ?? "talk",
     joined: true,
     simulcastTargets: null,
     yields: false,
@@ -685,10 +707,30 @@ export function __claimVoiceAirForTest(opts: {
 }
 
 /** Test-only: handle a control frame the same way the relay socket would. @internal */
-export function __handleVoiceControlForTest(ws: WebSocket, type: string): void {
-  if (type === "release_air") {
-    releaseAir(ws);
+export function __handleVoiceControlForTest(
+  ws: WebSocket,
+  type: string,
+  payload?: { unit_id?: string; display_name?: string },
+): void {
+  handleVoiceControl(ws, clientMeta.get(ws), { type, ...payload });
+}
+
+/** Test-only: run the half-duplex claim for a registered member exactly as a
+ *  binary voice frame would — including any `tx_meta` talker override. @internal */
+export function __claimAirAsMemberForTest(ws: WebSocket): boolean {
+  const meta = clientMeta.get(ws);
+  if (!meta?.channelKey) {
+    return false;
   }
+  const talker = talkerAttribution(meta);
+  return claimAir(
+    meta.channelKey,
+    ws,
+    talker.unitId,
+    talker.displayName,
+    meta.permission === "talk_priority",
+    meta.yields,
+  ).ok;
 }
 
 /**
@@ -827,6 +869,51 @@ function releaseAir(ws: WebSocket): void {
       voiceAirByChannel.delete(chanKey);
       broadcastAirReleased(ws, chanKey);
     }
+  }
+}
+
+/** Non-join control frames (release_air / marker_tone / tx_meta). Factored out
+ *  of the socket message handler so the test harness exercises the production
+ *  semantics. `meta` may be missing for release_air (it only needs the socket). */
+function handleVoiceControl(
+  ws: WebSocket,
+  meta: ClientMeta | undefined,
+  json: { type?: string; unit_id?: string; display_name?: string },
+): void {
+  // PTT released — drop `/v1/air` immediately instead of waiting for TTL. The
+  // transmission's talker override dies with the transmission.
+  if (json.type === "release_air") {
+    releaseAir(ws);
+    if (meta) {
+      meta.txUnitId = null;
+      meta.txDisplayName = null;
+    }
+    return;
+  }
+  if (!meta) {
+    return;
+  }
+  // 10-33 marker: the next PCM frame(s) are alert audio only, not keyed voice.
+  if (json.type === "marker_tone") {
+    meta.markerToneUntilMs = Date.now() + 30_000;
+    return;
+  }
+  // Per-transmission talker attribution: an SDR/radio bridge replaying a
+  // decoded P25 call names the real over-the-air talker (radio ID as the unit,
+  // talkgroup alias as the display name) so handsets paint
+  // "RX: 5921719 • TAN-CALL" instead of the bridge's own identity. Restricted
+  // to bridge sockets and priority (admin/dispatcher) accounts so a plain
+  // handset cannot spoof another unit's callsign.
+  if (json.type === "tx_meta") {
+    if (!meta.joined) {
+      return;
+    }
+    if (meta.identity.kind !== "bridge" && meta.permission !== "talk_priority") {
+      return;
+    }
+    meta.txUnitId = String(json.unit_id ?? "").trim().toUpperCase().slice(0, 24) || null;
+    meta.txDisplayName = String(json.display_name ?? "").trim().slice(0, 64) || null;
+    return;
   }
 }
 
@@ -1131,6 +1218,8 @@ export function attachVoiceRelay(
             channelId: null,
             userId: null,
             displayName: null,
+            txUnitId: null,
+            txDisplayName: null,
             permission: "listen_only",
             joined: false,
             simulcastTargets: null,
@@ -1266,6 +1355,8 @@ export function attachVoiceRelay(
 
     const chanKey = channelKey(meta.agencyId, chNorm);
     meta.unitId = unitId;
+    meta.txUnitId = null;
+    meta.txDisplayName = null;
     meta.channelNorm = chNorm;
     meta.channelKey = chanKey;
     meta.channelName = channelName;
@@ -1346,22 +1437,14 @@ export function attachVoiceRelay(
             type?: string;
             channel?: string;
             unit_id?: string;
+            display_name?: string;
             client?: string;
           };
           if (json.type === "join") {
             void handleJoin(ws, meta, json);
             return;
           }
-          // 10-33 marker: the next PCM frame(s) are alert audio only, not keyed voice.
-          if (json.type === "marker_tone") {
-            meta.markerToneUntilMs = Date.now() + 30_000;
-            return;
-          }
-          // PTT released — drop `/v1/air` immediately instead of waiting for TTL.
-          if (json.type === "release_air") {
-            releaseAir(ws);
-            return;
-          }
+          handleVoiceControl(ws, meta, json);
           return;
         }
 
@@ -1447,10 +1530,12 @@ export function attachVoiceRelay(
           return;
         }
 
+        const talker = talkerAttribution(meta);
+
         // Simulcast — fan the frame out to every member channel it can claim.
         if (meta.simulcastTargets) {
           for (const target of meta.simulcastTargets) {
-            if (!claimAir(target.channelKey, ws, meta.unitId, meta.displayName, priority, meta.yields).ok) {
+            if (!claimAir(target.channelKey, ws, talker.unitId, talker.displayName, priority, meta.yields).ok) {
               continue; // a member channel held by someone else is simply skipped
             }
             broadcastExcept(ws, target.channelKey, payload);
@@ -1470,7 +1555,7 @@ export function attachVoiceRelay(
         }
 
         // Strict half-duplex — only the channel holder's audio goes through.
-        const claim = claimAir(meta.channelKey, ws, meta.unitId, meta.displayName, priority, meta.yields);
+        const claim = claimAir(meta.channelKey, ws, talker.unitId, talker.displayName, priority, meta.yields);
         if (!claim.ok) {
           const now = Date.now();
           if (now - meta.lastBusyMs > BUSY_NOTICE_MS) {

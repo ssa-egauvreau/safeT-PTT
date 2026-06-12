@@ -23,6 +23,14 @@ data class RadioUiState(
     val networkLabel: String,
     val batteryPercent: Int,
     val zoneLabel: String,
+    /**
+     * True while zone-select mode is active (hold channel-up on TM-7 Plus, hold replay on IRC590,
+     * or tap the zone label). Channel up/down then steps [zoneLabel] through the zones instead of
+     * tuning; the same hold/tap commits and tunes the first channel of the chosen zone.
+     */
+    val zoneSelectActive: Boolean = false,
+    /** Distinct zones in the catalog; the zone tap affordance is hidden when there is only one. */
+    val zoneCount: Int = 1,
     val channelLabel: String,
     val channelPosition: String,
     val totalChannels: Int,

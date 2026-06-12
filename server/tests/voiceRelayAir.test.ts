@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import type { WebSocket } from "ws";
 
 import {
+  __claimAirAsMemberForTest,
   __claimVoiceAirForTest,
   __handleVoiceControlForTest,
   __registerVoiceMemberForTest,
@@ -276,5 +277,103 @@ describe("air_released cue broadcast", () => {
     // A second release with the slot already gone must not re-broadcast.
     __handleVoiceControlForTest(talker, "release_air");
     assert.equal(airReleasedFor(listener).length, 1);
+  });
+});
+
+describe("tx_meta per-transmission talker attribution", () => {
+  // An SDR bridge replaying a decoded P25 call sends `tx_meta` before the
+  // call's frames so listeners see the real over-the-air talker (radio ID +
+  // talkgroup alias) instead of the bridge's own identity.
+
+  function airClaimedFor(ws: { sent: string[] }): Array<{ unit_id?: string; display_name?: string | null }> {
+    return ws.sent
+      .map((s) => JSON.parse(s) as { type?: string; unit_id?: string; display_name?: string | null })
+      .filter((m) => m.type === "air_claimed");
+  }
+
+  test("a priority talker's tx_meta overrides the air_claimed attribution", () => {
+    const talker = fakeWs();
+    const listener = fakeWs();
+    __registerVoiceMemberForTest({
+      ws: talker,
+      agencyId: AGENCY,
+      channel: CHANNEL,
+      unitId: "SDR-BRIDGE",
+      displayName: "OC Scanner",
+      permission: "talk_priority",
+    });
+    __registerVoiceMemberForTest({ ws: listener, agencyId: AGENCY, channel: CHANNEL });
+
+    __handleVoiceControlForTest(talker, "tx_meta", { unit_id: "5921719", display_name: "TAN-CALL" });
+    assert.equal(__claimAirAsMemberForTest(talker), true);
+
+    const got = airClaimedFor(listener);
+    assert.equal(got.length, 1);
+    assert.equal(got[0]?.unit_id, "5921719");
+    assert.equal(got[0]?.display_name, "TAN-CALL");
+    const peek = peekVoiceTransmittingTalker(AGENCY, CHANNEL);
+    assert.equal(peek?.unit_id, "5921719");
+    assert.equal(peek?.display_name, "TAN-CALL");
+  });
+
+  test("tx_meta from a plain talk member is ignored (no callsign spoofing)", () => {
+    const talker = fakeWs();
+    const listener = fakeWs();
+    __registerVoiceMemberForTest({ ws: talker, agencyId: AGENCY, channel: CHANNEL, unitId: "U7" });
+    __registerVoiceMemberForTest({ ws: listener, agencyId: AGENCY, channel: CHANNEL });
+
+    __handleVoiceControlForTest(talker, "tx_meta", { unit_id: "CHIEF", display_name: "The Chief" });
+    assert.equal(__claimAirAsMemberForTest(talker), true);
+
+    const got = airClaimedFor(listener);
+    assert.equal(got.length, 1);
+    assert.equal(got[0]?.unit_id, "U7");
+    assert.equal(got[0]?.display_name, null);
+  });
+
+  test("release_air clears the override — the next claim reverts to the join identity", () => {
+    const talker = fakeWs();
+    const listener = fakeWs();
+    __registerVoiceMemberForTest({
+      ws: talker,
+      agencyId: AGENCY,
+      channel: CHANNEL,
+      unitId: "SDR-BRIDGE",
+      permission: "talk_priority",
+    });
+    __registerVoiceMemberForTest({ ws: listener, agencyId: AGENCY, channel: CHANNEL });
+
+    __handleVoiceControlForTest(talker, "tx_meta", { unit_id: "5921719", display_name: "TAN-CALL" });
+    assert.equal(__claimAirAsMemberForTest(talker), true);
+    __handleVoiceControlForTest(talker, "release_air");
+    // Next call arrives without fresh tx_meta — must not inherit the old talker.
+    assert.equal(__claimAirAsMemberForTest(talker), true);
+
+    const got = airClaimedFor(listener);
+    assert.equal(got.length, 2);
+    assert.equal(got[1]?.unit_id, "SDR-BRIDGE");
+    assert.equal(got[1]?.display_name, null);
+  });
+
+  test("tx_meta normalizes: unit uppercased, blanks fall back to join identity", () => {
+    const talker = fakeWs();
+    const listener = fakeWs();
+    __registerVoiceMemberForTest({
+      ws: talker,
+      agencyId: AGENCY,
+      channel: CHANNEL,
+      unitId: "SDR-BRIDGE",
+      displayName: "OC Scanner",
+      permission: "talk_priority",
+    });
+    __registerVoiceMemberForTest({ ws: listener, agencyId: AGENCY, channel: CHANNEL });
+
+    __handleVoiceControlForTest(talker, "tx_meta", { unit_id: "  eng61 ", display_name: "   " });
+    assert.equal(__claimAirAsMemberForTest(talker), true);
+
+    const got = airClaimedFor(listener);
+    assert.equal(got[0]?.unit_id, "ENG61");
+    // Blank display_name → fall back to the connection's display name.
+    assert.equal(got[0]?.display_name, "OC Scanner");
   });
 });
