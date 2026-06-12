@@ -2,12 +2,11 @@ package com.securityradio.ptt.device
 
 import android.media.AudioTrack
 import android.os.SystemClock
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 /**
- * Software jitter buffer + PLC (packet-loss concealment) for inbound voice.
+ * Adaptive software jitter buffer + PLC (packet-loss concealment) for inbound voice.
  *
  * The voice relay forwards voice frames over WebSocket as soon as they
  * arrive, with no smoothing on either side. Network jitter therefore lands
@@ -24,10 +23,25 @@ import kotlin.concurrent.withLock
  *     synthesises a concealment frame from the last good frame with a short
  *     linear fade to silence, instead of letting AudioTrack underrun.
  *
- * On a fresh talk-spurt the buffer waits for [INITIAL_TARGET_FRAMES] of audio
- * (~60 ms) before starting playout so a brief opening jitter spike does not
- * immediately trigger PLC. Long pauses between transmissions ([TALK_SPURT_GAP_MS])
- * reset state so the next talker starts cleanly without inherited PLC bleed.
+ * Adaptive cushion: playout starts (and, after an underrun, resumes) only once
+ * [targetFrames] of audio are queued. The target starts at
+ * [MIN_TARGET_FRAMES] (~80 ms) and grows by [TARGET_STEP_FRAMES] on every
+ * underrun up to [MAX_TARGET_FRAMES] (~240 ms), so a link that keeps stalling
+ * automatically trades a little latency for stability — the same strategy
+ * commercial PTT apps use to stay smooth on jittery cellular. A talk-spurt
+ * that completes without a single underrun decays the target by one frame, so
+ * the buffer drifts back toward minimum latency once the link recovers.
+ *
+ * Re-buffering after an underrun matters as much as the cushion itself: the
+ * old fixed-depth design drained every frame the instant it arrived after the
+ * first stall, so one late frame became a machine-gun stutter of
+ * PLC/late/PLC/late for the rest of the transmission. Now an underrun plays
+ * the short PLC fade, then holds (feeding the HAL silence so OEM tracks never
+ * starve) until the cushion is rebuilt — one clean gap instead of sustained
+ * garble.
+ *
+ * Long pauses between transmissions ([TALK_SPURT_GAP_MS]) reset per-spurt
+ * state so the next talker starts cleanly without inherited PLC bleed.
  *
  * Idle teardown: after [IDLE_RELEASE_MS] with no real inbound frames the playout
  * loop releases the AudioTrack and exits instead of streaming silence forever.
@@ -35,18 +49,34 @@ import kotlin.concurrent.withLock
  * built-in amplifier (e.g. amplified PTT earpieces) is heard as a constant buzz
  * between transmissions until the device reboots. Releasing the track lets that
  * route — and the accessory's amp — power down; the next [enqueue] lazily
- * recreates the track exactly as the first frame did.
+ * recreates the track exactly as the first frame did. The threshold is held
+ * well above [TALK_SPURT_GAP_MS]: a mid-transmission network stall must NOT
+ * tear the track down, or the recovery pays track re-init on top of the stall.
  */
 class InboundJitterBuffer(
     private val trackFactory: () -> AudioTrack?,
 ) {
 
     private val lock = ReentrantLock()
-    private val notEmpty = lock.newCondition()
     private val queue = ArrayDeque<ByteArray>()
     private var lastGoodFrame: ByteArray? = null
     private var plcCount = 0
     private var lastEnqueueMs = 0L
+
+    /** Adaptive playout cushion, in frames. Guarded by [lock]. */
+    private var targetFrames = MIN_TARGET_FRAMES
+
+    /** True while playout is held waiting for the cushion to (re)build. */
+    private var buffering = true
+    private var bufferingStartMs = 0L
+
+    /** True once the current contiguous underrun event has been counted. */
+    private var inUnderrun = false
+
+    /** True when the current talk-spurt has had at least one underrun —
+     *  drives the target decay decision at the next spurt boundary. */
+    private var spurtHadUnderrun = false
+    private var sawSpurt = false
 
     private var track: AudioTrack? = null
     @Volatile
@@ -63,6 +93,8 @@ class InboundJitterBuffer(
                 val t = trackFactory() ?: return
                 track = t
                 running = true
+                buffering = true
+                bufferingStartMs = SystemClock.elapsedRealtime()
                 thread = Thread({ playoutLoop(t) }, "voice-jitter-playout").apply {
                     isDaemon = true
                     start()
@@ -71,11 +103,23 @@ class InboundJitterBuffer(
             val now = SystemClock.elapsedRealtime()
             if (lastEnqueueMs != 0L && now - lastEnqueueMs > TALK_SPURT_GAP_MS) {
                 // A fresh talk-spurt — drop any stale tail so the new talker
-                // is not preceded by a faded-out copy of the last one.
+                // is not preceded by a faded-out copy of the last one, and
+                // rebuild the cushion so this spurt starts with full margin
+                // instead of draining frame-for-frame from depth zero.
                 queue.clear()
                 lastGoodFrame = null
                 plcCount = 0
+                inUnderrun = false
+                buffering = true
+                bufferingStartMs = now
+                // Adaptive decay: a previous spurt that never underran earns
+                // one frame of latency back, down to the minimum cushion.
+                if (sawSpurt && !spurtHadUnderrun && targetFrames > MIN_TARGET_FRAMES) {
+                    targetFrames--
+                }
+                spurtHadUnderrun = false
             }
+            sawSpurt = true
             lastEnqueueMs = now
             queue.addLast(pcm)
             // Voice-link telemetry: track the peak buffer depth this window so
@@ -88,7 +132,6 @@ class InboundJitterBuffer(
             while (queue.size > MAX_BUFFER_FRAMES) {
                 queue.removeFirst()
             }
-            notEmpty.signalAll()
         }
     }
 
@@ -106,7 +149,11 @@ class InboundJitterBuffer(
             lastGoodFrame = null
             plcCount = 0
             lastEnqueueMs = 0L
-            notEmpty.signalAll()
+            buffering = true
+            bufferingStartMs = 0L
+            inUnderrun = false
+            spurtHadUnderrun = false
+            sawSpurt = false
         }
         th?.interrupt()
         try {
@@ -134,21 +181,6 @@ class InboundJitterBuffer(
 
     private fun playoutLoop(t: AudioTrack) {
         try {
-            // Initial cushion: wait for a small target depth before the first
-            // write so an opening burst-then-stall does not immediately PLC.
-            lock.withLock {
-                val waitStart = SystemClock.elapsedRealtime()
-                while (running && queue.size < INITIAL_TARGET_FRAMES &&
-                    SystemClock.elapsedRealtime() - waitStart < INITIAL_TIMEOUT_MS
-                ) {
-                    try {
-                        notEmpty.await(WAKE_POLL_MS, TimeUnit.MILLISECONDS)
-                    } catch (_: InterruptedException) {
-                        return
-                    }
-                }
-            }
-
             // Wall-clock pacing keeps playout cadence independent of how AudioTrack's
             // internal buffer happens to be sized on this OEM; the AudioTrack
             // hardware buffer still absorbs sub-frame jitter on top of that.
@@ -205,58 +237,93 @@ class InboundJitterBuffer(
         runCatching { t.release() }
     }
 
-    /** Pulls one frame from the queue (real audio) or synthesises a PLC
-     *  frame when the queue is empty at playout time. Returns null when the
-     *  pacer should exit — either the buffer has been stopped or it has been
-     *  idle past [IDLE_RELEASE_MS] (in which case `running` is cleared here so
-     *  the track is released and the route powers down). Split out of
-     *  [playoutLoop] so the synchronized section has a clear scope and the
-     *  control-flow stays linear. */
+    /** Pulls one frame for the pacer: queued audio once the cushion is built,
+     *  a PLC fade frame on a fresh underrun, or silence while (re)buffering —
+     *  the HAL keeps getting fed either way so OEM tracks never starve.
+     *  Returns null when the pacer should exit — either the buffer has been
+     *  stopped or it has been idle past [IDLE_RELEASE_MS] (in which case
+     *  `running` is cleared here so the track is released and the route powers
+     *  down). */
     private fun nextPlayoutFrame(): ByteArray? {
         lock.withLock {
             if (!running) return null
+            val now = SystemClock.elapsedRealtime()
+
             if (queue.isNotEmpty()) {
+                if (buffering && !cushionReady(now)) {
+                    // Cushion still building; bridge with silence. Only the
+                    // post-underrun rebuild counts as concealment — at spurt
+                    // start nothing has been missed yet (the hold is latency,
+                    // not loss), so counting it would charge every clean
+                    // transmission ~4 phantom PLC frames.
+                    if (inUnderrun && inActiveSpurt(now)) {
+                        VoiceLinkTelemetryReporter.recordPlcSynthesized()
+                    }
+                    return SILENCE_FRAME
+                }
+                buffering = false
                 val f = queue.removeFirst()
                 lastGoodFrame = f
                 plcCount = 0
+                inUnderrun = false
                 return f
             }
 
             // Queue empty. Once we've been idle past the release threshold,
             // stop the loop (return null) so the finally releases the track and
             // the audio route — and any amplified accessory's amp — powers down
-            // instead of buzzing on the always-on output. The next enqueue()
+            // instead of buzzing on an always-on output. The next enqueue()
             // lazily recreates the track, mirroring first-frame startup.
-            val now = SystemClock.elapsedRealtime()
             if (lastEnqueueMs != 0L && now - lastEnqueueMs >= IDLE_RELEASE_MS) {
                 running = false
                 return null
             }
 
-            val plc = synthesizePlc()
-            // Voice-link telemetry: only count concealment that happens
-            // DURING an active talk-spurt (within TALK_SPURT_GAP_MS of the
-            // last received frame). Between transmissions the queue is empty on
-            // every tick too — counting that dead air would swamp the PLC ratio
-            // with channel idle time and a merely-quiet unit would read ~99%
-            // "loss" on the Link Health dashboard. The PLC fade itself still
-            // runs unconditionally so audio is unchanged; only the counters are
-            // gated.
-            val inActiveSpurt = lastEnqueueMs != 0L && now - lastEnqueueMs <= TALK_SPURT_GAP_MS
-            if (inActiveSpurt) {
-                // First PLC frame in a contiguous underrun event is also
-                // counted as one "buffer underrun" so the dashboard can
-                // distinguish outage frequency (underruns) from concealment
-                // volume (plc frames).
-                if (plcCount == 0) {
+            // Voice-link telemetry: only count concealment that happens DURING
+            // an active talk-spurt (within TALK_SPURT_GAP_MS of the last
+            // received frame). Between transmissions the queue is empty on
+            // every tick too — counting that dead air would swamp the PLC
+            // ratio with channel idle time and a merely-quiet unit would read
+            // ~99% "loss" on the Link Health dashboard.
+            if (inActiveSpurt(now)) {
+                if (!inUnderrun) {
+                    // First empty tick of a contiguous underrun event: count it
+                    // once (outage frequency vs. concealment volume) and widen
+                    // the cushion so the next stall has more margin.
+                    inUnderrun = true
+                    spurtHadUnderrun = true
+                    targetFrames = minOf(targetFrames + TARGET_STEP_FRAMES, MAX_TARGET_FRAMES)
                     VoiceLinkTelemetryReporter.recordBufferUnderrun()
                 }
                 VoiceLinkTelemetryReporter.recordPlcSynthesized()
             }
+
+            if (plcCount >= PLC_FADE_FRAMES && !buffering) {
+                // Fade exhausted — stop free-running and hold for the cushion
+                // to rebuild, so recovery is one clean gap instead of a
+                // PLC/late/PLC/late stutter for the rest of the transmission.
+                buffering = true
+                bufferingStartMs = now
+            }
+            val plc = synthesizePlc()
             plcCount++
             return plc
         }
     }
+
+    /** True when playout may leave the buffering hold: the cushion has hit the
+     *  adaptive target, the producer has gone quiet with a short tail still
+     *  queued (talker unkeyed — flush the final syllable instead of dropping
+     *  it at idle teardown), or the safety cap on hold time expired. */
+    private fun cushionReady(now: Long): Boolean {
+        if (queue.size >= targetFrames) return true
+        if (lastEnqueueMs != 0L && now - lastEnqueueMs >= TAIL_FLUSH_MS) return true
+        if (bufferingStartMs != 0L && now - bufferingStartMs >= MAX_BUFFER_WAIT_MS) return true
+        return false
+    }
+
+    private fun inActiveSpurt(now: Long): Boolean =
+        lastEnqueueMs != 0L && now - lastEnqueueMs <= TALK_SPURT_GAP_MS
 
     /**
      * Conceal an underrun by re-emitting the most recent frame with a linear
@@ -294,15 +361,21 @@ class InboundJitterBuffer(
         // 16 kHz mono PCM16 — 2 bytes per sample.
         const val BYTES_PER_SECOND = 16_000 * 2
 
-        // Initial cushion: 4 frames × 20 ms ≈ 80 ms before draining. A small
-        // step up from the 60 ms minimum to absorb brief cellular retransmit
-        // stalls before the playout underruns into PLC, at ~+20 ms latency
-        // (still far below the ~400 ms a PTT operator perceives as lag).
-        const val INITIAL_TARGET_FRAMES = 4
-        const val INITIAL_TIMEOUT_MS = 250L
+        // Adaptive cushion bounds. The floor (4 × 20 ms ≈ 80 ms) matches the
+        // old fixed cushion; the ceiling (12 × 20 ms ≈ 240 ms) is what a
+        // chronically jittery cellular link can earn — still well below the
+        // ~400 ms a PTT operator perceives as lag. Each underrun widens the
+        // target by TARGET_STEP_FRAMES; each clean spurt narrows it by one.
+        const val MIN_TARGET_FRAMES = 4
+        const val MAX_TARGET_FRAMES = 12
+        const val TARGET_STEP_FRAMES = 2
 
-        // Worst-case buffered audio. 16 × 20 ms ≈ 320 ms.
-        const val MAX_BUFFER_FRAMES = 16
+        // Worst-case buffered audio: 50 × 20 ms ≈ 1 s. Sized so a TCP
+        // retransmit burst after a long stall is absorbed (and played out,
+        // late) instead of dropping its oldest frames as garble. The added
+        // latency lasts at most one transmission — the talk-spurt boundary
+        // clears the queue.
+        const val MAX_BUFFER_FRAMES = 50
 
         // Talk-spurt boundary; matches the relay air-claim window so an
         // operator gap between transmissions clears stale state cleanly.
@@ -311,17 +384,28 @@ class InboundJitterBuffer(
         // Idle teardown threshold. After this long with no real inbound frame
         // the playout loop releases the AudioTrack so the audio route — and any
         // amplified accessory's built-in amp — powers down instead of buzzing
-        // on an always-on output. Set to the talk-spurt gap: the route goes
-        // quiet ~300 ms after the channel falls silent (buzz barely perceptible)
-        // while a normal back-and-forth, whose frames keep arriving inside that
-        // window, still reuses one track session rather than thrashing it. The
-        // next enqueue() recreates the track with the normal startup cushion.
-        const val IDLE_RELEASE_MS = TALK_SPURT_GAP_MS
+        // on an always-on output. Held well ABOVE the talk-spurt gap: a
+        // mid-transmission network stall in the 300 ms–1.5 s range must ride
+        // through on the same track, because tearing it down adds track
+        // re-init latency on top of the stall and turns a short dropout into
+        // a long one (the old value equalled the spurt gap and did exactly
+        // that). The cost is ~1.2 s more amp-buzz after the channel goes
+        // quiet, which is the lesser evil.
+        const val IDLE_RELEASE_MS = 1_500L
+
+        // While re-buffering, a producer quiet for this long with frames still
+        // queued means the talker unkeyed — flush the tail instead of holding
+        // it (frames arrive every ~20 ms while a transmission is live).
+        const val TAIL_FLUSH_MS = 150L
+
+        // Safety cap on any single buffering hold, so playout can never sit
+        // on queued audio indefinitely if arrival is somehow slower than
+        // real time.
+        const val MAX_BUFFER_WAIT_MS = 1_000L
 
         // Number of PLC frames synthesised before falling to silence.
         const val PLC_FADE_FRAMES = 3
 
-        const val WAKE_POLL_MS = 20L
         const val JOIN_TIMEOUT_MS = 200L
         const val FRAME_MS = 20L
 
