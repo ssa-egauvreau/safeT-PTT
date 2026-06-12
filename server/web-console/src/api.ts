@@ -597,6 +597,8 @@ export interface VoiceLinkTelemetryReport {
   unitId?: string;
   channel?: string;
   clientType?: string;
+  /** True when the window ran in a hidden (timer-throttled) browser tab. */
+  tabHidden?: boolean;
   counters: {
     framesReceived: number;
     framesDecoded: number;
@@ -634,6 +636,14 @@ export interface VoiceLinkUnitSummary {
   codec_mix: Record<string, VoiceLinkCodecEntry>;
   channels: string[];
   client_types: string[];
+  /** Last-hour counters (anchored at the unit's newest report, hidden-tab
+   *  windows excluded) — the badge basis. Optional: older servers omit them
+   *  and the panel falls back to the whole-range sums. */
+  recent_reports?: number;
+  recent_frames_decoded?: number;
+  recent_plc_frames_synthesized?: number;
+  recent_buffer_underruns?: number;
+  recent_hidden_reports?: number;
 }
 
 export interface VoiceLinkUnitsResponse {

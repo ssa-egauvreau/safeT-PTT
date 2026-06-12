@@ -2653,6 +2653,9 @@ export function createApiRouter(): Router {
         clientType,
         counters: parsed.counters,
         codecBreakdown: parsed.codecBreakdown,
+        // Web console only: window ran in a hidden, timer-throttled tab, so
+        // its PLC/underrun counters describe browser throttling, not the link.
+        tabHidden: body.tabHidden === true,
         clientTs: parsed.clientTs,
       };
       if (getPool() == null) {

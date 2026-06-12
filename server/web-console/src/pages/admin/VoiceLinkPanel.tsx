@@ -39,7 +39,7 @@ import { mergeLinkHealthRows, type LinkHealthRow } from "./linkHealthMerge";
 type LoadState = "idle" | "loading" | "ready" | "error";
 
 interface HealthClassification {
-  badge: "green" | "yellow" | "red" | "unknown";
+  badge: "green" | "yellow" | "orange" | "red" | "unknown";
   label: string;
   description: string;
 }
@@ -58,35 +58,69 @@ function plcRatio(plc: number, decoded: number): number {
 /** Mirrors the server-side `classifyHealth` thresholds so the badge stays
  *  consistent whether the aggregate is rendered server-side or fresh from a
  *  re-derived client view. The duplicate is small; the consistency is worth
- *  it. */
+ *  it.
+ *
+ *  Badge basis: the unit's most recent HOUR of reports (hidden-tab console
+ *  windows excluded), when the server provides those counters — so the badge
+ *  answers "how is this link right now", not "did anything bad happen in the
+ *  whole range". Older servers omit the recent fields; we fall back to the
+ *  range totals. */
 function classifyTelemetry(u: VoiceLinkUnitSummary): HealthClassification {
-  if (u.frames_decoded === 0 && u.plc_frames_synthesized === 0) {
+  const hasRecent = typeof u.recent_reports === "number";
+  const reports = hasRecent ? u.recent_reports! : u.reports;
+  const decoded = hasRecent ? u.recent_frames_decoded ?? 0 : u.frames_decoded;
+  const plc = hasRecent ? u.recent_plc_frames_synthesized ?? 0 : u.plc_frames_synthesized;
+  const underruns = hasRecent ? u.recent_buffer_underruns ?? 0 : u.buffer_underruns;
+  const hiddenReports = u.recent_hidden_reports ?? 0;
+
+  // A console whose recent windows ALL came from a hidden tab isn't degraded —
+  // browsers throttle background-tab timers, which starves the jitter buffer
+  // and manufactures PLC. Label it for what it is.
+  if (hasRecent && reports === 0 && hiddenReports > 0) {
+    return {
+      badge: "unknown",
+      label: "Background tab",
+      description:
+        "Console tab was in the background for its recent reports. Browsers throttle hidden tabs, " +
+        "so quality counters from those windows reflect throttling, not the network.",
+    };
+  }
+  if (decoded === 0 && plc === 0) {
     return {
       badge: "unknown",
       label: "Idle",
-      description: "No audio frames received in the window — unit is connected but silent.",
+      description: "No audio frames received in the last hour of reports — unit connected but silent.",
     };
   }
-  const ratio = plcRatio(u.plc_frames_synthesized, u.frames_decoded);
-  const underrunsPerWindow = u.reports > 0 ? u.buffer_underruns / u.reports : u.buffer_underruns;
-  if (ratio < 0.01 && u.buffer_underruns === 0) {
+  const ratio = plcRatio(plc, decoded);
+  const underrunsPerWindow = reports > 0 ? underruns / reports : underruns;
+  if (ratio < 0.01 && underruns === 0) {
     return {
       badge: "green",
-      label: "Healthy",
-      description: "Clean link — under 1 % PLC and no buffer underruns this window.",
+      label: "Good",
+      description: "Clean link — under 1 % PLC and no buffer underruns in the last hour of reports.",
     };
   }
   if (ratio < 0.05 && underrunsPerWindow < 3) {
     return {
       badge: "yellow",
+      label: "Fair",
+      description: "Some smoothing — under 5 % PLC and occasional underruns in the last hour. Watch.",
+    };
+  }
+  if (ratio < 0.15 && underrunsPerWindow < 15) {
+    return {
+      badge: "orange",
       label: "Marginal",
-      description: "Some smoothing — under 5 % PLC and occasional underruns. Watch.",
+      description:
+        "Audible smoothing — 5–15 % PLC in the last hour of reports. Usable but check coverage " +
+        "if it persists.",
     };
   }
   return {
     badge: "red",
     label: "Degraded",
-    description: "Operator-noticeable cutout — over 5 % PLC or frequent underruns.",
+    description: "Operator-noticeable cutout — over 15 % PLC or frequent underruns in the last hour.",
   };
 }
 
@@ -348,8 +382,11 @@ export function VoiceLinkPanel() {
         uploaded) over the range. The table lists everyone currently
         on a voice channel plus any unit that posted stats in the time range (about every
         30 s from the handset app). This is not the same as GPS/map &ldquo;online&rdquo; —
-        a radio must be tuned to a channel here. Click a unit for trend charts when stats
-        exist.
+        a radio must be tuned to a channel here. The <strong>Health</strong> badge reflects the
+        unit&rsquo;s most recent hour of reports (Good &lt;1% PLC · Fair &lt;5% · Marginal &lt;15% ·
+        Degraded above), and console windows from background browser tabs are excluded — hidden
+        tabs are timer-throttled and report phantom packet loss. Click a unit for trend charts
+        when stats exist.
       </p>
 
       <div className="card">

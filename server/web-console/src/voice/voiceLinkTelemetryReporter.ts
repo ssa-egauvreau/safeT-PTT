@@ -67,6 +67,16 @@ interface QueuedWindow {
   channel: string | null;
   counters: WindowCounters;
   closedAtMs: number;
+  /** True when any part of the window ran in a hidden tab — browsers throttle
+   *  timers there, starving the jitter buffer, so the window's PLC/underruns
+   *  describe throttling rather than the network. The server tags the row and
+   *  Link Health keeps it out of the quality badge. */
+  tabHidden: boolean;
+}
+
+/** `document.hidden`, safely false outside a DOM (unit tests run in Node). */
+function tabIsHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
 }
 
 function emptyWindow(now: number): WindowCounters {
@@ -93,6 +103,19 @@ export class VoiceLinkTelemetryReporter {
   private inFlight = false;
   private unitId: string | null = null;
   private channel: string | null = null;
+  /** Sticky per-window: set if the tab was hidden at any point while the
+   *  current window was open (visibilitychange listener + open/close checks). */
+  private windowSawHidden = tabIsHidden();
+
+  constructor() {
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", () => {
+        if (tabIsHidden()) {
+          this.windowSawHidden = true;
+        }
+      });
+    }
+  }
 
   /** Update which unit and channel future reports are billed to. Safe to call
    *  multiple times (channel switch); the new identity applies to the next
@@ -208,8 +231,10 @@ export class VoiceLinkTelemetryReporter {
       channel: this.channel,
       counters: this.window,
       closedAtMs: closedAt,
+      tabHidden: this.windowSawHidden || tabIsHidden(),
     });
     this.window = emptyWindow(closedAt);
+    this.windowSawHidden = tabIsHidden();
     // Drop the OLDEST queued window when over the cap — operators care about
     // the recent data the dashboard is showing them; an hour-old summary is
     // less actionable than the current one. Pre-cap so a long network outage
@@ -262,6 +287,7 @@ export function buildReportBody(w: QueuedWindow): VoiceLinkTelemetryReport {
     unitId: w.unitId,
     channel: w.channel ?? undefined,
     clientType: CLIENT_TYPE,
+    tabHidden: w.tabHidden || undefined,
     counters: {
       framesReceived: counters.framesReceived,
       framesDecoded: counters.framesDecoded,

@@ -628,6 +628,13 @@ export async function ensureSchema(): Promise<void> {
   await p.query(
     `ALTER TABLE voice_link_telemetry ADD COLUMN IF NOT EXISTS bytes_sent INT NOT NULL DEFAULT 0;`,
   );
+  // Web console windows recorded while the browser tab was hidden: browsers
+  // throttle timers in background tabs, which starves the jitter buffer and
+  // inflates PLC/underruns. Those windows are tagged so Link Health can keep
+  // them out of the quality badge instead of reporting a phantom outage.
+  await p.query(
+    `ALTER TABLE voice_link_telemetry ADD COLUMN IF NOT EXISTS tab_hidden BOOLEAN NOT NULL DEFAULT FALSE;`,
+  );
 
   // Per-agency saved Audio Lab presets — admin operators store the current
   // full AudioLabConfig under a human name ("Patrol", "Detective", "EMS-loud")

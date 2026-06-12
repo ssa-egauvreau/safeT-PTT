@@ -8509,6 +8509,11 @@ table.vlt-units tbody tr:hover {
   color: #d6a838;
   border-color: rgba(220, 170, 50, 0.4);
 }
+.vlt-badge-orange {
+  background: rgba(235, 130, 45, 0.16);
+  color: #e08537;
+  border-color: rgba(235, 130, 45, 0.45);
+}
 .vlt-badge-red {
   background: rgba(220, 80, 80, 0.16);
   color: #d65a5a;
