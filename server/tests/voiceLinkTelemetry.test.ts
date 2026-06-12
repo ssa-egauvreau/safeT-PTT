@@ -620,6 +620,64 @@ test("classifyHealth: green needs zero underruns AND <1% PLC", () => {
   assert.equal(h, "green");
 });
 
+test("classifyHealth: orange band — audible smoothing isn't lumped in with outright outage", () => {
+  // 80 PLC + 920 decoded = 8 % ratio: over the 5 % Fair ceiling but under the
+  // 15 % Degraded floor — a cellular unit on a patrol route, not a dead link.
+  const h = classifyHealth({
+    framesDecoded: 920,
+    plcFramesSynthesized: 80,
+    bufferUnderruns: 8,
+    plcRatio: computePlcRatio(80, 920),
+    reports: 10,
+  });
+  assert.equal(h, "orange");
+});
+
+test("aggregateWindowsByUnit: health judged on the last hour, not the whole range", () => {
+  const windows: AggregatableWindow[] = [];
+  // Two hours ago: a horrid stretch (would be red on its own).
+  for (let i = 0; i < 20; i++) {
+    windows.push(
+      makeWindow("U-SHIFT", 1_700_000_000 + i * 30, {
+        frames_decoded: 50,
+        plc_frames_synthesized: 40,
+        buffer_underruns: 20,
+      }),
+    );
+  }
+  // The most recent hour: clean.
+  const recentStart = 1_700_000_000 + 2 * 60 * 60;
+  for (let i = 0; i < 20; i++) {
+    windows.push(makeWindow("U-SHIFT", recentStart + i * 30, {}));
+  }
+  const out = aggregateWindowsByUnit(windows);
+  assert.equal(out.length, 1);
+  // Whole-range sums still include the bad stretch…
+  assert.ok(out[0]!.plcFramesSynthesized > 0);
+  // …but the badge reflects the clean last hour.
+  assert.equal(out[0]!.health, "green");
+});
+
+test("aggregateWindowsByUnit: hidden-tab windows don't poison the badge", () => {
+  // A backgrounded console tab manufactures PLC/underruns via timer
+  // throttling. When every recent window is hidden, the unit reads as
+  // unknown (no trustworthy audio evidence), not Degraded.
+  const windows: AggregatableWindow[] = [];
+  for (let i = 0; i < 10; i++) {
+    windows.push(
+      makeWindow("U-WEB", 1_700_000_000 + i * 30, {
+        client_type: "web",
+        frames_decoded: 100,
+        plc_frames_synthesized: 400,
+        buffer_underruns: 50,
+        tab_hidden: true,
+      }),
+    );
+  }
+  const out = aggregateWindowsByUnit(windows);
+  assert.equal(out[0]!.health, "unknown");
+});
+
 test("computePlcRatio: degenerate inputs don't blow up", () => {
   assert.equal(computePlcRatio(0, 0), 0);
   // No decoded frames but PLC happened → cap at 1 so the badge scales sanely.

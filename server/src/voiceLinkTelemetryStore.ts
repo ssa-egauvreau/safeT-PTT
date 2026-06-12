@@ -38,6 +38,9 @@ export interface VoiceLinkTelemetryInsert {
   clientType: string | null;
   counters: VoiceLinkTelemetryCounters;
   codecBreakdown: CodecBreakdown;
+  /** True when the reporting window ran in a hidden browser tab (timer
+   *  throttling inflates PLC/underruns there — see classifyHealth). */
+  tabHidden: boolean;
   /** ISO-8601 from the client clock, or null. Used only as a tiebreak when
    *  clients buffer multiple windows and the relay batches them — the server's
    *  `server_ts` is the authoritative one for retention and ordering. */
@@ -62,6 +65,18 @@ export interface VoiceLinkUnitSummaryRow {
   codec_mix: CodecBreakdown;
   channels: string[];
   client_types: string[];
+  /**
+   * Last-hour (relative to the unit's newest report), hidden-tab windows
+   * excluded — the basis for the health badge, so one bad patrol segment ten
+   * hours ago doesn't paint the unit "Degraded" all day and a backgrounded
+   * console tab doesn't read as an outage.
+   */
+  recent_reports: number;
+  recent_frames_decoded: number;
+  recent_plc_frames_synthesized: number;
+  recent_buffer_underruns: number;
+  /** Hidden-tab windows in the same last-hour span (console-tab detection). */
+  recent_hidden_reports: number;
 }
 
 export interface VoiceLinkTimeseriesPoint {
@@ -101,14 +116,14 @@ export async function insertVoiceLinkTelemetry(
        buffer_underruns, max_buffer_depth_frames,
        talk_spurts_started, talk_spurts_ended,
        bytes_received, bytes_sent, wall_ms_observation,
-       codec_breakdown, client_ts
+       codec_breakdown, tab_hidden, client_ts
      ) VALUES (
        $1, $2, $3, $4,
        $5, $6, $7, $8,
        $9, $10,
        $11, $12,
        $13, $14, $15,
-       $16::jsonb, $17
+       $16::jsonb, $17, $18
      );`,
     [
       input.agencyId,
@@ -127,6 +142,7 @@ export async function insertVoiceLinkTelemetry(
       input.counters.bytesSent,
       input.counters.wallMsObservation,
       JSON.stringify(input.codecBreakdown ?? {}),
+      input.tabHidden,
       input.clientTs,
     ],
   );
@@ -228,6 +244,36 @@ export async function listVoiceLinkUnitSummaries(
     };
     codecByUnit.set(c.unit_id, map);
   }
+
+  // Third pass: the unit's most recent hour (anchored at its own newest report,
+  // so a radio that went quiet 9 h ago is judged on its final hour of activity,
+  // not an empty window). Hidden-tab console windows are excluded from the
+  // quality counters and surfaced separately for the "background tab" badge.
+  const recentRes = await pool.query<{
+    unit_id: string;
+    recent_reports: string;
+    recent_frames_decoded: string;
+    recent_plc: string;
+    recent_underruns: string;
+    recent_hidden_reports: string;
+  }>(
+    `SELECT t.unit_id,
+            COUNT(*) FILTER (WHERE NOT t.tab_hidden)::text AS recent_reports,
+            COALESCE(SUM(t.frames_decoded) FILTER (WHERE NOT t.tab_hidden),0)::text AS recent_frames_decoded,
+            COALESCE(SUM(t.plc_frames_synthesized) FILTER (WHERE NOT t.tab_hidden),0)::text AS recent_plc,
+            COALESCE(SUM(t.buffer_underruns) FILTER (WHERE NOT t.tab_hidden),0)::text AS recent_underruns,
+            COUNT(*) FILTER (WHERE t.tab_hidden)::text AS recent_hidden_reports
+       FROM voice_link_telemetry t
+       JOIN (SELECT unit_id, MAX(server_ts) AS last_seen
+               FROM voice_link_telemetry
+              WHERE agency_id = $1 AND server_ts >= $2${channelClause}
+              GROUP BY unit_id) m ON m.unit_id = t.unit_id
+      WHERE t.agency_id = $1 AND t.server_ts >= $2${channelClause}
+        AND t.server_ts >= m.last_seen - interval '60 minutes'
+      GROUP BY t.unit_id;`,
+    params,
+  );
+  const recentByUnit = new Map(recentRes.rows.map((r) => [r.unit_id, r]));
   const rows = rowsRes;
 
   return rows.rows.map((r) => ({
@@ -248,6 +294,11 @@ export async function listVoiceLinkUnitSummaries(
     codec_mix: codecByUnit.get(r.unit_id) ?? {},
     channels: Array.isArray(r.channels) ? r.channels : [],
     client_types: Array.isArray(r.client_types) ? r.client_types : [],
+    recent_reports: Number(recentByUnit.get(r.unit_id)?.recent_reports ?? 0),
+    recent_frames_decoded: Number(recentByUnit.get(r.unit_id)?.recent_frames_decoded ?? 0),
+    recent_plc_frames_synthesized: Number(recentByUnit.get(r.unit_id)?.recent_plc ?? 0),
+    recent_buffer_underruns: Number(recentByUnit.get(r.unit_id)?.recent_underruns ?? 0),
+    recent_hidden_reports: Number(recentByUnit.get(r.unit_id)?.recent_hidden_reports ?? 0),
   }));
 }
 
@@ -363,8 +414,10 @@ export interface AggregatedUnitSummary {
   lastSeen: string;
   /** Per-window PLC ratio (plc / framesDecoded) capped at 1.0; 0 when no frames. */
   plcRatio: number;
-  /** Health classification used by the admin dashboard badge. */
-  health: "green" | "yellow" | "red" | "unknown";
+  /** Health classification used by the admin dashboard badge — computed from
+   *  the unit's most recent hour of windows (hidden-tab windows excluded),
+   *  mirroring the SQL summary's `recent_*` basis. */
+  health: "green" | "yellow" | "orange" | "red" | "unknown";
 }
 
 export interface AggregatableWindow {
@@ -384,7 +437,12 @@ export interface AggregatableWindow {
   bytes_sent: number;
   wall_ms_observation: number;
   codec_breakdown: CodecBreakdown;
+  /** True for a web-console window recorded in a hidden (timer-throttled) tab. */
+  tab_hidden?: boolean;
 }
+
+/** Span the health badge is judged over, anchored at the unit's newest report. */
+export const HEALTH_RECENT_WINDOW_MS = 60 * 60 * 1000;
 
 /**
  * Aggregates a flat list of window rows into one summary per unit. Used as the
@@ -449,7 +507,23 @@ export function aggregateWindowsByUnit(
   const out = Array.from(map.values());
   for (const s of out) {
     s.plcRatio = computePlcRatio(s.plcFramesSynthesized, s.framesDecoded);
-    s.health = classifyHealth(s);
+    // Badge from the unit's last hour of NON-hidden windows: a bad patch this
+    // morning shouldn't paint the unit red all day, and a backgrounded console
+    // tab (timer-throttled, phantom PLC) shouldn't read as an outage.
+    const cutoff = new Date(Date.parse(s.lastSeen) - HEALTH_RECENT_WINDOW_MS).toISOString();
+    const recent = rows.filter(
+      (r) => r.unit_id === s.unitId && r.server_ts >= cutoff && !r.tab_hidden,
+    );
+    const recentSums = {
+      framesDecoded: recent.reduce((a, r) => a + r.frames_decoded, 0),
+      plcFramesSynthesized: recent.reduce((a, r) => a + r.plc_frames_synthesized, 0),
+      bufferUnderruns: recent.reduce((a, r) => a + r.buffer_underruns, 0),
+      reports: recent.length,
+    };
+    s.health = classifyHealth({
+      ...recentSums,
+      plcRatio: computePlcRatio(recentSums.plcFramesSynthesized, recentSums.framesDecoded),
+    });
   }
   out.sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : a.lastSeen > b.lastSeen ? -1 : 0));
   return out;
@@ -469,16 +543,18 @@ export function computePlcRatio(plc: number, decoded: number): number {
 }
 
 /**
- * Maps a summary to a green/yellow/red health badge.
+ * Maps a summary to a health badge. Callers should feed it the unit's
+ * RECENT counters (last hour, hidden-tab windows excluded) so the badge says
+ * "how is this link right now", not "did anything bad happen all day".
  *
- *  - green: PLC ratio < 1 % AND zero buffer underruns over the range.
- *  - yellow: PLC ratio < 5 % AND fewer than 3 underruns/window AND decoded > 0.
- *  - red: anything worse than yellow.
- *  - unknown: no decoded frames AND no PLC over the range (a truly silent
- *    unit — could be off-air, but is not "having voice quality problems").
- *
- * Thresholds are deliberately permissive: 1 % PLC is "occasional smoothing"
- * and 5 % is "noticeable cutout"; >5 % is roughly when an operator complains.
+ *  - green ("Good"): PLC ratio < 1 % AND zero buffer underruns.
+ *  - yellow ("Fair"): PLC ratio < 5 % AND fewer than 3 underruns/window.
+ *  - orange ("Marginal"): PLC ratio < 15 % AND fewer than 15 underruns/window.
+ *    Audible smoothing, but usable — a cellular unit on a patrol route lives
+ *    here; lumping it in with 25 %+ links made the dashboard cry wolf.
+ *  - red ("Degraded"): anything worse — operator-noticeable cutout.
+ *  - unknown: no decoded frames AND no PLC (a truly silent unit — could be
+ *    off-air, but is not "having voice quality problems").
  */
 export function classifyHealth(s: {
   framesDecoded: number;
@@ -486,7 +562,7 @@ export function classifyHealth(s: {
   bufferUnderruns: number;
   plcRatio: number;
   reports: number;
-}): "green" | "yellow" | "red" | "unknown" {
+}): "green" | "yellow" | "orange" | "red" | "unknown" {
   if (s.framesDecoded === 0 && s.plcFramesSynthesized === 0) {
     return "unknown";
   }
@@ -496,6 +572,9 @@ export function classifyHealth(s: {
   }
   if (s.plcRatio < 0.05 && underrunsPerWindow < 3) {
     return "yellow";
+  }
+  if (s.plcRatio < 0.15 && underrunsPerWindow < 15) {
+    return "orange";
   }
   return "red";
 }
