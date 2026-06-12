@@ -600,6 +600,20 @@ private fun UniversalCockpitMainPanel(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
     ) {
+        if (state.zoneCount > 1) {
+            // Zone chip: tap to enter zone-select (CH +/- then steps zones), tap again to commit.
+            Text(
+                text = state.zoneLabel.uppercase(Locale.US),
+                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 16.sp),
+                color = if (state.zoneSelectActive) p.statusAmber else p.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onEvent(RadioUiEvent.ToggleZoneSelect) },
+            )
+        }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1270,12 +1284,17 @@ private fun LcdMainChannelBlock(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = if (state.zoneCount > 1) {
+                        Modifier.clickable { onEvent(RadioUiEvent.ToggleZoneSelect) }
+                    } else {
+                        Modifier
+                    },
                 ) {
                     LcdListChannelIcon(color = p.textMuted, modifier = Modifier.size(14.dp))
                     Text(
                         text = state.zoneLabel.uppercase(Locale.US),
                         style = styles.zone,
-                        color = p.textSecondary,
+                        color = if (state.zoneSelectActive) p.statusAmber else p.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1297,10 +1316,18 @@ private fun LcdMainChannelBlock(
                 Text(
                     text = "${state.zoneLabel} · ${state.channelPosition}".uppercase(Locale.US),
                     style = zoneStyle,
-                    color = p.textMuted,
+                    color = if (state.zoneSelectActive) p.statusAmber else p.textMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (state.zoneCount > 1) {
+                                Modifier.clickable { onEvent(RadioUiEvent.ToggleZoneSelect) }
+                            } else {
+                                Modifier
+                            },
+                        ),
                     textAlign = TextAlign.Center,
                 )
             }
@@ -1548,6 +1575,12 @@ private fun LcdHandsetFillChannelBlock(
                     deviceProfile = state.resolvedDeviceProfile,
                     styles = styles,
                     codecLabel = state.channelCodecLabel,
+                    zoneSelectActive = state.zoneSelectActive,
+                    onZoneTap = if (state.zoneCount > 1) {
+                        { onEvent(RadioUiEvent.ToggleZoneSelect) }
+                    } else {
+                        null
+                    },
                 )
             }
             val scanRxLive =
@@ -1607,6 +1640,11 @@ private fun LcdHandsetFillChannelBlock(
                                 zoneValue = zoneValue,
                                 channelValue = channelValue,
                                 styles = styles,
+                                onZoneTap = if (state.zoneCount > 1) {
+                                    { onEvent(RadioUiEvent.ToggleZoneSelect) }
+                                } else {
+                                    null
+                                },
                             )
                         }
                         val ten33Alpha = rememberTen33PulseAlpha(state.channelTen33)
@@ -1767,6 +1805,8 @@ private fun LcdHandsetZonePositionLine(
     deviceProfile: ResolvedDeviceProfile,
     styles: LcdTextStyles,
     codecLabel: String = "",
+    zoneSelectActive: Boolean = false,
+    onZoneTap: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val label = handsetZonePositionLabel(zoneValue, channelValue, codecLabel)
@@ -1784,12 +1824,13 @@ private fun LcdHandsetZonePositionLine(
             fontSize = fontSp,
             lineHeight = (fontSp.value * 1.12f).sp,
         ),
-        color = p.textSecondary,
+        color = if (zoneSelectActive) p.statusAmber else p.textSecondary,
         textAlign = TextAlign.Center,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .fillMaxWidth()
+            .then(if (onZoneTap != null) Modifier.clickable(onClick = onZoneTap) else Modifier)
             .padding(
                 top = 0.dp,
                 bottom = if (deviceProfile == ResolvedDeviceProfile.IRC590) 0.dp else 2.dp,
@@ -1804,6 +1845,7 @@ private fun LcdHandsetIrc590ChannelMetaHeader(
     zoneValue: String,
     channelValue: String,
     styles: LcdTextStyles,
+    onZoneTap: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val p = RadioLcdTheme.palette
@@ -1837,6 +1879,8 @@ private fun LcdHandsetIrc590ChannelMetaHeader(
             deviceProfile = ResolvedDeviceProfile.IRC590,
             styles = styles,
             codecLabel = state.channelCodecLabel,
+            zoneSelectActive = state.zoneSelectActive,
+            onZoneTap = onZoneTap,
         )
     }
 }
@@ -3235,7 +3279,11 @@ private fun LcdHardwareKeyLegend(
             LcdLegendLabel(text = "CH-", styles = styles, color = p.textOnButton)
         }
         LcdLegendSeparator(p.divider)
-        LcdLegendKey(onClick = { onEvent(RadioUiEvent.ChannelUp) }) {
+        LcdLegendKey(
+            onClick = { onEvent(RadioUiEvent.ChannelUp) },
+            // Mirrors the physical channel-up key: hold toggles zone-select mode.
+            onLongClick = { onEvent(RadioUiEvent.ToggleZoneSelect) },
+        ) {
             LcdLegendLabel(text = "CH+", styles = styles, color = p.textOnButton)
         }
         LcdLegendSeparator(p.divider)

@@ -69,6 +69,8 @@ data class ChannelDto(
     @SerializedName("name") val name: String,
     /** Server permission string: "talk_priority" / "talk" / "listen_only". */
     @SerializedName("permission") val permission: String? = null,
+    /** Zone label from the portal (safeT Control → Channels); null/blank = ungrouped. */
+    @SerializedName("zone") val zone: String? = null,
 )
 
 data class AirStateDto(

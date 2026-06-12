@@ -13,6 +13,8 @@ sealed interface RadioUiEvent {
     data object EmergencyToggle : RadioUiEvent
     data object ChannelUp : RadioUiEvent
     data object ChannelDown : RadioUiEvent
+    /** Zone label tapped: enter zone-select mode, or commit the previewed zone when already in it. */
+    data object ToggleZoneSelect : RadioUiEvent
     data object RetryChannelSync : RadioUiEvent
     /** Open overlay to pick channels that participate in scan. */
     /** TM7 day/night long-press: toggle scan and open channel picker when enabling. */

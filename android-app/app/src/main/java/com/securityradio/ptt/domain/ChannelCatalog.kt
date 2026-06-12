@@ -32,6 +32,8 @@ data class RadioChannelCatalog(
     val channels: List<String>,
     /** Lookup by lowercased channel name; missing entries default to [ChannelPermission.TALK]. */
     val permissions: Map<String, ChannelPermission>,
+    /** Zone label by lowercased channel name; channels missing here fall into the default zone. */
+    val zones: Map<String, String> = emptyMap(),
     val origin: ChannelCatalogOrigin,
     val errorMessage: String?,
 )

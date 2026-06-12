@@ -32,10 +32,17 @@ class RadioChannelGateway(
             val permissions = rows.associate {
                 it.name.lowercase() to ChannelPermission.fromWire(it.permission)
             }
+            val zones = buildMap {
+                for (row in rows) {
+                    val zone = row.zone?.trim().orEmpty()
+                    if (zone.isNotEmpty()) put(row.name.lowercase(), zone)
+                }
+            }
             serverReachabilityMonitor.reportSuccess()
             RadioChannelCatalog(
                 channels = names,
                 permissions = permissions,
+                zones = zones,
                 origin = ChannelCatalogOrigin.NETWORK,
                 errorMessage = null,
             )
@@ -45,6 +52,7 @@ class RadioChannelGateway(
             RadioChannelCatalog(
                 channels = local.channels,
                 permissions = local.permissions,
+                zones = local.zones,
                 origin = ChannelCatalogOrigin.LOCAL_FALLBACK,
                 errorMessage = e.message ?: e::class.java.simpleName,
             )

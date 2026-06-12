@@ -147,6 +147,22 @@ class RadioViewModel(
     private var replayHoldJob: Job? = null
     @Volatile
     private var replayHistoryToggledThisHold: Boolean = false
+    @Volatile
+    private var replayZoneToggledThisHold: Boolean = false
+
+    /** TM-7 Plus channel-up key: hold timer and whether this hold already toggled zone-select. */
+    private var chanUpHoldJob: Job? = null
+    @Volatile
+    private var chanUpZoneToggledThisHold: Boolean = false
+
+    /** Zone label by lowercased channel name (from the portal); missing = [DEFAULT_ZONE_LABEL]. */
+    private var channelZonesByName: Map<String, String> = emptyMap()
+
+    /** Cursor into [zoneNames] while zone-select mode previews a zone. */
+    private var zoneSelectCursor: Int = 0
+
+    /** Safety valve: an abandoned zone-select would make the channel keys feel dead. */
+    private var zoneSelectTimeoutJob: Job? = null
     private var historyPlayJob: Job? = null
     private var historyTranscriptPollJob: Job? = null
 
@@ -346,7 +362,8 @@ class RadioViewModel(
                     HardwareButtonEvent.PttPressed -> onPttPressed()
                     HardwareButtonEvent.PttReleased -> onPttReleased()
                     HardwareButtonEvent.EmergencyPressed -> toggleEmergency()
-                    HardwareButtonEvent.ChannelUpPressed -> bumpChannel(+1)
+                    HardwareButtonEvent.ChannelUpPressed -> onChannelUpKeyDown()
+                    HardwareButtonEvent.ChannelUpReleased -> onChannelUpKeyUp()
                     HardwareButtonEvent.ChannelDownPressed -> bumpChannel(-1)
                     HardwareButtonEvent.ScanTogglePressed -> {
                         _uiState.update { s -> onScanSoftKeyToggle(s) }
@@ -748,25 +765,71 @@ class RadioViewModel(
 
     private fun onPlayLastKeyDown() {
         replayHistoryToggledThisHold = false
+        replayZoneToggledThisHold = false
         replayHoldJob?.cancel()
-        if (_uiState.value.resolvedDeviceProfile != ResolvedDeviceProfile.TM7_PLUS) {
-            return
-        }
-        replayHoldJob = viewModelScope.launch {
-            delay(TM7_HOLD_ACTION_MS)
-            replayHistoryToggledThisHold = true
-            toggleMessageHistory()
+        when (_uiState.value.resolvedDeviceProfile) {
+            ResolvedDeviceProfile.TM7_PLUS -> {
+                replayHoldJob = viewModelScope.launch {
+                    delay(TM7_HOLD_ACTION_MS)
+                    replayHistoryToggledThisHold = true
+                    toggleMessageHistory()
+                }
+            }
+            // IRC590: replay is dual-function — hold ≥1 s enters/exits zone-select
+            // (its channel keys then step zones); quick press still replays.
+            ResolvedDeviceProfile.IRC590 -> {
+                replayHoldJob = viewModelScope.launch {
+                    delay(ZONE_HOLD_MS)
+                    replayZoneToggledThisHold = true
+                    toggleZoneSelect()
+                }
+            }
+            else -> return
         }
     }
 
     private fun onPlayLastKeyUp() {
         replayHoldJob?.cancel()
         replayHoldJob = null
-        if (replayHistoryToggledThisHold) {
+        if (replayHistoryToggledThisHold || replayZoneToggledThisHold) {
             replayHistoryToggledThisHold = false
+            replayZoneToggledThisHold = false
             return
         }
         playLastTransmission()
+    }
+
+    /**
+     * TM-7 Plus: channel-up is dual-function — hold ≥ [ZONE_HOLD_MS] enters/exits zone-select,
+     * quick press steps on key-up. Every other profile keeps the immediate step on key-down:
+     * the Inrico intent-broadcast path delivers presses with no release, so deferring there
+     * would kill channel scrolling outright.
+     */
+    private fun onChannelUpKeyDown() {
+        if (_uiState.value.resolvedDeviceProfile != ResolvedDeviceProfile.TM7_PLUS) {
+            bumpChannel(+1)
+            return
+        }
+        chanUpZoneToggledThisHold = false
+        chanUpHoldJob?.cancel()
+        chanUpHoldJob = viewModelScope.launch {
+            delay(ZONE_HOLD_MS)
+            chanUpZoneToggledThisHold = true
+            toggleZoneSelect()
+        }
+    }
+
+    private fun onChannelUpKeyUp() {
+        if (_uiState.value.resolvedDeviceProfile != ResolvedDeviceProfile.TM7_PLUS) {
+            return
+        }
+        chanUpHoldJob?.cancel()
+        chanUpHoldJob = null
+        if (chanUpZoneToggledThisHold) {
+            chanUpZoneToggledThisHold = false
+            return
+        }
+        bumpChannel(+1)
     }
 
     private fun onTm7ScanLongPressToggle() {
@@ -874,6 +937,7 @@ class RadioViewModel(
             RadioUiEvent.EmergencyToggle -> toggleEmergency()
             RadioUiEvent.ChannelUp -> bumpChannel(+1)
             RadioUiEvent.ChannelDown -> bumpChannel(-1)
+            RadioUiEvent.ToggleZoneSelect -> toggleZoneSelect()
             RadioUiEvent.ToggleScanLongPress -> onTm7ScanLongPressToggle()
             RadioUiEvent.DisableScan -> disableScan()
             RadioUiEvent.ToggleScanSoftKey -> {
@@ -1794,10 +1858,18 @@ class RadioViewModel(
     }
 
     private fun bumpChannel(delta: Int) {
+        if (_uiState.value.zoneSelectActive) {
+            stepZoneSelect(delta)
+            return
+        }
         if (channelNames.isEmpty() || _uiState.value.channelsLoading) {
             return
         }
-        channelIndex = (channelIndex + delta + channelNames.size) % channelNames.size
+        // The knob stays inside the tuned channel's zone (like an APX channel knob);
+        // crossing zones is the zone-select gesture's job.
+        val indices = zoneChannelIndices(zoneAt(channelIndex))
+        val pos = indices.indexOf(channelIndex).coerceAtLeast(0)
+        channelIndex = indices[(pos + delta + indices.size) % indices.size]
         val tunedLabel = channelNames[channelIndex]
         // Beep first, then announce the channel name — the TTS engine ran in parallel before, so
         // the spoken name and the beep overlapped. The callback fires on the main thread after
@@ -1815,6 +1887,113 @@ class RadioViewModel(
         reconcileVoiceTransport()
     }
 
+    // --- zones ------------------------------------------------------------
+
+    /** Distinct zone labels in catalog order (the server sorts channels zone-first). */
+    private fun zoneNames(): List<String> {
+        val seen = LinkedHashSet<String>()
+        for (name in channelNames) seen.add(zoneOf(name))
+        return seen.toList()
+    }
+
+    private fun zoneOf(channelName: String): String =
+        channelZonesByName[channelName.lowercase()] ?: DEFAULT_ZONE_LABEL
+
+    private fun zoneAt(index: Int): String =
+        channelNames.getOrNull(index)?.let(::zoneOf) ?: DEFAULT_ZONE_LABEL
+
+    /** Catalog indices of every channel in `zone`; never empty while the catalog has channels. */
+    private fun zoneChannelIndices(zone: String): List<Int> {
+        val matches = channelNames.indices.filter { zoneOf(channelNames[it]) == zone }
+        return matches.ifEmpty { channelNames.indices.toList() }
+    }
+
+    /**
+     * Enter zone-select, or commit the previewed zone when already in it. Entered by holding
+     * channel-up (TM-7 Plus) / replay (IRC590) for [ZONE_HOLD_MS], or tapping the zone label.
+     * While active, channel up/down previews zones on the display without retuning; the same
+     * hold/tap then tunes the first channel of the chosen zone.
+     */
+    private fun toggleZoneSelect() {
+        if (_uiState.value.zoneSelectActive) {
+            commitZoneSelect()
+            return
+        }
+        val zones = zoneNames()
+        if (zones.size <= 1) {
+            soundPlayer.playChannelSwitch()
+            _uiState.update { it.copy(statusMessage = "NO ZONES CONFIGURED") }
+            return
+        }
+        zoneSelectCursor = zones.indexOf(zoneAt(channelIndex)).coerceAtLeast(0)
+        soundPlayer.playChannelSwitch()
+        armZoneSelectTimeout()
+        _uiState.update {
+            it.copy(
+                zoneSelectActive = true,
+                zoneLabel = zones[zoneSelectCursor],
+                statusMessage = "ZONE SELECT",
+            )
+        }
+    }
+
+    private fun stepZoneSelect(delta: Int) {
+        val zones = zoneNames()
+        if (zones.isEmpty()) {
+            return
+        }
+        zoneSelectCursor = (zoneSelectCursor + delta + zones.size) % zones.size
+        val previewed = zones[zoneSelectCursor]
+        soundPlayer.playChannelSwitch()
+        armZoneSelectTimeout()
+        _uiState.update {
+            it.copy(
+                zoneLabel = previewed,
+                statusMessage = "ZONE: ${previewed.uppercase(Locale.US)}",
+            )
+        }
+    }
+
+    private fun commitZoneSelect() {
+        zoneSelectTimeoutJob?.cancel()
+        zoneSelectTimeoutJob = null
+        val target = zoneNames().getOrNull(zoneSelectCursor)
+        _uiState.update { it.copy(zoneSelectActive = false) }
+        if (target == null || target == zoneAt(channelIndex)) {
+            soundPlayer.playChannelSwitch()
+            _uiState.update { it.withTuning(channelNames, channelIndex).copy(statusMessage = "ZONE UNCHANGED") }
+            return
+        }
+        channelIndex = zoneChannelIndices(target).first()
+        val tunedLabel = channelNames[channelIndex]
+        soundPlayer.playChannelSwitch {
+            speechHelper.speakChannelTuneIfEnabled(tunedLabel)
+        }
+        _uiState.update {
+            it.withTuning(channelNames, channelIndex).pruneScanSets().copy(
+                statusMessage = "ZONE: ${target.uppercase(Locale.US)}",
+                currentChannelPermission = currentPermission(),
+            )
+        }
+        viewModelScope.launch { pulsePresenceHeartbeatAndCount(expectOnline = true) }
+        reconcileVoiceTransport()
+    }
+
+    /** Abandoned zone-select auto-cancels (no zone change) so the channel keys never feel dead. */
+    private fun armZoneSelectTimeout() {
+        zoneSelectTimeoutJob?.cancel()
+        zoneSelectTimeoutJob = viewModelScope.launch {
+            delay(ZONE_SELECT_TIMEOUT_MS)
+            if (_uiState.value.zoneSelectActive) {
+                _uiState.update {
+                    it.copy(zoneSelectActive = false)
+                        .withTuning(channelNames, channelIndex)
+                        .copy(statusMessage = "")
+                }
+            }
+        }
+    }
+
     private suspend fun syncCatalog(playConnectSoundIfNetwork: Boolean) {
         _uiState.update {
             it.copy(
@@ -1829,6 +2008,7 @@ class RadioViewModel(
         val catalog = channelRepository.loadCatalog()
         channelNames = catalog.channels
         channelPermissions = catalog.permissions
+        channelZonesByName = catalog.zones
         if (channelNames.isNotEmpty()) {
             channelIndex = channelIndex.coerceIn(0, channelNames.lastIndex)
         } else {
@@ -1943,8 +2123,9 @@ class RadioViewModel(
             if (fresh.origin != ChannelCatalogOrigin.NETWORK) continue
             val sameNames = fresh.channels == channelNames
             val samePermissions = fresh.permissions == channelPermissions
-            if (sameNames && samePermissions) continue
-            applyCatalogChange(fresh.channels, fresh.permissions)
+            val sameZones = fresh.zones == channelZonesByName
+            if (sameNames && samePermissions && sameZones) continue
+            applyCatalogChange(fresh.channels, fresh.permissions, fresh.zones)
         }
     }
 
@@ -2002,12 +2183,14 @@ class RadioViewModel(
     private fun applyCatalogChange(
         incoming: List<String>,
         incomingPermissions: Map<String, ChannelPermission>,
+        incomingZones: Map<String, String> = channelZonesByName,
     ) {
         if (incoming.isEmpty()) return
         val tunedName = channelNames
             .getOrNull(channelIndex.coerceIn(0, channelNames.lastIndex.coerceAtLeast(0)))
         channelNames = incoming
         channelPermissions = incomingPermissions
+        channelZonesByName = incomingZones
         channelIndex = tunedName
             ?.let { name -> incoming.indexOfFirst { it.equals(name, ignoreCase = true) } }
             ?.takeIf { it >= 0 }
@@ -2193,6 +2376,8 @@ class RadioViewModel(
     private fun RadioUiState.withTuning(names: List<String>, index: Int): RadioUiState {
         if (names.isEmpty()) {
             return copy(
+                zoneLabel = DEFAULT_ZONE_LABEL,
+                zoneCount = 1,
                 channelLabel = "----",
                 channelPosition = "-- / --",
                 totalChannels = 0,
@@ -2203,9 +2388,19 @@ class RadioViewModel(
         }
         val safeIndex = index.coerceIn(0, names.lastIndex)
         val label = names[safeIndex]
+        // The zone line shows where the knob is: the tuned channel's zone and the channel's
+        // position within that zone — except while zone-select previews another zone.
+        val zones = zoneNames()
+        val tunedZone = zoneAt(safeIndex)
+        val zoneIndices = zoneChannelIndices(tunedZone)
         return copy(
+            zoneLabel = if (zoneSelectActive) zones.getOrNull(zoneSelectCursor) ?: tunedZone else tunedZone,
+            zoneCount = zones.size.coerceAtLeast(1),
             channelLabel = label,
-            channelPosition = "%02d / %02d".format(safeIndex + 1, names.size),
+            channelPosition = "%02d / %02d".format(
+                (zoneIndices.indexOf(safeIndex) + 1).coerceAtLeast(1),
+                zoneIndices.size,
+            ),
             totalChannels = names.size,
             displayLine2 = "OPS: ${label.uppercase(Locale.US)}",
             channelCatalog = names,
@@ -2596,6 +2791,15 @@ class RadioViewModel(
         const val RECONNECTED_BANNER_MS = 2_000L
         const val DAY_NIGHT_HOLD_FLIP_MS = 2_000L
         const val TM7_HOLD_ACTION_MS = 800L
+
+        /** Hold-to-toggle zone-select: channel-up on TM-7 Plus, replay on IRC590. */
+        const val ZONE_HOLD_MS = 1_000L
+
+        /** Inactivity window before an open zone-select cancels itself (no zone change). */
+        const val ZONE_SELECT_TIMEOUT_MS = 15_000L
+
+        /** Zone shown for channels the portal hasn't grouped (matches the pre-zones display). */
+        const val DEFAULT_ZONE_LABEL = "ZONE 01"
         const val SCAN_RX_BANNER_HOLD_MS = 3_000L
         /** Extra time so the banner stays up until async AudioTrack playback actually ends. */
         const val REPLAY_BANNER_PAD_MS = 200L

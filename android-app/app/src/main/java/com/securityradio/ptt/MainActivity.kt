@@ -472,6 +472,10 @@ class MainActivity : ComponentActivity() {
                 HardwareButtonRelay.sendEvent(HardwareButtonEvent.PlayLastTransmissionReleased)
                 return true
             }
+            repository.getMapping(HardwareAction.CHANNEL_UP).contains(keyCode) -> {
+                HardwareButtonRelay.sendEvent(HardwareButtonEvent.ChannelUpReleased)
+                return true
+            }
         }
         return super.onKeyUp(keyCode, event)
     }
