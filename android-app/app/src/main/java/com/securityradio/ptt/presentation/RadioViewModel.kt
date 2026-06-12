@@ -46,6 +46,7 @@ import com.securityradio.ptt.device.VoiceRelayTransport
 import com.securityradio.ptt.domain.ChannelCatalogOrigin
 import com.securityradio.ptt.domain.ChannelPermission
 import com.securityradio.ptt.domain.ChannelRepository
+import com.securityradio.ptt.domain.ChannelZone
 import android.os.SystemClock
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -155,8 +156,8 @@ class RadioViewModel(
     @Volatile
     private var chanUpZoneToggledThisHold: Boolean = false
 
-    /** Zone label by lowercased channel name (from the portal); missing = [DEFAULT_ZONE_LABEL]. */
-    private var channelZonesByName: Map<String, String> = emptyMap()
+    /** Zone by lowercased channel name (from the portal); missing = the default zone. */
+    private var channelZonesByName: Map<String, ChannelZone> = emptyMap()
 
     /** Cursor into [zoneNames] while zone-select mode previews a zone. */
     private var zoneSelectCursor: Int = 0
@@ -1889,21 +1890,29 @@ class RadioViewModel(
 
     // --- zones ------------------------------------------------------------
 
-    /** Distinct zone labels in catalog order (the server sorts channels zone-first). */
-    private fun zoneNames(): List<String> {
-        val seen = LinkedHashSet<String>()
+    /** Distinct zones in catalog order (the server sorts channels by zone number). */
+    private fun zoneNames(): List<ChannelZone> {
+        val seen = LinkedHashSet<ChannelZone>()
         for (name in channelNames) seen.add(zoneOf(name))
         return seen.toList()
     }
 
-    private fun zoneOf(channelName: String): String =
-        channelZonesByName[channelName.lowercase()] ?: DEFAULT_ZONE_LABEL
+    private fun zoneOf(channelName: String): ChannelZone =
+        channelZonesByName[channelName.lowercase()] ?: DEFAULT_ZONE
 
-    private fun zoneAt(index: Int): String =
-        channelNames.getOrNull(index)?.let(::zoneOf) ?: DEFAULT_ZONE_LABEL
+    private fun zoneAt(index: Int): ChannelZone =
+        channelNames.getOrNull(index)?.let(::zoneOf) ?: DEFAULT_ZONE
+
+    /** Zone line text: "1 PATROL" for a numbered zone, plain name otherwise. */
+    private fun zoneDisplay(zone: ChannelZone): String =
+        zone.number?.let { "$it ${zone.name}" } ?: zone.name
+
+    /** Channel display text: the zone number rides in front of the name ("1 GREEN 1"). */
+    private fun channelDisplay(channelName: String): String =
+        zoneOf(channelName).number?.let { "$it $channelName" } ?: channelName
 
     /** Catalog indices of every channel in `zone`; never empty while the catalog has channels. */
-    private fun zoneChannelIndices(zone: String): List<Int> {
+    private fun zoneChannelIndices(zone: ChannelZone): List<Int> {
         val matches = channelNames.indices.filter { zoneOf(channelNames[it]) == zone }
         return matches.ifEmpty { channelNames.indices.toList() }
     }
@@ -1931,7 +1940,7 @@ class RadioViewModel(
         _uiState.update {
             it.copy(
                 zoneSelectActive = true,
-                zoneLabel = zones[zoneSelectCursor],
+                zoneLabel = zoneDisplay(zones[zoneSelectCursor]),
                 statusMessage = "ZONE SELECT",
             )
         }
@@ -1943,7 +1952,7 @@ class RadioViewModel(
             return
         }
         zoneSelectCursor = (zoneSelectCursor + delta + zones.size) % zones.size
-        val previewed = zones[zoneSelectCursor]
+        val previewed = zoneDisplay(zones[zoneSelectCursor])
         soundPlayer.playChannelSwitch()
         armZoneSelectTimeout()
         _uiState.update {
@@ -1971,7 +1980,7 @@ class RadioViewModel(
         }
         _uiState.update {
             it.withTuning(channelNames, channelIndex).pruneScanSets().copy(
-                statusMessage = "ZONE: ${target.uppercase(Locale.US)}",
+                statusMessage = "ZONE: ${zoneDisplay(target).uppercase(Locale.US)}",
                 currentChannelPermission = currentPermission(),
             )
         }
@@ -2183,7 +2192,7 @@ class RadioViewModel(
     private fun applyCatalogChange(
         incoming: List<String>,
         incomingPermissions: Map<String, ChannelPermission>,
-        incomingZones: Map<String, String> = channelZonesByName,
+        incomingZones: Map<String, ChannelZone> = channelZonesByName,
     ) {
         if (incoming.isEmpty()) return
         val tunedName = channelNames
@@ -2379,31 +2388,38 @@ class RadioViewModel(
                 zoneLabel = DEFAULT_ZONE_LABEL,
                 zoneCount = 1,
                 channelLabel = "----",
+                channelDisplayLabel = "----",
                 channelPosition = "-- / --",
                 totalChannels = 0,
                 displayLine2 = "OPERATIONS",
                 channelCatalog = emptyList(),
+                channelCatalogDisplay = emptyList(),
                 channelCatalogPermissions = emptyList(),
             )
         }
         val safeIndex = index.coerceIn(0, names.lastIndex)
         val label = names[safeIndex]
+        val display = channelDisplay(label)
         // The zone line shows where the knob is: the tuned channel's zone and the channel's
         // position within that zone — except while zone-select previews another zone.
         val zones = zoneNames()
         val tunedZone = zoneAt(safeIndex)
         val zoneIndices = zoneChannelIndices(tunedZone)
         return copy(
-            zoneLabel = if (zoneSelectActive) zones.getOrNull(zoneSelectCursor) ?: tunedZone else tunedZone,
+            zoneLabel = zoneDisplay(
+                if (zoneSelectActive) zones.getOrNull(zoneSelectCursor) ?: tunedZone else tunedZone,
+            ),
             zoneCount = zones.size.coerceAtLeast(1),
             channelLabel = label,
+            channelDisplayLabel = display,
             channelPosition = "%02d / %02d".format(
                 (zoneIndices.indexOf(safeIndex) + 1).coerceAtLeast(1),
                 zoneIndices.size,
             ),
             totalChannels = names.size,
-            displayLine2 = "OPS: ${label.uppercase(Locale.US)}",
+            displayLine2 = "OPS: ${display.uppercase(Locale.US)}",
             channelCatalog = names,
+            channelCatalogDisplay = names.map(::channelDisplay),
             channelCatalogPermissions = permissionsForCatalog(names),
         )
     }
@@ -2800,6 +2816,7 @@ class RadioViewModel(
 
         /** Zone shown for channels the portal hasn't grouped (matches the pre-zones display). */
         const val DEFAULT_ZONE_LABEL = "ZONE 01"
+        val DEFAULT_ZONE = ChannelZone(DEFAULT_ZONE_LABEL)
         const val SCAN_RX_BANNER_HOLD_MS = 3_000L
         /** Extra time so the banner stays up until async AudioTrack playback actually ends. */
         const val REPLAY_BANNER_PAD_MS = 200L

@@ -32,10 +32,18 @@ data class RadioUiState(
     /** Distinct zones in the catalog; the zone tap affordance is hidden when there is only one. */
     val zoneCount: Int = 1,
     val channelLabel: String,
+    /**
+     * What the display paints for the tuned channel: the zone number rides in front of the
+     * raw [channelLabel] ("1 GREEN 1" for Green 1 in zone 1). Logic (joins, scan matching,
+     * RX attribution) keeps using [channelLabel].
+     */
+    val channelDisplayLabel: String = "",
     val channelPosition: String,
     val totalChannels: Int,
     /** Channel names from catalog (for scan picker labels). */
     val channelCatalog: List<String>,
+    /** Parallel to [channelCatalog]: zone-number-prefixed labels for display. */
+    val channelCatalogDisplay: List<String> = emptyList(),
     /** Parallel to [channelCatalog] — permission for each row in the scan picker. */
     val channelCatalogPermissions: List<ChannelPermission> = emptyList(),
     /** Indices into [channelCatalog] included in scan when [scanActive] is true (never includes home channel). */
@@ -242,6 +250,7 @@ data class RadioUiState(
             batteryPercent = 100,
             zoneLabel = "ZONE 01",
             channelLabel = "----",
+            channelDisplayLabel = "----",
             channelPosition = "-- / --",
             totalChannels = 0,
             channelCatalog = emptyList(),

@@ -447,8 +447,17 @@ export interface ChannelRow {
   name: string;
   sort_order: number;
   color: string | null;
+  /** Zone NAME from the joined radio_zones row (legacy column is no longer read). */
   zone: string | null;
+  zone_id: number | null;
+  zone_number: number | null;
   codec: VoiceCodec;
+}
+
+export interface ZoneRow {
+  id: number;
+  zone_number: number;
+  name: string;
 }
 
 export interface MembershipRow {
@@ -463,6 +472,7 @@ export interface UserChannelRow {
   permission: Permission;
   color: string | null;
   zone: string | null;
+  zone_number: number | null;
   codec: VoiceCodec;
 }
 
@@ -614,14 +624,77 @@ export async function countActiveAdmins(agencyId: number): Promise<number> {
 
 // --- channels ------------------------------------------------------------
 
+/** Channel columns with the zone joined in: `zone` is the zone NAME. */
+const CHANNEL_COLS = `c.id, c.name, c.sort_order, c.color, z.name AS zone, c.zone_id, z.zone_number, c.codec`;
+const CHANNEL_FROM = `radio_channels c LEFT JOIN radio_zones z ON z.id = c.zone_id`;
+
 export async function listChannels(agencyId: number): Promise<ChannelRow[]> {
   const res = await requirePool().query<ChannelRowRaw>(
-    `SELECT id, name, sort_order, color, zone, codec FROM radio_channels
-     WHERE agency_id = $1
-     ORDER BY zone NULLS FIRST, sort_order ASC, id ASC;`,
+    `SELECT ${CHANNEL_COLS} FROM ${CHANNEL_FROM}
+     WHERE c.agency_id = $1
+     ORDER BY z.zone_number ASC NULLS FIRST, c.sort_order ASC, c.id ASC;`,
     [agencyId],
   );
   return res.rows.map(asChannelRow);
+}
+
+// --- zones ---------------------------------------------------------------
+
+export async function listZones(agencyId: number): Promise<ZoneRow[]> {
+  const res = await requirePool().query<ZoneRow>(
+    `SELECT id, zone_number, name FROM radio_zones WHERE agency_id = $1 ORDER BY zone_number ASC;`,
+    [agencyId],
+  );
+  return res.rows;
+}
+
+export async function getZoneById(id: number, agencyId: number): Promise<ZoneRow | null> {
+  const res = await requirePool().query<ZoneRow>(
+    `SELECT id, zone_number, name FROM radio_zones WHERE id = $1 AND agency_id = $2;`,
+    [id, agencyId],
+  );
+  return res.rows[0] ?? null;
+}
+
+/** Duplicate zone numbers per agency raise 23505 (mapped to 409 by the API). */
+export async function createZone(agencyId: number, zoneNumber: number, name: string): Promise<ZoneRow> {
+  const res = await requirePool().query<ZoneRow>(
+    `INSERT INTO radio_zones (agency_id, zone_number, name)
+     VALUES ($1, $2, $3) RETURNING id, zone_number, name;`,
+    [agencyId, zoneNumber, name.trim()],
+  );
+  return res.rows[0]!;
+}
+
+export async function updateZone(
+  id: number,
+  agencyId: number,
+  patch: { zoneNumber?: number; name?: string },
+): Promise<ZoneRow | null> {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  let i = 1;
+  if (patch.zoneNumber !== undefined) { sets.push(`zone_number = $${i++}`); vals.push(patch.zoneNumber); }
+  if (patch.name !== undefined) { sets.push(`name = $${i++}`); vals.push(patch.name.trim()); }
+  if (sets.length === 0) {
+    return getZoneById(id, agencyId);
+  }
+  vals.push(id, agencyId);
+  const res = await requirePool().query<ZoneRow>(
+    `UPDATE radio_zones SET ${sets.join(", ")} WHERE id = $${i++} AND agency_id = $${i}
+     RETURNING id, zone_number, name;`,
+    vals,
+  );
+  return res.rows[0] ?? null;
+}
+
+/** Channels in the zone fall back to unzoned (FK ON DELETE SET NULL). */
+export async function deleteZone(id: number, agencyId: number): Promise<boolean> {
+  const res = await requirePool().query(`DELETE FROM radio_zones WHERE id = $1 AND agency_id = $2;`, [
+    id,
+    agencyId,
+  ]);
+  return (res.rowCount ?? 0) > 0;
 }
 
 export async function createChannel(agencyId: number, name: string): Promise<ChannelRow> {
@@ -637,7 +710,7 @@ export async function createChannel(agencyId: number, name: string): Promise<Cha
        COALESCE((SELECT MAX(sort_order) + 1 FROM radio_channels WHERE agency_id = $1), 1),
        COALESCE((SELECT default_codec FROM agencies WHERE id = $1), 'imbe')
      )
-     RETURNING id, name, sort_order, color, zone, codec;`,
+     RETURNING id, name, sort_order, color, NULL::text AS zone, zone_id, NULL::int AS zone_number, codec;`,
     [agencyId, name.trim()],
   );
   return asChannelRow(res.rows[0]!);
@@ -646,25 +719,26 @@ export async function createChannel(agencyId: number, name: string): Promise<Cha
 export async function updateChannel(
   id: number,
   agencyId: number,
-  patch: { name?: string; color?: string | null; zone?: string | null; codec?: VoiceCodec },
+  patch: { name?: string; color?: string | null; zoneId?: number | null; codec?: VoiceCodec },
 ): Promise<ChannelRow | null> {
   const sets: string[] = [];
   const vals: unknown[] = [];
   let i = 1;
   if (patch.name !== undefined) { sets.push(`name = $${i++}`); vals.push(patch.name.trim()); }
   if (patch.color !== undefined) { sets.push(`color = $${i++}`); vals.push(patch.color); }
-  if (patch.zone !== undefined) { sets.push(`zone = $${i++}`); vals.push(patch.zone); }
+  if (patch.zoneId !== undefined) { sets.push(`zone_id = $${i++}`); vals.push(patch.zoneId); }
   if (patch.codec !== undefined) { sets.push(`codec = $${i++}`); vals.push(patch.codec); }
   if (sets.length === 0) {
     return getChannelById(id, agencyId);
   }
   vals.push(id, agencyId);
-  const res = await requirePool().query<ChannelRowRaw>(
+  const res = await requirePool().query<{ id: number }>(
     `UPDATE radio_channels SET ${sets.join(", ")} WHERE id = $${i++} AND agency_id = $${i}
-     RETURNING id, name, sort_order, color, zone, codec;`,
+     RETURNING id;`,
     vals,
   );
-  return res.rows[0] ? asChannelRow(res.rows[0]) : null;
+  // Re-select through the zone join so the returned row carries zone name/number.
+  return res.rows[0] ? getChannelById(id, agencyId) : null;
 }
 
 export async function deleteChannel(id: number, agencyId: number): Promise<boolean> {
@@ -712,7 +786,7 @@ export async function deleteEmergencyChannel(
 
 export async function getChannelById(id: number, agencyId: number): Promise<ChannelRow | null> {
   const res = await requirePool().query<ChannelRowRaw>(
-    `SELECT id, name, sort_order, color, zone, codec FROM radio_channels WHERE id = $1 AND agency_id = $2;`,
+    `SELECT ${CHANNEL_COLS} FROM ${CHANNEL_FROM} WHERE c.id = $1 AND c.agency_id = $2;`,
     [id, agencyId],
   );
   return res.rows[0] ? asChannelRow(res.rows[0]) : null;
@@ -721,8 +795,8 @@ export async function getChannelById(id: number, agencyId: number): Promise<Chan
 /** Case-insensitive channel lookup within an agency (used by the voice relay on join). */
 export async function getChannelByName(agencyId: number, name: string): Promise<ChannelRow | null> {
   const res = await requirePool().query<ChannelRowRaw>(
-    `SELECT id, name, sort_order, color, zone, codec FROM radio_channels
-     WHERE agency_id = $1 AND lower(name) = lower($2);`,
+    `SELECT ${CHANNEL_COLS} FROM ${CHANNEL_FROM}
+     WHERE c.agency_id = $1 AND lower(c.name) = lower($2);`,
     [agencyId, name.trim()],
   );
   return res.rows[0] ? asChannelRow(res.rows[0]) : null;
@@ -1026,11 +1100,12 @@ export async function listMemberships(agencyId: number): Promise<MembershipRow[]
 
 export async function listChannelsForUser(userId: number): Promise<UserChannelRow[]> {
   const res = await requirePool().query<UserChannelRowRaw>(
-    `SELECT c.id, c.name, c.color, c.zone, c.codec, m.permission
+    `SELECT c.id, c.name, c.color, z.name AS zone, z.zone_number, c.codec, m.permission
      FROM channel_members m
      JOIN radio_channels c ON c.id = m.channel_id
+     LEFT JOIN radio_zones z ON z.id = c.zone_id
      WHERE m.user_id = $1
-     ORDER BY c.zone NULLS FIRST, c.sort_order ASC, c.id ASC;`,
+     ORDER BY z.zone_number ASC NULLS FIRST, c.sort_order ASC, c.id ASC;`,
     [userId],
   );
   return res.rows.map(asUserChannelRow);

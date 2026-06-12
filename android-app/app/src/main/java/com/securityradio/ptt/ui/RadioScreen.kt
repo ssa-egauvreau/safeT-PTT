@@ -600,7 +600,7 @@ private fun UniversalCockpitMainPanel(
 ) {
     val p = RadioLcdTheme.palette
     val ten33Alpha = rememberTen33PulseAlpha(state.channelTen33)
-    val channelText = state.channelLabel.uppercase(Locale.US)
+    val channelText = state.channelDisplayLabel.ifBlank { state.channelLabel }.uppercase(Locale.US)
     // Strip the "RX:" prefix so the centre status line reads naturally; the chrome and the talker
     // line share rxAttributedLine but the cockpit doesn't paint a wash, just text.
     val talker = state.rxAttributedLine.trimStart().removePrefix("RX:").trim()
@@ -1360,7 +1360,8 @@ private fun LcdMainChannelBlock(
             }
             Text(
                 // At launch the version flashes here for a few seconds (IRC590 / TM-7 Plus).
-                text = (state.versionBanner ?: state.channelLabel).uppercase(Locale.US),
+                text = (state.versionBanner ?: state.channelDisplayLabel.ifBlank { state.channelLabel })
+                    .uppercase(Locale.US),
                 style = channelStyle,
                 color = chrome.channelTextColor,
                 maxLines = 1,
@@ -1641,7 +1642,7 @@ private fun LcdHandsetFillChannelBlock(
             ) {
                 if (remoteEmergencyLive) {
                     LcdHandsetRemoteEmergencyBlock(
-                        channelName = state.channelLabel,
+                        channelName = state.channelDisplayLabel.ifBlank { state.channelLabel },
                         unitId = talkUnit,
                         channelColor = chrome.channelTextColor,
                         emergencyColor = p.statusEmergency,
@@ -1650,7 +1651,8 @@ private fun LcdHandsetFillChannelBlock(
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
-                    val channelText = state.channelLabel.uppercase(Locale.US)
+                    val channelText =
+                        state.channelDisplayLabel.ifBlank { state.channelLabel }.uppercase(Locale.US)
                     val density = LocalDensity.current
                     val blockMaxHeight = maxHeight
                     val blockMaxWidth = maxWidth
@@ -3593,7 +3595,7 @@ private fun ScanChannelPickerFullScreen(
                     val permission =
                         state.channelCatalogPermissions.getOrNull(index) ?: ChannelPermission.TALK
                     ScanPickerChannelRow(
-                        label = label,
+                        label = state.channelCatalogDisplay.getOrNull(index) ?: label,
                         selected = selected,
                         isHome = isHome,
                         permission = permission,
@@ -3804,7 +3806,7 @@ private fun ScanChannelPickerDialog(
                     val permission =
                         state.channelCatalogPermissions.getOrNull(index) ?: ChannelPermission.TALK
                     ScanPickerChannelRow(
-                        label = label,
+                        label = state.channelCatalogDisplay.getOrNull(index) ?: label,
                         selected = selected,
                         isHome = isHome,
                         permission = permission,

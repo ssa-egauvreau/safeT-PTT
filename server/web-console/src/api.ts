@@ -129,8 +129,18 @@ export interface Channel {
   name: string;
   sort_order: number;
   color: string | null;
+  /** Zone NAME (joined from the agency's numbered zone bank). */
   zone: string | null;
+  zone_id: number | null;
+  zone_number: number | null;
   codec: VoiceCodec;
+}
+
+/** A numbered channel bank — radios show the number before the channel name ("1 GREEN 1"). */
+export interface Zone {
+  id: number;
+  zone_number: number;
+  name: string;
 }
 
 export interface Membership {
@@ -159,6 +169,7 @@ export interface UserChannel {
   permission: Permission;
   color: string | null;
   zone: string | null;
+  zone_number?: number | null;
   codec: VoiceCodec;
   /** True for a simulcast channel — keying it transmits on several real channels. */
   simulcast?: boolean;
@@ -903,9 +914,16 @@ export const api = {
     }>("PATCH", "/v1/admin/agency", { defaultCodec: codec }),
   updateChannel: (
     id: number,
-    patch: { name?: string; color?: string | null; zone?: string | null; codec?: VoiceCodec },
+    patch: { name?: string; color?: string | null; zone_id?: number | null; codec?: VoiceCodec },
   ) => request<{ channel: Channel }>("PATCH", `/v1/admin/channels/${id}`, patch),
   deleteChannel: (id: number) => request<{ ok: boolean }>("DELETE", `/v1/admin/channels/${id}`),
+
+  listZones: () => request<{ zones: Zone[] }>("GET", "/v1/admin/zones"),
+  createZone: (zoneNumber: number, name: string) =>
+    request<{ zone: Zone }>("POST", "/v1/admin/zones", { zone_number: zoneNumber, name }),
+  updateZone: (id: number, patch: { zone_number?: number; name?: string }) =>
+    request<{ zone: Zone }>("PATCH", `/v1/admin/zones/${id}`, patch),
+  deleteZone: (id: number) => request<{ ok: boolean }>("DELETE", `/v1/admin/zones/${id}`),
 
   listMemberships: () => request<{ memberships: Membership[] }>("GET", "/v1/admin/memberships"),
   setMembership: (userId: number, channelId: number, permission: Permission) =>

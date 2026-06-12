@@ -5,6 +5,7 @@ import com.securityradio.ptt.device.ServerReachabilityMonitor
 import com.securityradio.ptt.domain.ChannelCatalogOrigin
 import com.securityradio.ptt.domain.ChannelPermission
 import com.securityradio.ptt.domain.ChannelRepository
+import com.securityradio.ptt.domain.ChannelZone
 import com.securityradio.ptt.domain.RadioChannelCatalog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -35,7 +36,7 @@ class RadioChannelGateway(
             val zones = buildMap {
                 for (row in rows) {
                     val zone = row.zone?.trim().orEmpty()
-                    if (zone.isNotEmpty()) put(row.name.lowercase(), zone)
+                    if (zone.isNotEmpty()) put(row.name.lowercase(), ChannelZone(zone, row.zoneNumber))
                 }
             }
             serverReachabilityMonitor.reportSuccess()

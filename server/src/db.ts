@@ -177,6 +177,24 @@ export async function ensureSchema(): Promise<void> {
   // 'imbe' so the relay stays bit-compatible with pre-multi-codec clients.
   await p.query(`ALTER TABLE radio_channels ADD COLUMN IF NOT EXISTS codec TEXT NOT NULL DEFAULT 'imbe';`);
 
+  // First-class channel zones: a numbered bank (zone 1, zone 2, …) the radios
+  // cycle through; the zone number prefixes the channel name on the handset
+  // display ("1 GREEN 1"). The legacy free-text radio_channels.zone column is
+  // migrated into rows here once (numbered alphabetically, see below) and is
+  // no longer read afterwards.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS radio_zones (
+      id SERIAL PRIMARY KEY,
+      agency_id INT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      zone_number INT NOT NULL,
+      name TEXT NOT NULL,
+      UNIQUE (agency_id, zone_number)
+    );
+  `);
+  await p.query(
+    `ALTER TABLE radio_channels ADD COLUMN IF NOT EXISTS zone_id INT REFERENCES radio_zones(id) ON DELETE SET NULL;`,
+  );
+
   await p.query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -682,6 +700,34 @@ export async function ensureSchema(): Promise<void> {
   await ensureAgencyScopedKey(p, "radio_positions");
 
   await p.query(`ALTER TABLE radio_channels ALTER COLUMN agency_id SET NOT NULL;`);
+
+  // Migrate legacy free-text channel zones into numbered radio_zones rows —
+  // once: only channels still carrying text but no zone_id are considered.
+  // Numbers continue after the agency's current highest zone, alphabetically.
+  await p.query(`
+    INSERT INTO radio_zones (agency_id, zone_number, name)
+    SELECT d.agency_id,
+           COALESCE((SELECT MAX(z.zone_number) FROM radio_zones z WHERE z.agency_id = d.agency_id), 0)
+             + ROW_NUMBER() OVER (PARTITION BY d.agency_id ORDER BY lower(d.zone)),
+           btrim(d.zone)
+      FROM (SELECT DISTINCT agency_id, zone
+              FROM radio_channels
+             WHERE zone IS NOT NULL AND btrim(zone) <> '' AND zone_id IS NULL) d
+     WHERE NOT EXISTS (
+             SELECT 1 FROM radio_zones z2
+              WHERE z2.agency_id = d.agency_id AND lower(z2.name) = lower(btrim(d.zone))
+           );
+  `);
+  await p.query(`
+    UPDATE radio_channels c
+       SET zone_id = z.id
+      FROM radio_zones z
+     WHERE c.zone_id IS NULL
+       AND c.zone IS NOT NULL AND btrim(c.zone) <> ''
+       AND z.agency_id = c.agency_id
+       AND lower(z.name) = lower(btrim(c.zone));
+  `);
+
   // Channel names are unique per agency, not globally.
   await p.query(`ALTER TABLE radio_channels DROP CONSTRAINT IF EXISTS radio_channels_name_key;`);
   await p.query(
