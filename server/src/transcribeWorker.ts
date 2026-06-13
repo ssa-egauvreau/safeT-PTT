@@ -22,6 +22,18 @@ const MODEL = process.env.WHISPER_MODEL?.trim() || "Xenova/whisper-tiny.en";
 const DTYPE = process.env.WHISPER_DTYPE?.trim() || "q8";
 /** After a failed model load, wait before retrying (Railway OOM / cold start). */
 const LOAD_RETRY_MS = Number(process.env.WHISPER_LOAD_RETRY_MS) || 120_000;
+/**
+ * Hard cap on the model load itself. transformers.pipeline() fetches the model
+ * from the HF Hub on a cold container and inits ONNX; that fetch has no timeout
+ * of its own, so a stalled download leaves the worker stuck posting "loading"
+ * forever — every transmission then sits at "Transcribing…" and the queue grows
+ * unbounded (seen in production: state "loading", queue climbing, never a
+ * failure recorded). Bounding the load turns that hang into a "broken" state the
+ * existing retry path recovers from. Kept below the main thread's per-job
+ * LOAD_TIMEOUT_MS (180s) so the worker reports broken before the main side
+ * blunt-times-out the job.
+ */
+const MODEL_LOAD_TIMEOUT_MS = Number(process.env.WHISPER_MODEL_LOAD_TIMEOUT_MS) || 150_000;
 
 type WhisperPipeline = (audio: Float32Array, options?: unknown) => Promise<{ text?: string }>;
 
@@ -93,10 +105,22 @@ async function ensurePipeline(): Promise<WhisperPipeline | null> {
             options?: Record<string, unknown>,
           ) => Promise<WhisperPipeline>;
         };
-        pipelineFn = await transformers.pipeline("automatic-speech-recognition", MODEL, {
+        const loading = transformers.pipeline("automatic-speech-recognition", MODEL, {
           dtype: DTYPE,
           device: "cpu",
         });
+        let loadTimer: ReturnType<typeof setTimeout> | undefined;
+        const loadTimeout = new Promise<never>((_, reject) => {
+          loadTimer = setTimeout(
+            () => reject(new Error(`model load exceeded ${MODEL_LOAD_TIMEOUT_MS}ms`)),
+            MODEL_LOAD_TIMEOUT_MS,
+          );
+        });
+        try {
+          pipelineFn = await Promise.race([loading, loadTimeout]);
+        } finally {
+          clearTimeout(loadTimer);
+        }
         lastLoadFailedAt = 0;
         post({ type: "state", state: "ready" });
         console.log(`Transcriber ready (model ${MODEL}, dtype ${DTYPE}).`);
