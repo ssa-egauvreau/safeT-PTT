@@ -21,17 +21,22 @@ import assert from "node:assert/strict";
 
 import {
   parseTransmissionRetentionDays,
+  parseEmergencyAutoClearMs,
   runDataRetentionSweeps,
 } from "../src/dataRetention.js";
+
+const HOUR_MS = 60 * 60 * 1000;
 
 const ORIGINAL = {
   DATABASE_URL: process.env.DATABASE_URL,
   TRANSMISSION_RETENTION_DAYS: process.env.TRANSMISSION_RETENTION_DAYS,
+  EMERGENCY_AUTO_CLEAR_HOURS: process.env.EMERGENCY_AUTO_CLEAR_HOURS,
 };
 
 beforeEach(() => {
   delete process.env.DATABASE_URL;
   delete process.env.TRANSMISSION_RETENTION_DAYS;
+  delete process.env.EMERGENCY_AUTO_CLEAR_HOURS;
 });
 
 afterEach(() => {
@@ -110,6 +115,39 @@ test("parseTransmissionRetentionDays: floors fractional input via parseInt", () 
   // works numerically but bypasses the integer expectation.
   process.env.TRANSMISSION_RETENTION_DAYS = "7.9";
   assert.equal(parseTransmissionRetentionDays(), 7);
+});
+
+test("parseEmergencyAutoClearMs: defaults to 6h when unset / blank", () => {
+  delete process.env.EMERGENCY_AUTO_CLEAR_HOURS;
+  assert.equal(parseEmergencyAutoClearMs(), 6 * HOUR_MS);
+  process.env.EMERGENCY_AUTO_CLEAR_HOURS = "   ";
+  assert.equal(parseEmergencyAutoClearMs(), 6 * HOUR_MS);
+});
+
+test("parseEmergencyAutoClearMs: '0' / 'off' disables the sweep (returns 0)", () => {
+  process.env.EMERGENCY_AUTO_CLEAR_HOURS = "0";
+  assert.equal(parseEmergencyAutoClearMs(), 0);
+  process.env.EMERGENCY_AUTO_CLEAR_HOURS = "off";
+  assert.equal(parseEmergencyAutoClearMs(), 0);
+});
+
+test("parseEmergencyAutoClearMs: parses a positive (possibly fractional) hour count", () => {
+  process.env.EMERGENCY_AUTO_CLEAR_HOURS = "12";
+  assert.equal(parseEmergencyAutoClearMs(), 12 * HOUR_MS);
+  process.env.EMERGENCY_AUTO_CLEAR_HOURS = "0.5";
+  assert.equal(parseEmergencyAutoClearMs(), 0.5 * HOUR_MS);
+});
+
+test("parseEmergencyAutoClearMs: NaN / negative fall back to the 6h default (never a 0ms window that clears live emergencies)", () => {
+  process.env.EMERGENCY_AUTO_CLEAR_HOURS = "soon";
+  assert.equal(parseEmergencyAutoClearMs(), 6 * HOUR_MS);
+  process.env.EMERGENCY_AUTO_CLEAR_HOURS = "-3";
+  assert.equal(parseEmergencyAutoClearMs(), 6 * HOUR_MS);
+});
+
+test("parseEmergencyAutoClearMs: clamps absurd values to 30 days", () => {
+  process.env.EMERGENCY_AUTO_CLEAR_HOURS = "100000";
+  assert.equal(parseEmergencyAutoClearMs(), 24 * 30 * HOUR_MS);
 });
 
 test("runDataRetentionSweeps: no-op when DATABASE_URL is unset", async () => {

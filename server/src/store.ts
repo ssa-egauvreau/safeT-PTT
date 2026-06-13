@@ -2003,6 +2003,24 @@ export async function clearEmergenciesFromUnit(agencyId: number, unit: string, c
 }
 
 /**
+ * Auto-clears emergencies that nobody ever resolved. A handset that crashes or
+ * loses power mid-emergency leaves an `active` emergency row, which then haunts
+ * every radio's status line (and the dispatch board) indefinitely. Expiring rows
+ * older than `olderThanMs` lets the system self-heal. Agency-agnostic and
+ * idempotent — safe to run on a timer from any/all Node instances.
+ */
+export async function expireStaleEmergencies(olderThanMs: number): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanMs).toISOString();
+  const res = await requirePool().query(
+    `UPDATE alerts
+        SET active = FALSE, cleared_by = 'auto-expire', cleared_at = now()
+      WHERE kind = 'emergency' AND active = TRUE AND created_at < $1;`,
+    [cutoff],
+  );
+  return res.rowCount ?? 0;
+}
+
+/**
  * Outcome of an emergency lifecycle transition (acknowledge / resolve).
  * `not_found` and `conflict` map to HTTP 404 / 409 at the route layer.
  */
