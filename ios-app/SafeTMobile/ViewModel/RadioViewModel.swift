@@ -905,6 +905,11 @@ final class RadioViewModel: ObservableObject {
                             self.voiceAudio.stopCapture()
                             self.voiceTransport.stopUplinkCapture()
                             self.uiState.isTransmitting = false
+                            // Stop polling once denied — otherwise every tick
+                            // re-fires enterBusy and the busy beep repeats over
+                            // and over for the whole hold. The operator must
+                            // release and re-key (standard radio behaviour).
+                            return
                         }
                     }
                 }

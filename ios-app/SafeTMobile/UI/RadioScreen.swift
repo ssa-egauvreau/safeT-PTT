@@ -2,38 +2,40 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
-/// Live mic-level "equalizer" shown in the XMIT box while transmitting — a row of
-/// bars that pulse with the operator's voice level (mirrors the dispatch console's
-/// transmit visualizer).
+/// Live mic-level meter in the XMIT box while transmitting — a horizontal row of
+/// segments that light up **left → right** as the operator gets louder (quiet on
+/// the left, loud on the right), green → amber → red, mirroring the dispatch
+/// console's transmit meter.
 private struct TxVisualizer: View {
     /// Peak mic level, 0–1.
     let level: Float
 
-    private let barCount = 11
+    private let segmentCount = 18
 
     var body: some View {
-        HStack(alignment: .center, spacing: 4) {
-            ForEach(0..<barCount, id: \.self) { i in
-                Capsule()
-                    .fill(Color.white.opacity(0.92))
-                    .frame(width: 5, height: barHeight(i))
+        HStack(spacing: 3) {
+            ForEach(0..<segmentCount, id: \.self) { i in
+                let threshold = Float(i) / Float(segmentCount - 1)   // 0 (left) … 1 (right)
+                let lit = level >= threshold
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(segmentColor(threshold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 30)
+                    .opacity(lit ? 1.0 : 0.16)
             }
         }
-        .frame(height: 44)
-        .animation(.easeOut(duration: 0.09), value: level)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 20)
+        .animation(.easeOut(duration: 0.07), value: level)
         .accessibilityHidden(true)
     }
 
-    /// Symmetric bell shape (tall center, short edges) scaled by the live level,
-    /// plus a small per-bar offset so it reads as a moving visualizer rather than
-    /// one block growing.
-    private func barHeight(_ i: Int) -> CGFloat {
-        let center = Float(barCount - 1) / 2
-        let dist = abs(Float(i) - center) / center        // 0 center … 1 edge
-        let shape = 1 - 0.65 * dist                        // center 1.0, edge 0.35
-        let jitter = 0.85 + 0.15 * sinf(Float(i) * 1.7)    // subtle per-bar variation
-        let lvl = max(0.06, min(1, level))
-        return CGFloat(6 + lvl * shape * jitter * 34)      // 6 … ~40 pt
+    /// VU-style colour ramp across the meter: green for the bulk, amber as it
+    /// rises, red at the top (hot).
+    private func segmentColor(_ frac: Float) -> Color {
+        if frac < 0.6 { return .safetGreen }
+        if frac < 0.85 { return .safetAmber }
+        return .safetRed
     }
 }
 

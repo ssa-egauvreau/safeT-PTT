@@ -117,6 +117,9 @@ final class VoiceTransport {
     /// only to detect a talk-spurt boundary on RX so the post-decode chain
     /// can reset its biquad state before the next talker's first frame.
     private var lastInboundVoiceAt: TimeInterval = 0
+    /// Timestamp of the last end-of-TX cue, to dedup duplicate `air_released`
+    /// pushes that would otherwise replay the roger beep over and over.
+    private var lastEndOfTxCueAt: TimeInterval = 0
     /// Treat > 300 ms gap between inbound voice frames as a new talk-spurt.
     /// Matches the Android `scanTalkSpurtGapNs` for the same reason.
     private let talkSpurtGapSeconds: TimeInterval = VoiceTiming.talkSpurtGapSeconds
@@ -630,6 +633,11 @@ final class VoiceTransport {
         guard let cfg = postDecodeConfig, cfg.rogerBeepEnabled || cfg.squelchTailEnabled else {
             return
         }
+        // Dedup duplicate `air_released` pushes (common when the socket
+        // reconnects on a flaky link) so the roger beep doesn't play repeatedly.
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastEndOfTxCueAt < 0.8 { return }
+        lastEndOfTxCueAt = now
         // Defense-in-depth: if a dispatcher "move" raced the release, an
         // air_released for the channel we just left could arrive after we
         // re-joined elsewhere. The relay personalises the message with the
