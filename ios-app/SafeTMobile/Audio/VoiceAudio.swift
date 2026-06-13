@@ -86,13 +86,17 @@ final class VoiceAudio {
         jitterBuffer.release()
     }
 
-    /// Activates the audio session (media-volume playback) and starts the engine
-    /// for RX. Must be called after `requestRecordPermission()` returns true.
-    /// The mic is NOT wired here — we run playback-only so the volume buttons
-    /// show the speaker icon; `startCapture()` rebuilds the engine with input
-    /// when PTT is pressed.
+    /// Activates the audio session and starts the engine. Must be called after
+    /// `AudioSessionManager.requestRecordPermission()` returns true.
     func start() throws {
-        try AudioSessionManager.configureForPlayback()
+        try AudioSessionManager.configureForVoice()
+        // Touch the input node BEFORE starting the engine so the engine wires
+        // the mic route up front. Without this, the first access happens lazily
+        // inside startCapture() — and on a running playback-only engine, the
+        // input node's `outputFormat(forBus: 0)` can return a 0-channel /
+        // 0-sample-rate format. Installing a tap with that format crashes
+        // AVAudioEngine with `IsFormatSampleRateAndChannelCountValid(format)`.
+        _ = engine.inputNode
         if !engine.isRunning {
             engine.prepare()
             try engine.start()
@@ -100,26 +104,6 @@ final class VoiceAudio {
         if !player.isPlaying {
             player.play()
         }
-    }
-
-    /// (Re)start the engine in its playback-only shape. Idempotent. Best-effort
-    /// (used on the revert path), unlike `start()` which surfaces failures.
-    private func startEngineForPlayback() {
-        if !engine.isRunning {
-            engine.prepare()
-            try? engine.start()
-        }
-        if !player.isPlaying {
-            player.play()
-        }
-    }
-
-    /// Drop the mic, return to the media-volume playback session, and resume RX.
-    /// Used on PTT release and on any capture-setup failure.
-    private func revertToPlayback() {
-        if engine.isRunning { engine.stop() }
-        try? AudioSessionManager.configureForPlayback()
-        startEngineForPlayback()
     }
 
     func stop() {
@@ -136,29 +120,14 @@ final class VoiceAudio {
     func startCapture() -> UInt64? {
         guard !capturing else { return captureSessionId }
 
-        // Acquire the mic: switch to the record session and rebuild the engine so
-        // its input node wires up. We listen on a playback-only session (for the
-        // speaker-icon / media volume), so the input isn't configured until now.
-        // Stopping the engine before touching the input avoids the 0-channel /
-        // 0 Hz `outputFormat` that crashes installTap on a playback-only engine.
-        do {
-            try AudioSessionManager.configureForTransmit()
-        } catch {
-            revertToPlayback()
-            return nil
-        }
-        if engine.isRunning { engine.stop() }
-
         let inputNode = engine.inputNode
         let nativeFormat = inputNode.outputFormat(forBus: 0)
-        // Defensive guard: if record permission is missing or the input route is
-        // mid-change, `outputFormat` can still report a 0-channel / 0 Hz format.
-        // Installing a tap with that crashes AVAudioEngine — bail to playback so
-        // PTT just no-ops instead of taking the app down.
-        guard nativeFormat.channelCount > 0, nativeFormat.sampleRate > 0 else {
-            revertToPlayback()
-            return nil
-        }
+        // Defensive guard: if the audio session lost record permission, the input
+        // route changed mid-flight, or the engine started before the input was
+        // wired, `outputFormat` can return a 0-channel / 0 Hz format. Installing
+        // a tap with that crashes AVAudioEngine. Bail cleanly so PTT just no-ops
+        // instead of taking the app down.
+        guard nativeFormat.channelCount > 0, nativeFormat.sampleRate > 0 else { return nil }
 
         let pcm16Mono16k = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
@@ -166,30 +135,21 @@ final class VoiceAudio {
             channels: 1,
             interleaved: true
         )!
-        guard let converter = AVAudioConverter(from: nativeFormat, to: pcm16Mono16k) else {
-            revertToPlayback()
-            return nil
-        }
+        guard let converter = AVAudioConverter(from: nativeFormat, to: pcm16Mono16k) else { return nil }
         captureConverter = converter
         captureBuffer.removeAll(keepingCapacity: true)
         captureSessionId &+= 1
         let sessionId = captureSessionId
 
+        // Install the tap inside a do/catch via @objc exception bridging would be
+        // nicer, but Swift can't catch ObjC exceptions. The format guards above
+        // cover the known-bad cases; if AVAudioEngine still throws here, the bug
+        // is in the engine state and we want the crash report.
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: nativeFormat) { [weak self] buffer, _ in
             self?.handle(captureBuffer: buffer, target: pcm16Mono16k, sessionId: sessionId)
         }
-        engine.prepare()
-        do {
-            try engine.start()
-        } catch {
-            inputNode.removeTap(onBus: 0)
-            captureConverter = nil
-            revertToPlayback()
-            return nil
-        }
-        if !player.isPlaying { player.play() }
-        // Mark capturing AFTER a successful tap install + engine start so a
-        // failure path doesn't leave stopCapture() removing a tap that's gone.
+        // Mark capturing AFTER a successful tap install so a failure path doesn't
+        // leave stopCapture() trying to remove a tap that was never added.
         capturing = true
         return sessionId
     }
@@ -200,9 +160,6 @@ final class VoiceAudio {
         engine.inputNode.removeTap(onBus: 0)
         captureBuffer.removeAll(keepingCapacity: false)
         captureConverter = nil
-        // Drop the mic and return to the media-volume playback session so RX is
-        // loud and the volume buttons show the speaker icon again.
-        revertToPlayback()
     }
 
     private func handle(captureBuffer source: AVAudioPCMBuffer, target: AVAudioFormat, sessionId: UInt64) {

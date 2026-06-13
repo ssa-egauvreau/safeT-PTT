@@ -1,33 +1,16 @@
 import AVFoundation
 
-/// Manages the shared AVAudioSession for half-duplex radio voice. We switch
-/// category by phase so the volume buttons control the *media* volume (speaker
-/// icon) while listening, instead of the *call* volume (phone icon) that
-/// `.playAndRecord` forces the whole time:
+/// Configures the shared AVAudioSession for half-duplex radio voice: speakerphone
+/// by default, voice-chat mode (echo cancellation), allow Bluetooth headsets.
 ///
-/// - `configureForPlayback()` — RX / idle. `.playback` keeps incoming audio on
-///   the media-volume bus (loud, speaker icon). No mic.
-/// - `configureForTransmit()` — PTT held. `.playAndRecord` + `.voiceChat`
-///   (echo cancellation, speakerphone, Bluetooth) to capture the mic. The
-///   call-volume bus is fine here — the operator is talking, not listening.
-///
-/// `VoiceAudio` rebuilds its engine across the switch; the permit beep masks the
-/// brief reconfiguration so the operator never keys into dead air.
+/// Mode is `.voiceChat` (Apple's voice-processing I/O). An earlier attempt to use
+/// `.default` to make RX louder regressed incoming audio — it garbled and dropped
+/// frames, because the playback engine + inbound jitter buffer rely on the
+/// voice-processing I/O's fixed 16 kHz clock/buffering. RX integrity wins over
+/// loudness, so `.voiceChat` stays; the volume work is handled separately without
+/// touching the playback path.
 enum AudioSessionManager {
-    /// Listening / idle: media-volume playback. Speaker icon, full volume.
-    static func configureForPlayback() throws {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(
-            .playback,
-            mode: .default,
-            options: [.allowBluetoothA2DP, .allowAirPlay]
-        )
-        try session.setActive(true, options: [])
-        applyRoute(SettingsStore.shared.audioRoute)
-    }
-
-    /// Transmitting: record + play with voice processing for the mic.
-    static func configureForTransmit() throws {
+    static func configureForVoice() throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(
             .playAndRecord,
