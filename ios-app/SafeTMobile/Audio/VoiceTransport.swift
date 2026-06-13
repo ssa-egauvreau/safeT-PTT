@@ -671,7 +671,13 @@ final class VoiceTransport {
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                if Date().timeIntervalSince(self.lastReceivedAt) > VoiceTiming.talkSpurtGapSeconds {
+                // Hold the RX indicator for ~1.2s after the last frame so brief
+                // packet-loss gaps don't flap receiving on/off. Each flap re-set
+                // @Published RX state + the widget + the Live Activity on the main
+                // thread (~the "Updating content for activity" log storm), which
+                // starved the audio thread and made the dropouts worse. Only flip
+                // to idle after sustained silence (genuine end of transmission).
+                if Date().timeIntervalSince(self.lastReceivedAt) > 1.2 {
                     self.onReceivingChange?(false)
                 }
             }
