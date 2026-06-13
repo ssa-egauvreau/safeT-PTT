@@ -91,6 +91,18 @@ const slots: WorkerSlot[] = Array.from({ length: WORKER_COUNT }, () => ({
   inflight: null,
 }));
 
+/**
+ * Warm-up gate. The model is downloaded into a shared on-disk HuggingFace
+ * cache the first time it's loaded. If all workers cold-load an uncached model
+ * at once they race to write the same files and corrupt the download — every
+ * worker then reports "broken". So until one worker has loaded the model
+ * (proving it's cached), only a single "cold loader" slot is allowed to spawn;
+ * once it's ready the rest fan out and load from disk. `modelWarmed` latches
+ * for the process lifetime.
+ */
+let modelWarmed = false;
+let coldLoader: WorkerSlot | null = null;
+
 export interface TranscriptionDiagnostics {
   enabled: boolean;
   model: string;
@@ -156,6 +168,12 @@ function ensureSlotWorker(slot: WorkerSlot): Worker | null {
     if (msg?.type === "state" && msg.state) {
       state = msg.state;
       lastLoadFailedAt = msg.state === "broken" ? Date.now() : 0;
+      if (msg.state === "ready") {
+        // Model is cached on disk now — open the gate and wake idle slots.
+        modelWarmed = true;
+        coldLoader = null;
+        dispatch();
+      }
       return;
     }
     if (msg?.type === "result" && slot.inflight && msg.id === slot.inflight.id) {
@@ -172,6 +190,10 @@ function ensureSlotWorker(slot: WorkerSlot): Worker | null {
     slot.diedAt = Date.now();
     lastLoadFailedAt = slot.diedAt;
     state = "broken";
+    // If the cold loader died, let another slot take over the warm-up.
+    if (coldLoader === slot) {
+      coldLoader = null;
+    }
     console.warn(`Transcription worker ${reason}`, detail ?? "");
     if (slot.inflight) {
       const done = slot.inflight;
@@ -257,9 +279,18 @@ function dispatch(): void {
     if (slot.busy) {
       continue;
     }
+    const needsSpawn = slot.worker === null;
+    // Warm-up gate: until the model is cached (first worker ready), only the
+    // single cold-loader slot may spawn — others would race the download.
+    if (needsSpawn && !modelWarmed && coldLoader !== null && coldLoader !== slot) {
+      continue;
+    }
     const w = ensureSlotWorker(slot);
     if (!w) {
       continue; // in crash cooldown / failed to spawn — another slot may take it
+    }
+    if (needsSpawn && !modelWarmed) {
+      coldLoader = slot; // this slot owns the one-time cold load
     }
     const id = queue.shift()!;
     slot.busy = true;
