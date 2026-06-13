@@ -10,6 +10,10 @@ final class RadioLiveActivityController {
 
     private var currentActivity: Activity<RadioActivityAttributes>?
     private var currentChannel: String = ""
+    /// Last content pushed to the activity — so we skip redundant `update()`
+    /// calls. The voice path calls `startOrUpdate` on every received frame
+    /// (~50×/s); without this dedup the Dynamic Island churns continuously.
+    private var lastContent: RadioActivityAttributes.ContentState?
 
     /// Starts a Live Activity if one isn't already running, or updates the
     /// existing one in place. Calling this on every channel mutation keeps the
@@ -23,12 +27,16 @@ final class RadioLiveActivityController {
         )
         if let activity = currentActivity {
             currentChannel = channel
+            // Skip if nothing actually changed — avoids ~50 updates/sec during RX.
+            if state == lastContent { return }
+            lastContent = state
             Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
             return
         }
         let attributes = RadioActivityAttributes()
         let content = ActivityContent(state: state, staleDate: nil)
         currentActivity = try? Activity.request(attributes: attributes, content: content, pushType: nil)
+        lastContent = state
         currentChannel = channel
     }
 
@@ -52,6 +60,7 @@ final class RadioLiveActivityController {
         let prior = currentActivity
         currentActivity = nil
         currentChannel = ""
+        lastContent = nil
         guard let prior else { return }
         Task { await prior.end(nil, dismissalPolicy: .immediate) }
     }

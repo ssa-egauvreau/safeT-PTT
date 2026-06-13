@@ -462,6 +462,10 @@ final class RadioViewModel: ObservableObject {
         }
         voiceTransport.onReceivingChange = { [weak self] receiving in
             guard let self else { return }
+            // The transport pings this on every inbound frame to keep RX alive;
+            // only act on an actual edge so we don't re-render the screen (and
+            // re-touch the widget/Live Activity) ~50×/sec while receiving.
+            guard self.uiState.isReceivingAudio != receiving else { return }
             self.uiState.isReceivingAudio = receiving
             if #available(iOS 16.2, *), let channel = self.currentChannel {
                 if receiving {
