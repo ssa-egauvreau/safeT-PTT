@@ -192,8 +192,6 @@ struct RadioScreen: View {
                 displayPanel(state)
                 channelRow(state)
                 emergencyButton(state)
-                // PTT bar grows to fill the remaining height — no dead space,
-                // and a big key target for gloved hands.
                 pttBar(state)
             }
             .padding(16)
@@ -569,6 +567,10 @@ struct RadioScreen: View {
                 scanBanner(state)
             }
 
+            // Push the status line to the bottom of the (now expanded) card so
+            // the channel info sits at the top and fills the space cleanly.
+            Spacer(minLength: 8)
+
             Divider().overlay(Color.safetBorder)
 
             Text(state.channelsLoading ? "SYNCING…" : state.statusMessage)
@@ -584,7 +586,7 @@ struct RadioScreen: View {
                     .accessibilityLabel(Text(error))
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(14)
         .background(Color.safetSurface)
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.safetBorder, lineWidth: 1))
@@ -702,7 +704,7 @@ struct RadioScreen: View {
         }
         .foregroundColor(state.isListenOnly ? .safetTextDim : .white)
         .frame(maxWidth: .infinity)
-        .frame(minHeight: 130, maxHeight: .infinity)
+        .frame(height: 150)
         .background(pttColor(state))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
