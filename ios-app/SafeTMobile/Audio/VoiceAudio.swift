@@ -40,12 +40,12 @@ final class VoiceAudio {
     /// Linear gain applied to samples. Slider 1.0 → `maxOutputGain`×; the slider
     /// midpoint (~0.4) lands on unity.
     private var outputGain: Float { outputVolume01 * Self.maxOutputGain }
-    /// Headroom above unity at full slider. 4× is the middle ground — louder than
-    /// 3× but below the 6× that clipped, with the tanh soft-clip smoothing peaks.
-    /// Absolute loudness is still capped by the voice-chat call-volume bus (the
-    /// media-volume `.playback` session failed with OSStatus -50 on iOS 27, so
-    /// software gain is the only lever).
-    static let maxOutputGain: Float = 4.0
+    /// Headroom above unity at full slider. 5× — louder than 4×, with the tanh
+    /// soft-clip avoiding the harsh clipping raw 6× produced. This is near the
+    /// practical ceiling of the voice-chat call-volume bus; true media-volume
+    /// loudness needs the `.playback` session, which fails with OSStatus -50 on
+    /// iOS 27 beta (likely a beta bug — revisit when iOS 27 ships).
+    static let maxOutputGain: Float = 5.0
 
 
     private let engine = AVAudioEngine()
