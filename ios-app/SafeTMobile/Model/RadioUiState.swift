@@ -73,7 +73,15 @@ struct RadioUiState {
     /// True while the mic is hot and frames are being streamed to the server.
     var isTransmitting = false
     /// The server's permission grant for the current channel — gates the mic.
+    /// Defaults false (pessimistic) until a channel is tuned / the voice socket
+    /// acks, so it must NOT drive the listen-only UI on its own (that would grey
+    /// the PTT during normal startup). Use `isListenOnly` for the greyed-out UI.
     var canTransmit = false
+    /// True only when the tuned channel is *affirmatively* listen-only (its
+    /// permission is `listen_only`). Drives the greyed-out, non-interactive PTT
+    /// bar. Stays false while a channel is still loading so the bar reads
+    /// "HOLD TO TALK" rather than falsely claiming monitor-only.
+    var isListenOnly = false
 
     // MARK: - scan
 

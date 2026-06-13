@@ -634,20 +634,21 @@ struct RadioScreen: View {
                 .font(.safet(size: 10, weight: .semibold))
                 .opacity(0.85)
         }
-        .foregroundColor(state.canTransmit ? .white : .safetTextDim)
+        .foregroundColor(state.isListenOnly ? .safetTextDim : .white)
         .frame(maxWidth: .infinity)
         .frame(height: 116)
         .background(pttColor(state))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(state.canTransmit ? Color.clear : Color.safetBorder, lineWidth: 1)
+                .stroke(state.isListenOnly ? Color.safetBorder : Color.clear, lineWidth: 1)
         )
         .cornerRadius(12)
         // Listen-only channels can't key — grey the bar out and swallow taps so
         // the operator gets no "keying" feedback. The hardware/remote PTT paths
-        // are gated identically in the view-model.
-        .opacity(state.canTransmit ? 1.0 : 0.55)
-        .allowsHitTesting(state.canTransmit)
+        // are gated identically in the view-model. Gated on isListenOnly (not
+        // !canTransmit) so a still-loading channel doesn't grey out the bar.
+        .opacity(state.isListenOnly ? 0.55 : 1.0)
+        .allowsHitTesting(!state.isListenOnly)
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in
@@ -663,10 +664,10 @@ struct RadioScreen: View {
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Push to talk")
-        .accessibilityHint(state.canTransmit
-            ? "Hold to transmit on channel \(state.channelLabel)"
-            : "Listen only on channel \(state.channelLabel)")
-        .accessibilityValue(state.isTransmitting ? "Transmitting" : (state.canTransmit ? "Idle" : "Listen only"))
+        .accessibilityHint(state.isListenOnly
+            ? "Listen only on channel \(state.channelLabel)"
+            : "Hold to transmit on channel \(state.channelLabel)")
+        .accessibilityValue(state.isTransmitting ? "Transmitting" : (state.isListenOnly ? "Listen only" : "Idle"))
     }
 
     /// While transmitting, render "XMIT" with the lightning-bolt SF Symbol so
@@ -688,7 +689,7 @@ struct RadioScreen: View {
     }
 
     private func pttTitle(_ state: RadioUiState) -> String {
-        if !state.canTransmit { return "LISTEN ONLY" }
+        if state.isListenOnly { return "LISTEN ONLY" }
         if state.pttBusyTone { return "CHANNEL BUSY" }
         // isTransmitting is rendered by pttTitleView's icon+text branch — never reached here.
         if state.isPttPressed { return "KEYING…" }
@@ -696,13 +697,13 @@ struct RadioScreen: View {
     }
 
     private func pttSubtitle(_ state: RadioUiState) -> String {
-        if !state.canTransmit { return "MONITOR ONLY ON THIS CHANNEL" }
+        if state.isListenOnly { return "MONITOR ONLY ON THIS CHANNEL" }
         if state.isTransmitting { return "PCM 16K MONO \u{2014} HALF-DUPLEX" }
         return "PRESS AND HOLD"
     }
 
     private func pttColor(_ state: RadioUiState) -> Color {
-        if !state.canTransmit { return .safetSurface }
+        if state.isListenOnly { return .safetSurface }
         if state.pttBusyTone { return .safetRed }
         if state.isTransmitting { return .safetGreen }
         if state.isPttPressed { return .safetGreen.opacity(0.5) }

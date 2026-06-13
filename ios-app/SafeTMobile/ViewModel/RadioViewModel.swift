@@ -316,8 +316,11 @@ final class RadioViewModel: ObservableObject {
         uiState.zoneLabel = zoneHeaderLabel(dto)
         // Seed the PTT gate from the channel's permission so a listen-only
         // channel shows the mic greyed out the instant it's tuned — before the
-        // voice socket's `joined` ack arrives to confirm it.
+        // voice socket's `joined` ack arrives to confirm it. `isListenOnly` only
+        // goes true when the permission is *affirmatively* listen_only (not when
+        // it's merely unknown), so a still-loading channel doesn't grey the PTT.
         uiState.canTransmit = permissionAllowsTalk(dto?.permission)
+        uiState.isListenOnly = dto?.permission?.lowercased() == "listen_only"
         uiState.channelPosition = String(format: "%02ld / %02ld", channelIndex + 1, channelNames.count)
         uiState.displayLine2 = "OPS: " + name.uppercased()
         updateWidgetData()
@@ -423,6 +426,7 @@ final class RadioViewModel: ObservableObject {
             // The joined ack names the channel's TX codec — drive the badge.
             self.uiState.channelCodecLabel = joined.codec.displayLabel
             self.uiState.canTransmit = joined.permission != .listenOnly
+            self.uiState.isListenOnly = joined.permission == .listenOnly
             self.uiState.statusMessage = joined.permission == .listenOnly ? "MONITOR ONLY" : "READY"
             // Only stamp the connection start on (re)connect — set it when
             // we don't have one yet, OR when we were just reconnecting (the
