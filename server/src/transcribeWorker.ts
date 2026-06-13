@@ -17,6 +17,8 @@
 //                  { type: "result", id, ok: false, error }
 
 import { parentPort } from "node:worker_threads";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 
 // This module hosts the ONNX/transformers.js pipeline. It can run either as a
 // worker_thread (parentPort set) or — preferred — as a forked child process
@@ -54,6 +56,30 @@ interface TranscribeJob {
   type?: string;
   id?: number;
   wav?: ArrayBuffer;
+}
+
+/**
+ * Point transformers.js at a PERSISTENT model cache so the ~100 MB model is
+ * downloaded once, not on every deploy/restart. transformers.js defaults to an
+ * ephemeral `node_modules/.../.cache` and reads no HF env var, so we set
+ * `env.cacheDir` ourselves: an explicit MODEL_CACHE_DIR, else the Railway
+ * volume (RAILWAY_VOLUME_MOUNT_PATH, auto-injected when a volume is attached).
+ * Best-effort: if the dir can't be created the load falls back to the default
+ * (re-downloads each boot) rather than failing transcription.
+ */
+function applyModelCacheDir(env: { cacheDir?: string } | undefined): void {
+  if (!env) return;
+  const explicit = process.env.MODEL_CACHE_DIR?.trim();
+  const vol = process.env.RAILWAY_VOLUME_MOUNT_PATH?.trim();
+  const dir = explicit || (vol ? join(vol, "model-cache") : "");
+  if (!dir) return; // local dev / no volume — keep the default cache
+  try {
+    mkdirSync(dir, { recursive: true });
+    env.cacheDir = dir;
+    console.log(`Transcriber model cache: ${dir}`);
+  } catch (error) {
+    console.warn(`Could not use model cache dir ${dir}; using default (re-downloads each boot).`, error);
+  }
 }
 
 function post(message: unknown): void {
@@ -117,7 +143,9 @@ async function ensurePipeline(): Promise<WhisperPipeline | null> {
             model: string,
             options?: Record<string, unknown>,
           ) => Promise<WhisperPipeline>;
+          env?: { cacheDir?: string };
         };
+        applyModelCacheDir(transformers.env);
         const loading = transformers.pipeline("automatic-speech-recognition", MODEL, {
           dtype: DTYPE,
           device: "cpu",

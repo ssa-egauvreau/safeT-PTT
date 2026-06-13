@@ -3,6 +3,9 @@
 // transcribe.ts: a failed model load (Railway OOM / cold start) never throws —
 // callers treat a null result as "no knowledge base" and proceed unchanged.
 
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+
 const MODEL = process.env.KB_EMBED_MODEL?.trim() || "Xenova/all-MiniLM-L6-v2";
 /** q8 quarters the memory footprint vs fp32 — same reasoning as WHISPER_DTYPE. */
 const DTYPE = process.env.KB_EMBED_DTYPE?.trim() || "q8";
@@ -47,6 +50,27 @@ export function getEmbeddingDiagnostics(): {
   };
 }
 
+/**
+ * Persist the model cache to the Railway volume (or MODEL_CACHE_DIR) so the
+ * embedding model downloads once, not on every deploy. Same best-effort policy
+ * and cache dir as the transcription worker — both models share it. See
+ * transcribeWorker.applyModelCacheDir.
+ */
+function applyModelCacheDir(env: { cacheDir?: string } | undefined): void {
+  if (!env) return;
+  const explicit = process.env.MODEL_CACHE_DIR?.trim();
+  const vol = process.env.RAILWAY_VOLUME_MOUNT_PATH?.trim();
+  const dir = explicit || (vol ? join(vol, "model-cache") : "");
+  if (!dir) return;
+  try {
+    mkdirSync(dir, { recursive: true });
+    env.cacheDir = dir;
+    console.log(`[kb] embedding model cache: ${dir}`);
+  } catch (error) {
+    console.warn(`[kb] could not use model cache dir ${dir}; using default (re-downloads each boot).`, error);
+  }
+}
+
 async function ensurePipeline(): Promise<EmbedPipeline | null> {
   if (pipelineFn) {
     return pipelineFn;
@@ -69,7 +93,9 @@ async function ensurePipeline(): Promise<EmbedPipeline | null> {
             model: string,
             options?: Record<string, unknown>,
           ) => Promise<EmbedPipeline>;
+          env?: { cacheDir?: string };
         };
+        applyModelCacheDir(transformers.env);
         pipelineFn = await transformers.pipeline("feature-extraction", MODEL, {
           dtype: DTYPE,
           device: "cpu",

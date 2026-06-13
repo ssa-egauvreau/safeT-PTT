@@ -86,6 +86,8 @@ Keep UI / ViewModel / domain / data / device layers separate; state-driven Compo
 - `DATABASE_URL` — PostgreSQL. Unset → in-memory mode (see above). In cloud dev, if it's inherited pointing at `postgres.railway.internal` and that host is unreachable, **unset it** before local startup or background DB tasks crash the server after boot.
 - `RADIO_API_KEY` — handset key for the Default Agency. `JWT_SECRET` — console/admin auth.
 - `TRANSCRIPTION=off` and `KB_ENABLED=off` — skip Whisper + KB embedding model loads for faster dev startup.
+- `TRANSCRIPTION_WORKERS` — size of the Whisper transcription pool (separate child processes, not threads — onnxruntime-node is not isolate-safe across worker_threads). Defaults to the container's CPU allotment capped at 3; raise on a bigger box. `TRANSCRIBE_BRIDGE=on` re-enables transcription of SDR/radio-bridge audio (off by default — it's a firehose). `TRANSCRIPTION_STALE_MS` reaps pending rows older than 30 min so the console never shows a permanent "Transcribing…".
+- `MODEL_CACHE_DIR` — persistent directory for the downloaded transformers.js models (Whisper + KB embeddings). Defaults to `$RAILWAY_VOLUME_MOUNT_PATH/model-cache` when a Railway volume is attached, else the ephemeral default (models re-download every boot). Point it at a persistent volume in production so the ~100 MB Whisper model loads from disk instead of re-downloading on each deploy.
 - `AI_DISPATCH_LLM_*`, `ELEVENLABS_*`, `GOOGLE_MAPS_GEOCODING_API_KEY`, `PLATE_LOOKUP_*` — AI dispatch LLM, TTS, geocoding, and plate-lookup providers.
 - `OWNER_USERNAME` / `OWNER_INITIAL_PASSWORD` / `ADMIN_INITIAL_PASSWORD` — seed accounts on first boot.
 - Railway needs `ffmpeg` (declared in `server/railpack.json`) for bridge ingestion and recording.
