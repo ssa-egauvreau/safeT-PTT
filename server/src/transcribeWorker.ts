@@ -18,6 +18,15 @@
 
 import { parentPort } from "node:worker_threads";
 
+// This module hosts the ONNX/transformers.js pipeline. It can run either as a
+// worker_thread (parentPort set) or — preferred — as a forked child process
+// (process.send set). onnxruntime-node is NOT safe to run from multiple V8
+// isolates in one process: driving concurrent inference from several
+// worker_threads aborts the process with "HandleScope ... without proper
+// locking". Separate child processes have independent isolates, so the pool
+// uses fork() and this worker speaks whichever channel it was started on.
+const useProcessIpc = !parentPort && typeof process.send === "function";
+
 const MODEL = process.env.WHISPER_MODEL?.trim() || "Xenova/whisper-tiny.en";
 const DTYPE = process.env.WHISPER_DTYPE?.trim() || "q8";
 /** After a failed model load, wait before retrying (Railway OOM / cold start). */
@@ -48,7 +57,11 @@ interface TranscribeJob {
 }
 
 function post(message: unknown): void {
-  parentPort?.postMessage(message);
+  if (useProcessIpc) {
+    process.send?.(message);
+  } else {
+    parentPort?.postMessage(message);
+  }
 }
 
 /**
@@ -141,12 +154,14 @@ async function ensurePipeline(): Promise<WhisperPipeline | null> {
   return loadPromise;
 }
 
-parentPort?.on("message", (msg: TranscribeJob) => {
+function onJob(msg: TranscribeJob): void {
   if (!msg || msg.type !== "transcribe" || typeof msg.id !== "number" || !msg.wav) {
     return;
   }
   const id = msg.id;
-  const wav = Buffer.from(msg.wav);
+  // worker_threads transfer an ArrayBuffer; fork IPC (advanced serialization)
+  // delivers a Buffer. Buffer.from handles both.
+  const wav = Buffer.from(msg.wav as ArrayBuffer);
   void (async () => {
     try {
       const run = await ensurePipeline();
@@ -170,4 +185,10 @@ parentPort?.on("message", (msg: TranscribeJob) => {
       });
     }
   })();
-});
+}
+
+if (useProcessIpc) {
+  process.on("message", onJob);
+} else {
+  parentPort?.on("message", onJob);
+}

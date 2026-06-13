@@ -1,17 +1,23 @@
 // Background transcription of recorded transmissions using a self-hosted Whisper
 // model (transformers.js / ONNX). Best-effort: failures never block recording.
 //
-// The Whisper pipeline runs in a worker_thread (see transcribeWorker.ts), NOT on
-// the main event loop: this process is also the realtime voice relay, and a
-// single in-process inference used to stall frame forwarding long enough to
-// register as buffer underruns / PLC on every connected handset. The main
-// thread keeps the queue, the DB writes, and the AI-dispatch hand-off; the
-// worker only ever sees WAV bytes and returns text.
+// The Whisper pipeline runs in a forked CHILD PROCESS (see transcribeWorker.ts),
+// NOT on the main event loop: this process is also the realtime voice relay, and
+// a single in-process inference used to stall frame forwarding long enough to
+// register as buffer underruns / PLC on every connected handset. The main thread
+// keeps the queue, the DB writes, and the AI-dispatch hand-off; the worker only
+// ever sees WAV bytes and returns text.
+//
+// Child processes (not worker_threads): onnxruntime-node's native addon shares
+// V8 handle state across isolates in one process, so running inference from
+// several worker_threads at once aborts the whole server with "HandleScope ...
+// without proper locking". Separate processes have fully independent isolates,
+// so the pool scales safely.
 
 import { existsSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { fileURLToPath } from "node:url";
-import { Worker } from "node:worker_threads";
+import { fork, type ChildProcess } from "node:child_process";
 import { enqueueAiDispatchForTransmission } from "./aiDispatch/engine.js";
 import { getPool } from "./db.js";
 import {
@@ -74,9 +80,9 @@ const queue: number[] = [];
  */
 const inQueue = new Set<number>();
 
-/** One pool slot: its own worker, in-flight job, and crash-cooldown clock. */
+/** One pool slot: its own worker process, in-flight job, and crash-cooldown clock. */
 interface WorkerSlot {
-  worker: Worker | null;
+  worker: ChildProcess | null;
   /** Set synchronously when work is assigned so a re-entrant dispatch() can't
    *  hand the same slot a second clip before its inflight is wired up. */
   busy: boolean;
@@ -143,7 +149,7 @@ interface WorkerMessage {
  * via execArgv. Returns null while inside the slot's post-crash cooldown so a
  * worker that OOMs on load doesn't respawn-loop the container.
  */
-function ensureSlotWorker(slot: WorkerSlot): Worker | null {
+function ensureSlotWorker(slot: WorkerSlot): ChildProcess | null {
   if (slot.worker) {
     return slot.worker;
   }
@@ -153,9 +159,12 @@ function ensureSlotWorker(slot: WorkerSlot): Worker | null {
   const compiled = new URL("./transcribeWorker.js", import.meta.url);
   const source = new URL("./transcribeWorker.ts", import.meta.url);
   const url = existsSync(fileURLToPath(compiled)) ? compiled : source;
-  let spawned: Worker;
+  let spawned: ChildProcess;
   try {
-    spawned = new Worker(url);
+    // Forked process (not a thread) so onnxruntime gets its own V8 isolate.
+    // `serialization: "advanced"` lets the WAV Buffer cross IPC intact; execArgv
+    // is inherited so the dev/test tsx loader still resolves the .ts worker.
+    spawned = fork(fileURLToPath(url), [], { serialization: "advanced" });
   } catch (error) {
     slot.diedAt = Date.now();
     lastLoadFailedAt = slot.diedAt;
@@ -215,7 +224,7 @@ function ensureSlotWorker(slot: WorkerSlot): Worker | null {
 }
 
 /** Ships one WAV to a slot's worker; resolves with the transcript, or null on any failure/timeout. */
-function sendToSlot(slot: WorkerSlot, w: Worker, id: number, wav: Buffer): Promise<string | null> {
+function sendToSlot(slot: WorkerSlot, w: ChildProcess, id: number, wav: Buffer): Promise<string | null> {
   return new Promise<string | null>((resolve) => {
     const timer = setTimeout(() => {
       if (slot.inflight && slot.inflight.id === id) {
@@ -233,11 +242,16 @@ function sendToSlot(slot: WorkerSlot, w: Worker, id: number, wav: Buffer): Promi
         resolve(text);
       },
     };
-    // Copy into a transferable so the worker never aliases a pg-owned buffer.
-    const body = new ArrayBuffer(wav.byteLength);
-    new Uint8Array(body).set(wav);
     try {
-      w.postMessage({ type: "transcribe", id, wav: body }, [body]);
+      // Advanced IPC serialization copies the Buffer to the child intact.
+      w.send({ type: "transcribe", id, wav }, (error) => {
+        if (error && slot.inflight?.id === id) {
+          console.warn(`Could not hand transmission ${id} to the transcription worker`, error);
+          slot.inflight = null;
+          clearTimeout(timer);
+          resolve(null);
+        }
+      });
     } catch (error) {
       console.warn(`Could not hand transmission ${id} to the transcription worker`, error);
       clearTimeout(timer);
@@ -248,7 +262,7 @@ function sendToSlot(slot: WorkerSlot, w: Worker, id: number, wav: Buffer): Promi
 }
 
 /** Runs one transmission end-to-end on a claimed slot, then frees it and pulls the next. */
-async function runOnSlot(slot: WorkerSlot, w: Worker, id: number): Promise<void> {
+async function runOnSlot(slot: WorkerSlot, w: ChildProcess, id: number): Promise<void> {
   try {
     const record = await getTransmissionAudio(id);
     if (!record) {
