@@ -35,9 +35,10 @@ final class VoiceAudio {
     /// Linear gain applied to samples. Slider 1.0 → `maxOutputGain`×; the slider
     /// midpoint (~0.4) lands on unity.
     private var outputGain: Float { outputVolume01 * Self.maxOutputGain }
-    /// Headroom above unity at full slider. 2.5× with soft-limiting is a strong
-    /// but clean-enough boost for the quiet call-volume bus.
-    static let maxOutputGain: Float = 2.5
+    /// Headroom above unity at full slider. The voice-chat call-volume bus is
+    /// quiet, so we boost hard (4×) and lean on the soft knee + clamp to keep it
+    /// from distorting on peaks.
+    static let maxOutputGain: Float = 4.0
 
 
     private let engine = AVAudioEngine()

@@ -111,6 +111,11 @@ struct RadioScreen: View {
     /// BT headphones flips the glyph live.
     @State private var liveRouteIcon: String = "speaker.wave.2"
     @Environment(\.scenePhase) private var scenePhase
+    /// Repeating haptic while transmitting — buzzes for as long as the operator
+    /// holds PTT, for tactile "you're on air" feedback. Held in @State so the
+    /// generator survives view rebuilds (warm-up isn't dropped on every render).
+    @State private var pttHaptic = UIImpactFeedbackGenerator(style: .heavy)
+    @State private var pttHapticTimer: Timer?
 
     /// Construct the view-model lazily inside the StateObject autoclosure so
     /// SwiftUI retains the instance across re-renders. Building the view-model
@@ -171,6 +176,10 @@ struct RadioScreen: View {
             default: break
             }
         }
+        .onChange(of: state.isTransmitting) { transmitting in
+            if transmitting { startPttHaptic() } else { stopPttHaptic() }
+        }
+        .onDisappear { stopPttHaptic() }
         .sheet(isPresented: $showingDispatch) { sheetWrap("DISPATCH", isPresented: $showingDispatch) {
             if let token = session.token {
                 DispatchScreen(api: RadioApiClient(token: token))
@@ -738,5 +747,26 @@ struct RadioScreen: View {
         if state.isTransmitting { return .safetGreen }
         if state.isPttPressed { return .safetGreen.opacity(0.5) }
         return .safetBlue
+    }
+
+    // MARK: - PTT haptic
+
+    /// Start a repeating impact while transmitting so the operator feels a steady
+    /// buzz the whole time they're keyed up. Stops on release / when TX ends.
+    private func startPttHaptic() {
+        stopPttHaptic()
+        pttHaptic.prepare()
+        pttHaptic.impactOccurred()
+        let timer = Timer(timeInterval: 0.18, repeats: true) { _ in
+            pttHaptic.prepare()
+            pttHaptic.impactOccurred()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pttHapticTimer = timer
+    }
+
+    private func stopPttHaptic() {
+        pttHapticTimer?.invalidate()
+        pttHapticTimer = nil
     }
 }
