@@ -47,6 +47,28 @@ final class VoiceAudio {
     private var capturing = false
     private var captureSessionId: UInt64 = 0
 
+    // MARK: - playback source arbitration (scan "takes turns")
+    //
+    // The home channel and every scan listener push decoded PCM into the SAME
+    // jitter buffer / player. When two channels key at once their frames
+    // interleave into one queue and play as garbled overlap. Arbitrate so only
+    // one source feeds the player at a time: the first source to produce audio
+    // holds the player until it goes quiet for `sourceHoldSeconds`; a
+    // higher-priority source (the tuned/home channel) preempts a scan channel.
+    /// Source key currently allowed to feed the player (nil = free).
+    private var activeAudioSource: String?
+    /// Priority of the holding source — home (2) outranks scan (1).
+    private var activeAudioPriority: Int = 0
+    /// Monotonic timestamp (systemUptime) of the holding source's last frame.
+    private var lastSourceFrameAt: TimeInterval = 0
+    /// How long a source keeps the player after its last frame, so brief
+    /// inter-word gaps don't hand the channel to a competing talker mid-spurt.
+    private let sourceHoldSeconds: TimeInterval = 0.8
+    /// Priority constant for the tuned/home channel (always wins over scan).
+    static let homeAudioPriority = 2
+    /// Priority constant for scan-listener channels.
+    static let scanAudioPriority = 1
+
     /// Software jitter buffer + PLC between decoded PCM and the player. The
     /// relay forwards frames the instant they arrive over WebSocket (no
     /// smoothing on either side) — without this buffer, network jitter
@@ -184,10 +206,32 @@ final class VoiceAudio {
     /// forwards frames the instant they arrive over WebSocket, with no
     /// smoothing) is paced out at a steady cadence and isolated network
     /// stalls produce a short fade-to-silence via PLC instead of a hard cutout.
-    func enqueueIncoming(_ pcm16: Data) {
+    ///
+    /// `source` identifies the originating channel and `priority` ranks it
+    /// (home > scan). Frames from a source that doesn't currently hold the
+    /// player are dropped, so two channels keying at once play one-at-a-time
+    /// ("scan takes turns") instead of garbling together.
+    func enqueueIncoming(_ pcm16: Data, source: String = "home", priority: Int = VoiceAudio.homeAudioPriority) {
         guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return }
+        guard claimPlayback(source: source, priority: priority) else { return }
         onEnqueuedIncoming?(pcm16)
         jitterBuffer.enqueue(pcm16)
+    }
+
+    /// Decides whether `source` may feed the player right now. Grants the claim
+    /// when the player is free (no holder, or the holder went quiet past the
+    /// hold window), when `source` already holds it, or when `source` outranks
+    /// the current holder. Refreshes the hold timestamp on every granted frame.
+    private func claimPlayback(source: String, priority: Int) -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        let free = activeAudioSource == nil || (now - lastSourceFrameAt) > sourceHoldSeconds
+        guard free || source == activeAudioSource || priority > activeAudioPriority else {
+            return false
+        }
+        activeAudioSource = source
+        activeAudioPriority = priority
+        lastSourceFrameAt = now
+        return true
     }
 
     /// Plays back a PCM16 buffer without triggering `onEnqueuedIncoming`.
