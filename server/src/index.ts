@@ -37,6 +37,9 @@ import { handleStripeWebhook } from "./billing/webhooks.js";
 /** How often retention DELETE sweeps run (~10 min). */
 const DATA_RETENTION_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
 
+/** How often to re-drain pending transcriptions + reap stale ones (~2 min). */
+const TRANSCRIPTION_RECOVERY_INTERVAL_MS = 2 * 60 * 1000;
+
 /** Knowledge-base retrieval is on unless explicitly disabled (mirrors KB_ENABLED in retrieve.ts). */
 const KB_ENABLED = (process.env.KB_ENABLED ?? "on").trim().toLowerCase() !== "off";
 
@@ -305,6 +308,13 @@ async function main(): Promise<void> {
 
   startRecorder();
   void recoverPendingTranscriptions();
+  // Periodically re-drain: catches transmissions orphaned at 'pending' by a
+  // restart (the in-memory queue does not survive one) and reaps any so old
+  // they'd otherwise show "Transcribing…" on the console forever. Cheap and
+  // self-healing — the dedup set skips ids already queued.
+  setInterval(() => {
+    void recoverPendingTranscriptions();
+  }, TRANSCRIPTION_RECOVERY_INTERVAL_MS).unref();
   void initServerImbe();
   void initServerCodec2();
   void initServerOpus();
