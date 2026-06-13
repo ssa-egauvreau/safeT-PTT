@@ -151,7 +151,9 @@ final class VoiceAudio {
         )!
         guard let converter = AVAudioConverter(from: nativeFormat, to: pcm16Mono16k) else { return nil }
         captureConverter = converter
-        captureBuffer.removeAll(keepingCapacity: true)
+        // Reassign rather than removeAll(keepingCapacity:) — see VoiceTransport's
+        // pcmAcc note: removeAll on a removeFirst-sliced Data traps on iOS 27.
+        captureBuffer = Data()
         captureSessionId &+= 1
         let sessionId = captureSessionId
 
@@ -172,7 +174,7 @@ final class VoiceAudio {
         guard capturing else { return }
         capturing = false
         engine.inputNode.removeTap(onBus: 0)
-        captureBuffer.removeAll(keepingCapacity: false)
+        captureBuffer = Data()
         captureConverter = nil
     }
 

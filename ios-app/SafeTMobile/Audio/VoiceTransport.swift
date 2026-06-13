@@ -50,6 +50,11 @@ final class VoiceTransport {
     private var reconnectTask: Task<Void, Never>?
 
     private let txConditioner = ImbeTxConditioner()
+    /// Mic PCM staged for encoding. Cleared by reassigning `Data()`, never by
+    /// `removeAll(keepingCapacity:)`: repeated `removeFirst` turns this into a
+    /// `Data.InlineSlice`, and calling `removeAll` on a shared/offset slice traps
+    /// inside Foundation on iOS 27 (EXC_BREAKPOINT in `ensureUniqueBufferReference`,
+    /// surfacing at `flushUplinkTail`). A fresh `Data()` sidesteps that path.
     private var pcmAcc = Data()
     private var pcmFrameScratch = Data(count: P25ImbeNative.Frames.pcm16kFrameBytes)
     private var lastConsumeNs: UInt64 = 0
@@ -206,7 +211,7 @@ final class VoiceTransport {
     /// silence, so the operator's final syllable makes the air.
     private func flushUplinkTail() {
         let staged = pcmAcc
-        pcmAcc.removeAll(keepingCapacity: true)
+        pcmAcc = Data()
         guard !staged.isEmpty, let task else { return }
         guard let encoder = codecRegistry.txEncoder(for: currentTxCodec) else { return }
         let frameBytes = P25ImbeNative.Frames.pcm16kFrameBytes
@@ -229,14 +234,14 @@ final class VoiceTransport {
 
     /// PTT released — clear `/v1/air` immediately for peers (Android/web parity).
     func releaseTransmitHold() {
-        pcmAcc.removeAll(keepingCapacity: true)
+        pcmAcc = Data()
         guard let task else { return }
         let payload = "{\"type\":\"release_air\"}"
         task.send(.string(payload)) { _ in }
     }
 
     func resetUplinkState() {
-        pcmAcc.removeAll(keepingCapacity: true)
+        pcmAcc = Data()
         txConditioner.reset()
         lastConsumeNs = 0
     }
@@ -263,7 +268,7 @@ final class VoiceTransport {
                 warnedClearTx = true
                 logger.warning("No voice encoder available — uplink clear PCM")
             }
-            pcmAcc.removeAll(keepingCapacity: true)
+            pcmAcc = Data()
             task.send(.data(frame)) { _ in }
             VoiceLinkTelemetryReporter.shared.recordBytesSent(frame.count)
             return
@@ -310,7 +315,7 @@ final class VoiceTransport {
     private func reconcileAccumulatorForCodecToggle(_ current: VoiceCodec?) {
         let prev = lastTxCodec
         if prev != nil, prev != current {
-            pcmAcc.removeAll(keepingCapacity: true)
+            pcmAcc = Data()
         }
         lastTxCodec = current
     }
