@@ -1,24 +1,47 @@
 import AVFoundation
+import os
 
-/// Configures the shared AVAudioSession for half-duplex radio voice: speakerphone
-/// by default, voice-chat mode (echo cancellation), allow Bluetooth headsets.
+/// Manages the shared AVAudioSession for half-duplex radio voice, switching
+/// category by phase so the volume buttons control the **media** volume (speaker
+/// icon, loud) while listening instead of the **call** volume (phone icon, quiet)
+/// that `.playAndRecord` forces continuously:
 ///
-/// Mode is `.voiceChat` (Apple's voice-processing I/O). An earlier attempt to use
-/// `.default` to make RX louder regressed incoming audio — it garbled and dropped
-/// frames, because the playback engine + inbound jitter buffer rely on the
-/// voice-processing I/O's fixed 16 kHz clock/buffering. RX integrity wins over
-/// loudness, so `.voiceChat` stays; the volume work is handled separately without
-/// touching the playback path.
+/// - `configureForPlayback()` — RX / idle. `.playback`, media-volume bus.
+/// - `configureForTransmit()` — PTT held. `.playAndRecord` + `.voiceChat` for the
+///   mic; the call-volume bus is fine here because the operator is talking.
+///
+/// Every transition is logged (subsystem `com.safetptt.mobile`, category
+/// `audiosession`) so a regression is traceable from the device console.
 enum AudioSessionManager {
-    static func configureForVoice() throws {
+    private static let logger = Logger(subsystem: "com.safetptt.mobile", category: "audiosession")
+
+    /// Listening / idle: media-volume playback. Speaker icon, full volume.
+    static func configureForPlayback() throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(
-            .playAndRecord,
-            mode: .voiceChat,
-            options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
-        )
-        try session.setActive(true, options: [])
-        applyRoute(SettingsStore.shared.audioRoute)
+        do {
+            try session.setCategory(.playback, mode: .default, options: [.allowBluetoothA2DP, .allowAirPlay])
+            try session.setActive(true, options: [])
+            applyRoute(SettingsStore.shared.audioRoute)
+            logger.log("session -> playback OK (media volume)")
+        } catch {
+            logger.error("session -> playback FAILED: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
+
+    /// Transmitting: record + play with voice processing for the mic.
+    static func configureForTransmit() throws {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playAndRecord, mode: .voiceChat,
+                                    options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
+            try session.setActive(true, options: [])
+            applyRoute(SettingsStore.shared.audioRoute)
+            logger.log("session -> transmit OK (playAndRecord/voiceChat)")
+        } catch {
+            logger.error("session -> transmit FAILED: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
     }
 
     static func deactivate() {
