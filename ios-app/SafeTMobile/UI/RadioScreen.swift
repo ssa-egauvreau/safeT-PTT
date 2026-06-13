@@ -413,7 +413,6 @@ struct RadioScreen: View {
             tabButton(icon: "map", label: "MAP") { showingMap = true }
             tabButton(icon: "person.2.fill", label: "UNITS") { showingUnits = true }
             tabButton(icon: "text.bubble", label: "TX LOG") { showingTranscripts = true }
-            tabButton(icon: "waveform.circle", label: "CHANNELS") { showingMultiChannel = true }
             tabButton(
                 icon: "dot.radiowaves.left.and.right",
                 label: "SCAN",
@@ -521,7 +520,7 @@ struct RadioScreen: View {
                 }
 
                 if !state.unitsOnChannel.isEmpty {
-                    let maxVisible = 4
+                    let maxVisible = 8
                     let displayed = Array(state.unitsOnChannel.prefix(maxVisible))
                     let overflow = state.unitsOnChannel.count - maxVisible
                     VStack(alignment: .leading, spacing: 3) {

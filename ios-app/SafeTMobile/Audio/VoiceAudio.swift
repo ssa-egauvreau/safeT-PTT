@@ -40,11 +40,11 @@ final class VoiceAudio {
     /// Linear gain applied to samples. Slider 1.0 → `maxOutputGain`×; the slider
     /// midpoint (~0.4) lands on unity.
     private var outputGain: Float { outputVolume01 * Self.maxOutputGain }
-    /// Headroom above unity at full slider. The voice-chat call-volume bus is
-    /// quiet, so we boost hard (6×) and lean on the tanh soft-clip to keep it
-    /// from distorting on peaks. The bus itself caps absolute loudness — past
-    /// here, the real lever is the media-volume session (see notes).
-    static let maxOutputGain: Float = 6.0
+    /// Headroom above unity at full slider. 3× with the tanh soft-clip is loud
+    /// without the harsh clipping 6× produced. (Absolute loudness is still capped
+    /// by the voice-chat call-volume bus — the media-volume session is the real
+    /// lever, handled separately.)
+    static let maxOutputGain: Float = 3.0
 
 
     private let engine = AVAudioEngine()
