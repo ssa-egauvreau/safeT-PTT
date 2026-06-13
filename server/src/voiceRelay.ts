@@ -242,6 +242,11 @@ function frameAttribution(meta: ClientMeta): FrameAttribution {
     displayName: talker.displayName,
     aiDispatchListenPcm: meta.aiDispatchListenPcm,
     recordListenPcm: meta.recordListenPcm,
+    // Bridge ingest (SDR / radio bridges) is a firehose — Scan All records
+    // *every* decoded call — and its scanner audio is the lowest-value thing
+    // to transcribe. Flag it so the recorder can skip Whisper for it and keep
+    // the queue clear for handset traffic (see TRANSCRIBE_BRIDGE).
+    fromBridge: meta.identity.kind === "bridge",
   };
 }
 

@@ -1648,11 +1648,32 @@ export async function setTranscript(id: number, status: string, text: string | n
   );
 }
 
-export async function listPendingTranscriptionIds(): Promise<number[]> {
+export async function listPendingTranscriptionIds(limit = 200): Promise<number[]> {
   const res = await requirePool().query<{ id: number }>(
-    `SELECT id FROM transmissions WHERE transcript_status = 'pending' ORDER BY started_at ASC LIMIT 200;`,
+    `SELECT id FROM transmissions WHERE transcript_status = 'pending' ORDER BY started_at ASC LIMIT $1;`,
+    [Math.min(Math.max(limit, 1), 5000)],
   );
   return res.rows.map((r) => r.id);
+}
+
+/**
+ * Fails transmissions that have been stuck at 'pending' longer than
+ * `olderThanMs`. The console renders 'pending' as a perpetual "Transcribing…",
+ * so a backlog the worker can't drain (or rows orphaned by a restart before
+ * the in-memory queue could reach them) would otherwise show "Transcribing…"
+ * forever. Marking them 'failed' is the same terminal state the worker uses on
+ * a transcription error — the recording itself is untouched and still playable.
+ * Returns the number reaped (for logging).
+ */
+export async function reapStalePendingTranscriptions(olderThanMs: number): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanMs).toISOString();
+  const res = await requirePool().query(
+    `UPDATE transmissions
+        SET transcript_status = 'failed'
+      WHERE transcript_status = 'pending' AND started_at < $1;`,
+    [cutoff],
+  );
+  return res.rowCount ?? 0;
 }
 
 /** Transmissions on AI-enabled channels that never got an ai_dispatch_log row (backfill). */

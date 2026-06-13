@@ -2,7 +2,7 @@
 // to the transcriber. A talk-spurt ends after a short gap with no frames.
 
 import { getPool } from "./db.js";
-import { insertTransmission } from "./store.js";
+import { insertTransmission, setTranscript } from "./store.js";
 import { encodeWavPcm16, upsample8kTo16k } from "./wav.js";
 import { enqueueTranscription } from "./transcribe.js";
 import { isAiDispatchChannelCached } from "./aiDispatch/channelCache.js";
@@ -11,6 +11,12 @@ import { createCodec2Decoder } from "./codec2ServerCodec.js";
 import { createOpusDecoder } from "./opusServerCodec.js";
 import { createAmbeDecoder } from "./ambeServerCodec.js";
 import { detectFrameCodec, type VoiceCodec } from "./voiceCodecs.js";
+
+/** Transcribe bridge (SDR / radio) ingest too? Off by default: scanner traffic
+ *  is a firehose (Scan All records every decoded call) that floods the single
+ *  Whisper worker and starves handset transmissions. Set TRANSCRIBE_BRIDGE=on
+ *  to restore transcription for bridge audio. */
+const TRANSCRIBE_BRIDGE = (process.env.TRANSCRIBE_BRIDGE ?? "off").trim().toLowerCase() === "on";
 
 const SAMPLE_RATE = 16000;
 /** Silence after the last frame that closes a transmission. */
@@ -64,6 +70,10 @@ export interface FrameAttribution {
    * clear PCM frames so Whisper is not fed decoded IMBE audio.
    */
   recordListenPcm?: boolean;
+  /** True for bridge ingest (SDR / radio bridges). The recording is still
+   *  stored and playable, but Whisper is skipped unless TRANSCRIBE_BRIDGE is on
+   *  so scanner traffic can't flood the single-worker transcription queue. */
+  fromBridge?: boolean;
 }
 
 /** Recordings are tracked per agency + channel so tenants never share a talk-spurt. */
@@ -122,7 +132,13 @@ async function finalize(rec: ActiveRecording): Promise<void> {
       sampleRate: SAMPLE_RATE,
       audio: encodeWavPcm16(pcm, SAMPLE_RATE),
     });
-    enqueueTranscription(id);
+    if (rec.fromBridge && !TRANSCRIBE_BRIDGE) {
+      // Recording is saved and playable; just don't queue scanner audio for
+      // Whisper (terminal 'skipped' renders as a neutral "—" on the console).
+      void setTranscript(id, "skipped", null).catch(() => undefined);
+    } else {
+      enqueueTranscription(id);
+    }
   } catch (error) {
     console.warn("Failed to save transmission recording", error);
   }

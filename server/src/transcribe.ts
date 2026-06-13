@@ -13,12 +13,23 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import { enqueueAiDispatchForTransmission } from "./aiDispatch/engine.js";
 import { getPool } from "./db.js";
-import { getTransmissionAudio, listPendingTranscriptionIds, setTranscript } from "./store.js";
+import {
+  getTransmissionAudio,
+  listPendingTranscriptionIds,
+  reapStalePendingTranscriptions,
+  setTranscript,
+} from "./store.js";
 
 const ENABLED = (process.env.TRANSCRIPTION ?? "on").trim().toLowerCase() !== "off";
 const MODEL = process.env.WHISPER_MODEL?.trim() || "Xenova/whisper-tiny.en";
 /** After a worker crash or failed model load, wait before respawning (Railway OOM / cold start). */
 const LOAD_RETRY_MS = Number(process.env.WHISPER_LOAD_RETRY_MS) || 120_000;
+/**
+ * A 'pending' transmission older than this is reaped to 'failed' so the console
+ * stops showing a perpetual "Transcribing…". Tuned well above a healthy
+ * worker's drain time; raise it if you run a slow model on a deep backlog.
+ */
+const STALE_PENDING_MS = Number(process.env.TRANSCRIPTION_STALE_MS) || 30 * 60_000;
 /**
  * Cap how long a single transcription waits on the worker (model load + inference). Without this
  * a hung or very slow first-time model download (HF Hub fetch on a cold Railway container) blocks
@@ -32,6 +43,13 @@ type TranscriberState = "idle" | "loading" | "ready" | "broken";
 let state: TranscriberState = "idle";
 let lastLoadFailedAt = 0;
 const queue: number[] = [];
+/**
+ * Ids currently queued or in flight. Without this, the periodic recovery sweep
+ * (which re-reads every 'pending' row, including the ones already sitting in
+ * the in-memory `queue`) would push duplicates and the queue would balloon on
+ * a backlog that the worker hasn't drained yet.
+ */
+const inQueue = new Set<number>();
 let working = false;
 
 let worker: Worker | null = null;
@@ -205,14 +223,19 @@ async function pump(): Promise<void> {
   try {
     while (queue.length > 0) {
       const id = queue.shift()!;
-      await transcribeOne(id);
+      try {
+        await transcribeOne(id);
+      } finally {
+        inQueue.delete(id);
+      }
     }
   } finally {
     working = false;
   }
 }
 
-/** Queues a freshly recorded transmission for transcription. */
+/** Queues a freshly recorded transmission for transcription. Deduped so a
+ *  recovery sweep can't double-enqueue an id already waiting in the queue. */
 export function enqueueTranscription(id: number): void {
   if (!ENABLED) {
     void setTranscript(id, "disabled", null)
@@ -220,22 +243,44 @@ export function enqueueTranscription(id: number): void {
       .catch(() => undefined);
     return;
   }
+  if (inQueue.has(id)) {
+    return;
+  }
+  inQueue.add(id);
   queue.push(id);
   void pump();
 }
 
-/** Re-queues any transmissions left pending by an earlier crash/restart. */
+/**
+ * Drains every transmission left at 'pending' — by an earlier crash/restart
+ * (the in-memory queue does not survive a restart) or never enqueued at all.
+ * Reads in batches and stops when caught up, so a backlog of thousands isn't
+ * capped at the old single-shot LIMIT 200 that orphaned the overflow forever.
+ * Safe to call periodically: the `inQueue` dedup means already-queued ids are
+ * skipped, so it converges as the worker drains.
+ */
 export async function recoverPendingTranscriptions(): Promise<void> {
   if (!ENABLED) {
     return;
   }
   try {
-    const ids = await listPendingTranscriptionIds();
-    for (const id of ids) {
+    // First, retire anything so old it will never be useful as a live
+    // transcript — otherwise the console shows a permanent "Transcribing…".
+    const reaped = await reapStalePendingTranscriptions(STALE_PENDING_MS);
+    if (reaped > 0) {
+      console.log(`Reaped ${reaped} stale pending transcription(s) to 'failed'.`);
+    }
+    // Fetch the oldest pending rows (capped). Anything beyond the cap is picked
+    // up on the next periodic sweep once the worker has drained some of these —
+    // far better than the old single-shot LIMIT 200 that orphaned the rest.
+    const ids = await listPendingTranscriptionIds(5000);
+    const fresh = ids.filter((id) => !inQueue.has(id));
+    for (const id of fresh) {
+      inQueue.add(id);
       queue.push(id);
     }
-    if (ids.length > 0) {
-      console.log(`Re-queued ${ids.length} pending transcription(s).`);
+    if (fresh.length > 0) {
+      console.log(`Re-queued ${fresh.length} pending transcription(s).`);
       void pump();
     }
   } catch (error) {
