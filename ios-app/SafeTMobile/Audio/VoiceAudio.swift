@@ -20,11 +20,24 @@ final class VoiceAudio {
     /// Called when incoming PCM16 frames are enqueued for playback.
     var onEnqueuedIncoming: ((Data) -> Void)?
 
-    /// Gain applied to the AVAudioPlayerNode for incoming voice audio (0.0–1.0).
+    /// Operator volume (0.0–1.0 from the settings slider). Drives a SOFTWARE
+    /// output gain on the decoded PCM rather than the player node's 0–1 volume,
+    /// so RX can be amplified ABOVE unity. The `.voiceChat` session pins playback
+    /// to the quieter call-volume bus; a software boost is the safe way to make
+    /// RX louder without touching the playback session/engine (which regressed RX
+    /// when changed). The player node stays at unity gain.
     var playbackVolume: Float {
-        get { player.volume }
-        set { player.volume = newValue }
+        get { outputVolume01 }
+        set { outputVolume01 = max(0, min(1, newValue)) }
     }
+    /// Slider position, 0–1.
+    private var outputVolume01: Float = 1.0
+    /// Linear gain applied to samples. Slider 1.0 → `maxOutputGain`×; the slider
+    /// midpoint (~0.4) lands on unity.
+    private var outputGain: Float { outputVolume01 * Self.maxOutputGain }
+    /// Headroom above unity at full slider. 2.5× with soft-limiting is a strong
+    /// but clean-enough boost for the quiet call-volume bus.
+    static let maxOutputGain: Float = 2.5
 
 
     private let engine = AVAudioEngine()
@@ -214,8 +227,8 @@ final class VoiceAudio {
     func enqueueIncoming(_ pcm16: Data, source: String = "home", priority: Int = VoiceAudio.homeAudioPriority) {
         guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return }
         guard claimPlayback(source: source, priority: priority) else { return }
-        onEnqueuedIncoming?(pcm16)
-        jitterBuffer.enqueue(pcm16)
+        onEnqueuedIncoming?(pcm16)   // store the original (pre-gain) for replay
+        scheduleForPlayback(pcm16)
     }
 
     /// Decides whether `source` may feed the player right now. Grants the claim
@@ -238,6 +251,41 @@ final class VoiceAudio {
     /// Use for replay so the replayed audio is not re-appended to the last-received buffer.
     func replayAudio(_ pcm16: Data) {
         guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return }
-        jitterBuffer.enqueue(pcm16)
+        scheduleForPlayback(pcm16)
+    }
+
+    /// Applies the software output gain (with soft limiting) and hands the frame
+    /// to the jitter buffer. Single choke point so live RX and replay match.
+    private func scheduleForPlayback(_ pcm16: Data) {
+        jitterBuffer.enqueue(amplified(pcm16, gain: outputGain))
+    }
+
+    /// Multiplies each Int16 sample by `gain` with a soft knee + hard clamp, so a
+    /// boost above unity gets louder without integer wrap-around or harsh peak
+    /// clipping. Returns a fresh, zero-based `Data` (never an aliasing slice).
+    /// Pure sample math — no audio-session/engine state is touched, so it can't
+    /// regress the RX pipeline.
+    private func amplified(_ pcm16: Data, gain: Float) -> Data {
+        guard gain != 1.0 else { return pcm16 }
+        var out = Data(pcm16)   // fresh contiguous copy
+        out.withUnsafeMutableBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            let bytes = base.assumingMemoryBound(to: UInt8.self)
+            let knee: Float = 30_000
+            let count = raw.count / 2
+            for i in 0..<count {
+                let off = i * 2
+                let lo = UInt16(bytes[off])
+                let hi = UInt16(bytes[off + 1])
+                var s = Float(Int16(bitPattern: lo | (hi << 8))) * gain
+                if s > knee { s = knee + (s - knee) * 0.2 }
+                else if s < -knee { s = -knee + (s + knee) * 0.2 }
+                let clamped = min(max(s, -32_768), 32_767)
+                let le = UInt16(bitPattern: Int16(clamped))
+                bytes[off] = UInt8(le & 0xff)
+                bytes[off + 1] = UInt8((le >> 8) & 0xff)
+            }
+        }
+        return out
     }
 }
