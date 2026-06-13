@@ -7,9 +7,12 @@ import SwiftUI
 ///
 /// Reloads on appear, pull-to-refresh, and any filter change. No live polling
 /// — operators review past traffic episodically, so a manual refresh model is
-/// enough and keeps battery / data usage down. Pagination is "fetch a bigger
-/// page": server caps `limit` at 500, so the "Load more" button bumps the
-/// current limit by 100 each press up to the cap.
+/// enough and keeps battery / data usage down.
+///
+/// Rows are paged 25 at a time (`pageSize`) with PREV / NEXT controls so the
+/// view never renders a whole large log at once. The server fetch (`limit`,
+/// capped at 500) is folded into NEXT: paging past the loaded rows bumps the
+/// limit by `pageStep` and fetches the next batch.
 struct TranscriptionsScreen: View {
     let api: RadioApiClient
 
@@ -36,11 +39,18 @@ struct TranscriptionsScreen: View {
     }
 
     // MARK: - pagination
-    /// Server cap is 500; we start at 200 (vs the old hard-coded 80 that left
-    /// operators stuck when transmissions exceeded that count).
+    /// How many rows are fetched from the server in one request. Server cap is
+    /// 500; we start at 200 and bump by `pageStep` when the operator pages past
+    /// what's already loaded.
     @State private var limit: Int = 200
     private static let pageStep: Int = 100
     private static let maxLimit: Int = 500
+
+    /// Only `pageSize` rows are rendered at once. The full result set loaded all
+    /// rows into one List, which could stutter/crash on large logs; windowing to
+    /// a fixed page keeps the view light no matter how many rows were fetched.
+    @State private var page: Int = 0
+    private static let pageSize: Int = 25
 
     /// Debounce the search input so we don't fire a request on every keystroke.
     @State private var searchTask: Task<Void, Never>?
@@ -119,9 +129,9 @@ struct TranscriptionsScreen: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.safet(size: 10, weight: .bold))
                             Text("CLEAR")
-                                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                                .font(.safet(size: 10, weight: .heavy, design: .monospaced))
                         }
                         .foregroundColor(.safetRed)
                         .padding(.horizontal, 8)
@@ -145,12 +155,12 @@ struct TranscriptionsScreen: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.safet(size: 10, weight: .bold))
                 Text(label)
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                    .font(.safet(size: 10, weight: .heavy, design: .monospaced))
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.safet(size: 8, weight: .bold))
             }
             .foregroundColor(isActive ? .safetRed : .safetTextDim)
             .padding(.horizontal, 8)
@@ -192,7 +202,7 @@ struct TranscriptionsScreen: View {
             } label: {
                 HStack {
                     Text("ANY CHANNEL")
-                        .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                        .font(.safet(size: 13, weight: .heavy, design: .monospaced))
                         .foregroundColor(filterChannel == nil ? .safetRed : .safetText)
                     Spacer()
                     if filterChannel == nil {
@@ -208,7 +218,7 @@ struct TranscriptionsScreen: View {
                 } label: {
                     HStack {
                         Text(ch)
-                            .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                            .font(.safet(size: 13, weight: .heavy, design: .monospaced))
                             .foregroundColor(filterChannel == ch ? .safetRed : .safetText)
                         Spacer()
                         if filterChannel == ch {
@@ -223,7 +233,7 @@ struct TranscriptionsScreen: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("DONE") { openEditor = nil }
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.safet(size: 12, weight: .bold))
                     .foregroundColor(.safetText)
             }
         }
@@ -232,12 +242,12 @@ struct TranscriptionsScreen: View {
     private var unitPicker: some View {
         VStack(spacing: 16) {
             Text("Filter by exact unit ID (e.g. K12, UNIT4). Case-insensitive.")
-                .font(.system(size: 11))
+                .font(.safet(size: 11))
                 .foregroundColor(.safetTextDim)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
             TextField("UNIT ID", text: $filterUnit)
-                .font(.system(size: 16, weight: .heavy, design: .monospaced))
+                .font(.safet(size: 16, weight: .heavy, design: .monospaced))
                 .multilineTextAlignment(.center)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
@@ -252,14 +262,14 @@ struct TranscriptionsScreen: View {
                     openEditor = nil
                     Task { await reload() }
                 }
-                .font(.system(size: 12, weight: .bold))
+                .font(.safet(size: 12, weight: .bold))
                 .foregroundColor(.safetTextDim)
                 Spacer()
                 Button("APPLY") {
                     openEditor = nil
                     Task { await reload() }
                 }
-                .font(.system(size: 12, weight: .bold))
+                .font(.safet(size: 12, weight: .bold))
                 .foregroundColor(.safetRed)
             }
             .padding(.horizontal, 24)
@@ -291,7 +301,7 @@ struct TranscriptionsScreen: View {
                     openEditor = nil
                     Task { await reload() }
                 }
-                .font(.system(size: 12, weight: .bold))
+                .font(.safet(size: 12, weight: .bold))
                 .foregroundColor(.safetTextDim)
                 Spacer()
                 Button("APPLY") {
@@ -299,7 +309,7 @@ struct TranscriptionsScreen: View {
                     openEditor = nil
                     Task { await reload() }
                 }
-                .font(.system(size: 12, weight: .bold))
+                .font(.safet(size: 12, weight: .bold))
                 .foregroundColor(.safetRed)
             }
             .padding(.horizontal, 24)
@@ -324,15 +334,15 @@ struct TranscriptionsScreen: View {
                 VStack(spacing: 12) {
                     Spacer(minLength: 80)
                     Text("CAN'T LOAD TRANSCRIPTS")
-                        .font(.system(size: 12, weight: .heavy))
+                        .font(.safet(size: 12, weight: .heavy))
                         .foregroundColor(.safetRed)
                     Text(error)
-                        .font(.system(size: 11))
+                        .font(.safet(size: 11))
                         .foregroundColor(.safetTextDim)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
                     Button("RETRY") { Task { await reload() } }
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.safet(size: 12, weight: .bold))
                         .foregroundColor(.safetText)
                     Spacer(minLength: 80)
                 }
@@ -344,7 +354,7 @@ struct TranscriptionsScreen: View {
                 VStack {
                     Spacer(minLength: 80)
                     Text(search.isEmpty ? "NO RECENT TRANSMISSIONS" : "NO MATCHES")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.safet(size: 12, weight: .semibold))
                         .foregroundColor(.safetTextDim)
                     Spacer(minLength: 80)
                 }
@@ -359,10 +369,10 @@ struct TranscriptionsScreen: View {
     private var list: some View {
         ScrollView {
             LazyVStack(spacing: 8) {
-                ForEach(transmissions) { tx in
+                ForEach(pageItems) { tx in
                     row(tx)
                 }
-                listFooter
+                paginationFooter
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -370,40 +380,102 @@ struct TranscriptionsScreen: View {
         .refreshable { await reload() }
     }
 
-    /// Footer of the list — either a "Load more" button (we're below the cap
-    /// AND the last fetch filled the page, suggesting more rows exist) or a
-    /// terminal "End of log" stamp. Without this, operators with >200 rows had
-    /// no signal that more existed or any way to reach them.
+    // MARK: - paging math
+
+    /// Total pages across everything fetched so far (at least 1).
+    private var totalPages: Int {
+        max(1, (transmissions.count + Self.pageSize - 1) / Self.pageSize)
+    }
+
+    /// The 25-row window for the current page. Clamps defensively in case a
+    /// reload shrank the result set below the current page index.
+    private var pageItems: [Transmission] {
+        guard !transmissions.isEmpty else { return [] }
+        let clamped = min(max(page, 0), totalPages - 1)
+        let start = clamped * Self.pageSize
+        let end = min(start + Self.pageSize, transmissions.count)
+        guard start < end else { return [] }
+        return Array(transmissions[start..<end])
+    }
+
+    /// True when more rows likely exist on the server (the last fetch filled the
+    /// page and we're still under the 500 cap).
+    private var canLoadMore: Bool {
+        transmissions.count >= limit && limit < Self.maxLimit
+    }
+
+    private var canGoNext: Bool {
+        page + 1 < totalPages || canLoadMore
+    }
+
+    /// "SHOWING 1–25 OF 132" summary for the current page.
+    private var rangeSummary: String {
+        guard !transmissions.isEmpty else { return "" }
+        let clamped = min(max(page, 0), totalPages - 1)
+        let start = clamped * Self.pageSize
+        let end = min(start + Self.pageSize, transmissions.count)
+        return "SHOWING \(start + 1)–\(end) OF \(transmissions.count)"
+    }
+
+    /// Advance one page, fetching the next server batch first if we've run off
+    /// the end of what's already loaded.
+    private func goNextPage() async {
+        if page + 1 < totalPages {
+            page += 1
+            return
+        }
+        guard canLoadMore else { return }
+        limit = min(limit + Self.pageStep, Self.maxLimit)
+        let before = transmissions.count
+        await reload(resetPage: false)
+        if transmissions.count > before { page += 1 }
+    }
+
+    /// Prev / page-count / next controls plus the current range summary. Replaces
+    /// the old "Load more" footer — paging is now the primary navigation and the
+    /// server fetch is folded into the Next button.
     @ViewBuilder
-    private var listFooter: some View {
+    private var paginationFooter: some View {
         if loading && !transmissions.isEmpty {
             ProgressView().tint(.safetText).padding(.vertical, 12)
-        } else if transmissions.count >= limit && limit < Self.maxLimit {
-            Button {
-                Task { await loadMore() }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.down.circle.fill")
-                    Text("LOAD \(Self.pageStep) MORE")
-                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
+        } else {
+            VStack(spacing: 6) {
+                HStack {
+                    Button { if page > 0 { page -= 1 } } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "chevron.left").font(.safet(size: 10, weight: .bold))
+                            Text("PREV").font(.safet(size: 11, weight: .heavy, design: .monospaced))
+                        }
+                        .foregroundColor(page == 0 ? .safetTextDim.opacity(0.4) : .safetSignal)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(page == 0)
+                    Spacer()
+                    Text("PAGE \(min(page + 1, totalPages)) / \(totalPages)")
+                        .font(.safet(size: 11, weight: .heavy, design: .monospaced))
+                        .foregroundColor(.safetTextDim)
+                    Spacer()
+                    Button { Task { await goNextPage() } } label: {
+                        HStack(spacing: 3) {
+                            Text("NEXT").font(.safet(size: 11, weight: .heavy, design: .monospaced))
+                            Image(systemName: "chevron.right").font(.safet(size: 10, weight: .bold))
+                        }
+                        .foregroundColor(canGoNext ? .safetSignal : .safetTextDim.opacity(0.4))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canGoNext)
                 }
-                .foregroundColor(.safetSignal)
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity)
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.safetSignal.opacity(0.5), lineWidth: 1))
+                .padding(.horizontal, 4)
+                Text(rangeSummary)
+                    .font(.safet(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.safetTextDim.opacity(0.7))
+                if transmissions.count >= Self.maxLimit {
+                    Text("SHOWING FIRST \(Self.maxLimit) — NARROW WITH FILTERS")
+                        .font(.safet(size: 10, weight: .heavy, design: .monospaced))
+                        .foregroundColor(.safetAmber)
+                }
             }
-            .buttonStyle(.plain)
-            .padding(.top, 6)
-        } else if transmissions.count >= Self.maxLimit {
-            Text("SHOWING FIRST \(Self.maxLimit) — NARROW WITH FILTERS")
-                .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                .foregroundColor(.safetAmber)
-                .padding(.vertical, 12)
-        } else if !transmissions.isEmpty {
-            Text("END OF LOG")
-                .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                .foregroundColor(.safetTextDim)
-                .padding(.vertical, 12)
+            .padding(.vertical, 12)
         }
     }
 
@@ -419,25 +491,25 @@ struct TranscriptionsScreen: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(tx.channelName)
-                            .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                            .font(.safet(size: 11, weight: .heavy, design: .monospaced))
                             .foregroundColor(.safetSignal)
                         Spacer()
                         Text(formatTime(tx.startedAt))
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .font(.safet(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundColor(.safetTextDim)
                     }
                     HStack(spacing: 6) {
                         Text(tx.unitId ?? "?")
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .font(.safet(size: 11, weight: .bold, design: .monospaced))
                             .foregroundColor(.safetText)
                         if let name = tx.displayName, !name.isEmpty {
                             Text("• \(name)")
-                                .font(.system(size: 10))
+                                .font(.safet(size: 10))
                                 .foregroundColor(.safetTextDim)
                         }
                         Spacer()
                         Text(formatDuration(tx.durationMs))
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .font(.safet(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundColor(.safetTextDim)
                     }
                     transcriptLine(tx)
@@ -468,37 +540,37 @@ struct TranscriptionsScreen: View {
         case "done":
             if let text = tx.transcript, !text.isEmpty {
                 Text(text)
-                    .font(.system(size: 12))
+                    .font(.safet(size: 12))
                     .foregroundColor(.safetText)
                     .multilineTextAlignment(.leading)
             } else {
                 Text("(no speech detected)")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.safet(size: 11, weight: .semibold))
                     .foregroundColor(.safetTextDim)
             }
         case "pending":
             Text("TRANSCRIBING…")
-                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .font(.safet(size: 10, weight: .heavy, design: .monospaced))
                 .foregroundColor(.safetAmber)
         case "failed":
             // Server emits "failed" when Whisper errored on this clip (not
             // "error" — earlier mapping was wrong, falling into default and
             // rendering nothing).
             Text("TRANSCRIPT FAILED")
-                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .font(.safet(size: 10, weight: .heavy, design: .monospaced))
                 .foregroundColor(.safetRed)
         case "disabled":
             // Transcription is globally off for this agency. Operators need
             // to know the silence is intentional, not a missing transcript.
             Text("TRANSCRIPTION OFF")
-                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .font(.safet(size: 10, weight: .heavy, design: .monospaced))
                 .foregroundColor(.safetTextDim)
         default:
             // Defensive — should never hit. If the server adds a new status
             // value, render it raw so it's visible in the field instead of
             // silently disappearing.
             Text(tx.transcriptStatus.uppercased())
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.safet(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundColor(.safetTextDim)
         }
     }
@@ -553,7 +625,11 @@ struct TranscriptionsScreen: View {
         }
     }
 
-    private func reload() async {
+    /// Reload from the server. `resetPage` is true for fresh loads (filter /
+    /// search change, pull-to-refresh) so the operator lands on page 1; the
+    /// Next-button fetch passes false so it can advance into the newly loaded
+    /// rows instead of snapping back to the top.
+    private func reload(resetPage: Bool = true) async {
         // Cancel any in-flight reload — fast typing was causing slow responses
         // for older queries to clobber newer results. Capture the query at the
         // start so we can also discard if the user has changed it before our
@@ -561,13 +637,13 @@ struct TranscriptionsScreen: View {
         reloadTask?.cancel()
         let snapshot = search.isEmpty ? nil : search
         let task = Task { [snapshot] in
-            await performReload(query: snapshot)
+            await performReload(query: snapshot, resetPage: resetPage)
         }
         reloadTask = task
         await task.value
     }
 
-    private func performReload(query: String?) async {
+    private func performReload(query: String?, resetPage: Bool) async {
         loading = true
         error = nil
         // Only clear the spinner if THIS reload is still the active one and
@@ -593,22 +669,13 @@ struct TranscriptionsScreen: View {
             // were in-flight, or if a newer reload took over.
             guard !Task.isCancelled, (query ?? "") == search else { return }
             transmissions = result
+            if resetPage { page = 0 }
         } catch is CancellationError {
             return
         } catch {
             if (error as? URLError)?.code == .cancelled { return }
             self.error = "\(error)"
         }
-    }
-
-    /// Bumps `limit` by `pageStep` (capped at server max) and re-fetches.
-    /// Server doesn't support offset/cursor pagination so we always re-fetch
-    /// the whole page — slightly wasteful but matches how the web console does
-    /// it and keeps the result set in sort order without merging.
-    private func loadMore() async {
-        guard limit < Self.maxLimit else { return }
-        limit = min(limit + Self.pageStep, Self.maxLimit)
-        await reload()
     }
 
     /// Populate the channel-filter picker with whatever channels the operator

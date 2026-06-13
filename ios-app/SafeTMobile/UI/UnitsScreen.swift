@@ -47,12 +47,12 @@ struct UnitsScreen: View {
             ScrollView {
                 VStack(spacing: 12) {
                     Text("CAN'T LOAD UNITS")
-                        .font(.system(size: 12, weight: .heavy)).foregroundColor(.safetRed)
+                        .font(.safet(size: 12, weight: .heavy)).foregroundColor(.safetRed)
                     Text(error)
-                        .font(.system(size: 11)).foregroundColor(.safetTextDim)
+                        .font(.safet(size: 11)).foregroundColor(.safetTextDim)
                         .multilineTextAlignment(.center).padding(.horizontal, 24)
                     Button("RETRY") { Task { await refresh() } }
-                        .font(.system(size: 12, weight: .bold)).foregroundColor(.safetText)
+                        .font(.safet(size: 12, weight: .bold)).foregroundColor(.safetText)
                 }
                 .frame(maxWidth: .infinity, minHeight: 300)
             }
@@ -66,7 +66,7 @@ struct UnitsScreen: View {
                 VStack {
                     Spacer(minLength: 80)
                     Text(units.isEmpty ? "NO UNITS REPORTING" : "NO MATCHES")
-                        .font(.system(size: 12, weight: .semibold)).foregroundColor(.safetTextDim)
+                        .font(.safet(size: 12, weight: .semibold)).foregroundColor(.safetTextDim)
                     Spacer(minLength: 80)
                 }
                 .frame(maxWidth: .infinity, minHeight: 400)
@@ -100,13 +100,13 @@ struct UnitsScreen: View {
             HStack(spacing: 4) {
                 Circle().fill(Color.safetGreen).frame(width: 6, height: 6)
                 Text("\(onlineCount) ONLINE")
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                    .font(.safet(size: 10, weight: .heavy, design: .monospaced))
                     .foregroundColor(.safetGreen)
             }
             HStack(spacing: 4) {
                 Circle().fill(Color.safetTextDim).frame(width: 6, height: 6)
                 Text("\(offlineCount) OFFLINE")
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                    .font(.safet(size: 10, weight: .heavy, design: .monospaced))
                     .foregroundColor(.safetTextDim)
             }
             Spacer()
@@ -124,24 +124,24 @@ struct UnitsScreen: View {
                     .fill(online ? Color.safetGreen : Color.safetTextDim)
                     .frame(width: 8, height: 8)
                 Image(systemName: deviceIcon(unit.deviceType))
-                    .font(.system(size: 14))
+                    .font(.safet(size: 14))
                     .foregroundColor(.safetTextDim)
             }
             .frame(width: 24)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(unit.unitId)
-                        .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                        .font(.safet(size: 13, weight: .heavy, design: .monospaced))
                         .foregroundColor(.safetText)
                     if let name = unit.displayName, !name.isEmpty {
                         Text(name)
-                            .font(.system(size: 11))
+                            .font(.safet(size: 11))
                             .foregroundColor(.safetTextDim)
                             .lineLimit(1)
                     }
                     Spacer()
                     Text(deviceLabel(unit.deviceType))
-                        .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                        .font(.safet(size: 9, weight: .heavy, design: .monospaced))
                         .foregroundColor(.safetTextDim)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -150,16 +150,16 @@ struct UnitsScreen: View {
                 HStack(spacing: 8) {
                     if let channel = unit.channelName, !channel.isEmpty {
                         Text("CH \(channel)")
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .font(.safet(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundColor(.safetSignal)
                     } else {
                         Text("NO CHANNEL")
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .font(.safet(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundColor(.safetTextDim)
                     }
                     Spacer()
                     Text(formatAgo(unit.updatedAt))
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .font(.safet(size: 10, weight: .medium, design: .monospaced))
                         .foregroundColor(online ? .safetTextDim : .safetAmber)
                     platformBadge(unit.clientType)
                 }
@@ -262,14 +262,14 @@ struct UnitsScreen: View {
     private func platformBadge(_ clientType: String?) -> some View {
         if let clientType {
             Text(platformLabel(clientType))
-                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                .font(.safet(size: 9, weight: .heavy, design: .monospaced))
                 .foregroundColor(platformColor(clientType))
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
                 .overlay(RoundedRectangle(cornerRadius: 3).stroke(platformColor(clientType).opacity(0.6), lineWidth: 1))
         } else {
             Text("—")
-                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .font(.safet(size: 10, weight: .heavy, design: .monospaced))
                 .foregroundColor(.safetTextDim.opacity(0.4))
         }
     }

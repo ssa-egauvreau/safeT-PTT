@@ -78,7 +78,7 @@ struct DispatchScreen: View {
             sectionHeader("10-33 EMERGENCY TRAFFIC")
             if let ten33Error {
                 Text(ten33Error)
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                    .font(.safet(size: 10, weight: .heavy, design: .monospaced))
                     .foregroundColor(.safetRed)
             }
             // Surface channel-list load failures BEFORE the empty-state text.
@@ -87,11 +87,11 @@ struct DispatchScreen: View {
             // could drive incorrect dispatch decisions.
             if let channelsError {
                 Text(channelsError)
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                    .font(.safet(size: 10, weight: .heavy, design: .monospaced))
                     .foregroundColor(.safetRed)
             } else if channels.isEmpty {
                 Text("NO CHANNELS")
-                    .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                    .font(.safet(size: 11, weight: .heavy, design: .monospaced))
                     .foregroundColor(.safetTextDim)
             } else {
                 VStack(spacing: 6) {
@@ -122,10 +122,10 @@ struct DispatchScreen: View {
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(channel)
-                    .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                    .font(.safet(size: 13, weight: .heavy, design: .monospaced))
                     .foregroundColor(.safetText)
                 Text(statusLabel(for: cell))
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(.safet(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundColor(statusColor(for: cell))
             }
             Spacer()
@@ -141,7 +141,7 @@ struct DispatchScreen: View {
                     Task { await refreshTen33All() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.safet(size: 14, weight: .bold))
                         .foregroundColor(.safetAmber)
                 }
             } else {
@@ -208,7 +208,7 @@ struct DispatchScreen: View {
         VStack(alignment: .leading, spacing: 6) {
             sectionHeader("TONE-OUTS (PREVIEW)")
             Text("Tap to audition. Broadcast to channel not yet supported.")
-                .font(.system(size: 10))
+                .font(.safet(size: 10))
                 .foregroundColor(.safetTextDim)
                 .padding(.bottom, 4)
             // Render error banner regardless of whether the list is loaded —
@@ -220,7 +220,7 @@ struct DispatchScreen: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.safetRed)
                     Text(toneOutsError)
-                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                        .font(.safet(size: 10, weight: .heavy, design: .monospaced))
                         .foregroundColor(.safetRed)
                     Spacer()
                     Button {
@@ -239,7 +239,7 @@ struct DispatchScreen: View {
                 ProgressView().tint(.safetText).frame(maxWidth: .infinity).padding(.vertical, 24)
             } else if toneOuts.isEmpty && toneOutsError == nil {
                 Text("NO TONE-OUTS CONFIGURED")
-                    .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                    .font(.safet(size: 11, weight: .heavy, design: .monospaced))
                     .foregroundColor(.safetTextDim)
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], spacing: 8) {
@@ -267,7 +267,7 @@ struct DispatchScreen: View {
                         .foregroundColor(isPlaying ? .safetRed : .safetGreen)
                 }
                 Text(tone.name)
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.safet(size: 11, weight: .bold))
                     .foregroundColor(.safetText)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
@@ -285,7 +285,7 @@ struct DispatchScreen: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 11, weight: .heavy, design: .monospaced))
+            .font(.safet(size: 11, weight: .heavy, design: .monospaced))
             .foregroundColor(.safetTextDim)
             .padding(.horizontal, 2)
     }

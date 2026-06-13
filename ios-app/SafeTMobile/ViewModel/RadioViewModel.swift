@@ -28,6 +28,10 @@ final class RadioViewModel: ObservableObject {
     private let logger = Logger(subsystem: "com.safetptt.mobile", category: "radio")
 
     private var channelNames: [String] = []
+    /// Full channel records (zone grouping + permission) parallel to
+    /// `channelNames`, kept so tuning can surface the zone prefix and the PTT
+    /// permission gate without a second fetch.
+    private var channelDTOs: [ChannelDTO] = []
     private var channelIndex = 0
     private var inboxSince = 0
     private var inboxPrimed = false
@@ -167,6 +171,7 @@ final class RadioViewModel: ObservableObject {
         case .retryChannelSync: Task { await loadCatalog() }
         case .channelUp: bumpChannel(1)
         case .channelDown: bumpChannel(-1)
+        case .selectChannel(let index): selectChannel(index)
         case .pttPressed: Task { await onPttPressed() }
         case .pttReleased: onPttReleased()
         case .emergencyToggle: toggleEmergency()
@@ -178,6 +183,43 @@ final class RadioViewModel: ObservableObject {
     func replay() {
         guard !lastReceivedAudio.isEmpty else { return }
         voiceAudio.replayAudio(lastReceivedAudio)
+    }
+
+    // MARK: - app lifecycle (Live Activity)
+
+    /// Tear the Live Activity down when the app leaves the foreground. iOS does
+    /// not reliably deliver a "terminated" callback when the operator swipe-kills
+    /// the app from the app switcher, which left the Dynamic Island stranded on
+    /// the last "IDLE" state. Ending it on background guarantees the island
+    /// clears whenever the app is closed; `reassertLiveActivity()` rebuilds it
+    /// the moment the operator returns.
+    func endLiveActivityForBackground() {
+        if #available(iOS 16.2, *) {
+            RadioLiveActivityController.shared.end()
+        }
+    }
+
+    /// Re-create the Live Activity on return to the foreground, reflecting the
+    /// current TX/RX/IDLE state so the island comes straight back.
+    func reassertLiveActivity() {
+        guard #available(iOS 16.2, *), let channel = currentChannel else { return }
+        let stateLabel: String
+        let callsign: String?
+        if uiState.isTransmitting {
+            stateLabel = "TX"
+            callsign = uiState.localShortUnitId
+        } else if uiState.isReceivingAudio {
+            stateLabel = "RX"
+            callsign = uiState.activeTalkUnitId.isEmpty ? nil : uiState.activeTalkUnitId
+        } else {
+            stateLabel = "IDLE"
+            callsign = nil
+        }
+        RadioLiveActivityController.shared.startOrUpdate(
+            channel: channel,
+            callsign: callsign,
+            stateLabel: stateLabel
+        )
     }
 
     // MARK: - widget data
@@ -208,8 +250,10 @@ final class RadioViewModel: ObservableObject {
         uiState.statusMessage = "SYNCING CATALOG"
         do {
             let channels = try await api.channels()
+            channelDTOs = channels
             channelNames = channels.map(\.name)
             channelIndex = min(channelIndex, max(channelNames.count - 1, 0))
+            rebuildChannelOptions()
             uiState.channelsLoading = false
             uiState.channelSyncError = nil
             uiState.networkLabel = "ONLINE"
@@ -253,26 +297,90 @@ final class RadioViewModel: ObservableObject {
     private func applyTuning() {
         guard !channelNames.isEmpty else {
             uiState.channelLabel = "----"
+            uiState.channelDisplayLabel = "----"
+            uiState.zoneLabel = ""
             uiState.channelPosition = "-- / --"
             uiState.displayLine2 = "OPERATIONS"
             updateWidgetData()
             return
         }
         let name = channelNames[channelIndex]
+        let dto = channelDTOs.indices.contains(channelIndex) ? channelDTOs[channelIndex] : nil
         uiState.channelLabel = name
+        uiState.channelIndex = channelIndex
+        if let zoneNumber = dto?.zoneNumber {
+            uiState.channelDisplayLabel = "\(zoneNumber) \(name)"
+        } else {
+            uiState.channelDisplayLabel = name
+        }
+        uiState.zoneLabel = zoneHeaderLabel(dto)
+        // Seed the PTT gate from the channel's permission so a listen-only
+        // channel shows the mic greyed out the instant it's tuned — before the
+        // voice socket's `joined` ack arrives to confirm it. `isListenOnly` only
+        // goes true when the permission is *affirmatively* listen_only (not when
+        // it's merely unknown), so a still-loading channel doesn't grey the PTT.
+        uiState.canTransmit = permissionAllowsTalk(dto?.permission)
+        uiState.isListenOnly = dto?.permission?.lowercased() == "listen_only"
         uiState.channelPosition = String(format: "%02ld / %02ld", channelIndex + 1, channelNames.count)
         uiState.displayLine2 = "OPS: " + name.uppercased()
         updateWidgetData()
     }
 
+    /// Builds the zone/channel dropdown options from the current catalog.
+    private func rebuildChannelOptions() {
+        uiState.channels = channelDTOs.enumerated().map { index, dto in
+            ChannelOption(
+                index: index,
+                name: dto.name,
+                zoneNumber: dto.zoneNumber,
+                zoneName: dto.zone
+            )
+        }
+    }
+
+    /// Zone heading for the display, mirroring `ChannelOption.zoneHeader` so the
+    /// shell and the dropdown read identically. Empty when the channel is
+    /// ungrouped (no zone number and no zone name).
+    private func zoneHeaderLabel(_ dto: ChannelDTO?) -> String {
+        let trimmed = dto?.zone?.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch (dto?.zoneNumber, trimmed) {
+        case let (z?, n?) where !n.isEmpty: return "ZONE \(z) · \(n.uppercased())"
+        case let (z?, _): return "ZONE \(z)"
+        case let (nil, n?) where !n.isEmpty: return n.uppercased()
+        default: return ""
+        }
+    }
+
+    /// Server permission → can-key. Only "listen_only" blocks transmit; an
+    /// absent/unknown value is treated as talk-capable and refined by the voice
+    /// socket's `joined` ack.
+    private func permissionAllowsTalk(_ permission: String?) -> Bool {
+        guard let permission else { return true }
+        return permission.lowercased() != "listen_only"
+    }
+
     private func bumpChannel(_ delta: Int) {
         guard !channelNames.isEmpty, !uiState.channelsLoading else { return }
-        channelIndex = (channelIndex + delta + channelNames.count) % channelNames.count
+        let target = (channelIndex + delta + channelNames.count) % channelNames.count
+        tuneTo(target, announce: delta > 0 ? "CHANNEL +" : "CHANNEL -")
+    }
+
+    /// Absolute tune from the zone/channel dropdown picker.
+    private func selectChannel(_ index: Int) {
+        guard !channelNames.isEmpty, !uiState.channelsLoading else { return }
+        guard channelNames.indices.contains(index), index != channelIndex else { return }
+        tuneTo(index, announce: "CHANNEL SET")
+    }
+
+    /// Shared tuning path for both ▲/▼ stepping and dropdown selection. Re-points
+    /// the index, refreshes the display (which re-seeds the PTT gate from the new
+    /// channel's permission), rejoins the voice channel, and re-primes presence.
+    private func tuneTo(_ index: Int, announce: String) {
+        channelIndex = index
         applyTuning()
         sounds.play(.channelSwitch)
-        uiState.statusMessage = delta > 0 ? "CHANNEL +" : "CHANNEL -"
+        uiState.statusMessage = announce
         uiState.radiosOnlineOnChannel = nil
-        uiState.canTransmit = false
         locationReporter.setChannel(currentChannel)
         if let channel = currentChannel {
             voiceTransport.join(channel: channel)
@@ -318,6 +426,7 @@ final class RadioViewModel: ObservableObject {
             // The joined ack names the channel's TX codec — drive the badge.
             self.uiState.channelCodecLabel = joined.codec.displayLabel
             self.uiState.canTransmit = joined.permission != .listenOnly
+            self.uiState.isListenOnly = joined.permission == .listenOnly
             self.uiState.statusMessage = joined.permission == .listenOnly ? "MONITOR ONLY" : "READY"
             // Only stamp the connection start on (re)connect — set it when
             // we don't have one yet, OR when we were just reconnecting (the

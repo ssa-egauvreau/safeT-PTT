@@ -2,6 +2,14 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
+/// A contiguous zone bank in the channel picker — a header ("ZONE 1 · PATROL")
+/// and the channels under it. Identifiable so the dropdown's `ForEach` is stable.
+private struct ChannelZoneGroup: Identifiable {
+    let id: Int
+    let header: String
+    var options: [ChannelOption]
+}
+
 /// The safeT Mobile radio shell — status strip, channel display, controls,
 /// emergency, and a press-and-hold PTT bar.
 struct RadioScreen: View {
@@ -21,6 +29,7 @@ struct RadioScreen: View {
     /// appear and on AVAudioSession.routeChangeNotification so plugging in
     /// BT headphones flips the glyph live.
     @State private var liveRouteIcon: String = "speaker.wave.2"
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Construct the view-model lazily inside the StateObject autoclosure so
     /// SwiftUI retains the instance across re-renders. Building the view-model
@@ -68,28 +77,17 @@ struct RadioScreen: View {
                 channelRow(state)
                 Spacer(minLength: 12)
                 emergencyButton(state)
-                if settings.bigPttButtonEnabled {
-                    // RESERVE space at the bottom so the bottom-trailing
-                    // BigPttButton overlay (140 pt circle) doesn't cover the
-                    // EMERGENCY button or the channel ▲/▼ row on small
-                    // phones. Without this spacer the overlay floats over
-                    // the controls above it.
-                    Color.clear.frame(height: 160)
-                } else {
-                    pttBar(state)
-                }
+                pttBar(state)
             }
             .padding(16)
         }
-        .overlay(alignment: .bottomTrailing) {
-            if settings.bigPttButtonEnabled {
-                BigPttButton(
-                    isPressed: state.isTransmitting || state.isPttPressed,
-                    onPress: { viewModel.handle(.pttPressed) },
-                    onRelease: { viewModel.handle(.pttReleased) }
-                )
-                .padding(.trailing, 20)
-                .padding(.bottom, 24)
+        .onChange(of: scenePhase) { phase in
+            // Clear the Dynamic Island when the app is closed/backgrounded and
+            // bring it back when the operator returns. See RadioViewModel.
+            switch phase {
+            case .background: viewModel.endLiveActivityForBackground()
+            case .active: viewModel.reassertLiveActivity()
+            default: break
             }
         }
         .sheet(isPresented: $showingDispatch) { sheetWrap("DISPATCH", isPresented: $showingDispatch) {
@@ -157,13 +155,13 @@ struct RadioScreen: View {
             Color.safetBackground.ignoresSafeArea()
             VStack(spacing: 16) {
                 Image(systemName: "mic.slash.fill")
-                    .font(.system(size: 48, weight: .bold))
+                    .font(.safet(size: 48, weight: .bold))
                     .foregroundColor(.safetRed)
                 Text("MICROPHONE BLOCKED")
-                    .font(.system(size: 16, weight: .heavy))
+                    .font(.safet(size: 16, weight: .heavy))
                     .foregroundColor(.safetText)
                 Text("safeT can't transmit voice without the mic. Open Settings to allow microphone access.")
-                    .font(.system(size: 13))
+                    .font(.safet(size: 13))
                     .foregroundColor(.safetTextDim)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
@@ -173,7 +171,7 @@ struct RadioScreen: View {
                     }
                 } label: {
                     Text("OPEN SETTINGS")
-                        .font(.system(size: 14, weight: .heavy))
+                        .font(.safet(size: 14, weight: .heavy))
                         .foregroundColor(.white)
                         .padding(.horizontal, 24)
                         .padding(.vertical, 12)
@@ -196,7 +194,7 @@ struct RadioScreen: View {
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
                         Button("CLOSE") { isPresented.wrappedValue = false }
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.safet(size: 12, weight: .bold))
                             .foregroundColor(.safetText)
                     }
                 }
@@ -208,11 +206,11 @@ struct RadioScreen: View {
     private func statusStrip(_ state: RadioUiState) -> some View {
         HStack(spacing: 8) {
             Text("UNIT \(state.localShortUnitId)")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.safet(size: 12, weight: .semibold))
                 .foregroundColor(.safetTextDim)
             Spacer()
             Text(state.systemTime)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.safet(size: 13, weight: .semibold))
                 .foregroundColor(.safetText)
             Spacer()
             audioRouteMenu
@@ -233,7 +231,7 @@ struct RadioScreen: View {
             }
         } label: {
             Image(systemName: liveRouteIcon)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.safet(size: 14, weight: .semibold))
                 .foregroundColor(.safetTextDim)
                 .frame(width: 24, height: 24)
         }
@@ -269,14 +267,14 @@ struct RadioScreen: View {
     private func operatorStrip(_ state: RadioUiState) -> some View {
         HStack(spacing: 6) {
             Text(state.operatorDisplayName.uppercased())
-                .font(.system(size: 11, weight: .semibold))
+                .font(.safet(size: 11, weight: .semibold))
                 .foregroundColor(.safetTextDim)
                 .lineLimit(1)
                 .truncationMode(.tail)
             if !state.agencyName.isEmpty {
-                Text("·").foregroundColor(.safetTextDim.opacity(0.6)).font(.system(size: 10))
+                Text("·").foregroundColor(.safetTextDim.opacity(0.6)).font(.safet(size: 10))
                 Text(state.agencyName)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.safet(size: 11, weight: .medium))
                     .foregroundColor(.safetTextDim)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -322,7 +320,7 @@ struct RadioScreen: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .bold))
+                .font(.safet(size: 16, weight: .bold))
                 .foregroundColor(tint)
                 .frame(maxWidth: .infinity)
                 .frame(height: 36)
@@ -356,7 +354,7 @@ struct RadioScreen: View {
         HStack(spacing: 5) {
             Circle().fill(color).frame(width: 6, height: 6)
             Text(text)
-                .font(.system(size: 10, weight: .bold))
+                .font(.safet(size: 10, weight: .bold))
                 .foregroundColor(color)
         }
         .padding(.horizontal, 8)
@@ -371,9 +369,9 @@ struct RadioScreen: View {
             if state.channelTen33 {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.safet(size: 10, weight: .bold))
                     Text("10-33 EMERGENCY TRAFFIC")
-                        .font(.system(size: 11, weight: .heavy))
+                        .font(.safet(size: 11, weight: .heavy))
                 }
                 .foregroundColor(.safetAmber)
                 .padding(.vertical, 4)
@@ -384,15 +382,22 @@ struct RadioScreen: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(state.channelLabel)
-                    .font(.system(.largeTitle, design: .rounded).weight(.heavy))
+                if !state.zoneLabel.isEmpty {
+                    Text(state.zoneLabel)
+                        .font(.safet(size: 15, weight: .bold))
+                        .foregroundColor(.safetTextDim)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                }
+                Text(state.channelDisplayLabel)
+                    .font(.safet(size: 34, weight: .heavy))
                     .foregroundColor(.safetText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
 
                 if !state.channelCodecLabel.isEmpty {
                     Text(state.channelCodecLabel)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .font(.safet(size: 11, weight: .semibold, design: .rounded))
                         .foregroundColor(.safetTextDim)
                         .padding(.vertical, 2)
                         .padding(.horizontal, 6)
@@ -407,13 +412,13 @@ struct RadioScreen: View {
                     VStack(alignment: .leading, spacing: 3) {
                         ForEach(displayed, id: \.self) { unit in
                             Text("• \(unit)")
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.safet(size: 11, weight: .medium))
                                 .foregroundColor(.safetTextDim)
                                 .lineLimit(1)
                         }
                         if overflow > 0 {
                             Text("+ \(overflow) more")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.safet(size: 10, weight: .semibold))
                                 .foregroundColor(.safetTextDim.opacity(0.6))
                         }
                     }
@@ -422,12 +427,12 @@ struct RadioScreen: View {
 
             HStack {
                 Text(state.channelPosition)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.safet(size: 13, weight: .semibold))
                     .foregroundColor(.safetTextDim)
                 Spacer()
                 if state.isReceivingAudio {
                     Text("RX")
-                        .font(.system(size: 11, weight: .heavy))
+                        .font(.safet(size: 11, weight: .heavy))
                         .foregroundColor(.safetSignal)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
@@ -437,7 +442,7 @@ struct RadioScreen: View {
 
             if !state.rxAttributedLine.isEmpty, !state.channelTen33 {
                 Text(state.rxAttributedLine)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.safet(size: 12, weight: .bold))
                     .foregroundColor(state.rxFromScan ? .safetGreen : .safetSignal)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
@@ -450,14 +455,14 @@ struct RadioScreen: View {
             Divider().overlay(Color.safetBorder)
 
             Text(state.channelsLoading ? "SYNCING…" : state.statusMessage)
-                .font(.system(size: 13, weight: .bold))
+                .font(.safet(size: 13, weight: .bold))
                 .foregroundColor(statusColor(state))
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
 
             if let error = state.channelSyncError {
                 Button("RETRY SYNC") { viewModel.handle(.retryChannelSync) }
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.safet(size: 11, weight: .bold))
                     .foregroundColor(.safetSignal)
                     .accessibilityLabel(Text(error))
             }
@@ -472,15 +477,15 @@ struct RadioScreen: View {
     private func scanBanner(_ state: RadioUiState) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "dot.radiowaves.left.and.right")
-                .font(.system(size: 10, weight: .bold))
+                .font(.safet(size: 10, weight: .bold))
             if let rx = state.scanRxChannel {
                 Text("SCAN: \(rx.uppercased())")
-                    .font(.system(size: 11, weight: .heavy))
+                    .font(.safet(size: 11, weight: .heavy))
             } else {
                 let home = state.channelLabel.lowercased()
                 let count = state.scanIncludedChannels.filter { $0 != home }.count
                 Text(count > 0 ? "SCAN ON · \(count) CH" : "SCAN ON · PICK CHANNELS")
-                    .font(.system(size: 11, weight: .heavy))
+                    .font(.safet(size: 11, weight: .heavy))
             }
             Spacer()
         }
@@ -502,22 +507,86 @@ struct RadioScreen: View {
     // MARK: - channel controls
 
     private func channelRow(_ state: RadioUiState) -> some View {
-        HStack(spacing: 10) {
-            controlButton(title: "CH \u{25BC}", enabled: !state.channelsLoading) {
-                viewModel.handle(.channelDown)
+        VStack(spacing: 10) {
+            channelPickerMenu(state)
+            HStack(spacing: 10) {
+                controlButton(title: "CH \u{25BC}", enabled: !state.channelsLoading) {
+                    viewModel.handle(.channelDown)
+                }
+                .accessibilityLabel("Channel down")
+                .accessibilityValue("Currently \(state.channelLabel)")
+                controlButton(title: "CH \u{25B2}", enabled: !state.channelsLoading) {
+                    viewModel.handle(.channelUp)
+                }
+                .accessibilityLabel("Channel up")
+                .accessibilityValue("Currently \(state.channelLabel)")
+                controlButton(title: "REPLAY", enabled: !state.channelsLoading) {
+                    viewModel.replay()
+                }
+                .accessibilityLabel("Replay last message")
             }
-            .accessibilityLabel("Channel down")
-            .accessibilityValue("Currently \(state.channelLabel)")
-            controlButton(title: "CH \u{25B2}", enabled: !state.channelsLoading) {
-                viewModel.handle(.channelUp)
-            }
-            .accessibilityLabel("Channel up")
-            .accessibilityValue("Currently \(state.channelLabel)")
-            controlButton(title: "REPLAY", enabled: !state.channelsLoading) {
-                viewModel.replay()
-            }
-            .accessibilityLabel("Replay last message")
         }
+    }
+
+    /// Quick zone/channel picker — a dropdown grouped by zone bank so the
+    /// operator can jump straight to a channel instead of stepping ▲/▼ through
+    /// the whole catalog. Mirrors the Android zone-select affordance.
+    private func channelPickerMenu(_ state: RadioUiState) -> some View {
+        Menu {
+            ForEach(groupedChannels(state.channels)) { group in
+                Section(group.header) {
+                    ForEach(group.options) { option in
+                        Button {
+                            viewModel.handle(.selectChannel(option.index))
+                        } label: {
+                            if option.index == state.channelIndex {
+                                Label(option.displayLabel, systemImage: "checkmark")
+                            } else {
+                                Text(option.displayLabel)
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.safet(size: 13, weight: .bold))
+                Text(state.channelDisplayLabel)
+                    .font(.safet(size: 14, weight: .heavy))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.safet(size: 11, weight: .bold))
+            }
+            .foregroundColor(.safetText)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity)
+            .frame(height: 46)
+            .background(Color.safetSurface)
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.safetBorder, lineWidth: 1))
+            .cornerRadius(8)
+        }
+        .disabled(state.channelsLoading || state.channels.isEmpty)
+        .accessibilityLabel("Select zone and channel")
+        .accessibilityValue("Currently \(state.channelDisplayLabel)")
+    }
+
+    /// Groups channels into contiguous zone sections for the picker. The catalog
+    /// arrives ordered by zone number (server `ORDER BY zone_number`), so
+    /// consecutive grouping preserves the intended bank layout.
+    private func groupedChannels(_ options: [ChannelOption]) -> [ChannelZoneGroup] {
+        var groups: [ChannelZoneGroup] = []
+        for option in options {
+            let header = option.zoneHeader
+            if let last = groups.last, last.header == header {
+                groups[groups.count - 1].options.append(option)
+            } else {
+                groups.append(ChannelZoneGroup(id: groups.count, header: header, options: [option]))
+            }
+        }
+        return groups
     }
 
     private func controlButton(
@@ -528,7 +597,7 @@ struct RadioScreen: View {
     ) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: .bold))
+                .font(.safet(size: 13, weight: .bold))
                 .foregroundColor(enabled ? tint : .safetTextDim.opacity(0.5))
                 .frame(maxWidth: .infinity)
                 .frame(height: 46)
@@ -546,7 +615,7 @@ struct RadioScreen: View {
             viewModel.handle(.emergencyToggle)
         } label: {
             Text(state.isEmergencyActive ? "EMERGENCY ACTIVE \u{2014} TAP TO CLEAR" : "EMERGENCY")
-                .font(.system(size: 14, weight: .heavy))
+                .font(.safet(size: 14, weight: .heavy))
                 .foregroundColor(state.isEmergencyActive ? .white : .safetRed)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
@@ -562,14 +631,24 @@ struct RadioScreen: View {
         VStack(spacing: 4) {
             pttTitleView(state)
             Text(pttSubtitle(state))
-                .font(.system(size: 10, weight: .semibold))
+                .font(.safet(size: 10, weight: .semibold))
                 .opacity(0.85)
         }
-        .foregroundColor(.white)
+        .foregroundColor(state.isListenOnly ? .safetTextDim : .white)
         .frame(maxWidth: .infinity)
         .frame(height: 116)
         .background(pttColor(state))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(state.isListenOnly ? Color.safetBorder : Color.clear, lineWidth: 1)
+        )
         .cornerRadius(12)
+        // Listen-only channels can't key — grey the bar out and swallow taps so
+        // the operator gets no "keying" feedback. The hardware/remote PTT paths
+        // are gated identically in the view-model. Gated on isListenOnly (not
+        // !canTransmit) so a still-loading channel doesn't grey out the bar.
+        .opacity(state.isListenOnly ? 0.55 : 1.0)
+        .allowsHitTesting(!state.isListenOnly)
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in
@@ -585,8 +664,10 @@ struct RadioScreen: View {
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Push to talk")
-        .accessibilityHint("Hold to transmit on channel \(state.channelLabel)")
-        .accessibilityValue(state.isTransmitting ? "Transmitting" : "Idle")
+        .accessibilityHint(state.isListenOnly
+            ? "Listen only on channel \(state.channelLabel)"
+            : "Hold to transmit on channel \(state.channelLabel)")
+        .accessibilityValue(state.isTransmitting ? "Transmitting" : (state.isListenOnly ? "Listen only" : "Idle"))
     }
 
     /// While transmitting, render "XMIT" with the lightning-bolt SF Symbol so
@@ -597,17 +678,18 @@ struct RadioScreen: View {
         if state.isTransmitting {
             HStack(spacing: 6) {
                 Image(systemName: "bolt.fill")
-                    .font(.system(size: 22, weight: .heavy))
+                    .font(.safet(size: 22, weight: .heavy))
                 Text("XMIT")
-                    .font(.system(size: 22, weight: .heavy))
+                    .font(.safet(size: 22, weight: .heavy))
             }
         } else {
             Text(pttTitle(state))
-                .font(.system(size: 22, weight: .heavy))
+                .font(.safet(size: 22, weight: .heavy))
         }
     }
 
     private func pttTitle(_ state: RadioUiState) -> String {
+        if state.isListenOnly { return "LISTEN ONLY" }
         if state.pttBusyTone { return "CHANNEL BUSY" }
         // isTransmitting is rendered by pttTitleView's icon+text branch — never reached here.
         if state.isPttPressed { return "KEYING…" }
@@ -615,12 +697,13 @@ struct RadioScreen: View {
     }
 
     private func pttSubtitle(_ state: RadioUiState) -> String {
-        if !state.canTransmit && state.networkLabel == "ONLINE" { return "MONITOR ONLY ON THIS CHANNEL" }
+        if state.isListenOnly { return "MONITOR ONLY ON THIS CHANNEL" }
         if state.isTransmitting { return "PCM 16K MONO \u{2014} HALF-DUPLEX" }
         return "PRESS AND HOLD"
     }
 
     private func pttColor(_ state: RadioUiState) -> Color {
+        if state.isListenOnly { return .safetSurface }
         if state.pttBusyTone { return .safetRed }
         if state.isTransmitting { return .safetGreen }
         if state.isPttPressed { return .safetGreen.opacity(0.5) }

@@ -24,10 +24,10 @@ struct MultiChannelScreen: View {
                 )) {
                     HStack(spacing: 6) {
                         Image(systemName: "dot.radiowaves.left.and.right")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.safet(size: 13, weight: .bold))
                             .foregroundColor(scanActive ? .safetGreen : .safetTextDim)
                         Text("SCAN")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.safet(size: 13, weight: .bold))
                             .foregroundColor(scanActive ? .safetGreen : .safetText)
                     }
                 }
@@ -43,7 +43,7 @@ struct MultiChannelScreen: View {
                 Button("ALL") {
                     visibleChannels = Set(channels)
                 }
-                .font(.system(size: 12, weight: .bold))
+                .font(.safet(size: 12, weight: .bold))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(visibleChannels.count == channels.count ? Color.safetBlue : Color.safetSurface)
@@ -53,7 +53,7 @@ struct MultiChannelScreen: View {
                 Button("NONE") {
                     visibleChannels.removeAll()
                 }
-                .font(.system(size: 12, weight: .bold))
+                .font(.safet(size: 12, weight: .bold))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(visibleChannels.isEmpty ? Color.safetBlue : Color.safetSurface)
@@ -62,14 +62,14 @@ struct MultiChannelScreen: View {
 
                 Spacer()
                 Text("\(visibleChannels.count)/\(channels.count)")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.safet(size: 11, weight: .semibold))
                     .foregroundColor(.safetTextDim)
             }
             .padding(.horizontal, 12)
 
             if let error {
                 Text(error)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.safet(size: 11, weight: .semibold))
                     .foregroundColor(.safetRed)
                     .padding(.horizontal, 12)
             }
@@ -80,7 +80,7 @@ struct MultiChannelScreen: View {
                         ProgressView().tint(.safetText)
                     } else if channels.isEmpty {
                         Text("NO CHANNELS")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.safet(size: 12, weight: .semibold))
                             .foregroundColor(.safetTextDim)
                             .padding(.top, 24)
                     } else {
@@ -97,7 +97,7 @@ struct MultiChannelScreen: View {
                 Button("CLOSE") {
                     dismiss()
                 }
-                .font(.system(size: 13, weight: .bold))
+                .font(.safet(size: 13, weight: .bold))
                 .foregroundColor(.safetText)
                 .frame(maxWidth: .infinity)
                 .frame(height: 44)
@@ -122,7 +122,7 @@ struct MultiChannelScreen: View {
     private func channelRow(_ channel: String) -> some View {
         HStack(spacing: 10) {
             Text(channel.uppercased())
-                .font(.system(size: 13, weight: .bold))
+                .font(.safet(size: 13, weight: .bold))
                 .foregroundColor(.safetText)
             Spacer()
             Toggle("", isOn: Binding(

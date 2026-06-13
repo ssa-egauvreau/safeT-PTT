@@ -32,7 +32,7 @@ struct SettingsScreen: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("CLOSE") { onClose() }
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.safet(size: 12, weight: .bold))
                         .foregroundColor(.safetText)
                 }
             }
@@ -61,7 +61,7 @@ struct SettingsScreen: View {
             Text("Appearance")
         } footer: {
             Text("System follows the iOS display setting. Dark is the default for night / low-light operations.")
-                .font(.system(size: 11))
+                .font(.safet(size: 11))
                 .foregroundColor(.safetTextDim)
         }
         .listRowBackground(Color.safetSurface)
@@ -84,9 +84,6 @@ struct SettingsScreen: View {
 
     private var controlsSection: some View {
         Section {
-            Toggle("Large PTT button", isOn: $settings.bigPttButtonEnabled)
-                .tint(.safetGreen)
-                .foregroundColor(.safetText)
             Toggle("Hardware PTT (Volume Down / Action Button)", isOn: $settings.hardwarePttEnabled)
                 .tint(.safetGreen)
                 .foregroundColor(.safetText)
@@ -94,7 +91,7 @@ struct SettingsScreen: View {
             Text("Controls")
         } footer: {
             Text("Volume Down (held) keys the mic while the radio screen is open. On iPhone 15 Pro and later, bind the Action Button to the 'Start PTT' / 'Stop PTT' shortcuts via Settings → Action Button.")
-                .font(.system(size: 11))
+                .font(.safet(size: 11))
                 .foregroundColor(.safetTextDim)
         }
         .listRowBackground(Color.safetSurface)
@@ -113,7 +110,7 @@ struct SettingsScreen: View {
                         .foregroundColor(.safetText)
                     Spacer()
                     Text("\(Int(settings.playbackVolume * 100))%")
-                        .font(.system(size: 13, design: .monospaced))
+                        .font(.safet(size: 13, design: .monospaced))
                         .foregroundColor(.safetTextDim)
                 }
                 Slider(value: $settings.playbackVolume, in: 0...1, step: 0.05)
@@ -131,7 +128,7 @@ struct SettingsScreen: View {
             Text("Audio")
         } footer: {
             Text("Notification sounds cover channel-switch beeps and PTT cues. Emergency alerts always play regardless of this setting. Playback volume controls incoming voice audio.")
-                .font(.system(size: 11))
+                .font(.safet(size: 11))
                 .foregroundColor(.safetTextDim)
         }
         .listRowBackground(Color.safetSurface)
@@ -147,10 +144,10 @@ struct SettingsScreen: View {
             )) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Scan")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.safet(size: 15, weight: .semibold))
                         .foregroundColor(.safetText)
                     Text(scanSubtitle)
-                        .font(.system(size: 11))
+                        .font(.safet(size: 11))
                         .foregroundColor(.safetTextDim)
                 }
             }
@@ -170,7 +167,7 @@ struct SettingsScreen: View {
                         .foregroundColor(.safetText)
                     Spacer()
                     Text(scanChannelsLabel)
-                        .font(.system(size: 13, design: .monospaced))
+                        .font(.safet(size: 13, design: .monospaced))
                         .foregroundColor(.safetTextDim)
                 }
             }
@@ -179,7 +176,7 @@ struct SettingsScreen: View {
             Text("Scan")
         } footer: {
             Text("Scan opens extra listen-only streams for the channels you pick. The currently tuned channel is always heard.")
-                .font(.system(size: 11))
+                .font(.safet(size: 11))
                 .foregroundColor(.safetTextDim)
         }
         .listRowBackground(Color.safetSurface)
@@ -194,12 +191,12 @@ struct SettingsScreen: View {
                     .foregroundColor(state.locationAuthorized ? .safetGreen : .safetAmber)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("GPS")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.safet(size: 15, weight: .semibold))
                         .foregroundColor(.safetText)
                     Text(state.locationAuthorized
                          ? "Reporting position to dispatch"
                          : "Awaiting location permission")
-                        .font(.system(size: 11))
+                        .font(.safet(size: 11))
                         .foregroundColor(.safetTextDim)
                 }
             }
@@ -207,7 +204,7 @@ struct SettingsScreen: View {
             Text("Location")
         } footer: {
             Text("GPS is always on for unit safety. Change permission in iOS Settings → safeT Mobile.")
-                .font(.system(size: 11))
+                .font(.safet(size: 11))
                 .foregroundColor(.safetTextDim)
         }
         .listRowBackground(Color.safetSurface)
@@ -235,7 +232,7 @@ struct SettingsScreen: View {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
                         .accessibilityHidden(true)
                     Text("Sign Out…")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.safet(size: 15, weight: .semibold))
                 }
                 .foregroundColor(.safetRed)
             }
@@ -253,7 +250,7 @@ struct SettingsScreen: View {
                 .foregroundColor(.safetTextDim)
             Spacer()
             Text(value)
-                .font(.system(.footnote, design: .monospaced))
+                .font(.safet(size: 13))
                 .foregroundColor(.safetText)
                 .lineLimit(1)
                 .truncationMode(.middle)

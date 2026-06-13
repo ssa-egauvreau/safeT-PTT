@@ -18,10 +18,10 @@ struct LoginScreen: View {
 
                 VStack(spacing: 4) {
                     Text("safeT")
-                        .font(.system(size: 36, weight: .heavy, design: .rounded))
+                        .font(.safet(size: 36, weight: .heavy, design: .rounded))
                         .foregroundColor(.safetSignal)
                     Text("MOBILE")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.safet(size: 14, weight: .bold))
                         .tracking(6)
                         .foregroundColor(.safetTextDim)
                 }
@@ -49,7 +49,7 @@ struct LoginScreen: View {
 
                 if let error = session.loginError {
                     Text(error)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.safet(size: 12, weight: .semibold))
                         .foregroundColor(.safetRed)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -57,7 +57,7 @@ struct LoginScreen: View {
                 Button(action: signIn) {
                     ZStack {
                         Text("SIGN IN")
-                            .font(.system(size: 15, weight: .heavy))
+                            .font(.safet(size: 15, weight: .heavy))
                             .opacity(session.isLoggingIn ? 0 : 1)
                         if session.isLoggingIn {
                             ProgressView().tint(.white)
@@ -90,7 +90,7 @@ struct LoginScreen: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 10, weight: .bold))
+                .font(.safet(size: 10, weight: .bold))
                 .tracking(2)
                 .foregroundColor(.safetTextDim)
             Group {
@@ -110,7 +110,7 @@ struct LoginScreen: View {
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.safetBorder, lineWidth: 1))
             .cornerRadius(8)
             .foregroundColor(.safetText)
-            .font(.system(size: 16, weight: .semibold, design: .monospaced))
+            .font(.safet(size: 16, weight: .semibold, design: .monospaced))
         }
     }
 

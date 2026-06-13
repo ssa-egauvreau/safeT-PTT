@@ -48,25 +48,21 @@ final class SettingsStore: ObservableObject {
     static let shared = SettingsStore()
 
     private let defaults: UserDefaults
-    private var muteDidSet = false
 
     @Published var appColorScheme: AppColorScheme {
-        didSet { if !muteDidSet { defaults.set(appColorScheme.rawValue, forKey: Keys.appColorScheme) } }
+        didSet { defaults.set(appColorScheme.rawValue, forKey: Keys.appColorScheme) }
     }
     @Published var hardwarePttEnabled: Bool {
-        didSet { if !muteDidSet { defaults.set(hardwarePttEnabled, forKey: Keys.hardwarePtt) } }
-    }
-    @Published var bigPttButtonEnabled: Bool {
-        didSet { if !muteDidSet { defaults.set(bigPttButtonEnabled, forKey: Keys.bigPtt) } }
+        didSet { defaults.set(hardwarePttEnabled, forKey: Keys.hardwarePtt) }
     }
     @Published var audioRoute: AudioRoute {
-        didSet { if !muteDidSet { defaults.set(audioRoute.rawValue, forKey: Keys.audioRoute) } }
+        didSet { defaults.set(audioRoute.rawValue, forKey: Keys.audioRoute) }
     }
     @Published var notificationSoundsEnabled: Bool {
-        didSet { if !muteDidSet { defaults.set(notificationSoundsEnabled, forKey: Keys.notificationSounds) } }
+        didSet { defaults.set(notificationSoundsEnabled, forKey: Keys.notificationSounds) }
     }
     @Published var playbackVolume: Float {
-        didSet { if !muteDidSet { defaults.set(playbackVolume, forKey: Keys.playbackVolume) } }
+        didSet { defaults.set(playbackVolume, forKey: Keys.playbackVolume) }
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -74,28 +70,15 @@ final class SettingsStore: ObservableObject {
         let rawScheme = defaults.string(forKey: Keys.appColorScheme) ?? AppColorScheme.system.rawValue
         appColorScheme = AppColorScheme(rawValue: rawScheme) ?? .system
         hardwarePttEnabled = defaults.bool(forKey: Keys.hardwarePtt)
-        bigPttButtonEnabled = (defaults.object(forKey: Keys.bigPtt) as? Bool) ?? true
         let rawRoute = defaults.string(forKey: Keys.audioRoute) ?? AudioRoute.auto.rawValue
         audioRoute = AudioRoute(rawValue: rawRoute) ?? .auto
         notificationSoundsEnabled = (defaults.object(forKey: Keys.notificationSounds) as? Bool) ?? true
         playbackVolume = defaults.object(forKey: Keys.playbackVolume) as? Float ?? 1.0
-
-        let args = ProcessInfo.processInfo.arguments
-        if args.contains("-uitest-big-ptt-on") {
-            muteDidSet = true
-            bigPttButtonEnabled = true
-            muteDidSet = false
-        } else if args.contains("-uitest-big-ptt-off") {
-            muteDidSet = true
-            bigPttButtonEnabled = false
-            muteDidSet = false
-        }
     }
 
     private enum Keys {
         static let appColorScheme = "safet.appColorScheme"
         static let hardwarePtt = "safet.hardwarePttEnabled"
-        static let bigPtt = "safet.bigPttButtonEnabled"
         static let audioRoute = "safet.audioRoute"
         static let notificationSounds = "safet.notificationSoundsEnabled"
         static let playbackVolume = "safet.playbackVolume"
