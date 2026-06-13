@@ -17,6 +17,11 @@ final class VoiceAudio {
     /// session id that produced it. Configure before calling `startCapture()`.
     var onCapturedFrame: ((Data, UInt64) -> Void)?
 
+    /// Called (on the audio thread) with the peak mic level (0–1) of each
+    /// captured buffer — drives the XMIT-box audio visualizer. Hop to the main
+    /// actor before touching UI state.
+    var onTxLevel: ((Float) -> Void)?
+
     /// Called when incoming PCM16 frames are enqueued for playback.
     var onEnqueuedIncoming: ((Data) -> Void)?
 
@@ -199,6 +204,16 @@ final class VoiceAudio {
         guard status != .error, let int16 = converted.int16ChannelData, converted.frameLength > 0 else { return }
 
         let frameCount = Int(converted.frameLength)
+        // Peak level for the XMIT visualizer.
+        if let onTxLevel {
+            var peak: Float = 0
+            let samples = int16[0]
+            for i in 0..<frameCount {
+                let v = abs(Float(samples[i]))
+                if v > peak { peak = v }
+            }
+            onTxLevel(min(1, peak / 32_767))
+        }
         let byteCount = frameCount * MemoryLayout<Int16>.size
         int16[0].withMemoryRebound(to: UInt8.self, capacity: byteCount) { bytes in
             captureBuffer.append(bytes, count: byteCount)

@@ -406,6 +406,12 @@ final class RadioViewModel: ObservableObject {
         voiceAudio.onCapturedFrame = { [weak self] frame, captureSessionId in
             self?.voiceTransport.sendCaptured(frame, captureSessionId: captureSessionId)
         }
+        voiceAudio.onTxLevel = { [weak self] level in
+            Task { @MainActor in
+                guard let self, self.uiState.isTransmitting else { return }
+                self.uiState.txLevel = level
+            }
+        }
         voiceAudio.onEnqueuedIncoming = { [weak self] pcm16 in
             guard let self else { return }
             self.lastReceivedAudio.append(pcm16)
@@ -629,6 +635,7 @@ final class RadioViewModel: ObservableObject {
         sounds.stop(.busy)
         if uiState.isTransmitting {
             uiState.isTransmitting = false
+            uiState.txLevel = 0
             updateWidgetData()
             // Operators were losing the last ~0.5 s of every transmission: the
             // word spoken at release is still in the capture pipeline, and the
