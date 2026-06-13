@@ -549,48 +549,55 @@ final class RadioViewModel: ObservableObject {
             enterBusy("VOICE UNAVAILABLE")
             return
         }
-        uiState.statusMessage = "AIR: CHECKING"
+        // The REST air probe rides plain HTTPS — it can succeed while the voice
+        // WebSocket is still reconnecting, in which case captured frames would
+        // silently drop. Don't key up on a dead link.
+        guard voiceTransport.isTransmitPathReady else {
+            enterBusy("LINK CONNECTING")
+            return
+        }
+        // Instant key-up: permit beep + green + capture immediately so PTT feels
+        // like a hardware radio, then validate the channel wasn't already busy in
+        // the background (below). startPttAirPolling keeps watching for
+        // mid-transmission collisions, and the relay arbitrates server-side — so
+        // the worst case of an optimistic key is a brief (~1 s) overlap that the
+        // busy check then cuts.
+        sounds.play(.pttPermit)
+        guard let captureSessionId = voiceAudio.startCapture() else {
+            enterBusy("VOICE UNAVAILABLE")
+            voiceTransport.stopUplinkCapture()
+            return
+        }
+        voiceTransport.startUplinkCapture(sessionId: captureSessionId)
+        uiState.statusMessage = P25ImbeNative.isAvailable ? "ON AIR · IMBE" : "ON AIR · CLEAR PCM"
+        uiState.isTransmitting = true
+        updateWidgetData()
+        if #available(iOS 16.2, *), let channel = currentChannel {
+            RadioLiveActivityController.shared.startOrUpdate(
+                channel: channel,
+                callsign: uiState.localShortUnitId,
+                stateLabel: "TX"
+            )
+        }
         startPttAirPolling()
+
+        // Background busy validation. If the channel was already taken when we
+        // keyed, abort to a busy tone and tear the uplink down. A failed probe
+        // (transient network blip) is intentionally ignored — the link is up, the
+        // relay arbitrates, and the air poll keeps watching, so we don't cut a
+        // live transmission over a one-off error.
         do {
             let air = try await api.airState(channel: currentChannel)
-            guard uiState.isPttPressed else { return }
-            let busy = channelBusyForLocalPtt(air)
-            if busy {
+            guard uiState.isPttPressed, uiState.isTransmitting else { return }
+            if channelBusyForLocalPtt(air) {
                 let peer = air.transmittingUnitId?.uppercased() ?? ""
                 enterBusy(peer.isEmpty ? "CHANNEL BUSY" : "CHANNEL BUSY — \(peer)")
-                return
-            }
-            // The REST air probe rides plain HTTPS — it can succeed while the
-            // voice WebSocket is still reconnecting, in which case captured
-            // frames would silently drop. Don't go green on a dead link.
-            guard voiceTransport.isTransmitPathReady else {
-                enterBusy("LINK CONNECTING")
-                return
-            }
-            // Air is clear — play the permit beep, then start capturing. The beep
-            // overlaps the first ~250 ms of mic capture; that's how Android does
-            // it too, and the listener side hasn't started decoding yet anyway.
-            sounds.play(.pttPermit)
-            guard let captureSessionId = voiceAudio.startCapture() else {
-                enterBusy("VOICE UNAVAILABLE")
+                voiceAudio.stopCapture()
                 voiceTransport.stopUplinkCapture()
-                return
-            }
-            voiceTransport.startUplinkCapture(sessionId: captureSessionId)
-            // Green only now — capture running and the uplink actually live.
-            uiState.statusMessage = P25ImbeNative.isAvailable ? "ON AIR · IMBE" : "ON AIR · CLEAR PCM"
-            uiState.isTransmitting = true
-            updateWidgetData()
-            if #available(iOS 16.2, *), let channel = currentChannel {
-                RadioLiveActivityController.shared.startOrUpdate(
-                    channel: channel,
-                    callsign: uiState.localShortUnitId,
-                    stateLabel: "TX"
-                )
+                uiState.isTransmitting = false
             }
         } catch {
-            guard uiState.isPttPressed else { return }
-            enterBusy("AIR CHECK FAILED")
+            // Ignored deliberately — see above.
         }
     }
 
