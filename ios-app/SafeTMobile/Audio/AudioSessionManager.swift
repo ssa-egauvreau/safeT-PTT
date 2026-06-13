@@ -19,7 +19,10 @@ enum AudioSessionManager {
     static func configureForPlayback() throws {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playback, mode: .default, options: [.allowBluetoothA2DP, .allowAirPlay])
+            // NOTE: .allowAirPlay is ONLY valid with .playAndRecord — including it
+            // here makes setCategory fail with OSStatus -50, which silently kills
+            // the playback session (and thus all RX audio). Keep options minimal.
+            try session.setCategory(.playback, mode: .default, options: [.allowBluetoothA2DP])
             try session.setActive(true, options: [])
             applyRoute(SettingsStore.shared.audioRoute)
             logger.log("session -> playback OK (media volume)")
