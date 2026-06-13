@@ -1,11 +1,36 @@
 import { sweepAiDispatchLog } from "./aiDispatch/activityLog.js";
 import { getPool } from "./db.js";
 import { isPostgresDiskFullError } from "./postgresErrors.js";
-import { sweepTransmissions, sweepTransmissionsPerAgency } from "./store.js";
+import { sweepTransmissions, sweepTransmissionsPerAgency, expireStaleEmergencies } from "./store.js";
 import { sweepTen8WebhookLog } from "./ten8/store.js";
 import { sweepVoiceLinkTelemetry } from "./voiceLinkTelemetryStore.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * How long an unresolved emergency stays `active` before the periodic sweep
+ * auto-clears it, from `EMERGENCY_AUTO_CLEAR_HOURS` (default 6 h). A handset that
+ * crashes mid-emergency otherwise leaves a row that haunts every radio's status
+ * line forever. Returns milliseconds, or `0` to disable (env `0` / `off`).
+ * Exported for unit testing — a regression returning 0/NaN as "enabled" would
+ * either disable the self-heal or hand a 0 ms window that clears live emergencies.
+ */
+export function parseEmergencyAutoClearMs(): number {
+  const raw = process.env.EMERGENCY_AUTO_CLEAR_HOURS?.trim();
+  if (raw === undefined || raw === "") {
+    return 6 * HOUR_MS;
+  }
+  if (raw === "0" || raw.toLowerCase() === "off") {
+    return 0; // explicitly disabled
+  }
+  const n = Number.parseFloat(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    return 6 * HOUR_MS;
+  }
+  // Cap at 30 days so a fat-fingered value can't effectively disable the sweep.
+  return Math.min(n, 24 * 30) * HOUR_MS;
+}
 
 /** Debug webhook payloads — admin UI only shows the latest ~25 rows. */
 const TEN8_WEBHOOK_LOG_RETENTION_MS = 30 * DAY_MS;
@@ -79,6 +104,22 @@ export async function runDataRetentionSweeps(): Promise<void> {
         return;
       }
       console.warn(`[data-retention] ${name}: sweep failed`, error);
+    }
+  }
+
+  // Emergency auto-expiry. Distinct from the DELETE sweeps above (it UPDATEs the
+  // row's `active` flag, not deletes it), so it runs separately with its own
+  // logging. Clears emergencies nobody resolved so a crashed/powered-off handset
+  // can't strand "EMERGENCY <unit>" on every radio's display indefinitely.
+  const emergencyMs = parseEmergencyAutoClearMs();
+  if (emergencyMs > 0) {
+    try {
+      const cleared = await expireStaleEmergencies(emergencyMs);
+      if (cleared > 0) {
+        console.log(`[emergency-expiry] auto-cleared ${cleared} stale emergency alert(s)`);
+      }
+    } catch (error) {
+      console.warn("[emergency-expiry] sweep failed", error);
     }
   }
 }

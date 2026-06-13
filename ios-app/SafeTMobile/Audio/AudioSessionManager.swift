@@ -1,21 +1,20 @@
 import AVFoundation
 
 /// Configures the shared AVAudioSession for half-duplex radio voice: speakerphone
-/// by default, allow Bluetooth headsets.
+/// by default, voice-chat mode (echo cancellation), allow Bluetooth headsets.
 ///
-/// Mode is `.default`, NOT `.voiceChat`. `.voiceChat` routes through Apple's
-/// voice-processing I/O, which ties output to the *call* volume bus and applies
-/// telephony-style AGC — the "quiet even at full volume, like a phone call"
-/// symptom operators reported. `.default` keeps RX on the media volume bus so it
-/// plays at full speaker level. PTT is half-duplex (we don't play and capture at
-/// the same instant) and the uplink already runs `ImbeTxConditioner`, so the
-/// system echo-cancellation `.voiceChat` provided isn't needed.
+/// Mode is `.voiceChat` (Apple's voice-processing I/O). An earlier attempt to use
+/// `.default` to make RX louder regressed incoming audio — it garbled and dropped
+/// frames, because the playback engine + inbound jitter buffer rely on the
+/// voice-processing I/O's fixed 16 kHz clock/buffering. RX integrity wins over
+/// loudness, so `.voiceChat` stays; the volume work is handled separately without
+/// touching the playback path.
 enum AudioSessionManager {
     static func configureForVoice() throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(
             .playAndRecord,
-            mode: .default,
+            mode: .voiceChat,
             options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
         )
         try session.setActive(true, options: [])

@@ -286,7 +286,14 @@ final class VoiceTransport {
         pcmAcc.append(frame)
         let frameBytes = P25ImbeNative.Frames.pcm16kFrameBytes
         while pcmAcc.count >= frameBytes {
-            pcmFrameScratch = pcmAcc.prefix(frameBytes)
+            // Copy into a fresh, zero-based Data (NOT a slice of pcmAcc). The
+            // conditioner and the native IMBE encoder reach into this buffer via
+            // withUnsafe[Mutable]Bytes + manual pointer indexing; handing them an
+            // offset slice that still aliases pcmAcc's storage corrupts pcmAcc's
+            // backing header, which later traps in flushUplinkTail's removeAll.
+            // `Data(_:)` forces a uniquely-owned contiguous copy (same guard
+            // flushUplinkTail already applies to its staged tail frame).
+            pcmFrameScratch = Data(pcmAcc.prefix(frameBytes))
             pcmAcc.removeFirst(frameBytes)
 
             txConditioner.conditionLe16(frame: &pcmFrameScratch, bypassExpanderAgc: bypassMicProcessing)

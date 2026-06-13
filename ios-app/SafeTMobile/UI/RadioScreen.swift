@@ -10,6 +10,87 @@ private struct ChannelZoneGroup: Identifiable {
     var options: [ChannelOption]
 }
 
+/// Quick zone/channel picker — a dropdown grouped by zone bank so the operator
+/// can jump straight to a channel instead of stepping ▲/▼ through the whole
+/// catalog. Mirrors the Android zone-select affordance.
+///
+/// Extracted into its own `Equatable` view (used via `.equatable()`) so the
+/// radio shell's once-per-second clock re-render doesn't rebuild the open Menu
+/// and bounce its scroll position back to the top. The `onSelect` closure is
+/// deliberately excluded from `==` — only the rendered data gates a redraw.
+private struct ChannelPickerMenu: View, Equatable {
+    let channels: [ChannelOption]
+    let selectedIndex: Int
+    let displayLabel: String
+    let disabled: Bool
+    let onSelect: (Int) -> Void
+
+    static func == (lhs: ChannelPickerMenu, rhs: ChannelPickerMenu) -> Bool {
+        lhs.selectedIndex == rhs.selectedIndex &&
+        lhs.displayLabel == rhs.displayLabel &&
+        lhs.disabled == rhs.disabled &&
+        lhs.channels == rhs.channels
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(groupedChannels) { group in
+                Section(group.header) {
+                    ForEach(group.options) { option in
+                        Button {
+                            onSelect(option.index)
+                        } label: {
+                            if option.index == selectedIndex {
+                                Label(option.displayLabel, systemImage: "checkmark")
+                            } else {
+                                Text(option.displayLabel)
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.safet(size: 13, weight: .bold))
+                Text(displayLabel)
+                    .font(.safet(size: 14, weight: .heavy))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.safet(size: 11, weight: .bold))
+            }
+            .foregroundColor(.safetText)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity)
+            .frame(height: 46)
+            .background(Color.safetSurface)
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.safetBorder, lineWidth: 1))
+            .cornerRadius(8)
+        }
+        .disabled(disabled)
+        .accessibilityLabel("Select zone and channel")
+        .accessibilityValue("Currently \(displayLabel)")
+    }
+
+    /// Groups channels into contiguous zone sections. The catalog arrives ordered
+    /// by zone number (server `ORDER BY zone_number`), so consecutive grouping
+    /// preserves the intended bank layout.
+    private var groupedChannels: [ChannelZoneGroup] {
+        var groups: [ChannelZoneGroup] = []
+        for option in channels {
+            let header = option.zoneHeader
+            if let last = groups.last, last.header == header {
+                groups[groups.count - 1].options.append(option)
+            } else {
+                groups.append(ChannelZoneGroup(id: groups.count, header: header, options: [option]))
+            }
+        }
+        return groups
+    }
+}
+
 /// The safeT Mobile radio shell — status strip, channel display, controls,
 /// emergency, and a press-and-hold PTT bar.
 struct RadioScreen: View {
@@ -508,7 +589,17 @@ struct RadioScreen: View {
 
     private func channelRow(_ state: RadioUiState) -> some View {
         VStack(spacing: 10) {
-            channelPickerMenu(state)
+            // Equatable so the once-per-second clock tick (which re-renders this
+            // whole screen) doesn't rebuild the open dropdown and bounce its
+            // scroll back to the top.
+            ChannelPickerMenu(
+                channels: state.channels,
+                selectedIndex: state.channelIndex,
+                displayLabel: state.channelDisplayLabel,
+                disabled: state.channelsLoading || state.channels.isEmpty,
+                onSelect: { viewModel.handle(.selectChannel($0)) }
+            )
+            .equatable()
             HStack(spacing: 10) {
                 controlButton(title: "CH \u{25BC}", enabled: !state.channelsLoading) {
                     viewModel.handle(.channelDown)
@@ -526,67 +617,6 @@ struct RadioScreen: View {
                 .accessibilityLabel("Replay last message")
             }
         }
-    }
-
-    /// Quick zone/channel picker — a dropdown grouped by zone bank so the
-    /// operator can jump straight to a channel instead of stepping ▲/▼ through
-    /// the whole catalog. Mirrors the Android zone-select affordance.
-    private func channelPickerMenu(_ state: RadioUiState) -> some View {
-        Menu {
-            ForEach(groupedChannels(state.channels)) { group in
-                Section(group.header) {
-                    ForEach(group.options) { option in
-                        Button {
-                            viewModel.handle(.selectChannel(option.index))
-                        } label: {
-                            if option.index == state.channelIndex {
-                                Label(option.displayLabel, systemImage: "checkmark")
-                            } else {
-                                Text(option.displayLabel)
-                            }
-                        }
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "line.3.horizontal")
-                    .font(.safet(size: 13, weight: .bold))
-                Text(state.channelDisplayLabel)
-                    .font(.safet(size: 14, weight: .heavy))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                Spacer()
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.safet(size: 11, weight: .bold))
-            }
-            .foregroundColor(.safetText)
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity)
-            .frame(height: 46)
-            .background(Color.safetSurface)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.safetBorder, lineWidth: 1))
-            .cornerRadius(8)
-        }
-        .disabled(state.channelsLoading || state.channels.isEmpty)
-        .accessibilityLabel("Select zone and channel")
-        .accessibilityValue("Currently \(state.channelDisplayLabel)")
-    }
-
-    /// Groups channels into contiguous zone sections for the picker. The catalog
-    /// arrives ordered by zone number (server `ORDER BY zone_number`), so
-    /// consecutive grouping preserves the intended bank layout.
-    private func groupedChannels(_ options: [ChannelOption]) -> [ChannelZoneGroup] {
-        var groups: [ChannelZoneGroup] = []
-        for option in options {
-            let header = option.zoneHeader
-            if let last = groups.last, last.header == header {
-                groups[groups.count - 1].options.append(option)
-            } else {
-                groups.append(ChannelZoneGroup(id: groups.count, header: header, options: [option]))
-            }
-        }
-        return groups
     }
 
     private func controlButton(
