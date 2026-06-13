@@ -1,4 +1,5 @@
 import AVFoundation
+import AudioToolbox
 import Combine
 import Foundation
 import os
@@ -563,6 +564,9 @@ final class RadioViewModel: ObservableObject {
         // the worst case of an optimistic key is a brief (~1 s) overlap that the
         // busy check then cuts.
         sounds.play(.pttPermit)
+        // Single ~0.4 s vibration synced to the permit chirp on key-up (matches
+        // the chirp's length), instead of buzzing for the whole transmission.
+        AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
         guard let captureSessionId = voiceAudio.startCapture() else {
             enterBusy("VOICE UNAVAILABLE")
             voiceTransport.stopUplinkCapture()

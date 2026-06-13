@@ -274,16 +274,19 @@ final class VoiceAudio {
         out.withUnsafeMutableBytes { raw in
             guard let base = raw.baseAddress else { return }
             let bytes = base.assumingMemoryBound(to: UInt8.self)
-            let knee: Float = 30_000
+            let limit: Float = 32_767
             let count = raw.count / 2
             for i in 0..<count {
                 let off = i * 2
                 let lo = UInt16(bytes[off])
                 let hi = UInt16(bytes[off + 1])
-                var s = Float(Int16(bitPattern: lo | (hi << 8))) * gain
-                if s > knee { s = knee + (s - knee) * 0.2 }
-                else if s < -knee { s = -knee + (s + knee) * 0.2 }
-                let clamped = min(max(s, -32_768), 32_767)
+                let s = Float(Int16(bitPattern: lo | (hi << 8))) * gain
+                // Smooth tanh soft-clip: roughly linear (full boost) for quiet
+                // audio, saturating gently toward ±full-scale for loud audio
+                // instead of hard-clipping. Hard clipping adds harsh harmonics
+                // that sound "robotic"; tanh keeps it loud but clean.
+                let shaped = limit * tanhf(s / limit)
+                let clamped = min(max(shaped, -32_768), 32_767)
                 let le = UInt16(bitPattern: Int16(clamped))
                 bytes[off] = UInt8(le & 0xff)
                 bytes[off + 1] = UInt8((le >> 8) & 0xff)
