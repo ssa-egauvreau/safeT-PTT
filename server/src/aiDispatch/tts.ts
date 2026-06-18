@@ -1,5 +1,5 @@
 import { getAgencyIntegrationValue } from "../store.js";
-import { recordElevenLabsCall } from "../integrations/health.js";
+import { classifyFailure, recordElevenLabsCall } from "../integrations/health.js";
 import { prepareTextForTts } from "./speech/prepareTextForTts.js";
 import { getTtsPrecacheHit, scheduleAgencyTtsPrecache } from "./ttsPrecache.js";
 
@@ -97,6 +97,26 @@ function isV3Model(modelId: string): boolean {
   return modelId.toLowerCase().includes("v3");
 }
 
+/** Caller-provided sink that [synthesizeElevenLabsMp3] fills with the real failure reason. */
+export interface TtsFailureInfo {
+  status?: number;
+  detail?: string;
+}
+
+/**
+ * Turn an ElevenLabs TTS error into an actionable, admin-facing reason so the
+ * console shows *why* a reply went silent instead of a generic "check the key".
+ * 404 / voice-id errors get called out specifically because a wrong voice ID is
+ * the other common cause besides a bad key or exhausted credits.
+ */
+export function describeTtsFailure(status: number, body: string): string {
+  const text = (body ?? "").toLowerCase();
+  if (status === 404 || text.includes("voice_not_found") || text.includes("voice does not exist")) {
+    return "ElevenLabs voice ID not found — check the voice ID under Admin → Integrations.";
+  }
+  return classifyFailure(status, body).detail;
+}
+
 function modelAndSettings(profile: TtsProfile): { model_id: string; voice_settings: ElevenVoiceSettings } {
   const model_id = profile === "fast" ? fastModelId() : expressiveModelId();
   const useExpressiveTuning = profile === "expressive" || isV3Model(model_id);
@@ -135,12 +155,21 @@ function fallbackModels(primaryModelId: string): string[] {
 export async function synthesizeElevenLabsMp3(
   agencyId: number,
   text: string,
-  opts?: { skipPrecache?: boolean; speechKind?: TtsSpeechKind; profile?: TtsProfile },
+  opts?: {
+    skipPrecache?: boolean;
+    speechKind?: TtsSpeechKind;
+    profile?: TtsProfile;
+    /** Optional sink populated with the real failure reason when this returns null. */
+    failure?: TtsFailureInfo;
+  },
 ): Promise<Buffer | null> {
   const apiKey = await getAgencyIntegrationValue(agencyId, "elevenlabs_api_key");
   const voiceId =
     (await getAgencyIntegrationValue(agencyId, "elevenlabs_voice_id")) ?? "21m00Tcm4TlvDq8ikWAM";
   if (!apiKey) {
+    if (opts?.failure) {
+      opts.failure.detail = "No ElevenLabs API key configured for this agency (Admin → Integrations).";
+    }
     return null;
   }
 
@@ -195,6 +224,10 @@ export async function synthesizeElevenLabsMp3(
       `[ai-dispatch] ElevenLabs ${res.status} profile=${profile} model=${model_id}: ${err.slice(0, 200)}`,
     );
     recordElevenLabsCall(agencyId, false, res.status, err);
+    if (opts?.failure) {
+      opts.failure.status = res.status;
+      opts.failure.detail = describeTtsFailure(res.status, err);
+    }
     return null;
   }
 
