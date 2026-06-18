@@ -25,7 +25,11 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 
-import { describeBridgeIngestError, describeBridgeSpawnError } from "../src/bridgeWorker.js";
+import {
+  describeBridgeIngestError,
+  describeBridgeSpawnError,
+  noiseFilterChain,
+} from "../src/bridgeWorker.js";
 
 test("a 403 is a refused connection and names the concurrent-listener limit", (_t: TestContext) => {
   const fromStatus = describeBridgeIngestError("Server returned 403 Forbidden (access denied)");
@@ -107,4 +111,32 @@ test("an unknown spawn error is surfaced with its code and message, length-cappe
 
   // No code at all still yields a usable message.
   assert.match(describeBridgeSpawnError(undefined, "weird failure"), /weird failure/);
+});
+
+/**
+ * `noiseFilterChain` maps a bridge's noise-suppression setting to the ffmpeg
+ * `-af` chain applied on ingest. "off" (and any unknown value) must yield null
+ * so no filter is added and the audio path is unchanged for existing bridges;
+ * "light"/"strong" must keep the voice band-pass so radio speech stays intact.
+ */
+test("noiseFilterChain: off / unknown / undefined add no filter", (_t: TestContext) => {
+  assert.equal(noiseFilterChain("off"), null);
+  assert.equal(noiseFilterChain(undefined), null);
+  assert.equal(noiseFilterChain("bogus"), null);
+});
+
+test("noiseFilterChain: light is a voice band-pass, no denoiser", (_t: TestContext) => {
+  const chain = noiseFilterChain("light");
+  assert.ok(chain);
+  assert.match(chain!, /highpass/);
+  assert.match(chain!, /lowpass/);
+  assert.doesNotMatch(chain!, /afftdn/);
+});
+
+test("noiseFilterChain: strong keeps the band-pass and adds the FFT denoiser", (_t: TestContext) => {
+  const chain = noiseFilterChain("strong");
+  assert.ok(chain);
+  assert.match(chain!, /highpass/);
+  assert.match(chain!, /lowpass/);
+  assert.match(chain!, /afftdn/);
 });

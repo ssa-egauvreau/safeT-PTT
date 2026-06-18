@@ -425,9 +425,14 @@ export async function ensureSchema(): Promise<void> {
       vox_threshold DOUBLE PRECISION NOT NULL DEFAULT 0.02,
       vox_hang_ms INT NOT NULL DEFAULT 1500,
       enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      noise_suppression TEXT NOT NULL DEFAULT 'off',
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  // Noise suppression added later — backfill existing bridges with 'off'.
+  await p.query(
+    `ALTER TABLE radio_bridges ADD COLUMN IF NOT EXISTS noise_suppression TEXT NOT NULL DEFAULT 'off';`,
+  );
 
   // Map geofences — circle or custom-polygon overlay zones an operator draws.
   await p.query(`

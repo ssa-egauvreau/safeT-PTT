@@ -936,6 +936,8 @@ export async function deleteSimulcast(id: number, agencyId: number): Promise<boo
 export const BRIDGE_SOURCE_TYPES = ["stream_url", "audio_device"] as const;
 export const BRIDGE_DIRECTIONS = ["inbound", "bidirectional"] as const;
 export const BRIDGE_TX_MODES = ["passthrough", "vocoder"] as const;
+/** Static/hiss filtering applied to a bridge's ingest. */
+export const BRIDGE_NOISE_LEVELS = ["off", "light", "strong"] as const;
 
 export interface BridgeRow {
   id: number;
@@ -950,6 +952,7 @@ export interface BridgeRow {
   vox_threshold: number;
   vox_hang_ms: number;
   enabled: boolean;
+  noise_suppression: string;
   created_at: string;
 }
 
@@ -965,11 +968,12 @@ export interface BridgeInput {
   voxThreshold: number;
   voxHangMs: number;
   enabled: boolean;
+  noiseSuppression: string;
 }
 
 const BRIDGE_COLS =
   "id, name, source_type, source_url, device_hint, target_channel, direction, " +
-  "yield_to_units, tx_mode, vox_threshold, vox_hang_ms, enabled, created_at";
+  "yield_to_units, tx_mode, vox_threshold, vox_hang_ms, enabled, noise_suppression, created_at";
 
 export async function listBridges(agencyId: number): Promise<BridgeRow[]> {
   const res = await requirePool().query<BridgeRow>(
@@ -983,8 +987,8 @@ export async function createBridge(agencyId: number, input: BridgeInput): Promis
   const res = await requirePool().query<BridgeRow>(
     `INSERT INTO radio_bridges
        (agency_id, name, source_type, source_url, device_hint, target_channel,
-        direction, yield_to_units, tx_mode, vox_threshold, vox_hang_ms, enabled)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        direction, yield_to_units, tx_mode, vox_threshold, vox_hang_ms, enabled, noise_suppression)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING ${BRIDGE_COLS};`,
     [
       agencyId,
@@ -999,6 +1003,7 @@ export async function createBridge(agencyId: number, input: BridgeInput): Promis
       input.voxThreshold,
       input.voxHangMs,
       input.enabled,
+      input.noiseSuppression,
     ],
   );
   return res.rows[0]!;
@@ -1027,6 +1032,7 @@ export async function updateBridge(
   if (patch.voxThreshold !== undefined) col("vox_threshold", patch.voxThreshold);
   if (patch.voxHangMs !== undefined) col("vox_hang_ms", patch.voxHangMs);
   if (patch.enabled !== undefined) col("enabled", patch.enabled);
+  if (patch.noiseSuppression !== undefined) col("noise_suppression", patch.noiseSuppression);
   if (sets.length === 0) {
     const res = await requirePool().query<BridgeRow>(
       `SELECT ${BRIDGE_COLS} FROM radio_bridges WHERE id = $1 AND agency_id = $2;`,
@@ -1073,7 +1079,7 @@ export async function listEnabledStreamBridges(): Promise<AgencyBridgeRow[]> {
   const res = await requirePool().query<AgencyBridgeRow>(
     `SELECT b.agency_id, b.id, b.name, b.source_type, b.source_url, b.device_hint,
             b.target_channel, b.direction, b.yield_to_units, b.tx_mode,
-            b.vox_threshold, b.vox_hang_ms, b.enabled, b.created_at
+            b.vox_threshold, b.vox_hang_ms, b.enabled, b.noise_suppression, b.created_at
        FROM radio_bridges b
        JOIN agencies a ON a.id = b.agency_id
       WHERE b.enabled = TRUE

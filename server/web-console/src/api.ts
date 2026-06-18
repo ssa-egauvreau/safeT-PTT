@@ -542,6 +542,8 @@ export interface Bridge {
   vox_threshold: number;
   vox_hang_ms: number;
   enabled: boolean;
+  /** Static/hiss filtering on ingest: "off" | "light" | "strong". */
+  noise_suppression: string;
   created_at: string;
 }
 
@@ -557,6 +559,7 @@ export interface BridgeInput {
   voxThreshold: number;
   voxHangMs: number;
   enabled: boolean;
+  noiseSuppression: string;
 }
 
 /** Live ingest status for a stream bridge — its input level and VOX gate state. */

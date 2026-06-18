@@ -16,6 +16,7 @@ function emptyInput(): BridgeInput {
     voxThreshold: 0.02,
     voxHangMs: 1500,
     enabled: false,
+    noiseSuppression: "off",
   };
 }
 
@@ -32,6 +33,7 @@ function toInput(b: Bridge): BridgeInput {
     voxThreshold: b.vox_threshold,
     voxHangMs: b.vox_hang_ms,
     enabled: b.enabled,
+    noiseSuppression: b.noise_suppression ?? "off",
   };
 }
 
@@ -205,6 +207,24 @@ function BridgeForm({
             How long the gate stays open after audio stops, so word endings aren't clipped.
           </p>
         </div>
+        {f.sourceType === "stream_url" && (
+          <div className="field">
+            <label>Noise suppression</label>
+            <select
+              value={f.noiseSuppression}
+              onChange={(e) => set("noiseSuppression", e.target.value)}
+            >
+              <option value="off">Off</option>
+              <option value="light">Light — voice band-pass</option>
+              <option value="strong">Strong — band-pass + denoiser</option>
+            </select>
+            <p className="field-hint">
+              Filters static/hiss on this feed. Light keeps a 200–3400 Hz voice band (cuts hum and
+              high hiss). Strong adds an FFT denoiser for steady static. Start with Light; use
+              Strong on noisy analog feeds.
+            </p>
+          </div>
+        )}
       </div>
       <div className="sim-channels" style={{ marginTop: 4 }}>
         <label>
