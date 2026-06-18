@@ -79,6 +79,15 @@ interface ChannelPanelProps {
 }
 
 /**
+ * Explainer for the AI-dispatch toggle. Kept as the button's hover tooltip only
+ * — it's reference info, not an actionable warning, so it shouldn't take a line
+ * of on-card space every time AI dispatch is on (actionable config warnings,
+ * e.g. a missing key, still render as the note).
+ */
+const AI_DISPATCH_ON_NOTE =
+  "AI dispatch uses clear audio for transcripts; Fast (vocoder) still keys the channel for other units.";
+
+/**
  * One channel as a collapsible accordion row. Collapsed it shows the name, an
  * on/off (monitor) toggle, and a quick PTT button; expanded it reveals the full
  * control surface — listen, transmit, 10-33 marker, AI dispatch, and tone-outs.
@@ -361,13 +370,8 @@ export function ChannelPanel({
       setAiDispatch(!next);
     });
     clientRef.current?.setAiDispatchListenPcm(next);
-    if (next) {
-      setAiDispatchHint(
-        "AI dispatch uses clear audio for transcripts; Fast (vocoder) still keys the channel for other units.",
-      );
-    } else {
-      setAiDispatchHint(null);
-    }
+    // Don't push the clear-audio explainer into the on-card note — it's hover-only
+    // now. `aiDispatchHint` is left to the config-warning effect (missing key, etc.).
   }
 
   useEffect(() => {
@@ -1009,7 +1013,9 @@ export function ChannelPanel({
             onClick={toggleAiDispatch}
             title={
               aiDispatchHint ??
-              "When on, unit transmissions on this channel can trigger an AI dispatcher reply on the air."
+              (aiDispatch
+                ? AI_DISPATCH_ON_NOTE
+                : "When on, unit transmissions on this channel can trigger an AI dispatcher reply on the air.")
             }
           >
             <span className="ch-action-kicker">AI dispatch</span>
