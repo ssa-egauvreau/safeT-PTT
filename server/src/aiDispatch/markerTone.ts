@@ -63,11 +63,29 @@ function decodeMarkerFile(path: string): Promise<Buffer> {
  * the bundled default beep; decoding from a real file matches the bundled path
  * and handles every format ffmpeg supports.
  */
+/** Retry the custom-tone decode a few times — a transient ffmpeg spawn failure
+ *  (EAGAIN/ENOMEM under load) would otherwise drop this agency to the default
+ *  beep for the burst, and that's exactly the condition that kept reverting the
+ *  custom 10-33 to the default. A successful decode is cached, so one win sticks. */
+const MARKER_DECODE_ATTEMPTS = 3;
+const MARKER_DECODE_BACKOFF_MS = 250;
+
 async function decodeMarkerAudio(input: Buffer): Promise<Buffer> {
   const tmp = join(tmpdir(), `marker-${randomBytes(8).toString("hex")}`);
   await writeFile(tmp, input);
   try {
-    return await decodeMarkerFile(tmp);
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < MARKER_DECODE_ATTEMPTS; attempt++) {
+      try {
+        return await decodeMarkerFile(tmp);
+      } catch (err) {
+        lastErr = err;
+        if (attempt < MARKER_DECODE_ATTEMPTS - 1) {
+          await new Promise((r) => setTimeout(r, MARKER_DECODE_BACKOFF_MS * (attempt + 1)));
+        }
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
   } finally {
     await unlink(tmp).catch(() => undefined);
   }

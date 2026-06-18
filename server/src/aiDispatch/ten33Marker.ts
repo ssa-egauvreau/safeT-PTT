@@ -14,6 +14,11 @@ function loopKey(agencyId: number, channelName: string): LoopKey {
   return `${agencyId}:${channelName}`;
 }
 
+/** True while a 10-33 marker loop is armed on this channel. */
+export function isTen33MarkerActive(agencyId: number, channelName: string): boolean {
+  return markerLoops.has(loopKey(agencyId, channelName));
+}
+
 export function stopTen33MarkerLoop(agencyId: number, channelName: string): void {
   const key = loopKey(agencyId, channelName);
   const timer = markerLoops.get(key);
@@ -42,7 +47,12 @@ function playMarkerBurst(opts: MarkerLoopOpts): void {
  */
 export function startTen33MarkerLoop(opts: MarkerLoopOpts, immediateBurst = true): void {
   const key = loopKey(opts.agencyId, opts.channelName);
-  stopTen33MarkerLoop(opts.agencyId, opts.channelName);
+  // Idempotent: if 10-33 is already armed on this channel, leave the running
+  // loop as-is. Restarting it would fire a second immediate burst, so a manual
+  // button push and the AI both activating would double-play the marker tone.
+  if (markerLoops.has(key)) {
+    return;
+  }
   const tick = () => playMarkerBurst(opts);
   if (immediateBurst) {
     tick();
