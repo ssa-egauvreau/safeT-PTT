@@ -82,6 +82,23 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Minimum spacing between ffmpeg launches across all bridges. */
+const LAUNCH_GAP_MS = 400;
+/**
+ * Serializes ffmpeg launches fleet-wide. On boot/redeploy every bridge finishes
+ * its loopback handshake at almost the same instant and would `spawn` ffmpeg in
+ * the same tick; that burst — stacked on the transcription worker processes —
+ * blows past the container's process/thread limit and the kernel refuses the
+ * fork with EAGAIN. Spacing launches a few hundred ms apart brings the fleet up
+ * smoothly and de-synchronizes the retry storm that follows a wave of failures.
+ */
+let launchChain: Promise<void> = Promise.resolve();
+function acquireLaunchSlot(): Promise<void> {
+  const ready = launchChain;
+  launchChain = launchChain.then(() => delay(LAUNCH_GAP_MS));
+  return ready;
+}
+
 /** Probes for an ffmpeg binary on PATH exactly once per process. */
 function ffmpegAvailable(): Promise<boolean> {
   if (!ffmpegReady) {
@@ -158,7 +175,15 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
         resolve();
       };
 
-      const startIngest = (): void => {
+      const startIngest = async (): Promise<void> => {
+        if (done || stopped) {
+          finish();
+          return;
+        }
+        // Stagger the fork so a fleet-wide (re)start doesn't hit the container's
+        // process/thread limit all at once (spawn EAGAIN). Re-check liveness
+        // after the wait — the socket may have closed while we were queued.
+        await acquireLaunchSlot();
         if (done || stopped) {
           finish();
           return;
@@ -168,6 +193,12 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
           "-loglevel",
           "error",
           "-nostdin",
+          // One decode thread is plenty for a mono 16 kHz PCM ingest and keeps
+          // each bridge's thread footprint small; with many bridges plus the
+          // transcription workers, default multi-threading otherwise piles onto
+          // the container's process/thread limit.
+          "-threads",
+          "1",
           // Pace ingestion to real time. A no-op for genuine live streams (they
           // already arrive at 1x); for a file-like URL it stops ffmpeg dumping
           // the whole source at once and flooding the channel.
@@ -257,7 +288,7 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
           return;
         }
         if (msg.type === "joined") {
-          startIngest();
+          void startIngest();
         } else if (msg.type === "error") {
           console.warn(`bridge "${bridge.name}": relay rejected join (${msg.code ?? "error"})`);
           finish();
@@ -291,7 +322,9 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
       if (Date.now() - startedAt > HEALTHY_RUN_MS) {
         backoff = BACKOFF_MIN_MS;
       }
-      await delay(backoff);
+      // Jitter so a wave of bridges that failed together (e.g. an EAGAIN burst)
+      // doesn't retry in lockstep and re-trigger the same burst.
+      await delay(backoff + Math.floor(Math.random() * 1000));
       backoff = Math.min(backoff * 2, BACKOFF_MAX_MS);
     }
   })();
