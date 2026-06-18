@@ -22,11 +22,12 @@ const MAX_OPEN_CHANNELS = 16;
 const MAX_DOCKED_CHANNELS = 12;
 /**
  * Effective caps applied on every commit to keep Mission Control stable — too many tiles at once
- * can freeze the tab (black screen) on reload. Kept below the looser dedup ceilings above. Raise
- * cautiously and re-test reload performance with the higher counts.
+ * can freeze the tab (black screen) on reload. Kept at/below the dedup ceilings above. Raised to
+ * the hard docked cap so operators can run more channels on the board; note each monitored channel
+ * is a live voice connection + AudioContext, so very high counts can strain low-powered clients.
  */
-export const MAX_SAFE_DOCKED_CHANNELS = 8;
-const MAX_SAFE_OPEN_CHANNELS = 10;
+export const MAX_SAFE_DOCKED_CHANNELS = 12;
+const MAX_SAFE_OPEN_CHANNELS = 12;
 const COMMIT_STORM_LIMIT = 24;
 const COMMIT_STORM_WINDOW_MS = 2000;
 
