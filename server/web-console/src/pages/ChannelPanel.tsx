@@ -435,13 +435,15 @@ export function ChannelPanel({
   function stopAllSounds() {
     clientRef.current?.stopAllTones();
     sounds.stopAll();
-    // 10-33 runs server-side on a repeating timer. Only users allowed to transmit
-    // should be able to clear it from this bulk action.
-    if (marker && canTransmit) {
+    // 10-33 runs server-side on a repeating timer. Always clear it (when allowed
+    // to transmit) — it may have been armed by the AI dispatcher rather than from
+    // this console, in which case the locally-polled `marker` state can be stale,
+    // so gating on it would leave an AI-armed 10-33 playing until a verbal 10-34.
+    if (canTransmit) {
       setMarker(false);
-      void api.setChannelTen33(channel.name, false).catch(() => {
-        setMarker(true);
-      });
+      // No optimistic rollback on failure: the periodic 10-33 poll re-syncs the
+      // true state, so a transient error self-corrects instead of flipping back on.
+      void api.setChannelTen33(channel.name, false).catch(() => undefined);
     }
     setLoopingIds(new Set());
   }
