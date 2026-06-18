@@ -2,6 +2,43 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
+/// Live mic-level meter in the XMIT box while transmitting — a horizontal row of
+/// segments that light up **left → right** as the operator gets louder (quiet on
+/// the left, loud on the right), green → amber → red, mirroring the dispatch
+/// console's transmit meter.
+private struct TxVisualizer: View {
+    /// Peak mic level, 0–1.
+    let level: Float
+
+    private let segmentCount = 18
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<segmentCount, id: \.self) { i in
+                let threshold = Float(i) / Float(segmentCount - 1)   // 0 (left) … 1 (right)
+                let lit = level >= threshold
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(segmentColor(threshold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 30)
+                    .opacity(lit ? 1.0 : 0.16)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 20)
+        .animation(.easeOut(duration: 0.07), value: level)
+        .accessibilityHidden(true)
+    }
+
+    /// VU-style colour ramp across the meter: green for the bulk, amber as it
+    /// rises, red at the top (hot).
+    private func segmentColor(_ frac: Float) -> Color {
+        if frac < 0.6 { return .safetGreen }
+        if frac < 0.85 { return .safetAmber }
+        return .safetRed
+    }
+}
+
 /// A contiguous zone bank in the channel picker — a header ("ZONE 1 · PATROL")
 /// and the channels under it. Identifiable so the dropdown's `ForEach` is stable.
 private struct ChannelZoneGroup: Identifiable {
@@ -156,7 +193,6 @@ struct RadioScreen: View {
                 tabStrip(state)
                 displayPanel(state)
                 channelRow(state)
-                Spacer(minLength: 12)
                 emergencyButton(state)
                 pttBar(state)
             }
@@ -379,7 +415,6 @@ struct RadioScreen: View {
             tabButton(icon: "map", label: "MAP") { showingMap = true }
             tabButton(icon: "person.2.fill", label: "UNITS") { showingUnits = true }
             tabButton(icon: "text.bubble", label: "TX LOG") { showingTranscripts = true }
-            tabButton(icon: "waveform.circle", label: "CHANNELS") { showingMultiChannel = true }
             tabButton(
                 icon: "dot.radiowaves.left.and.right",
                 label: "SCAN",
@@ -465,20 +500,20 @@ struct RadioScreen: View {
             VStack(alignment: .leading, spacing: 8) {
                 if !state.zoneLabel.isEmpty {
                     Text(state.zoneLabel)
-                        .font(.safet(size: 15, weight: .bold))
+                        .font(.safet(size: 18, weight: .bold))
                         .foregroundColor(.safetTextDim)
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
                 }
                 Text(state.channelDisplayLabel)
-                    .font(.safet(size: 34, weight: .heavy))
+                    .font(.safet(size: 44, weight: .heavy))
                     .foregroundColor(.safetText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
 
                 if !state.channelCodecLabel.isEmpty {
                     Text(state.channelCodecLabel)
-                        .font(.safet(size: 11, weight: .semibold, design: .rounded))
+                        .font(.safet(size: 13, weight: .semibold, design: .rounded))
                         .foregroundColor(.safetTextDim)
                         .padding(.vertical, 2)
                         .padding(.horizontal, 6)
@@ -487,19 +522,19 @@ struct RadioScreen: View {
                 }
 
                 if !state.unitsOnChannel.isEmpty {
-                    let maxVisible = 4
+                    let maxVisible = 8
                     let displayed = Array(state.unitsOnChannel.prefix(maxVisible))
                     let overflow = state.unitsOnChannel.count - maxVisible
                     VStack(alignment: .leading, spacing: 3) {
                         ForEach(displayed, id: \.self) { unit in
                             Text("• \(unit)")
-                                .font(.safet(size: 11, weight: .medium))
+                                .font(.safet(size: 15, weight: .medium))
                                 .foregroundColor(.safetTextDim)
                                 .lineLimit(1)
                         }
                         if overflow > 0 {
                             Text("+ \(overflow) more")
-                                .font(.safet(size: 10, weight: .semibold))
+                                .font(.safet(size: 13, weight: .semibold))
                                 .foregroundColor(.safetTextDim.opacity(0.6))
                         }
                     }
@@ -508,12 +543,12 @@ struct RadioScreen: View {
 
             HStack {
                 Text(state.channelPosition)
-                    .font(.safet(size: 13, weight: .semibold))
+                    .font(.safet(size: 17, weight: .semibold))
                     .foregroundColor(.safetTextDim)
                 Spacer()
                 if state.isReceivingAudio {
                     Text("RX")
-                        .font(.safet(size: 11, weight: .heavy))
+                        .font(.safet(size: 14, weight: .heavy))
                         .foregroundColor(.safetSignal)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
@@ -523,7 +558,7 @@ struct RadioScreen: View {
 
             if !state.rxAttributedLine.isEmpty, !state.channelTen33 {
                 Text(state.rxAttributedLine)
-                    .font(.safet(size: 12, weight: .bold))
+                    .font(.safet(size: 15, weight: .bold))
                     .foregroundColor(state.rxFromScan ? .safetGreen : .safetSignal)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
@@ -533,10 +568,14 @@ struct RadioScreen: View {
                 scanBanner(state)
             }
 
+            // Push the status line to the bottom of the (now expanded) card so
+            // the channel info sits at the top and fills the space cleanly.
+            Spacer(minLength: 8)
+
             Divider().overlay(Color.safetBorder)
 
             Text(state.channelsLoading ? "SYNCING…" : state.statusMessage)
-                .font(.safet(size: 13, weight: .bold))
+                .font(.safet(size: 17, weight: .bold))
                 .foregroundColor(statusColor(state))
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
@@ -548,7 +587,7 @@ struct RadioScreen: View {
                     .accessibilityLabel(Text(error))
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(14)
         .background(Color.safetSurface)
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.safetBorder, lineWidth: 1))
@@ -645,10 +684,10 @@ struct RadioScreen: View {
             viewModel.handle(.emergencyToggle)
         } label: {
             Text(state.isEmergencyActive ? "EMERGENCY ACTIVE \u{2014} TAP TO CLEAR" : "EMERGENCY")
-                .font(.safet(size: 14, weight: .heavy))
+                .font(.safet(size: 17, weight: .heavy))
                 .foregroundColor(state.isEmergencyActive ? .white : .safetRed)
                 .frame(maxWidth: .infinity)
-                .frame(height: 48)
+                .frame(height: 56)
                 .background(state.isEmergencyActive ? Color.safetRed : Color.safetRed.opacity(0.16))
                 .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.safetRed, lineWidth: 1.5))
                 .cornerRadius(9)
@@ -661,12 +700,12 @@ struct RadioScreen: View {
         VStack(spacing: 4) {
             pttTitleView(state)
             Text(pttSubtitle(state))
-                .font(.safet(size: 10, weight: .semibold))
+                .font(.safet(size: 13, weight: .semibold))
                 .opacity(0.85)
         }
         .foregroundColor(state.isListenOnly ? .safetTextDim : .white)
         .frame(maxWidth: .infinity)
-        .frame(height: 116)
+        .frame(height: 150)
         .background(pttColor(state))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -706,15 +745,18 @@ struct RadioScreen: View {
     @ViewBuilder
     private func pttTitleView(_ state: RadioUiState) -> some View {
         if state.isTransmitting {
-            HStack(spacing: 6) {
-                Image(systemName: "bolt.fill")
-                    .font(.safet(size: 22, weight: .heavy))
-                Text("XMIT")
-                    .font(.safet(size: 22, weight: .heavy))
+            VStack(spacing: 14) {
+                HStack(spacing: 6) {
+                    Image(systemName: "bolt.fill")
+                        .font(.safet(size: 28, weight: .heavy))
+                    Text("XMIT")
+                        .font(.safet(size: 28, weight: .heavy))
+                }
+                TxVisualizer(level: state.txLevel)
             }
         } else {
             Text(pttTitle(state))
-                .font(.safet(size: 22, weight: .heavy))
+                .font(.safet(size: 28, weight: .heavy))
         }
     }
 
@@ -739,4 +781,5 @@ struct RadioScreen: View {
         if state.isPttPressed { return .safetGreen.opacity(0.5) }
         return .safetBlue
     }
+
 }

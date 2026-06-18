@@ -271,12 +271,12 @@ final class ScanVoiceListenTransport {
                 } else {
                     pcm16 = Self.shortLeMonoBytes(samples)
                 }
-                audio.enqueueIncoming(pcm16)
+                audio.enqueueIncoming(pcm16, source: channelKey, priority: VoiceAudio.scanAudioPriority)
                 onRx(channelLabel)
                 return
             }
             // Clear-PCM payload from a peer that lacks any vocoder.
-            audio.enqueueIncoming(payload)
+            audio.enqueueIncoming(payload, source: channelKey, priority: VoiceAudio.scanAudioPriority)
             onRx(channelLabel)
         }
 

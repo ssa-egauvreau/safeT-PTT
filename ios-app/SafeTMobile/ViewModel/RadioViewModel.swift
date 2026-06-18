@@ -1,4 +1,5 @@
 import AVFoundation
+import AudioToolbox
 import Combine
 import Foundation
 import os
@@ -405,6 +406,12 @@ final class RadioViewModel: ObservableObject {
         voiceAudio.onCapturedFrame = { [weak self] frame, captureSessionId in
             self?.voiceTransport.sendCaptured(frame, captureSessionId: captureSessionId)
         }
+        voiceAudio.onTxLevel = { [weak self] level in
+            Task { @MainActor in
+                guard let self, self.uiState.isTransmitting else { return }
+                self.uiState.txLevel = level
+            }
+        }
         voiceAudio.onEnqueuedIncoming = { [weak self] pcm16 in
             guard let self else { return }
             self.lastReceivedAudio.append(pcm16)
@@ -455,6 +462,10 @@ final class RadioViewModel: ObservableObject {
         }
         voiceTransport.onReceivingChange = { [weak self] receiving in
             guard let self else { return }
+            // The transport pings this on every inbound frame to keep RX alive;
+            // only act on an actual edge so we don't re-render the screen (and
+            // re-touch the widget/Live Activity) ~50×/sec while receiving.
+            guard self.uiState.isReceivingAudio != receiving else { return }
             self.uiState.isReceivingAudio = receiving
             if #available(iOS 16.2, *), let channel = self.currentChannel {
                 if receiving {
@@ -563,6 +574,9 @@ final class RadioViewModel: ObservableObject {
         // the worst case of an optimistic key is a brief (~1 s) overlap that the
         // busy check then cuts.
         sounds.play(.pttPermit)
+        // Single ~0.4 s vibration synced to the permit chirp on key-up (matches
+        // the chirp's length), instead of buzzing for the whole transmission.
+        AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
         guard let captureSessionId = voiceAudio.startCapture() else {
             enterBusy("VOICE UNAVAILABLE")
             voiceTransport.stopUplinkCapture()
@@ -625,6 +639,7 @@ final class RadioViewModel: ObservableObject {
         sounds.stop(.busy)
         if uiState.isTransmitting {
             uiState.isTransmitting = false
+            uiState.txLevel = 0
             updateWidgetData()
             // Operators were losing the last ~0.5 s of every transmission: the
             // word spoken at release is still in the capture pipeline, and the
@@ -890,6 +905,11 @@ final class RadioViewModel: ObservableObject {
                             self.voiceAudio.stopCapture()
                             self.voiceTransport.stopUplinkCapture()
                             self.uiState.isTransmitting = false
+                            // Stop polling once denied — otherwise every tick
+                            // re-fires enterBusy and the busy beep repeats over
+                            // and over for the whole hold. The operator must
+                            // release and re-key (standard radio behaviour).
+                            return
                         }
                     }
                 }

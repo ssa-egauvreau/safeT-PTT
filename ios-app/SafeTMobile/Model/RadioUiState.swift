@@ -72,6 +72,9 @@ struct RadioUiState {
     var isReceivingAudio = false
     /// True while the mic is hot and frames are being streamed to the server.
     var isTransmitting = false
+    /// Live mic level (0–1, peak) while transmitting — drives the XMIT-box audio
+    /// visualizer. Zero when not transmitting.
+    var txLevel: Float = 0
     /// The server's permission grant for the current channel — gates the mic.
     /// Defaults false (pessimistic) until a channel is tuned / the voice socket
     /// acks, so it must NOT drive the listen-only UI on its own (that would grey

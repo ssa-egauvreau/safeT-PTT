@@ -43,17 +43,17 @@ final class InboundJitterBuffer {
     /// sub-frame jitter on top of that.
     private let frameMs: Double = 20.0
 
-    /// Initial cushion: 4 × 20 ms ≈ 80 ms before the first scheduleBuffer call.
-    /// A small step up from the 60 ms minimum to absorb brief cellular
-    /// retransmit stalls before the playout underruns into PLC, at ~+20 ms
-    /// latency (still far below the ~400 ms a PTT operator perceives as lag).
-    private let initialTargetFrames: Int = 4
-    private let initialTimeoutMs: Double = 250.0
+    /// Initial cushion before the first scheduleBuffer call. 6 × 20 ms ≈ 120 ms
+    /// — a deeper cushion to ride out the bursty/lossy stalls seen on flaky
+    /// networks (incl. the iOS 27 beta QUIC drops) before underrunning into PLC,
+    /// at ~+40 ms latency vs the old 80 ms (still well under perceived PTT lag).
+    private let initialTargetFrames: Int = 6
+    private let initialTimeoutMs: Double = 300.0
 
-    /// Worst-case buffered audio. 16 × 20 ms ≈ 320 ms — if the producer
-    /// outpaces the player (sustained burst), drop the oldest frame rather
+    /// Worst-case buffered audio. 24 × 20 ms ≈ 480 ms — if the producer outpaces
+    /// the player (sustained burst after a stall), drop the oldest frame rather
     /// than letting the buffer grow without bound.
-    private let maxBufferFrames: Int = 16
+    private let maxBufferFrames: Int = 24
 
     /// Talk-spurt boundary; matches the relay air-claim window so an operator
     /// gap between transmissions clears stale state cleanly.

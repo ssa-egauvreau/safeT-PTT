@@ -50,6 +50,11 @@ final class VoiceTransport {
     private var reconnectTask: Task<Void, Never>?
 
     private let txConditioner = ImbeTxConditioner()
+    /// Mic PCM staged for encoding. Cleared by reassigning `Data()`, never by
+    /// `removeAll(keepingCapacity:)`: repeated `removeFirst` turns this into a
+    /// `Data.InlineSlice`, and calling `removeAll` on a shared/offset slice traps
+    /// inside Foundation on iOS 27 (EXC_BREAKPOINT in `ensureUniqueBufferReference`,
+    /// surfacing at `flushUplinkTail`). A fresh `Data()` sidesteps that path.
     private var pcmAcc = Data()
     private var pcmFrameScratch = Data(count: P25ImbeNative.Frames.pcm16kFrameBytes)
     private var lastConsumeNs: UInt64 = 0
@@ -112,6 +117,9 @@ final class VoiceTransport {
     /// only to detect a talk-spurt boundary on RX so the post-decode chain
     /// can reset its biquad state before the next talker's first frame.
     private var lastInboundVoiceAt: TimeInterval = 0
+    /// Timestamp of the last end-of-TX cue, to dedup duplicate `air_released`
+    /// pushes that would otherwise replay the roger beep over and over.
+    private var lastEndOfTxCueAt: TimeInterval = 0
     /// Treat > 300 ms gap between inbound voice frames as a new talk-spurt.
     /// Matches the Android `scanTalkSpurtGapNs` for the same reason.
     private let talkSpurtGapSeconds: TimeInterval = VoiceTiming.talkSpurtGapSeconds
@@ -206,7 +214,7 @@ final class VoiceTransport {
     /// silence, so the operator's final syllable makes the air.
     private func flushUplinkTail() {
         let staged = pcmAcc
-        pcmAcc.removeAll(keepingCapacity: true)
+        pcmAcc = Data()
         guard !staged.isEmpty, let task else { return }
         guard let encoder = codecRegistry.txEncoder(for: currentTxCodec) else { return }
         let frameBytes = P25ImbeNative.Frames.pcm16kFrameBytes
@@ -229,14 +237,14 @@ final class VoiceTransport {
 
     /// PTT released — clear `/v1/air` immediately for peers (Android/web parity).
     func releaseTransmitHold() {
-        pcmAcc.removeAll(keepingCapacity: true)
+        pcmAcc = Data()
         guard let task else { return }
         let payload = "{\"type\":\"release_air\"}"
         task.send(.string(payload)) { _ in }
     }
 
     func resetUplinkState() {
-        pcmAcc.removeAll(keepingCapacity: true)
+        pcmAcc = Data()
         txConditioner.reset()
         lastConsumeNs = 0
     }
@@ -263,7 +271,7 @@ final class VoiceTransport {
                 warnedClearTx = true
                 logger.warning("No voice encoder available — uplink clear PCM")
             }
-            pcmAcc.removeAll(keepingCapacity: true)
+            pcmAcc = Data()
             task.send(.data(frame)) { _ in }
             VoiceLinkTelemetryReporter.shared.recordBytesSent(frame.count)
             return
@@ -310,7 +318,7 @@ final class VoiceTransport {
     private func reconcileAccumulatorForCodecToggle(_ current: VoiceCodec?) {
         let prev = lastTxCodec
         if prev != nil, prev != current {
-            pcmAcc.removeAll(keepingCapacity: true)
+            pcmAcc = Data()
         }
         lastTxCodec = current
     }
@@ -625,6 +633,11 @@ final class VoiceTransport {
         guard let cfg = postDecodeConfig, cfg.rogerBeepEnabled || cfg.squelchTailEnabled else {
             return
         }
+        // Dedup duplicate `air_released` pushes (common when the socket
+        // reconnects on a flaky link) so the roger beep doesn't play repeatedly.
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastEndOfTxCueAt < 0.8 { return }
+        lastEndOfTxCueAt = now
         // Defense-in-depth: if a dispatcher "move" raced the release, an
         // air_released for the channel we just left could arrive after we
         // re-joined elsewhere. The relay personalises the message with the
@@ -658,7 +671,13 @@ final class VoiceTransport {
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                if Date().timeIntervalSince(self.lastReceivedAt) > VoiceTiming.talkSpurtGapSeconds {
+                // Hold the RX indicator for ~1.2s after the last frame so brief
+                // packet-loss gaps don't flap receiving on/off. Each flap re-set
+                // @Published RX state + the widget + the Live Activity on the main
+                // thread (~the "Updating content for activity" log storm), which
+                // starved the audio thread and made the dropouts worse. Only flip
+                // to idle after sustained silence (genuine end of transmission).
+                if Date().timeIntervalSince(self.lastReceivedAt) > 1.2 {
                     self.onReceivingChange?(false)
                 }
             }

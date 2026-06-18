@@ -17,14 +17,35 @@ final class VoiceAudio {
     /// session id that produced it. Configure before calling `startCapture()`.
     var onCapturedFrame: ((Data, UInt64) -> Void)?
 
+    /// Called (on the audio thread) with the peak mic level (0–1) of each
+    /// captured buffer — drives the XMIT-box audio visualizer. Hop to the main
+    /// actor before touching UI state.
+    var onTxLevel: ((Float) -> Void)?
+
     /// Called when incoming PCM16 frames are enqueued for playback.
     var onEnqueuedIncoming: ((Data) -> Void)?
 
-    /// Gain applied to the AVAudioPlayerNode for incoming voice audio (0.0–1.0).
+    /// Operator volume (0.0–1.0 from the settings slider). Drives a SOFTWARE
+    /// output gain on the decoded PCM rather than the player node's 0–1 volume,
+    /// so RX can be amplified ABOVE unity. The `.voiceChat` session pins playback
+    /// to the quieter call-volume bus; a software boost is the safe way to make
+    /// RX louder without touching the playback session/engine (which regressed RX
+    /// when changed). The player node stays at unity gain.
     var playbackVolume: Float {
-        get { player.volume }
-        set { player.volume = newValue }
+        get { outputVolume01 }
+        set { outputVolume01 = max(0, min(1, newValue)) }
     }
+    /// Slider position, 0–1.
+    private var outputVolume01: Float = 1.0
+    /// Linear gain applied to samples. Slider 1.0 → `maxOutputGain`×; the slider
+    /// midpoint (~0.4) lands on unity.
+    private var outputGain: Float { outputVolume01 * Self.maxOutputGain }
+    /// Headroom above unity at full slider. 5× — louder than 4×, with the tanh
+    /// soft-clip avoiding the harsh clipping raw 6× produced. This is near the
+    /// practical ceiling of the voice-chat call-volume bus; true media-volume
+    /// loudness needs the `.playback` session, which fails with OSStatus -50 on
+    /// iOS 27 beta (likely a beta bug — revisit when iOS 27 ships).
+    static let maxOutputGain: Float = 5.0
 
 
     private let engine = AVAudioEngine()
@@ -46,6 +67,28 @@ final class VoiceAudio {
     private var captureBuffer = Data()
     private var capturing = false
     private var captureSessionId: UInt64 = 0
+
+    // MARK: - playback source arbitration (scan "takes turns")
+    //
+    // The home channel and every scan listener push decoded PCM into the SAME
+    // jitter buffer / player. When two channels key at once their frames
+    // interleave into one queue and play as garbled overlap. Arbitrate so only
+    // one source feeds the player at a time: the first source to produce audio
+    // holds the player until it goes quiet for `sourceHoldSeconds`; a
+    // higher-priority source (the tuned/home channel) preempts a scan channel.
+    /// Source key currently allowed to feed the player (nil = free).
+    private var activeAudioSource: String?
+    /// Priority of the holding source — home (2) outranks scan (1).
+    private var activeAudioPriority: Int = 0
+    /// Monotonic timestamp (systemUptime) of the holding source's last frame.
+    private var lastSourceFrameAt: TimeInterval = 0
+    /// How long a source keeps the player after its last frame, so brief
+    /// inter-word gaps don't hand the channel to a competing talker mid-spurt.
+    private let sourceHoldSeconds: TimeInterval = 0.8
+    /// Priority constant for the tuned/home channel (always wins over scan).
+    static let homeAudioPriority = 2
+    /// Priority constant for scan-listener channels.
+    static let scanAudioPriority = 1
 
     /// Software jitter buffer + PLC between decoded PCM and the player. The
     /// relay forwards frames the instant they arrive over WebSocket (no
@@ -115,7 +158,9 @@ final class VoiceAudio {
         )!
         guard let converter = AVAudioConverter(from: nativeFormat, to: pcm16Mono16k) else { return nil }
         captureConverter = converter
-        captureBuffer.removeAll(keepingCapacity: true)
+        // Reassign rather than removeAll(keepingCapacity:) — see VoiceTransport's
+        // pcmAcc note: removeAll on a removeFirst-sliced Data traps on iOS 27.
+        captureBuffer = Data()
         captureSessionId &+= 1
         let sessionId = captureSessionId
 
@@ -136,7 +181,7 @@ final class VoiceAudio {
         guard capturing else { return }
         capturing = false
         engine.inputNode.removeTap(onBus: 0)
-        captureBuffer.removeAll(keepingCapacity: false)
+        captureBuffer = Data()
         captureConverter = nil
     }
 
@@ -161,6 +206,16 @@ final class VoiceAudio {
         guard status != .error, let int16 = converted.int16ChannelData, converted.frameLength > 0 else { return }
 
         let frameCount = Int(converted.frameLength)
+        // Peak level for the XMIT visualizer.
+        if let onTxLevel {
+            var peak: Float = 0
+            let samples = int16[0]
+            for i in 0..<frameCount {
+                let v = abs(Float(samples[i]))
+                if v > peak { peak = v }
+            }
+            onTxLevel(min(1, peak / 32_767))
+        }
         let byteCount = frameCount * MemoryLayout<Int16>.size
         int16[0].withMemoryRebound(to: UInt8.self, capacity: byteCount) { bytes in
             captureBuffer.append(bytes, count: byteCount)
@@ -184,16 +239,76 @@ final class VoiceAudio {
     /// forwards frames the instant they arrive over WebSocket, with no
     /// smoothing) is paced out at a steady cadence and isolated network
     /// stalls produce a short fade-to-silence via PLC instead of a hard cutout.
-    func enqueueIncoming(_ pcm16: Data) {
+    ///
+    /// `source` identifies the originating channel and `priority` ranks it
+    /// (home > scan). Frames from a source that doesn't currently hold the
+    /// player are dropped, so two channels keying at once play one-at-a-time
+    /// ("scan takes turns") instead of garbling together.
+    func enqueueIncoming(_ pcm16: Data, source: String = "home", priority: Int = VoiceAudio.homeAudioPriority) {
         guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return }
-        onEnqueuedIncoming?(pcm16)
-        jitterBuffer.enqueue(pcm16)
+        guard claimPlayback(source: source, priority: priority) else { return }
+        onEnqueuedIncoming?(pcm16)   // store the original (pre-gain) for replay
+        scheduleForPlayback(pcm16)
+    }
+
+    /// Decides whether `source` may feed the player right now. Grants the claim
+    /// when the player is free (no holder, or the holder went quiet past the
+    /// hold window), when `source` already holds it, or when `source` outranks
+    /// the current holder. Refreshes the hold timestamp on every granted frame.
+    private func claimPlayback(source: String, priority: Int) -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        let free = activeAudioSource == nil || (now - lastSourceFrameAt) > sourceHoldSeconds
+        guard free || source == activeAudioSource || priority > activeAudioPriority else {
+            return false
+        }
+        activeAudioSource = source
+        activeAudioPriority = priority
+        lastSourceFrameAt = now
+        return true
     }
 
     /// Plays back a PCM16 buffer without triggering `onEnqueuedIncoming`.
     /// Use for replay so the replayed audio is not re-appended to the last-received buffer.
     func replayAudio(_ pcm16: Data) {
         guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return }
-        jitterBuffer.enqueue(pcm16)
+        scheduleForPlayback(pcm16)
+    }
+
+    /// Applies the software output gain (with soft limiting) and hands the frame
+    /// to the jitter buffer. Single choke point so live RX and replay match.
+    private func scheduleForPlayback(_ pcm16: Data) {
+        jitterBuffer.enqueue(amplified(pcm16, gain: outputGain))
+    }
+
+    /// Multiplies each Int16 sample by `gain` with a soft knee + hard clamp, so a
+    /// boost above unity gets louder without integer wrap-around or harsh peak
+    /// clipping. Returns a fresh, zero-based `Data` (never an aliasing slice).
+    /// Pure sample math — no audio-session/engine state is touched, so it can't
+    /// regress the RX pipeline.
+    private func amplified(_ pcm16: Data, gain: Float) -> Data {
+        guard gain != 1.0 else { return pcm16 }
+        var out = Data(pcm16)   // fresh contiguous copy
+        out.withUnsafeMutableBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            let bytes = base.assumingMemoryBound(to: UInt8.self)
+            let limit: Float = 32_767
+            let count = raw.count / 2
+            for i in 0..<count {
+                let off = i * 2
+                let lo = UInt16(bytes[off])
+                let hi = UInt16(bytes[off + 1])
+                let s = Float(Int16(bitPattern: lo | (hi << 8))) * gain
+                // Smooth tanh soft-clip: roughly linear (full boost) for quiet
+                // audio, saturating gently toward ±full-scale for loud audio
+                // instead of hard-clipping. Hard clipping adds harsh harmonics
+                // that sound "robotic"; tanh keeps it loud but clean.
+                let shaped = limit * tanhf(s / limit)
+                let clamped = min(max(shaped, -32_768), 32_767)
+                let le = UInt16(bitPattern: Int16(clamped))
+                bytes[off] = UInt8(le & 0xff)
+                bytes[off + 1] = UInt8((le >> 8) & 0xff)
+            }
+        }
+        return out
     }
 }
