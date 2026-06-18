@@ -109,28 +109,40 @@ async function getMarkerPcmForAgency(agencyId: number): Promise<Buffer> {
   }
 
   const custom = await getAgencySound(agencyId, "marker_1033");
-  let pcm: Buffer;
   if (custom?.audio?.length) {
     try {
-      pcm = await decodeMarkerAudio(custom.audio);
+      const pcm = await decodeMarkerAudio(custom.audio);
+      cacheAgencyMarker(agencyId, cacheKey, pcm);
+      return pcm;
     } catch (err) {
+      // Return the bundled default for THIS burst but do NOT cache it — the
+      // sounds version only changes on re-upload, so caching the fallback here
+      // would pin the default beep until redeploy/re-upload even though the
+      // failure (e.g. a transient ffmpeg spawn error under load) was temporary.
+      // Leaving it uncached lets the next 12 s burst retry the custom tone.
       console.warn(
-        `[ai-dispatch] agency ${agencyId} custom marker_1033 decode failed, using bundled default`,
+        `[ai-dispatch] agency ${agencyId} custom marker_1033 decode failed, using bundled default for this burst (will retry)`,
         err,
       );
-      pcm = await getBundledMarkerPcm();
+      return getBundledMarkerPcm();
     }
-  } else {
-    pcm = await getBundledMarkerPcm();
   }
 
+  // No custom tone configured — the bundled default is the correct, stable
+  // answer for this version, so it's safe to cache.
+  const pcm = await getBundledMarkerPcm();
+  cacheAgencyMarker(agencyId, cacheKey, pcm);
+  return pcm;
+}
+
+/** Store the agency's marker PCM and drop its stale (older-version) entries. */
+function cacheAgencyMarker(agencyId: number, cacheKey: string, pcm: Buffer): void {
   agencyMarkerCache.set(cacheKey, pcm);
   for (const key of agencyMarkerCache.keys()) {
     if (key.startsWith(`${agencyId}:`) && key !== cacheKey) {
       agencyMarkerCache.delete(key);
     }
   }
-  return pcm;
 }
 
 /** One 10-33 marker burst on the channel (same relay path as dispatch console marker). */
