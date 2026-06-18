@@ -19,6 +19,7 @@ import type { WorkspaceWidgetSize } from "../consoleStore";
 import { sounds } from "../sounds";
 import { useToneOuts, loadTonePcm, ToneOutBadge } from "../toneOuts";
 import {
+  IconAi,
   IconBolt,
   IconBeacon,
   IconKeyboard,
@@ -41,7 +42,6 @@ import {
   loadVolume,
   muteKey,
   saveAudioOutputId,
-  txDigitalKey,
   volumeKey,
 } from "./consoleShared";
 
@@ -106,7 +106,6 @@ export function ChannelPanel({
   const [aiDispatch, setAiDispatch] = useState(channel.ai_dispatch_enabled === true);
   const [aiDispatchReady, setAiDispatchReady] = useState(false);
   const [aiDispatchHint, setAiDispatchHint] = useState<string | null>(null);
-  const [txDigital, setTxDigital] = useState(() => loadTxDigital(channel.id));
   const [volume, setVolume] = useState(() => loadVolume(channel.id));
   const [muted, setMuted] = useState(() => loadMuted(channel.id));
   const [audioOutputId, setAudioOutputId] = useState(() => loadAudioOutputId(channel.id));
@@ -447,13 +446,6 @@ export function ChannelPanel({
     setLoopingIds(new Set());
   }
 
-  function toggleTxMode() {
-    const next = !txDigital;
-    setTxDigital(next);
-    localStorage.setItem(txDigitalKey(channel.id), next ? "1" : "0");
-    clientRef.current?.setDigitalTx(next);
-  }
-
   function changeVolume(next: number) {
     setVolume(next);
     clientRef.current?.setVolume(next);
@@ -554,6 +546,13 @@ export function ChannelPanel({
   );
   /** Workspace tiles use the body XMIT pad only (no toolbar PTT). */
   const showMainTxButton = true;
+  /** Zone caption shown under the channel name, e.g. "Zone 1 : Patrol". */
+  const zoneLabel = [
+    channel.zone_number != null ? `Zone ${channel.zone_number}` : null,
+    channel.zone || null,
+  ]
+    .filter(Boolean)
+    .join(" : ");
   /** Who is currently keyed on the channel — shown inside the XMIT button while
    *  receiving, so the live talker no longer needs a separate (card-resizing) box. */
   const rxTalkerLabel = pushedTalker
@@ -686,6 +685,7 @@ export function ChannelPanel({
                     </span>
                   )}
                 </div>
+                {zoneLabel && <span className="ch-card-zone">{zoneLabel}</span>}
                 {showMemberCount && (
                   <ChannelMemberCount
                     channelName={channel.name}
@@ -755,6 +755,7 @@ export function ChannelPanel({
               <span className="ch-card-label">{channel.name}</span>
               {channel.simulcast && <span className="chan-sim-tag">SIM</span>}
             </button>
+            {zoneLabel && <span className="ch-card-zone ch-card-zone--row">{zoneLabel}</span>}
             {monitoring &&
               (!expanded && connected ? (
                 <span
@@ -1010,20 +1011,10 @@ export function ChannelPanel({
             }
           >
             <span className="ch-action-kicker">AI dispatch</span>
-            <strong>{aiDispatch ? "ON" : "OFF"}</strong>
-          </button>
-          <button
-            className="txmode-btn ch-action-cell"
-            onClick={toggleTxMode}
-            type="button"
-            title={
-              txDigital
-                ? "Compressed, fast transmit — tap for high quality"
-                : "High quality transmit — tap for compressed, fast"
-            }
-          >
-            <span className="ch-action-kicker">TX mode</span>
-            <strong>{txDigital ? "Fast" : "HQ"}</strong>
+            <strong className="ch-qc-value">
+              {aiDispatch && <IconAi size={wsIcon?.action ?? 11} className="ch-ai-spark" />}
+              {aiDispatch ? "ON" : "OFF"}
+            </strong>
           </button>
           <button
             type="button"
@@ -1055,11 +1046,6 @@ export function ChannelPanel({
 
       {showActionsGrid && (
       <div className="ch-actions-stack">
-        <button className="txmode-btn ch-action-cell" onClick={toggleTxMode} type="button">
-          TX MODE:{" "}
-          <strong>{txDigital ? "COMPRESSED · FAST" : "HIGH QUALITY · NORMAL SPEED"}</strong>
-        </button>
-
         <button
           type="button"
           className={marker ? "marker-button active ch-action-cell" : "marker-button ch-action-cell"}

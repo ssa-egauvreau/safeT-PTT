@@ -3111,6 +3111,34 @@ button.ch-kbd-chip:hover {
   word-break: normal;
   min-width: 0;
 }
+/* White name text sits on the channel's custom colour, which can be a bright
+ * hue (neon green, yellow) where white is hard to read. A dark halo keeps it
+ * legible on any colour without darkening the swatch. */
+.channel-card.workspace .ch-card-title-row.has-channel-color .ch-card-label,
+.channel-card.workspace .ch-card-title-row.has-channel-color .ch-card-zone {
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.85),
+    0 1px 1px rgba(0, 0, 0, 0.7);
+}
+
+/* Zone caption under the channel name — "Zone 1 : Patrol". */
+.ch-card-zone {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  opacity: 0.92;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.ch-card-zone--row {
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 1;
+}
 .channel-card.workspace .ch-card-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -4983,6 +5011,49 @@ button.ch-kbd-chip:hover {
   }
   4% {
     box-shadow: 0 0 0 6px rgba(251, 191, 36, 0);
+  }
+}
+
+/* --- channel-card action colours: 10-33 = yellow, Stop = red, AI = sparkle --- */
+
+/* 10-33 marker reads yellow even when idle (the ON state keeps its filled pulse). */
+.marker-button:not(.active):not(:disabled) {
+  border-color: color-mix(in srgb, var(--amber) 55%, var(--border));
+  color: var(--amber);
+}
+.marker-button:not(.active):not(:disabled) svg {
+  color: var(--amber);
+}
+
+/* Stop all sounds reads red. */
+.ch-qc-stop:not(:disabled) {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--border));
+}
+.ch-qc-stop:not(:disabled) .ch-qc-value,
+.ch-qc-stop:not(:disabled) .ch-qc-value svg {
+  color: var(--red);
+}
+
+/* AI dispatch ON: the sparkle shimmers through colours. hue-rotate cycles
+ * whatever base colour the icon inherits, so it reads as a colourful AI mark. */
+.ch-ai-spark {
+  animation: ai-spark-shimmer 3.2s linear infinite;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--accent-2) 60%, transparent));
+}
+@keyframes ai-spark-shimmer {
+  0% {
+    filter: hue-rotate(0deg) drop-shadow(0 0 2px rgba(168, 85, 247, 0.6));
+  }
+  50% {
+    filter: hue-rotate(180deg) drop-shadow(0 0 3px rgba(34, 197, 229, 0.6));
+  }
+  100% {
+    filter: hue-rotate(360deg) drop-shadow(0 0 2px rgba(168, 85, 247, 0.6));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ch-ai-spark {
+    animation: none;
   }
 }
 .marker-note {
