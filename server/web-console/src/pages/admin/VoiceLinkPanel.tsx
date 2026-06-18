@@ -214,6 +214,8 @@ export function VoiceLinkPanel() {
   const [windows, setWindows] = useState<VoiceLinkTimeseriesPoint[] | null>(null);
   const [detailState, setDetailState] = useState<LoadState>("idle");
   const [detailError, setDetailError] = useState<string | null>(null);
+  /** Published Android build, for the "out of date" flag in the App column. */
+  const [publishedVersionCode, setPublishedVersionCode] = useState<number | null>(null);
 
   // --- top-level fetch -----------------------------------------------------
 
@@ -231,6 +233,10 @@ export function VoiceLinkPanel() {
       ]);
       setChannels(chRes.channels);
       setRows(mergeLinkHealthRows(telemetryRes.units, rosterRes.channels, channelFilter));
+      api
+        .getAndroidAppRelease()
+        .then((r) => setPublishedVersionCode(r.versionCode ?? null))
+        .catch(() => undefined);
       setState("ready");
     } catch (err) {
       setError(describeError(err));
@@ -443,6 +449,7 @@ export function VoiceLinkPanel() {
             <tr>
               <th>Unit</th>
               <th>Status</th>
+              <th>App</th>
               <th>PLC ratio</th>
               <th>Underruns</th>
               <th>Decode fail</th>
@@ -483,6 +490,26 @@ export function VoiceLinkPanel() {
                     ) : null}
                   </td>
                   <td>{lastSeenLabel(row)}</td>
+                  <td>
+                    {t?.app_version_name ? (
+                      <>
+                        <span className="mono small">{t.app_version_name}</span>
+                        {publishedVersionCode != null &&
+                        t.app_version_code != null &&
+                        t.app_version_code < publishedVersionCode ? (
+                          <span
+                            className="pill off small"
+                            style={{ marginLeft: 6 }}
+                            title={`Latest published build is ${publishedVersionCode}`}
+                          >
+                            OUT OF DATE
+                          </span>
+                        ) : null}
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td>{ratio != null ? `${(ratio * 100).toFixed(2)}%` : "—"}</td>
                   <td>{t != null ? t.buffer_underruns : "—"}</td>
                   <td>{t != null ? t.decode_failures : "—"}</td>
