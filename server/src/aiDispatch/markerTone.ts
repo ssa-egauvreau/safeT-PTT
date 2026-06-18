@@ -1,4 +1,7 @@
 import { existsSync } from "node:fs";
+import { writeFile, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -26,34 +29,7 @@ function markerBeepPcm(): Buffer {
   return buf;
 }
 
-function decodeMarkerAudio(input: Buffer): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const ff = spawn("ffmpeg", [
-      "-hide_banner",
-      "-loglevel",
-      "error",
-      "-i",
-      "pipe:0",
-      "-f",
-      "s16le",
-      "-acodec",
-      "pcm_s16le",
-      "-ac",
-      "1",
-      "-ar",
-      String(SAMPLE_RATE),
-      "pipe:1",
-    ]);
-    const out: Buffer[] = [];
-    ff.stdout.on("data", (d: Buffer) => out.push(d));
-    ff.stdin.on("error", () => undefined);
-    ff.stdin.end(input);
-    ff.on("error", reject);
-    ff.on("close", (code) => (code === 0 ? resolve(Buffer.concat(out)) : reject(new Error(`ffmpeg ${code}`))));
-  });
-}
-
-function decodeMarkerWav(path: string): Promise<Buffer> {
+function decodeMarkerFile(path: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const ff = spawn("ffmpeg", [
       "-hide_banner",
@@ -78,6 +54,25 @@ function decodeMarkerWav(path: string): Promise<Buffer> {
   });
 }
 
+/**
+ * Decode an uploaded custom tone to PCM. The bytes are written to a temp file
+ * first (rather than piped to ffmpeg's stdin) because `accept="audio/*"` lets
+ * operators upload containers — m4a / mp4 / aac and some WAVs — whose metadata
+ * sits at the end of the file and so cannot be decoded from a non-seekable
+ * stdin pipe. A pipe decode of those formats fails and silently falls back to
+ * the bundled default beep; decoding from a real file matches the bundled path
+ * and handles every format ffmpeg supports.
+ */
+async function decodeMarkerAudio(input: Buffer): Promise<Buffer> {
+  const tmp = join(tmpdir(), `marker-${randomBytes(8).toString("hex")}`);
+  await writeFile(tmp, input);
+  try {
+    return await decodeMarkerFile(tmp);
+  } finally {
+    await unlink(tmp).catch(() => undefined);
+  }
+}
+
 const bundledMarkerCache: { pcm: Buffer | null } = { pcm: null };
 const agencyMarkerCache = new Map<string, Buffer>();
 
@@ -93,7 +88,7 @@ async function getBundledMarkerPcm(): Promise<Buffer> {
   for (const wavPath of roots) {
     if (existsSync(wavPath)) {
       try {
-        bundledMarkerCache.pcm = await decodeMarkerWav(wavPath);
+        bundledMarkerCache.pcm = await decodeMarkerFile(wavPath);
         return bundledMarkerCache.pcm;
       } catch {
         /* try next */
@@ -114,28 +109,40 @@ async function getMarkerPcmForAgency(agencyId: number): Promise<Buffer> {
   }
 
   const custom = await getAgencySound(agencyId, "marker_1033");
-  let pcm: Buffer;
   if (custom?.audio?.length) {
     try {
-      pcm = await decodeMarkerAudio(custom.audio);
+      const pcm = await decodeMarkerAudio(custom.audio);
+      cacheAgencyMarker(agencyId, cacheKey, pcm);
+      return pcm;
     } catch (err) {
+      // Return the bundled default for THIS burst but do NOT cache it — the
+      // sounds version only changes on re-upload, so caching the fallback here
+      // would pin the default beep until redeploy/re-upload even though the
+      // failure (e.g. a transient ffmpeg spawn error under load) was temporary.
+      // Leaving it uncached lets the next 12 s burst retry the custom tone.
       console.warn(
-        `[ai-dispatch] agency ${agencyId} custom marker_1033 decode failed, using bundled default`,
+        `[ai-dispatch] agency ${agencyId} custom marker_1033 decode failed, using bundled default for this burst (will retry)`,
         err,
       );
-      pcm = await getBundledMarkerPcm();
+      return getBundledMarkerPcm();
     }
-  } else {
-    pcm = await getBundledMarkerPcm();
   }
 
+  // No custom tone configured — the bundled default is the correct, stable
+  // answer for this version, so it's safe to cache.
+  const pcm = await getBundledMarkerPcm();
+  cacheAgencyMarker(agencyId, cacheKey, pcm);
+  return pcm;
+}
+
+/** Store the agency's marker PCM and drop its stale (older-version) entries. */
+function cacheAgencyMarker(agencyId: number, cacheKey: string, pcm: Buffer): void {
   agencyMarkerCache.set(cacheKey, pcm);
   for (const key of agencyMarkerCache.keys()) {
     if (key.startsWith(`${agencyId}:`) && key !== cacheKey) {
       agencyMarkerCache.delete(key);
     }
   }
-  return pcm;
 }
 
 /** One 10-33 marker burst on the channel (same relay path as dispatch console marker). */
