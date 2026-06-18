@@ -158,7 +158,25 @@ function signatureOf(b: AgencyBridgeRow): string {
     b.yield_to_units,
     b.vox_threshold,
     b.vox_hang_ms,
+    b.noise_suppression,
   ]);
+}
+
+/**
+ * ffmpeg audio-filter chain for a bridge's noise-suppression setting, or null
+ * for "off". A voice band-pass (≈200–3400 Hz) strips low hum and high hiss that
+ * sit outside speech; "strong" adds the FFT denoiser `afftdn` for steady
+ * static. Kept conservative so radio voice (incl. P25) stays intelligible.
+ */
+export function noiseFilterChain(level: string | undefined): string | null {
+  switch (level) {
+    case "light":
+      return "highpass=f=200,lowpass=f=3400";
+    case "strong":
+      return "highpass=f=200,lowpass=f=3400,afftdn=nr=12:nf=-25";
+    default:
+      return null;
+  }
 }
 
 function delay(ms: number): Promise<void> {
@@ -246,6 +264,7 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
           finish();
           return;
         }
+        const noiseFilter = noiseFilterChain(bridge.noise_suppression);
         child = spawn("ffmpeg", [
           "-hide_banner",
           "-loglevel",
@@ -263,6 +282,8 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
           "5",
           "-i",
           bridge.source_url ?? "",
+          // Optional static/hiss suppression, applied before downmix/resample.
+          ...(noiseFilter ? ["-af", noiseFilter] : []),
           "-ac",
           "1",
           "-ar",

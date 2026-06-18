@@ -57,6 +57,7 @@ import {
   BRIDGE_SOURCE_TYPES,
   BRIDGE_DIRECTIONS,
   BRIDGE_TX_MODES,
+  BRIDGE_NOISE_LEVELS,
   createBridge,
   deleteBridge,
   getBridgeById,
@@ -1655,6 +1656,7 @@ export function createApiRouter(): Router {
         voxThreshold: clampNumber(body.voxThreshold, 0, 1, 0.02),
         voxHangMs: Math.round(clampNumber(body.voxHangMs, 100, 10000, 1500)),
         enabled: Boolean(body.enabled),
+        noiseSuppression: oneOf(body.noiseSuppression, BRIDGE_NOISE_LEVELS, "off"),
       };
       // An enabled stream bridge with no URL has nothing to ingest — the worker
       // would skip it, leaving it "enabled" in the UI but never keying anything.
@@ -1711,6 +1713,8 @@ export function createApiRouter(): Router {
       if (body.voxThreshold !== undefined) patch.voxThreshold = clampNumber(body.voxThreshold, 0, 1, 0.02);
       if (body.voxHangMs !== undefined) patch.voxHangMs = Math.round(clampNumber(body.voxHangMs, 100, 10000, 1500));
       if (body.enabled !== undefined) patch.enabled = Boolean(body.enabled);
+      if (body.noiseSuppression !== undefined)
+        patch.noiseSuppression = oneOf(body.noiseSuppression, BRIDGE_NOISE_LEVELS, "off");
       const current = await getBridgeById(id, agencyId);
       if (!current) {
         res.status(404).json({ error: "not_found" });

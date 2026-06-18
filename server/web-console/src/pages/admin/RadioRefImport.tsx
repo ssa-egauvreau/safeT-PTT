@@ -264,6 +264,7 @@ export function RadioRefImport({
           voxThreshold: 0.02,
           voxHangMs: 1500,
           enabled: true,
+          noiseSuppression: "off",
         });
         existingBridges.add(channelName);
         createdBr++;
