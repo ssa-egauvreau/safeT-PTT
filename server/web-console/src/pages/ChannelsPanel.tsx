@@ -24,7 +24,6 @@ import {
 import { ChannelRailTile } from "./ChannelRailTile";
 import { ChannelWorkspace } from "./ChannelWorkspace";
 import { LiveControlPanel } from "./LiveControlPanel";
-import { IconBoard, IconHeadphones } from "../icons";
 
 /**
  * The "Channels" section — every channel the account may use, each as a
@@ -88,16 +87,17 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
     setPrimaryChannel(id);
   }
 
-  function toggleMonitorFromRail(channelId: number) {
-    if (open.includes(channelId)) {
-      setChannelMonitoring(channelId, false);
+  /** Rail name click: one toggle for the whole "on the board + audio on" state. */
+  function toggleActiveFromRail(channelId: number) {
+    const active = expanded.includes(channelId) || open.includes(channelId);
+    if (active) {
+      undockChannel(channelId);
+      if (open.includes(channelId)) {
+        setChannelMonitoring(channelId, false);
+      }
       return;
     }
-    if (!tryDock(channelId)) {
-      return;
-    }
-    setChannelMonitoring(channelId, true);
-    setPrimaryChannel(channelId);
+    dockFromRail(channelId);
   }
 
   const refreshChannels = useCallback(() => {
@@ -232,9 +232,7 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
                   channel={channel}
                   monitoring={open.includes(channel.id)}
                   docked={dockedIdSet.has(channel.id)}
-                  onDock={() => dockFromRail(channel.id)}
-                  onToggleMonitor={() => toggleMonitorFromRail(channel.id)}
-                  onUndock={() => undockChannel(channel.id)}
+                  onToggleActive={() => toggleActiveFromRail(channel.id)}
                 />
               </Fragment>
             );
@@ -252,13 +250,8 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
                   Pop out
                 </button>
               )}
-              <div className="channel-rail-legend" title="Each channel row: board button = shown on the workspace; headphones = audio on">
-                <span className="channel-rail-legend-item">
-                  <IconBoard size={10} /> on board
-                </span>
-                <span className="channel-rail-legend-item">
-                  <IconHeadphones size={10} /> audio on
-                </span>
+              <div className="channel-rail-legend" title="Click a channel name to turn it on (on the board, audio on) or off">
+                <span className="channel-rail-legend-item">Click a channel to turn it on / off</span>
               </div>
               <div
                 className={workspaceFull ? "channel-rail-count full" : "channel-rail-count"}
