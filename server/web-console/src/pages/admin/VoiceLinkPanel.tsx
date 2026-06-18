@@ -216,6 +216,25 @@ export function VoiceLinkPanel() {
   const [detailError, setDetailError] = useState<string | null>(null);
   /** Published Android build, for the "out of date" flag in the App column. */
   const [publishedVersionCode, setPublishedVersionCode] = useState<number | null>(null);
+  /** Per-unit OTA push state: in-flight unit ids and last result message. */
+  const [pushingUnit, setPushingUnit] = useState<string | null>(null);
+  const [pushResult, setPushResult] = useState<Record<string, string>>({});
+
+  async function pushUpdate(unitId: string) {
+    setPushingUnit(unitId);
+    setPushResult((prev) => ({ ...prev, [unitId]: "" }));
+    try {
+      const res = await api.sendDeviceCommand(unitId, "check_update");
+      setPushResult((prev) => ({
+        ...prev,
+        [unitId]: res.reached > 0 ? "Update pushed — radio is checking & installing" : "Radio offline",
+      }));
+    } catch (err) {
+      setPushResult((prev) => ({ ...prev, [unitId]: describeError(err) }));
+    } finally {
+      setPushingUnit(null);
+    }
+  }
 
   // --- top-level fetch -----------------------------------------------------
 
@@ -497,13 +516,34 @@ export function VoiceLinkPanel() {
                         {publishedVersionCode != null &&
                         t.app_version_code != null &&
                         t.app_version_code < publishedVersionCode ? (
-                          <span
-                            className="pill off small"
-                            style={{ marginLeft: 6 }}
-                            title={`Latest published build is ${publishedVersionCode}`}
-                          >
-                            OUT OF DATE
-                          </span>
+                          <>
+                            <span
+                              className="pill off small"
+                              style={{ marginLeft: 6 }}
+                              title={`Latest published build is ${publishedVersionCode}`}
+                            >
+                              OUT OF DATE
+                            </span>
+                            {row.connected_now ? (
+                              <button
+                                className="btn sm"
+                                style={{ marginLeft: 6 }}
+                                disabled={pushingUnit === row.unit_id}
+                                title="Push the latest build to this online radio (it installs touchlessly)"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void pushUpdate(row.unit_id);
+                                }}
+                              >
+                                {pushingUnit === row.unit_id ? "Pushing…" : "Push update"}
+                              </button>
+                            ) : null}
+                            {pushResult[row.unit_id] ? (
+                              <span className="muted small" style={{ display: "block" }}>
+                                {pushResult[row.unit_id]}
+                              </span>
+                            ) : null}
+                          </>
                         ) : null}
                       </>
                     ) : (
