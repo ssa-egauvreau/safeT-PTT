@@ -987,6 +987,15 @@ export const api = {
       qs ? `/v1/admin/voice-link-telemetry?${qs}` : "/v1/admin/voice-link-telemetry",
     );
   },
+  /** Online roster — unit IDs of this agency with a live voice socket right now. */
+  listOnlineUnits: () => request<{ units: string[] }>("GET", "/v1/admin/online-units"),
+  /** Push an admin remote command to one handset over its live voice socket. */
+  sendDeviceCommand: (unitId: string, command: string, params?: Record<string, unknown>) =>
+    request<{ ok: boolean; reached: number; commandId: string }>(
+      "POST",
+      "/v1/admin/device-command",
+      { unit_id: unitId, command, params: params ?? {} },
+    ),
   getVoiceLinkUnitTimeseries: (unitId: string, opts: { sinceMs?: number; channel?: string } = {}) => {
     const params = new URLSearchParams();
     if (opts.sinceMs && opts.sinceMs > 0) {
