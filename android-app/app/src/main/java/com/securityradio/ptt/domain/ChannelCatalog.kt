@@ -37,6 +37,8 @@ data class RadioChannelCatalog(
     val permissions: Map<String, ChannelPermission>,
     /** Zone by lowercased channel name; channels missing here fall into the default zone. */
     val zones: Map<String, ChannelZone> = emptyMap(),
+    /** Lowercased names of channels with the AI dispatcher enabled (radios show an AI badge). */
+    val aiDispatch: Set<String> = emptySet(),
     val origin: ChannelCatalogOrigin,
     val errorMessage: String?,
 )

@@ -38,6 +38,8 @@ data class RadioUiState(
      * RX attribution) keeps using [channelLabel].
      */
     val channelDisplayLabel: String = "",
+    /** True when the AI dispatcher is enabled on the tuned channel — the shell shows an AI badge. */
+    val aiDispatchEnabled: Boolean = false,
     val channelPosition: String,
     val totalChannels: Int,
     /** Channel names from catalog (for scan picker labels). */

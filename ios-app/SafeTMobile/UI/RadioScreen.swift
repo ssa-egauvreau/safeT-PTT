@@ -476,6 +476,28 @@ struct RadioScreen: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
 
+                if state.aiDispatchEnabled {
+                    // Rainbow "AI DISPATCH" capsule — this channel runs the AI dispatcher.
+                    Text("✦ AI DISPATCH")
+                        .font(.safet(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(.black)
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 8)
+                        .background(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 1.0, green: 0.37, blue: 0.43),
+                                    Color(red: 1.0, green: 0.77, blue: 0.44),
+                                    Color(red: 0.22, green: 0.98, blue: 0.84),
+                                    Color(red: 0.50, green: 0.50, blue: 0.84),
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .clipShape(Capsule())
+                }
+
                 if !state.channelCodecLabel.isEmpty {
                     Text(state.channelCodecLabel)
                         .font(.safet(size: 11, weight: .semibold, design: .rounded))

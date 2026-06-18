@@ -39,11 +39,13 @@ class RadioChannelGateway(
                     if (zone.isNotEmpty()) put(row.name.lowercase(), ChannelZone(zone, row.zoneNumber))
                 }
             }
+            val aiDispatch = rows.filter { it.aiDispatchEnabled }.map { it.name.lowercase() }.toSet()
             serverReachabilityMonitor.reportSuccess()
             RadioChannelCatalog(
                 channels = names,
                 permissions = permissions,
                 zones = zones,
+                aiDispatch = aiDispatch,
                 origin = ChannelCatalogOrigin.NETWORK,
                 errorMessage = null,
             )
@@ -54,6 +56,7 @@ class RadioChannelGateway(
                 channels = local.channels,
                 permissions = local.permissions,
                 zones = local.zones,
+                aiDispatch = local.aiDispatch,
                 origin = ChannelCatalogOrigin.LOCAL_FALLBACK,
                 errorMessage = e.message ?: e::class.java.simpleName,
             )

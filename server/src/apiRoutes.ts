@@ -834,7 +834,11 @@ export function createApiRouter(): Router {
         });
         return;
       }
-      res.json({ channels: await listChannelsForUser(me.id) });
+      const userChannels = await listChannelsForUser(me.id);
+      const aiOn = new Set(await listChannelAiDispatchEnabled(me.agencyId!));
+      res.json({
+        channels: userChannels.map((c) => ({ ...c, ai_dispatch_enabled: aiOn.has(c.name) })),
+      });
     } catch (error) {
       fail(res, error);
     }

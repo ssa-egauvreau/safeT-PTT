@@ -333,7 +333,8 @@ final class RadioViewModel: ObservableObject {
                 index: index,
                 name: dto.name,
                 zoneNumber: dto.zoneNumber,
-                zoneName: dto.zone
+                zoneName: dto.zone,
+                aiDispatchEnabled: dto.aiDispatchEnabled ?? false
             )
         }
     }
