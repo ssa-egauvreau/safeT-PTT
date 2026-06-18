@@ -1,5 +1,6 @@
 package com.securityradio.ptt.device
 
+import com.securityradio.ptt.BuildConfig
 import com.securityradio.ptt.data.remote.normalizeApiBaseUrl
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -286,6 +287,10 @@ object VoiceLinkTelemetryReporter {
         obj.put("unitId", w.unitId)
         if (w.channel != null) obj.put("channel", w.channel)
         obj.put("clientType", CLIENT_TYPE)
+        // App version rides along so safeT Control can show each unit's build and
+        // flag out-of-date radios (drives the fleet OTA view).
+        obj.put("appVersionName", BuildConfig.VERSION_NAME)
+        obj.put("appVersionCode", BuildConfig.VERSION_CODE)
         val counters = JSONObject()
         counters.put("framesReceived", w.counters.framesReceived)
         counters.put("framesDecoded", w.counters.framesDecoded)

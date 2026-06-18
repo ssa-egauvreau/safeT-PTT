@@ -165,6 +165,7 @@ import { isPostgresDiskFullError } from "./postgresErrors.js";
 import {
   insertVoiceLinkTelemetry,
   listVoiceLinkUnitSummaries,
+  listLatestAppVersionsByUnit,
   listVoiceLinkUnitTimeseries,
   type VoiceLinkTelemetryInsert,
 } from "./voiceLinkTelemetryStore.js";
@@ -344,6 +345,8 @@ export function parseVoiceLinkTelemetryBody(body: Record<string, unknown>): {
   };
   codecBreakdown: Record<string, { framesReceived: number; framesDecoded: number }>;
   clientTs: string | null;
+  appVersionName: string | null;
+  appVersionCode: number | null;
 } | { ok: false; error: string } {
   // Reject oversize JSON up front so a buggy/hostile client can't slip a large
   // blob through this endpoint. We measure the JSON size of the parsed body
@@ -400,7 +403,16 @@ export function parseVoiceLinkTelemetryBody(body: Record<string, unknown>): {
       clientTs = new Date(parsed).toISOString();
     }
   }
-  return { ok: true, counters, codecBreakdown, clientTs };
+  const appVersionName =
+    typeof body.appVersionName === "string" && body.appVersionName.trim().length > 0
+      ? body.appVersionName.trim().slice(0, 40)
+      : null;
+  const rawVersionCode = Number(body.appVersionCode);
+  const appVersionCode =
+    Number.isInteger(rawVersionCode) && rawVersionCode > 0 && rawVersionCode < 1_000_000_000
+      ? rawVersionCode
+      : null;
+  return { ok: true, counters, codecBreakdown, clientTs, appVersionName, appVersionCode };
 }
 
 /** Requires a signed-in account that belongs to an agency (blocks platform owners). */
@@ -2819,6 +2831,8 @@ export function createApiRouter(): Router {
         // its PLC/underrun counters describe browser throttling, not the link.
         tabHidden: body.tabHidden === true,
         clientTs: parsed.clientTs,
+        appVersionName: parsed.appVersionName,
+        appVersionCode: parsed.appVersionCode,
       };
       if (getPool() == null) {
         // No DB configured: accept-and-drop so the client's reporter loop
@@ -2843,8 +2857,20 @@ export function createApiRouter(): Router {
         typeof req.query.channel === "string" && req.query.channel.trim()
           ? req.query.channel.trim()
           : undefined;
-      const units = await listVoiceLinkUnitSummaries(agencyId, sinceMs, channel);
-      res.json({ units, sinceMs });
+      const [units, versions] = await Promise.all([
+        listVoiceLinkUnitSummaries(agencyId, sinceMs, channel),
+        listLatestAppVersionsByUnit(agencyId, sinceMs),
+      ]);
+      const versionByUnit = new Map(versions.map((v) => [v.unit_id, v]));
+      const unitsWithVersion = units.map((u) => {
+        const v = versionByUnit.get(u.unit_id);
+        return {
+          ...u,
+          app_version_name: v?.app_version_name ?? null,
+          app_version_code: v?.app_version_code ?? null,
+        };
+      });
+      res.json({ units: unitsWithVersion, sinceMs });
     } catch (error) {
       fail(res, error);
     }

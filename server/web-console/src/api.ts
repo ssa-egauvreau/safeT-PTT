@@ -662,6 +662,9 @@ export interface VoiceLinkUnitSummary {
   recent_plc_frames_synthesized?: number;
   recent_buffer_underruns?: number;
   recent_hidden_reports?: number;
+  /** Latest app build this unit reported (fleet OTA / version view). Null until a client sends it. */
+  app_version_name?: string | null;
+  app_version_code?: number | null;
 }
 
 export interface VoiceLinkUnitsResponse {

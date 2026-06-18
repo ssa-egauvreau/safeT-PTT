@@ -36,6 +36,9 @@ export interface VoiceLinkTelemetryInsert {
   unitId: string;
   channel: string | null;
   clientType: string | null;
+  /** App build the client reports (drives the fleet OTA / version view). */
+  appVersionName: string | null;
+  appVersionCode: number | null;
   counters: VoiceLinkTelemetryCounters;
   codecBreakdown: CodecBreakdown;
   /** True when the reporting window ran in a hidden browser tab (timer
@@ -79,6 +82,14 @@ export interface VoiceLinkUnitSummaryRow {
   recent_hidden_reports: number;
 }
 
+/** Most-recent app build reported by one unit (fleet OTA / version view). */
+export interface UnitAppVersionRow {
+  unit_id: string;
+  app_version_name: string | null;
+  app_version_code: number | null;
+  reported_at: string;
+}
+
 export interface VoiceLinkTimeseriesPoint {
   server_ts: string;
   channel: string | null;
@@ -116,14 +127,16 @@ export async function insertVoiceLinkTelemetry(
        buffer_underruns, max_buffer_depth_frames,
        talk_spurts_started, talk_spurts_ended,
        bytes_received, bytes_sent, wall_ms_observation,
-       codec_breakdown, tab_hidden, client_ts
+       codec_breakdown, tab_hidden, client_ts,
+       app_version_name, app_version_code
      ) VALUES (
        $1, $2, $3, $4,
        $5, $6, $7, $8,
        $9, $10,
        $11, $12,
        $13, $14, $15,
-       $16::jsonb, $17, $18
+       $16::jsonb, $17, $18,
+       $19, $20
      );`,
     [
       input.agencyId,
@@ -144,6 +157,8 @@ export async function insertVoiceLinkTelemetry(
       JSON.stringify(input.codecBreakdown ?? {}),
       input.tabHidden,
       input.clientTs,
+      input.appVersionName,
+      input.appVersionCode,
     ],
   );
 }
@@ -373,6 +388,38 @@ export async function listVoiceLinkUnitTimeseries(
  * from multiple instances; rows already deleted just match zero. Returns the
  * count for logging.
  */
+/**
+ * Most recent app build each unit reported within the window — one row per unit.
+ * Kept separate from the heavy counter aggregation so the version/OTA view is a
+ * cheap `DISTINCT ON` and doesn't touch the summary query.
+ */
+export async function listLatestAppVersionsByUnit(
+  agencyId: number,
+  sinceMs: number,
+): Promise<UnitAppVersionRow[]> {
+  const res = await requirePool().query<{
+    unit_id: string;
+    app_version_name: string | null;
+    app_version_code: number | null;
+    reported_at: Date | string;
+  }>(
+    `SELECT DISTINCT ON (unit_id)
+            unit_id, app_version_name, app_version_code, server_ts AS reported_at
+       FROM voice_link_telemetry
+      WHERE agency_id = $1
+        AND server_ts >= $2
+        AND app_version_code IS NOT NULL
+      ORDER BY unit_id, server_ts DESC;`,
+    [agencyId, new Date(Date.now() - sinceMs).toISOString()],
+  );
+  return res.rows.map((r) => ({
+    unit_id: r.unit_id,
+    app_version_name: r.app_version_name,
+    app_version_code: r.app_version_code,
+    reported_at: typeof r.reported_at === "string" ? r.reported_at : r.reported_at.toISOString(),
+  }));
+}
+
 export async function sweepVoiceLinkTelemetry(retentionMs: number): Promise<number> {
   const p = getPool();
   if (!p) {

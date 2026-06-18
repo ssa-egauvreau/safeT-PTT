@@ -665,6 +665,13 @@ export async function ensureSchema(): Promise<void> {
   await p.query(
     `ALTER TABLE voice_link_telemetry ADD COLUMN IF NOT EXISTS tab_hidden BOOLEAN NOT NULL DEFAULT FALSE;`,
   );
+  // App build the reporting client is running — drives the fleet OTA / version view.
+  await p.query(
+    `ALTER TABLE voice_link_telemetry ADD COLUMN IF NOT EXISTS app_version_name TEXT;`,
+  );
+  await p.query(
+    `ALTER TABLE voice_link_telemetry ADD COLUMN IF NOT EXISTS app_version_code INT;`,
+  );
 
   // Per-agency saved Audio Lab presets — admin operators store the current
   // full AudioLabConfig under a human name ("Patrol", "Detective", "EMS-loud")
