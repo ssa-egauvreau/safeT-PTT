@@ -5276,6 +5276,20 @@ button.ch-kbd-chip:hover {
   color: var(--amber);
   border-color: var(--amber);
 }
+/* Each tone button carries a meaningful hue: routine = green (all-clear),
+ * status = blue (informational); priority stays amber (urgent). */
+.toneout-btn.routine:not(:disabled) {
+  color: var(--green);
+  border-color: var(--green);
+}
+.toneout-btn.status:not(:disabled) {
+  color: var(--accent-2);
+  border-color: var(--accent-2);
+}
+.toneout-btn.custom:not(:disabled) {
+  color: var(--tone-color, var(--text-dim));
+  border-color: color-mix(in srgb, var(--tone-color, var(--border)) 55%, var(--border));
+}
 
 /* custom soundboard tone-outs */
 .toneout-custom {
@@ -7716,6 +7730,49 @@ button.ch-kbd-chip:hover {
 .channel-workspace-tile .channel-card.workspace .toneout-btn.priority.ch-action-cell:not(:disabled):hover {
   background: color-mix(in srgb, var(--amber) 18%, var(--bg-input));
   border-color: var(--amber);
+}
+/* Filled overlays (matching Priority) so every action button reads as its
+ * meaning at a glance: routine green, status blue, marker amber, stop red,
+ * and custom tone-outs tinted with their own configured colour. */
+.channel-workspace-tile .channel-card.workspace .toneout-btn.routine.ch-action-cell:not(:disabled) {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 60%, var(--border));
+  background: color-mix(in srgb, var(--green) 10%, var(--bg-input));
+}
+.channel-workspace-tile .channel-card.workspace .toneout-btn.routine.ch-action-cell:not(:disabled):hover {
+  background: color-mix(in srgb, var(--green) 18%, var(--bg-input));
+  border-color: var(--green);
+}
+.channel-workspace-tile .channel-card.workspace .toneout-btn.status.ch-action-cell:not(:disabled) {
+  color: var(--accent-2);
+  border-color: color-mix(in srgb, var(--accent-2) 60%, var(--border));
+  background: color-mix(in srgb, var(--accent-2) 10%, var(--bg-input));
+}
+.channel-workspace-tile .channel-card.workspace .toneout-btn.status.ch-action-cell:not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent-2) 18%, var(--bg-input));
+  border-color: var(--accent-2);
+}
+.channel-workspace-tile .channel-card.workspace .toneout-btn.custom.ch-action-cell:not(:disabled) {
+  color: var(--tone-color, var(--text-dim));
+  border-color: color-mix(in srgb, var(--tone-color, var(--border)) 55%, var(--border));
+  background: color-mix(in srgb, var(--tone-color, transparent) 12%, var(--bg-input));
+}
+.channel-workspace-tile .channel-card.workspace .marker-button.ch-action-cell:not(.active):not(:disabled) {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 60%, var(--border));
+  background: color-mix(in srgb, var(--amber) 12%, var(--bg-input));
+}
+.channel-workspace-tile .channel-card.workspace .marker-button.ch-action-cell:not(.active):not(:disabled):hover {
+  background: color-mix(in srgb, var(--amber) 20%, var(--bg-input));
+  border-color: var(--amber);
+}
+.channel-workspace-tile .channel-card.workspace .ch-qc-stop.ch-action-cell:not(:disabled) {
+  border-color: color-mix(in srgb, var(--red) 55%, var(--border));
+  background: color-mix(in srgb, var(--red) 12%, var(--bg-input));
+}
+.channel-workspace-tile .channel-card.workspace .ch-qc-stop.ch-action-cell:not(:disabled):hover {
+  background: color-mix(in srgb, var(--red) 20%, var(--bg-input));
+  border-color: var(--red);
 }
 .channel-workspace-tile .channel-card.workspace .toneout-btn.custom.ch-action-cell.looping {
   border-color: var(--accent);
