@@ -2803,6 +2803,15 @@ button.ch-kbd-chip:hover {
   position: relative;
   z-index: 1;
 }
+/* Keep the sub-line to a single row — a long live-talker name (shown while
+ * receiving) must not wrap and grow the XMIT button, which would resize the
+ * whole Mission Control card on every key-up/key-down. */
+.tx-sub {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .state-chip.tx {
   color: #ef4444;
   border-color: color-mix(in srgb, #ef4444 40%, var(--border));

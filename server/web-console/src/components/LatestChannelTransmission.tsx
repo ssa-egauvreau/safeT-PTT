@@ -21,6 +21,12 @@ export type LatestChannelTransmissionProps = {
   logHint?: string;
   /** Mission Control widget density (S / M / L). */
   workspaceSize?: WorkspaceWidgetSize;
+  /**
+   * Suppress the live "Receiving" talker block. The Mission Control card shows
+   * the receiving state inside the XMIT button instead, so rendering it here too
+   * would resize the whole card every time someone keys/un-keys the channel.
+   */
+  hideLiveBadge?: boolean;
 };
 
 /**
@@ -38,6 +44,7 @@ export function LatestChannelTransmission({
   variant = "console",
   logHint = "Open the transcript log below for full history.",
   workspaceSize,
+  hideLiveBadge = false,
 }: LatestChannelTransmissionProps) {
   const aliasFor = useUnitAliasResolver();
   const { liveTalker, latestTx, showLive } = useChannelLiveRx({
@@ -125,7 +132,7 @@ export function LatestChannelTransmission({
   const isPlaying = latestTx != null && playingId === latestTx.id;
   const isBusy = latestTx != null && busyId === latestTx.id;
 
-  const liveNow = showLive && liveTalker ? (
+  const liveNow = showLive && liveTalker && !hideLiveBadge ? (
     <div
       className={ws ? "live-tx-now live-tx-now--ws" : "live-tx-now"}
       role="status"

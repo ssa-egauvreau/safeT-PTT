@@ -554,6 +554,11 @@ export function ChannelPanel({
   );
   /** Workspace tiles use the body XMIT pad only (no toolbar PTT). */
   const showMainTxButton = true;
+  /** Who is currently keyed on the channel — shown inside the XMIT button while
+   *  receiving, so the live talker no longer needs a separate (card-resizing) box. */
+  const rxTalkerLabel = pushedTalker
+    ? `Receiving · ${pushedTalker.unitId}${pushedTalker.displayName ? ` · ${pushedTalker.displayName}` : ""}`
+    : "Receiving";
   const showActionNotes =
     !workspace
       ? marker || aiDispatchHint || (aiDispatch && !aiDispatchHint)
@@ -839,24 +844,26 @@ export function ChannelPanel({
             </div>
             <span className="tx-main">
               <IconBolt size={wsIcon?.txMain ?? 22} />
-              {transmitting ? "ON AIR" : !canTransmit ? "LISTEN ONLY" : receiving ? "BUSY" : "XMIT"}
+              {transmitting ? "ON AIR" : receiving ? "BUSY" : !canTransmit ? "LISTEN ONLY" : "XMIT"}
             </span>
             <span className="tx-sub">
               {transmitting
                 ? "Release to stop"
-                : !canTransmit
-                  ? "No transmit permission"
-                  : !connected
-                    ? "Connecting…"
-                    : !monitoring
-                      ? "Turn channel on first"
-                      : wsSize === "small"
-                        ? primary
-                          ? `Hold · ${keyLabel(pttCode)}`
-                          : "Hold to talk"
-                        : primary
-                          ? `Hold to talk · ${keyLabel(pttCode)}`
-                          : "Hold to talk"}
+                : receiving
+                  ? rxTalkerLabel
+                  : !canTransmit
+                    ? "No transmit permission"
+                    : !connected
+                      ? "Connecting…"
+                      : !monitoring
+                        ? "Turn channel on first"
+                        : wsSize === "small"
+                          ? primary
+                            ? `Hold · ${keyLabel(pttCode)}`
+                            : "Hold to talk"
+                          : primary
+                            ? `Hold to talk · ${keyLabel(pttCode)}`
+                            : "Hold to talk"}
             </span>
           </button>
         </section>
@@ -940,17 +947,17 @@ export function ChannelPanel({
       >
         <span className="tx-main">
           <IconBolt size={26} />
-          {transmitting ? "ON AIR" : !canTransmit ? "LISTEN ONLY" : receiving ? "BUSY" : "XMIT"}
+          {transmitting ? "ON AIR" : receiving ? "BUSY" : !canTransmit ? "LISTEN ONLY" : "XMIT"}
         </span>
         <span className="tx-sub">
           {transmitting
             ? "release to stop"
-            : !canTransmit
-              ? "no transmit permission"
-              : !connected
-                ? "connecting…"
-                : receiving
-                  ? "channel busy — another unit transmitting"
+            : receiving
+              ? rxTalkerLabel
+              : !canTransmit
+                ? "no transmit permission"
+                : !connected
+                  ? "connecting…"
                   : primary
                     ? `hold to talk · ${keyLabel(pttCode)}`
                     : "hold to talk"}
@@ -976,6 +983,7 @@ export function ChannelPanel({
             channelName={channel.name}
             active={monitoring && connected}
             homeReceiving={receiving && !transmitting}
+            hideLiveBadge
             pushedTalker={pushedTalker}
             workspaceSize={workspace ? wsSize : undefined}
             logHint={
