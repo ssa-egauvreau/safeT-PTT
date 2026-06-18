@@ -13,6 +13,8 @@
   --green: #4ade80;
   --red: #ef4444;
   --amber: #f59e0b;
+  /* 10-33 marker — a hotter orange, distinct from the amber Priority tone. */
+  --marker-orange: #fb6514;
   --danger-bg: #2a161a;
   --danger-border: #5b2330;
   --danger-text: #ffb4b4;
@@ -40,6 +42,7 @@
   --green: #16a34a;
   --red: #dc2626;
   --amber: #d97706;
+  --marker-orange: #ea580c;
   --danger-bg: #fdeaea;
   --danger-border: #f0b4b4;
   --danger-text: #b42318;
@@ -4998,31 +5001,36 @@ button.ch-kbd-chip:hover {
   cursor: not-allowed;
 }
 .marker-button.active {
-  border-color: var(--amber);
-  background: var(--marker-bg);
-  color: var(--amber);
-  animation: marker-pulse 12s linear infinite;
+  border-color: var(--marker-orange);
+  background: color-mix(in srgb, var(--marker-orange) 16%, var(--bg-input));
+  color: var(--marker-orange);
+  animation: marker-pulse-on 1.5s ease-in-out infinite;
 }
-@keyframes marker-pulse {
+/* Steady throb while the 10-33 marker is armed, in the marker's own orange. */
+@keyframes marker-pulse-on {
   0%,
-  8%,
   100% {
-    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.55);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--marker-orange) 55%, transparent);
   }
-  4% {
-    box-shadow: 0 0 0 6px rgba(251, 191, 36, 0);
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--marker-orange) 0%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marker-button.active {
+    animation: none;
   }
 }
 
 /* --- channel-card action colours: 10-33 = yellow, Stop = red, AI = sparkle --- */
 
-/* 10-33 marker reads yellow even when idle (the ON state keeps its filled pulse). */
+/* 10-33 marker reads orange even when idle; the ON state fills + pulses. */
 .marker-button:not(.active):not(:disabled) {
-  border-color: color-mix(in srgb, var(--amber) 55%, var(--border));
-  color: var(--amber);
+  border-color: color-mix(in srgb, var(--marker-orange) 55%, var(--border));
+  color: var(--marker-orange);
 }
 .marker-button:not(.active):not(:disabled) svg {
-  color: var(--amber);
+  color: var(--marker-orange);
 }
 
 /* Stop all sounds reads red. */
@@ -7758,13 +7766,21 @@ button.ch-kbd-chip:hover {
   background: color-mix(in srgb, var(--tone-color, transparent) 12%, var(--bg-input));
 }
 .channel-workspace-tile .channel-card.workspace .marker-button.ch-action-cell:not(.active):not(:disabled) {
-  color: var(--amber);
-  border-color: color-mix(in srgb, var(--amber) 60%, var(--border));
-  background: color-mix(in srgb, var(--amber) 12%, var(--bg-input));
+  color: var(--marker-orange);
+  border-color: color-mix(in srgb, var(--marker-orange) 60%, var(--border));
+  background: color-mix(in srgb, var(--marker-orange) 12%, var(--bg-input));
 }
 .channel-workspace-tile .channel-card.workspace .marker-button.ch-action-cell:not(.active):not(:disabled):hover {
-  background: color-mix(in srgb, var(--amber) 20%, var(--bg-input));
-  border-color: var(--amber);
+  background: color-mix(in srgb, var(--marker-orange) 20%, var(--bg-input));
+  border-color: var(--marker-orange);
+}
+/* Armed (ON) in a workspace tile: filled orange + the steady pulse. The
+ * generic .ch-action-cell background would otherwise mask the active fill. */
+.channel-workspace-tile .channel-card.workspace .marker-button.active.ch-action-cell {
+  color: var(--marker-orange);
+  border-color: var(--marker-orange);
+  background: color-mix(in srgb, var(--marker-orange) 22%, var(--bg-input));
+  animation: marker-pulse-on 1.5s ease-in-out infinite;
 }
 .channel-workspace-tile .channel-card.workspace .ch-qc-stop.ch-action-cell:not(:disabled) {
   border-color: color-mix(in srgb, var(--red) 55%, var(--border));
