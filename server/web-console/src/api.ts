@@ -23,6 +23,8 @@ export interface AdminUser {
   disabled: boolean;
   agency_id: number | null;
   created_at: string;
+  /** Permission template this user follows (channels mirror it), or null. */
+  assigned_template_id: number | null;
 }
 
 /** Device categories an admin can assign to an account. */
@@ -913,6 +915,8 @@ export const api = {
       deviceType: string | null;
       disabled: boolean;
       password: string;
+      /** Bind to a permission template (null unbinds). Binding re-syncs the user's channels. */
+      assignedTemplateId: number | null;
     }>,
   ) => request<{ user: AdminUser }>("PATCH", `/v1/admin/users/${id}`, patch),
   deleteUser: (id: number) => request<{ ok: boolean }>("DELETE", `/v1/admin/users/${id}`),

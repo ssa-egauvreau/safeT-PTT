@@ -217,27 +217,6 @@ export function UsersAndAssignmentsPanel() {
     }
   }
 
-  async function applyTemplateToUser(user: AdminUser, template: UserPermissionTemplate) {
-    if (
-      !window.confirm(
-        `Apply template "${template.name}" to ${user.username}?\n\nThis updates channel permissions listed in the template. Other channel access is left unchanged.`,
-      )
-    ) {
-      return;
-    }
-    setError(null);
-    try {
-      const result = await api.applyUserTemplate(template.id, user.id);
-      await reload();
-      if (result.skipped > 0) {
-        setError(
-          `Applied ${result.applied} channel permission(s); ${result.skipped} referenced channel(s) no longer exist.`,
-        );
-      }
-    } catch (err) {
-      setError(describeError(err));
-    }
-  }
 
   function saveTemplateFromUser(user: AdminUser) {
     const memberships = membershipsFromGrid(user.id, grid);
@@ -559,24 +538,31 @@ export function UsersAndAssignmentsPanel() {
                       {templates.length > 0 && (
                         <select
                           className="apply-template-select"
-                          defaultValue=""
-                          title="Apply a user template"
+                          value={user.assigned_template_id != null ? String(user.assigned_template_id) : ""}
+                          title="Bind this user to a template — their channels follow it and re-sync whenever the template changes"
                           onChange={(e) => {
-                            const templateId = Number(e.target.value);
-                            e.target.value = "";
-                            if (!Number.isFinite(templateId)) {
-                              return;
+                            const v = e.target.value;
+                            const templateId = v ? Number(v) : null;
+                            if (templateId !== null) {
+                              const t = templates.find((tpl) => tpl.id === templateId);
+                              if (
+                                !window.confirm(
+                                  `Bind "${user.username}" to template "${t?.name ?? ""}"?\n\n` +
+                                    `Their channel access will be set to match the template now and will ` +
+                                    `re-sync automatically whenever the template changes. Any manual channel ` +
+                                    `tweaks for this user will be replaced.`,
+                                )
+                              ) {
+                                return;
+                              }
                             }
-                            const template = templates.find((t) => t.id === templateId);
-                            if (template) {
-                              void applyTemplateToUser(user, template);
-                            }
+                            void patch(user, { assignedTemplateId: templateId });
                           }}
                         >
-                          <option value="">Apply template…</option>
+                          <option value="">No template</option>
                           {templates.map((template) => (
                             <option key={template.id} value={String(template.id)}>
-                              {template.name}
+                              Follows: {template.name}
                             </option>
                           ))}
                         </select>
