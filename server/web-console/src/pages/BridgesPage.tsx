@@ -182,6 +182,7 @@ function BridgeRunnerRow({
         voxHangMs: bridge.vox_hang_ms,
         inputDeviceId: inputId,
         outputDeviceId: bidirectional ? outputId || null : null,
+        noiseSuppression: bridge.noise_suppression,
       },
       {
         onState: (state, d) => {

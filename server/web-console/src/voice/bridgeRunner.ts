@@ -29,6 +29,39 @@ export interface BridgeRunnerConfig {
   inputDeviceId: string;
   /** Output device for bidirectional playback; null uses the system default. */
   outputDeviceId: string | null;
+  /** Static/hiss filtering applied to the captured line-in: "off" | "light" | "strong". */
+  noiseSuppression?: string;
+}
+
+/**
+ * Build the capture-side noise-suppression filter chain for a line-in feed.
+ * A voice band-pass (≈200–3400 Hz) strips the low hum/ground-loop buzz and the
+ * high hiss that sit outside speech — a high-pass at 200 Hz alone removes the
+ * 60 Hz mains hum that plagues wired radio feeds. "strong" tightens the band
+ * and cascades the filters for a steeper roll-off. Returns the nodes in
+ * connection order (empty for "off").
+ */
+function buildNoiseFilters(ctx: AudioContext, level: string | undefined): BiquadFilterNode[] {
+  const hp = (hz: number) => {
+    const n = ctx.createBiquadFilter();
+    n.type = "highpass";
+    n.frequency.value = hz;
+    return n;
+  };
+  const lp = (hz: number) => {
+    const n = ctx.createBiquadFilter();
+    n.type = "lowpass";
+    n.frequency.value = hz;
+    return n;
+  };
+  if (level === "light") {
+    return [hp(200), lp(3400)];
+  }
+  if (level === "strong") {
+    // Tighter band + cascaded high-/low-pass for a steeper (~24 dB/oct) skirt.
+    return [hp(300), hp(300), lp(3000), lp(3000)];
+  }
+  return [];
 }
 
 const TARGET_RATE = 16000;
@@ -73,6 +106,7 @@ export class BridgeRunnerClient {
   private inputStream: MediaStream | null = null;
   private capCtx: AudioContext | null = null;
   private capSource: MediaStreamAudioSourceNode | null = null;
+  private capFilters: BiquadFilterNode[] = [];
   private capNode: AudioWorkletNode | null = null;
 
   private playCtx: AudioContext | null = null;
@@ -232,7 +266,14 @@ export class BridgeRunnerClient {
         this.onCaptureFrame(event.data);
       }
     };
-    this.capSource.connect(this.capNode);
+    // Optional noise-suppression band-pass between the line-in source and the
+    // capture worklet, so the VOX gate and the channel both see cleaned audio.
+    this.capFilters = buildNoiseFilters(this.capCtx, this.config.noiseSuppression);
+    const head: AudioNode = this.capFilters.reduce<AudioNode>((prev, filter) => {
+      prev.connect(filter);
+      return filter;
+    }, this.capSource);
+    head.connect(this.capNode);
     // A silent sink keeps the worklet pulled.
     const sink = this.capCtx.createGain();
     sink.gain.value = 0;
@@ -354,6 +395,10 @@ export class BridgeRunnerClient {
     if (this.capSource) {
       this.capSource.disconnect();
       this.capSource = null;
+    }
+    if (this.capFilters.length > 0) {
+      this.capFilters.forEach((f) => f.disconnect());
+      this.capFilters = [];
     }
     if (this.inputStream) {
       this.inputStream.getTracks().forEach((t) => t.stop());
