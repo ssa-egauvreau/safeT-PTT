@@ -53,15 +53,81 @@ interface BridgeStatus {
 const bridgeStatuses = new Map<number, BridgeStatus>();
 
 /**
- * Most recent ingest status for a stream bridge. `running` is false once the
- * status goes stale, so a stalled or stopped ingest reads as not running.
+ * Last failure reason for a stream bridge that isn't currently passing audio.
+ * Persisted across the supervisor's respawn/backoff loop so the console can
+ * show *why* a bridge reads "Not running" (stream refused, auth failed,
+ * unreachable, …) instead of a bare red dot. Cleared the moment audio flows.
  */
-export function getBridgeStatus(id: number): { level: number; keyed: boolean; running: boolean } {
-  const status = bridgeStatuses.get(id);
-  if (!status || Date.now() - status.updatedAt > 4000) {
-    return { level: 0, keyed: false, running: false };
+interface BridgeDiagnostic {
+  reason: string;
+  at: number;
+}
+const bridgeDiagnostics = new Map<number, BridgeDiagnostic>();
+
+/** How long a recorded failure reason stays relevant once nothing refreshes it. */
+const REASON_TTL_MS = 120_000;
+
+function setBridgeReason(id: number, reason: string): void {
+  bridgeDiagnostics.set(id, { reason, at: Date.now() });
+}
+
+/**
+ * Translate an ffmpeg stderr line (or other ingest failure text) into an
+ * operator-readable reason. Broadcastify's concurrent-listener limit shows up
+ * as a 403, so it's called out specifically — that's the most common cause of
+ * an authenticated feed that nonetheless refuses the bridge.
+ */
+export function describeBridgeIngestError(raw: string): string | null {
+  const text = (raw ?? "").trim();
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  if (lower.includes("403") || lower.includes("forbidden")) {
+    return "Stream refused the connection (HTTP 403) — the source account may already be streaming elsewhere (Broadcastify allows a limited number of simultaneous listeners) or the feed requires a premium subscription.";
   }
-  return { level: status.level, keyed: status.keyed, running: true };
+  if (lower.includes("401") || lower.includes("unauthorized")) {
+    return "Stream authentication failed (HTTP 401) — check the username and password in the stream URL.";
+  }
+  if (lower.includes("404") || lower.includes("not found")) {
+    return "Stream not found (HTTP 404) — check the feed ID / URL.";
+  }
+  if (lower.includes("429")) {
+    return "Stream is rate-limiting the connection (HTTP 429) — too many recent attempts.";
+  }
+  if (
+    lower.includes("failed to resolve") ||
+    lower.includes("name or service not known") ||
+    lower.includes("could not resolve")
+  ) {
+    return "Could not resolve the stream host — check the URL hostname.";
+  }
+  if (lower.includes("connection refused") || lower.includes("connection timed out") || lower.includes("timed out")) {
+    return "Could not reach the stream — connection refused or timed out.";
+  }
+  if (lower.includes("protocol not on whitelist") || lower.includes("tls") || lower.includes("ssl")) {
+    return "Could not open the secure stream (TLS error) — try the http:// URL instead of https://.";
+  }
+  if (lower.includes("invalid data found") || lower.includes("could not find codec")) {
+    return "The source isn't decodable audio — confirm the URL points at an audio stream.";
+  }
+  // Unknown ffmpeg error: surface its first line verbatim, trimmed for the UI.
+  return `Ingest error: ${text.split("\n")[0].slice(0, 160)}`;
+}
+
+/**
+ * Most recent ingest status for a stream bridge. `running` is false once the
+ * status goes stale, so a stalled or stopped ingest reads as not running. When
+ * not running, `reason` carries the last failure cause (if known and fresh).
+ */
+export function getBridgeStatus(
+  id: number,
+): { level: number; keyed: boolean; running: boolean; reason: string | null } {
+  const status = bridgeStatuses.get(id);
+  if (status && Date.now() - status.updatedAt <= 4000) {
+    return { level: status.level, keyed: status.keyed, running: true, reason: null };
+  }
+  const diag = bridgeDiagnostics.get(id);
+  const reason = diag && Date.now() - diag.at <= REASON_TTL_MS ? diag.reason : null;
+  return { level: 0, keyed: false, running: false, reason };
 }
 
 /** Fields that, when changed, require the ingest to be rebuilt from scratch. */
@@ -192,6 +258,7 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
 
         child.on("error", (err) => {
           console.warn(`bridge "${bridge.name}": ffmpeg failed to start —`, err.message);
+          setBridgeReason(bridge.id, "ffmpeg is not available on the server — stream bridges cannot run.");
           finish();
         });
         child.on("exit", () => finish());
@@ -199,6 +266,10 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
           const text = chunk.toString("utf8").trim();
           if (text) {
             console.warn(`bridge "${bridge.name}" ffmpeg:`, text.split("\n")[0]);
+            const reason = describeBridgeIngestError(text);
+            if (reason) {
+              setBridgeReason(bridge.id, reason);
+            }
           }
         });
 
@@ -219,6 +290,8 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
             // activity between its (~1 s) polls.
             meterLevel = Math.max(rms, meterLevel * 0.96);
             bridgeStatuses.set(bridge.id, { level: meterLevel, keyed: gateOpen, updatedAt: now });
+            // Audio is flowing — clear any stale failure reason.
+            bridgeDiagnostics.delete(bridge.id);
             if (gateOpen && ws.readyState === WebSocket.OPEN) {
               try {
                 ws.send(frame);
@@ -260,6 +333,12 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
           startIngest();
         } else if (msg.type === "error") {
           console.warn(`bridge "${bridge.name}": relay rejected join (${msg.code ?? "error"})`);
+          setBridgeReason(
+            bridge.id,
+            msg.code === "unknown_channel"
+              ? `Target channel "${bridge.target_channel}" does not exist — pick an existing channel for this bridge.`
+              : `Relay rejected the bridge (${msg.code ?? "error"}).`,
+          );
           finish();
         }
         // "busy" is expected when a yielding bridge is pre-empted — ignore it.
@@ -278,6 +357,7 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
         ffmpegMissingLogged = true;
         console.warn("Radio bridge worker: ffmpeg not found on PATH — stream bridges are idle.");
       }
+      setBridgeReason(bridge.id, "ffmpeg is not installed on the server — stream bridges cannot run.");
       return;
     }
     console.log(
@@ -301,6 +381,7 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
     stop: () => {
       stopped = true;
       bridgeStatuses.delete(bridge.id);
+      bridgeDiagnostics.delete(bridge.id);
       if (activeChild) {
         try {
           activeChild.kill("SIGKILL");
@@ -373,4 +454,5 @@ export function stopBridgeWorker(): void {
   }
   running.clear();
   bridgeStatuses.clear();
+  bridgeDiagnostics.clear();
 }

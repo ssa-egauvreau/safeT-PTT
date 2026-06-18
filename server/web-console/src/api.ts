@@ -568,6 +568,8 @@ export interface BridgeStatus {
   keyed: boolean;
   /** Whether the server is actively ingesting this bridge. */
   running: boolean;
+  /** When not running, the last failure cause (refused, auth, unreachable, …), else null. */
+  reason?: string | null;
 }
 
 /** A custom soundboard tone-out — an operator-fired audio clip. */
