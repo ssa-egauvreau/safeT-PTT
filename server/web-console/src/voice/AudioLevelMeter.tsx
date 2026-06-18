@@ -1,9 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 
-/** Perceptual 0–1 scale so quiet speech still moves the meter noticeably. */
-export function meterScale(value: number): number {
-  return Math.min(1, Math.sqrt(Math.max(0, value)));
+/**
+ * Perceptual 0–1 scale so quiet speech still moves the meter noticeably.
+ * `gain` pre-amplifies the raw level before the perceptual curve — the live
+ * mic / RX RMS typically runs low (~0.02–0.15 for speech), so the tx/rx meters
+ * apply gain to stay responsive without pinning, while bridge meters keep
+ * gain = 1 so their VOX threshold marker stays calibrated to the set value.
+ */
+export function meterScale(value: number, gain = 1): number {
+  return Math.min(1, Math.sqrt(Math.max(0, value) * gain));
 }
+
+/** Pre-amp for the console mic/RX meters (raw RMS runs low). */
+const TX_RX_METER_GAIN = 3.2;
 
 export type AudioLevelMeterVariant = "tx" | "rx" | "bridge";
 
@@ -50,7 +59,10 @@ export function AudioLevelMeter({
     }
     let raf = 0;
     const tick = () => {
-      setPolled(getLevelRef.current?.() ?? 0);
+      const next = getLevelRef.current?.() ?? 0;
+      // Fast attack, slow release — catches transients yet reads smoothly
+      // instead of flickering frame-to-frame off the raw instantaneous RMS.
+      setPolled((prev) => (next > prev ? next : prev * 0.8 + next * 0.2));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -58,9 +70,10 @@ export function AudioLevelMeter({
   }, [active, levelProp]);
 
   const raw = levelProp !== undefined ? levelProp : polled;
-  const fillPct = active ? meterScale(raw) * 100 : 0;
+  const gain = variant === "bridge" ? 1 : TX_RX_METER_GAIN;
+  const fillPct = active ? meterScale(raw, gain) * 100 : 0;
   const markPct =
-    threshold !== undefined && Number.isFinite(threshold) ? meterScale(threshold) * 100 : null;
+    threshold !== undefined && Number.isFinite(threshold) ? meterScale(threshold, gain) * 100 : null;
 
   const fillClass =
     variant === "bridge" && keyed
