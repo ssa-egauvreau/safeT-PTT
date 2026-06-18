@@ -3,6 +3,7 @@ import {
   api,
   describeError,
   type Channel,
+  type DeviceAck,
   type VoiceLinkCodecEntry,
   type VoiceLinkTimeseriesPoint,
   type VoiceLinkUnitSummary,
@@ -240,6 +241,28 @@ export function VoiceLinkPanel() {
       setAudioResult((prev) => ({ ...prev, [unitId]: describeError(err) }));
     } finally {
       setAudioBusyUnit(null);
+    }
+  }
+
+  /** Remote-diagnostics state. */
+  const [diagBusyUnit, setDiagBusyUnit] = useState<string | null>(null);
+  const [diagAcks, setDiagAcks] = useState<Record<string, DeviceAck[]>>({});
+  const [diagError, setDiagError] = useState<Record<string, string>>({});
+
+  async function runDiagnostics(unitId: string) {
+    setDiagBusyUnit(unitId);
+    setDiagError((prev) => ({ ...prev, [unitId]: "" }));
+    try {
+      await api.sendDeviceCommand(unitId, "report_diagnostics");
+      // The radio answers asynchronously via its ack (audit log); give it a
+      // moment, then pull the latest acks for this unit.
+      await new Promise((r) => setTimeout(r, 1500));
+      const res = await api.listDeviceAcks(unitId, 10);
+      setDiagAcks((prev) => ({ ...prev, [unitId]: res.acks }));
+    } catch (err) {
+      setDiagError((prev) => ({ ...prev, [unitId]: describeError(err) }));
+    } finally {
+      setDiagBusyUnit(null);
     }
   }
 
@@ -628,7 +651,42 @@ export function VoiceLinkPanel() {
               {audioResult[selected.unit_id] ? (
                 <span className="muted small">{audioResult[selected.unit_id]}</span>
               ) : null}
+              <button
+                className="btn sm"
+                disabled={diagBusyUnit === selected.unit_id}
+                title="Ask the radio to report its build, clock, channel and audio settings"
+                onClick={() => void runDiagnostics(selected.unit_id)}
+              >
+                {diagBusyUnit === selected.unit_id ? "Running…" : "Run diagnostics"}
+              </button>
+              {diagError[selected.unit_id] ? (
+                <span className="muted small">{diagError[selected.unit_id]}</span>
+              ) : null}
             </div>
+          ) : null}
+          {selected && (diagAcks[selected.unit_id]?.length ?? 0) > 0 ? (
+            <table className="vlt-units" style={{ marginTop: 8 }}>
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Command</th>
+                  <th>Status</th>
+                  <th>Detail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {diagAcks[selected.unit_id]!.map((a) => (
+                  <tr key={a.id}>
+                    <td>{formatRelative(a.ts)}</td>
+                    <td className="mono small">{a.detail?.command ?? "—"}</td>
+                    <td>{a.detail?.status ?? "—"}</td>
+                    <td className="mono small">
+                      {a.detail?.detail != null ? JSON.stringify(a.detail.detail) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : null}
           {detailState === "loading" ? (
             <LoadingState label="Loading time series" />

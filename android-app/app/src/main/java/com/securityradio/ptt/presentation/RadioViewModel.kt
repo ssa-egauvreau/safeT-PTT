@@ -1,5 +1,6 @@
 package com.securityradio.ptt.presentation
 
+import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.securityradio.ptt.data.remote.AirStateDto
@@ -67,6 +68,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 class RadioViewModel(
     private val application: Application,
@@ -2656,12 +2658,40 @@ class RadioViewModel(
                     "REMOTE: VOLUME SET ×${"%.1f".format(clamped)}"
                 }
             }
+            "report_diagnostics" -> {
+                // Over-the-air troubleshooting: snapshot the radio's identity,
+                // build, clock, current channel, and audio settings back to the
+                // admin via the ack's structured detail payload.
+                voiceRelay.sendDeviceAck(
+                    event.commandId,
+                    event.command,
+                    "ok",
+                    buildDiagnosticsSnapshot(),
+                )
+                "REMOTE: SENT DIAGNOSTICS"
+            }
             else -> {
-                // report_diagnostics lands in a follow-up PR; ack so the admin
-                // sees the radio received but can't act yet.
                 voiceRelay.sendDeviceAck(event.commandId, event.command, "unsupported")
                 null
             }
+        }
+    }
+
+    /** Snapshot for the remote-diagnostics ack — small, JSON-friendly, no PII
+     *  beyond what the admin already sees (unit id, channel). */
+    private fun buildDiagnosticsSnapshot(): JSONObject {
+        val snap = _uiState.value
+        return JSONObject().apply {
+            put("appVersionName", BuildConfig.VERSION_NAME)
+            put("appVersionCode", BuildConfig.VERSION_CODE)
+            put("device", "${Build.MANUFACTURER} ${Build.MODEL}")
+            put("androidSdk", Build.VERSION.SDK_INT)
+            put("deviceTimeMs", System.currentTimeMillis())
+            put("clockSane", System.currentTimeMillis() >= MIN_SANE_CLOCK_MS)
+            put("channel", snap.channelLabel)
+            put("network", snap.networkLabel)
+            put("rxGain", radioPreferences.getRxGainMultiplier().toDouble())
+            put("micGain", radioPreferences.getMicGainMultiplier().toDouble())
         }
     }
 

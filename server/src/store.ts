@@ -1479,6 +1479,25 @@ export async function listAudit(agencyId: number, limit = 200): Promise<AuditRow
   return res.rows;
 }
 
+/** Recent device-command acks for one unit (newest first) — backs the
+ *  safeT Control "remote diagnostics" view. Reads the audit rows the voice
+ *  relay writes when a handset acknowledges an admin command. */
+export async function listDeviceAcks(
+  agencyId: number,
+  unitId: string,
+  limit = 20,
+): Promise<AuditRow[]> {
+  const capped = Math.min(Math.max(Math.trunc(limit) || 20, 1), 100);
+  const res = await requirePool().query<AuditRow>(
+    `SELECT id, ts, actor_user_id, actor_name, action, target, detail, ip
+     FROM audit_log
+     WHERE agency_id = $1 AND action = 'device_command_ack' AND target LIKE $2
+     ORDER BY ts DESC LIMIT $3;`,
+    [agencyId, `unit:${unitId.toUpperCase()} %`, capped],
+  );
+  return res.rows;
+}
+
 // --- unit aliases --------------------------------------------------------
 
 export interface UnitAliasRow {

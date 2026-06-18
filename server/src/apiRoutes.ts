@@ -72,6 +72,7 @@ import {
   getUserByUsername,
   listAgencies,
   listAlerts,
+  listDeviceAcks,
   listAudit,
   listChannels,
   listChannelsForUser,
@@ -3923,6 +3924,23 @@ export function createApiRouter(): Router {
         return;
       }
       res.json({ ok: true, reached, commandId });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Recent device-command acks for a unit (remote diagnostics view): the
+  // handset's replies to admin commands, newest first.
+  router.get("/admin/device-acks/:unitId", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const unit = String(req.params.unitId ?? "").trim();
+      if (!unit) {
+        res.status(400).json({ error: "missing_unit" });
+        return;
+      }
+      const limit = Number(req.query.limit ?? 20);
+      res.json({ acks: await listDeviceAcks(agencyId, unit, Number.isFinite(limit) ? limit : 20) });
     } catch (error) {
       fail(res, error);
     }

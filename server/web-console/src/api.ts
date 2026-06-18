@@ -635,6 +635,19 @@ export interface VoiceLinkTelemetryReport {
   clientTs: string;
 }
 
+export interface DeviceAck {
+  id: number;
+  ts: string;
+  actor_name: string | null;
+  target: string | null;
+  detail: {
+    command?: string;
+    commandId?: string | null;
+    status?: string;
+    detail?: unknown;
+  } | null;
+}
+
 export interface VoiceLinkUnitSummary {
   unit_id: string;
   last_seen: string;
@@ -989,6 +1002,12 @@ export const api = {
   },
   /** Online roster — unit IDs of this agency with a live voice socket right now. */
   listOnlineUnits: () => request<{ units: string[] }>("GET", "/v1/admin/online-units"),
+  /** Recent device-command acks for a unit (remote diagnostics). */
+  listDeviceAcks: (unitId: string, limit = 20) =>
+    request<{ acks: DeviceAck[] }>(
+      "GET",
+      `/v1/admin/device-acks/${encodeURIComponent(unitId)}?limit=${limit}`,
+    ),
   /** Push an admin remote command to one handset over its live voice socket. */
   sendDeviceCommand: (unitId: string, command: string, params?: Record<string, unknown>) =>
     request<{ ok: boolean; reached: number; commandId: string }>(
