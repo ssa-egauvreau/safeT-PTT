@@ -126,6 +126,15 @@ class RadioViewModel(
     private var offlineJob: Job? = null
     private var reconnectClearJob: Job? = null
 
+    /**
+     * Auto-retries the channel sync every [AUTO_RESYNC_INTERVAL_MS] while it's
+     * failing, so the radio self-heals without a manual "resync" tap. This is the
+     * recovery path for the TM-7 booting to a wrong date: the bad clock fails TLS
+     * (cert looks out-of-validity) until automatic time / NTP corrects it, then the
+     * very next retry reconnects on its own.
+     */
+    private var autoResyncJob: Job? = null
+
     /** Clears the replay banner once the replayed clip has finished playing. */
     private var replayJob: Job? = null
     /** Bumped on each new replay so a stale timer cannot clear a fresh banner. */
@@ -2039,7 +2048,12 @@ class RadioViewModel(
             else -> "LOCAL"
         }
 
+        // A clock reading years in the past (TM-7 reset to a default date on reboot)
+        // fails TLS, which looks like a generic sync error — call it out so the
+        // operator knows to fix the date instead of chasing a network gremlin.
+        val clockLikelyWrong = System.currentTimeMillis() < MIN_SANE_CLOCK_MS
         val detailLine = when {
+            catalog.errorMessage != null && clockLikelyWrong -> "CHECK DEVICE DATE/TIME"
             catalog.errorMessage != null -> "SYNC: ${catalog.errorMessage.take(52)}"
             catalog.origin == ChannelCatalogOrigin.NETWORK -> "CHANNELS: NETWORK OK"
             else -> "CHANNELS: LOCAL LIST"
@@ -2072,6 +2086,32 @@ class RadioViewModel(
             pulsePresenceFromCurrentState(clearWhenOffline = false)
         }
         reconcileVoiceTransport()
+        // Keep retrying on a short cadence while offline so the link self-heals
+        // (e.g. once the device clock corrects) without a manual resync.
+        maybeAutoResync(online = networkLabel == "ONLINE")
+    }
+
+    /**
+     * Starts a background retry loop while the channel sync is failing, and stops
+     * it once we're back online. One loop at a time; each pass calls [syncCatalog],
+     * which re-invokes this — the active-job guard prevents nesting.
+     */
+    private fun maybeAutoResync(online: Boolean) {
+        if (online) {
+            autoResyncJob?.cancel()
+            autoResyncJob = null
+            return
+        }
+        if (autoResyncJob?.isActive == true) {
+            return
+        }
+        autoResyncJob = viewModelScope.launch {
+            while (isActive && _uiState.value.networkLabel != "ONLINE") {
+                delay(AUTO_RESYNC_INTERVAL_MS)
+                if (!isActive) break
+                syncCatalog(playConnectSoundIfNetwork = true)
+            }
+        }
     }
 
     /** Fire-and-forget presence refresh aligned with catalog / link changes. */
@@ -2761,6 +2801,7 @@ class RadioViewModel(
 
     override fun onCleared() {
         appUpdatePollJob?.cancel()
+        autoResyncJob?.cancel()
         appUpdater.setProgressListener(null)
         // Voice and GPS intentionally keep running after the UI is gone — a
         // foreground service holds the process, like a radio left in a pocket.
@@ -2777,6 +2818,11 @@ class RadioViewModel(
     private companion object {
         const val CLOCK_TICK_MS = 1_000L
         const val VERSION_BANNER_MS = 5_000L
+        /** How often to auto-retry a failed channel sync until the link recovers. */
+        const val AUTO_RESYNC_INTERVAL_MS = 5_000L
+        /** Device clocks reading before this are almost certainly wrong (reset on reboot),
+         *  which fails TLS — surface a "check date/time" hint. 2025-01-01 UTC in millis. */
+        const val MIN_SANE_CLOCK_MS = 1_735_689_600_000L
         /** How long the "MOVED TO" banner survives the immediate re-join "VOICE ON" ack. */
         const val MOVE_BANNER_MS = 6_000L
         const val AIR_POLL_MS = 250L
