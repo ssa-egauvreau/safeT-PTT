@@ -130,6 +130,23 @@ export function getBridgeStatus(
   return { level: 0, keyed: false, running: false, reason };
 }
 
+/**
+ * Translate an ffmpeg *spawn* failure (the child process couldn't be started)
+ * into an operator-readable reason. ENOENT means the binary is genuinely
+ * missing; ENOMEM / EAGAIN mean the binary exists but the container couldn't
+ * fork another ffmpeg — the common cause when one bridge runs fine but the
+ * next won't start (too many concurrent ingests for the available memory/CPU).
+ */
+export function describeBridgeSpawnError(code: string | undefined, message: string): string {
+  if (code === "ENOENT") {
+    return "ffmpeg is not installed on the server — stream bridges cannot run.";
+  }
+  if (code === "ENOMEM" || code === "EAGAIN") {
+    return `The server ran out of resources to start this bridge (${code}) — too many concurrent ffmpeg ingests for the available memory/CPU. Increase the container's resources or run fewer bridges at once.`;
+  }
+  return `ffmpeg could not start${code ? ` (${code})` : ""}: ${message}`.slice(0, 200);
+}
+
 /** Fields that, when changed, require the ingest to be rebuilt from scratch. */
 function signatureOf(b: AgencyBridgeRow): string {
   return JSON.stringify([
@@ -257,8 +274,9 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
         activeChild = child;
 
         child.on("error", (err) => {
-          console.warn(`bridge "${bridge.name}": ffmpeg failed to start —`, err.message);
-          setBridgeReason(bridge.id, "ffmpeg is not available on the server — stream bridges cannot run.");
+          const code = (err as NodeJS.ErrnoException).code;
+          console.warn(`bridge "${bridge.name}": ffmpeg failed to start — ${code ?? ""} ${err.message}`);
+          setBridgeReason(bridge.id, describeBridgeSpawnError(code, err.message));
           finish();
         });
         child.on("exit", () => finish());
