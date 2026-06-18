@@ -2635,9 +2635,30 @@ class RadioViewModel(
                 voiceRelay.sendDeviceAck(event.commandId, event.command, "started")
                 "REMOTE: CHECKING FOR UPDATE"
             }
+            "apply_audio_settings" -> {
+                // Admin remotely levels a "low / far away" radio. params.rxGain is
+                // a multiplier on inbound audio; persisted so it survives reboots
+                // and read live by the inbound player.
+                val rxGain = event.params.optDouble("rxGain", Double.NaN)
+                if (rxGain.isNaN()) {
+                    voiceRelay.sendDeviceAck(event.commandId, event.command, "ignored", "no rxGain")
+                    null
+                } else {
+                    val clamped = rxGain.toFloat()
+                        .coerceIn(RadioPreferences.MIN_RX_GAIN, RadioPreferences.MAX_RX_GAIN)
+                    radioPreferences.setRxGainMultiplier(clamped)
+                    voiceRelay.sendDeviceAck(
+                        event.commandId,
+                        event.command,
+                        "applied",
+                        "rxGain=$clamped",
+                    )
+                    "REMOTE: VOLUME SET ×${"%.1f".format(clamped)}"
+                }
+            }
             else -> {
-                // apply_audio_settings / report_diagnostics land in follow-up
-                // PRs; ack so the admin sees the radio received but can't act yet.
+                // report_diagnostics lands in a follow-up PR; ack so the admin
+                // sees the radio received but can't act yet.
                 voiceRelay.sendDeviceAck(event.commandId, event.command, "unsupported")
                 null
             }

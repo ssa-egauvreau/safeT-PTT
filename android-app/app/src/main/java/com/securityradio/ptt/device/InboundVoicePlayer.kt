@@ -68,9 +68,12 @@ class InboundVoicePlayer(
         if (recordForReplay) {
             lastRxRecorder?.onInboundPcm(chunk)
         }
-        val gain = listenGainProvider().coerceIn(0f, 1f)
+        // Gain may attenuate (<1) or boost (>1) — a "far away" radio is leveled up
+        // over the air. Samples are hard-clamped to int16 in scalePcm16 so a high
+        // boost saturates rather than wraps.
+        val gain = listenGainProvider().coerceIn(0f, 4f)
         if (gain <= 0f) return
-        val out = if (gain >= 0.999f) {
+        val out = if (gain in 0.999f..1.001f) {
             chunk
         } else {
             scalePcm16(chunk, gain)

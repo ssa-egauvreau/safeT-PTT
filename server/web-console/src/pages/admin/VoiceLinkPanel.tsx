@@ -220,6 +220,29 @@ export function VoiceLinkPanel() {
   const [pushingUnit, setPushingUnit] = useState<string | null>(null);
   const [pushResult, setPushResult] = useState<Record<string, string>>({});
 
+  /** Per-unit RX volume push state. */
+  const [rxGainChoice, setRxGainChoice] = useState<string>("1.5");
+  const [audioBusyUnit, setAudioBusyUnit] = useState<string | null>(null);
+  const [audioResult, setAudioResult] = useState<Record<string, string>>({});
+
+  async function applyRxGain(unitId: string) {
+    setAudioBusyUnit(unitId);
+    setAudioResult((prev) => ({ ...prev, [unitId]: "" }));
+    try {
+      const res = await api.sendDeviceCommand(unitId, "apply_audio_settings", {
+        rxGain: Number(rxGainChoice),
+      });
+      setAudioResult((prev) => ({
+        ...prev,
+        [unitId]: res.reached > 0 ? `Volume ×${rxGainChoice} pushed to radio` : "Radio offline",
+      }));
+    } catch (err) {
+      setAudioResult((prev) => ({ ...prev, [unitId]: describeError(err) }));
+    } finally {
+      setAudioBusyUnit(null);
+    }
+  }
+
   async function pushUpdate(unitId: string) {
     setPushingUnit(unitId);
     setPushResult((prev) => ({ ...prev, [unitId]: "" }));
@@ -583,6 +606,30 @@ export function VoiceLinkPanel() {
               Close
             </button>
           </div>
+          {selected.connected_now ? (
+            <div className="form-row" style={{ alignItems: "flex-end" }}>
+              <div className="field">
+                <label>Remote RX volume</label>
+                <select value={rxGainChoice} onChange={(e) => setRxGainChoice(e.target.value)}>
+                  <option value="1">Normal (×1)</option>
+                  <option value="1.5">Loud (×1.5)</option>
+                  <option value="2">Louder (×2)</option>
+                  <option value="3">Max (×3)</option>
+                </select>
+              </div>
+              <button
+                className="btn sm"
+                disabled={audioBusyUnit === selected.unit_id}
+                title="Push this inbound-audio gain to the radio over the air (persists across reboots)"
+                onClick={() => void applyRxGain(selected.unit_id)}
+              >
+                {audioBusyUnit === selected.unit_id ? "Applying…" : "Set volume"}
+              </button>
+              {audioResult[selected.unit_id] ? (
+                <span className="muted small">{audioResult[selected.unit_id]}</span>
+              ) : null}
+            </div>
+          ) : null}
           {detailState === "loading" ? (
             <LoadingState label="Loading time series" />
           ) : detailState === "error" ? (
