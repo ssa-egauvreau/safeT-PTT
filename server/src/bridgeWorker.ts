@@ -209,6 +209,30 @@ function frameRms(frame: Buffer): number {
 }
 
 /**
+ * Minimum spacing between ffmpeg ingest spawns. Reconciling several enabled
+ * bridges at once (boot, or a respawn storm after the network blips) would
+ * otherwise fork every ffmpeg in the same tick — and a *burst* of spawns is
+ * what trips a container's process/memory limits (EAGAIN/ENOMEM) even when it
+ * has ample headroom to keep them all running once started. Spacing the spawns
+ * out costs a second or two of extra startup latency and removes the burst.
+ */
+const SPAWN_STAGGER_MS = 700;
+let lastSpawnAt = 0;
+let spawnChain: Promise<void> = Promise.resolve();
+
+/** Resolves when it's this ingest's turn to spawn — at most one per stagger window. */
+function nextFfmpegSpawnSlot(): Promise<void> {
+  spawnChain = spawnChain.then(async () => {
+    const wait = lastSpawnAt + SPAWN_STAGGER_MS - Date.now();
+    if (wait > 0) {
+      await delay(wait);
+    }
+    lastSpawnAt = Date.now();
+  });
+  return spawnChain;
+}
+
+/**
  * Supervises one stream bridge: an ffmpeg ingest piped — through a VOX gate —
  * into a loopback voice socket, respawned with backoff until `stop()`.
  */
@@ -259,7 +283,13 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
         resolve();
       };
 
-      const startIngest = (): void => {
+      const startIngest = async (): Promise<void> => {
+        if (done || stopped) {
+          finish();
+          return;
+        }
+        // Space out ffmpeg spawns so a multi-bridge reconcile doesn't burst-fork.
+        await nextFfmpegSpawnSlot();
         if (done || stopped) {
           finish();
           return;
@@ -369,7 +399,7 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
           return;
         }
         if (msg.type === "joined") {
-          startIngest();
+          void startIngest();
         } else if (msg.type === "error") {
           console.warn(`bridge "${bridge.name}": relay rejected join (${msg.code ?? "error"})`);
           setBridgeReason(
