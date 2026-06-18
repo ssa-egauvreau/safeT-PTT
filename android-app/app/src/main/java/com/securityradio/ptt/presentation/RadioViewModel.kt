@@ -351,6 +351,7 @@ class RadioViewModel(
                         onRemoteAirReleased(event)
                         null
                     }
+                    is VoiceControlEvent.DeviceCommand -> onDeviceCommand(event)
                 }
                 if (hint != null) {
                     _uiState.update { it.copy(statusMessage = hint) }
@@ -2621,6 +2622,25 @@ class RadioViewModel(
                 activeTalkUnitId = "",
                 activeTalkDisplayName = "",
             )
+        }
+    }
+
+    /** Execute an admin-pushed remote command and report the outcome back to the
+     *  relay. The transport already sent a "received" ack; here we run the action
+     *  and send a result ack. Returns an optional status-line hint. */
+    private fun onDeviceCommand(event: VoiceControlEvent.DeviceCommand): String? {
+        return when (event.command) {
+            "check_update" -> {
+                appUpdater.checkAndInstallAsync(force = true, manual = true)
+                voiceRelay.sendDeviceAck(event.commandId, event.command, "started")
+                "REMOTE: CHECKING FOR UPDATE"
+            }
+            else -> {
+                // apply_audio_settings / report_diagnostics land in follow-up
+                // PRs; ack so the admin sees the radio received but can't act yet.
+                voiceRelay.sendDeviceAck(event.commandId, event.command, "unsupported")
+                null
+            }
         }
     }
 
