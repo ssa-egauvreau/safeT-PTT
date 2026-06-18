@@ -38,6 +38,7 @@ import {
   getUserById,
   isChannelAiDispatchEnabled,
   resolveAgencyByKey,
+  writeAudit,
   type Permission,
 } from "./store.js";
 import { recordFrame, type FrameAttribution } from "./recorder.js";
@@ -835,6 +836,61 @@ export function sendMoveCommand(
   return reached;
 }
 
+/**
+ * Push an admin-issued device command to every live socket belonging to
+ * agency+unit. The handset interprets `command` (e.g. "check_update",
+ * "apply_audio_settings") and may reply with a `device_ack` control frame.
+ * Returns the number of sockets the command reached.
+ */
+export function sendDeviceCommand(
+  agencyId: number,
+  unitIdRaw: string,
+  command: string,
+  params: Record<string, unknown> | null,
+  commandId: string,
+): number {
+  const unit = unitIdRaw.trim().toUpperCase();
+  if (!unit) {
+    return 0;
+  }
+  const payload = JSON.stringify({
+    type: "device_command",
+    command,
+    command_id: commandId,
+    params: params ?? {},
+  });
+  let reached = 0;
+  for (const [ws, meta] of clientMeta) {
+    if (meta.agencyId !== agencyId || meta.unitId !== unit) {
+      continue;
+    }
+    if (ws.readyState !== WebSocket.OPEN) {
+      continue;
+    }
+    try {
+      ws.send(payload);
+      reached += 1;
+    } catch {
+      /* stale socket — ignore */
+    }
+  }
+  return reached;
+}
+
+/** Unit IDs with at least one live socket for an agency (online roster). */
+export function listOnlineUnits(agencyId: number): string[] {
+  const units = new Set<string>();
+  for (const [ws, meta] of clientMeta) {
+    if (meta.agencyId !== agencyId || !meta.unitId) {
+      continue;
+    }
+    if (ws.readyState === WebSocket.OPEN) {
+      units.add(meta.unitId);
+    }
+  }
+  return [...units];
+}
+
 export function peekVoiceTransmittingUnit(agencyId: number, channelRaw: unknown): string | null {
   return peekVoiceTransmittingTalker(agencyId, channelRaw)?.unit_id ?? null;
 }
@@ -940,7 +996,15 @@ function releaseAir(ws: WebSocket): void {
 function handleVoiceControl(
   ws: WebSocket,
   meta: ClientMeta | undefined,
-  json: { type?: string; unit_id?: string; display_name?: string },
+  json: {
+    type?: string;
+    unit_id?: string;
+    display_name?: string;
+    command?: string;
+    command_id?: string;
+    status?: string;
+    detail?: unknown;
+  },
 ): void {
   // PTT released — drop `/v1/air` immediately instead of waiting for TTL. The
   // transmission's talker override dies with the transmission.
@@ -975,6 +1039,23 @@ function handleVoiceControl(
     }
     meta.txUnitId = String(json.unit_id ?? "").trim().toUpperCase().slice(0, 24) || null;
     meta.txDisplayName = String(json.display_name ?? "").trim().slice(0, 64) || null;
+    return;
+  }
+  // Handset acknowledgement of an admin device command. Persisted to the audit
+  // trail so safeT Control shows the outcome (e.g. "check_update → up_to_date").
+  if (json.type === "device_ack") {
+    const command = String(json.command ?? "").trim().slice(0, 40) || "unknown";
+    const commandId = String(json.command_id ?? "").trim().slice(0, 64) || null;
+    const status = String(json.status ?? "").trim().slice(0, 40) || "ack";
+    void writeAudit({
+      agencyId: meta.agencyId,
+      actorUserId: null,
+      actorName: meta.unitId ?? null,
+      action: "device_command_ack",
+      target: `unit:${meta.unitId ?? "?"} command:${command}`,
+      detail: { command, commandId, status, detail: json.detail ?? null },
+      ip: null,
+    }).catch(() => undefined);
     return;
   }
 }

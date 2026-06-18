@@ -71,6 +71,14 @@ sealed interface VoiceControlEvent {
     data class AirClaimed(val channel: String, val unitId: String, val displayName: String?) : VoiceControlEvent
     /** The talker on this channel unkeyed — clear the talker line immediately. */
     data class AirReleased(val channel: String) : VoiceControlEvent
+    /** Admin pushed a remote command (OTA update check, audio settings,
+     *  diagnostics). The app layer executes it and reports back via
+     *  [VoiceRelayTransport.sendDeviceAck]. `params` is the raw JSON object. */
+    data class DeviceCommand(
+        val command: String,
+        val commandId: String?,
+        val params: JSONObject,
+    ) : VoiceControlEvent
 }
 
 class VoiceRelayTransport(
@@ -274,6 +282,24 @@ class VoiceRelayTransport(
                     val releasedChannel = json.optString("channel").trim()
                     playEndOfTxCue(releasedChannel)
                     _controlEvents.tryEmit(VoiceControlEvent.AirReleased(channel = releasedChannel))
+                }
+                "device_command" -> {
+                    val command = json.optString("command").trim()
+                    if (command.isNotEmpty()) {
+                        val commandId = json.optString("command_id").trim().takeIf { it.isNotEmpty() }
+                        val params = json.optJSONObject("params") ?: JSONObject()
+                        // Immediate "received" ack so the admin sees the radio
+                        // got the command; the app layer sends a result ack once
+                        // it finishes executing.
+                        sendDeviceAck(commandId, command, "received")
+                        _controlEvents.tryEmit(
+                            VoiceControlEvent.DeviceCommand(
+                                command = command,
+                                commandId = commandId,
+                                params = params,
+                            ),
+                        )
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -533,6 +559,26 @@ class VoiceRelayTransport(
         if (!socketReady.get()) return
         try {
             ws.send("""{"type":"release_air"}""")
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * Acknowledge an admin device command back to the relay (logged to the
+     * agency audit trail). Safe to call from any thread; a no-op when the
+     * socket is down (the admin sees the command never reached / completed).
+     */
+    fun sendDeviceAck(commandId: String?, command: String, status: String, detail: String? = null) {
+        val ws = webSocketRef.get() ?: return
+        if (!socketReady.get()) return
+        try {
+            val obj = JSONObject()
+                .put("type", "device_ack")
+                .put("command", command)
+                .put("status", status)
+            if (commandId != null) obj.put("command_id", commandId)
+            if (detail != null) obj.put("detail", detail)
+            ws.send(obj.toString())
         } catch (_: Exception) {
         }
     }

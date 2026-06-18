@@ -1,4 +1,5 @@
 import { Router, raw } from "express";
+import { randomUUID } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import {
   requireAdmin,
@@ -20,6 +21,8 @@ import {
   withRosterMoveLock,
   peekVoiceTransmittingUnit,
   sendMoveCommand,
+  sendDeviceCommand,
+  listOnlineUnits,
   notifyChannelCodec,
   refreshSimulcastSockets,
   type PresenceStatus,
@@ -268,6 +271,15 @@ function clientIp(req: Request): string {
   const first = Array.isArray(fwd) ? fwd[0] : fwd?.split(",")[0];
   return (first ?? req.socket.remoteAddress ?? "").trim();
 }
+
+/** Commands an admin may push to a handset via POST /admin/device-command.
+ *  Kept as an allowlist so a new server→device capability is an explicit,
+ *  auditable addition rather than an open remote-control surface. */
+const DEVICE_COMMANDS = new Set<string>([
+  "check_update", // check for a newer app build and (touchlessly) install it
+  "apply_audio_settings", // push RX gain / EQ / volume to the device
+  "report_diagnostics", // ask the handset to send back a diagnostics snapshot
+]);
 
 function fail(res: Response, error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
@@ -3859,6 +3871,58 @@ export function createApiRouter(): Router {
         ip: clientIp(req),
       });
       res.json({ ok: true, reached });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Online roster: unit IDs of this agency with a live voice socket right now.
+  // Backs the safeT Control "who's reachable for a remote command" view.
+  router.get("/admin/online-units", requireAdmin, async (req, res) => {
+    try {
+      res.json({ units: listOnlineUnits(req.authUser!.agencyId!) });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Remote device command: an admin pushes a control command to one handset
+  // over its live voice socket. Admin-only, agency-scoped, and audited. The
+  // handset replies with a `device_ack` frame which is logged separately.
+  router.post("/admin/device-command", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const unit = String(req.body?.unit_id ?? "").trim().toUpperCase();
+      const command = String(req.body?.command ?? "").trim();
+      const rawParams = req.body?.params;
+      const params =
+        rawParams && typeof rawParams === "object" && !Array.isArray(rawParams)
+          ? (rawParams as Record<string, unknown>)
+          : null;
+      if (!unit || !command) {
+        res.status(400).json({ error: "missing_unit_or_command" });
+        return;
+      }
+      if (!DEVICE_COMMANDS.has(command)) {
+        res.status(400).json({ error: "unknown_command" });
+        return;
+      }
+      const commandId = randomUUID();
+      const reached = sendDeviceCommand(agencyId, unit, command, params, commandId);
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "device_command",
+        target: `unit:${unit} command:${command}`,
+        detail: { unit, command, params, commandId, reached },
+        ip: clientIp(req),
+      });
+      if (reached === 0) {
+        res.status(409).json({ error: "unit_offline", commandId });
+        return;
+      }
+      res.json({ ok: true, reached, commandId });
     } catch (error) {
       fail(res, error);
     }
