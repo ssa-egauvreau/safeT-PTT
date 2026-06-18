@@ -434,6 +434,8 @@ export interface UserRow {
   agency_id: number | null;
   created_at: string;
   token_generation: number;
+  /** Template this user follows; their channel memberships mirror it. Null = none. */
+  assigned_template_id: number | null;
 }
 
 export interface UserWithHash extends UserRow {
@@ -499,7 +501,7 @@ export interface AuditRow {
   ip: string | null;
 }
 
-const USER_COLS = "id, username, display_name, role, unit_id, device_type, disabled, agency_id, created_at, token_generation";
+const USER_COLS = "id, username, display_name, role, unit_id, device_type, disabled, agency_id, created_at, token_generation, assigned_template_id";
 
 /** Accounts within one agency. */
 export async function listUsers(agencyId: number): Promise<UserRow[]> {
@@ -526,7 +528,7 @@ export async function getUserById(id: number, agencyId?: number): Promise<UserRo
 export async function getUserByUsername(username: string): Promise<UserWithHash | null> {
   const res = await requirePool().query<UserWithHash>(
     `SELECT u.id, u.username, u.display_name, u.role, u.unit_id, u.device_type, u.disabled, u.agency_id,
-            u.created_at, u.token_generation, u.password_hash,
+            u.created_at, u.token_generation, u.assigned_template_id, u.password_hash,
             a.name AS agency_name, a.disabled AS agency_disabled
        FROM users u
        LEFT JOIN agencies a ON a.id = u.agency_id
@@ -1302,6 +1304,10 @@ export async function updateUserPermissionTemplate(
   if (!row) {
     return null;
   }
+  // The template's channels changed — push the new set to every user bound to it.
+  if (patch.memberships !== undefined) {
+    await resyncTemplateAssignedUsers(id, agencyId);
+  }
   return {
     id: row.id,
     agency_id: row.agency_id,
@@ -1318,6 +1324,88 @@ export async function deleteUserPermissionTemplate(id: number, agencyId: number)
     [id, agencyId],
   );
   return (res.rowCount ?? 0) > 0;
+}
+
+/**
+ * Full-sync a user's channel memberships to their assigned template: the user
+ * ends up a member of exactly the template's still-existing channels, at the
+ * template's permissions — memberships outside the template are removed. Runs
+ * in a transaction so a partial failure can't leave a half-applied set. No-op
+ * when the user has no template.
+ */
+export async function syncUserToAssignedTemplate(userId: number, agencyId: number): Promise<void> {
+  const user = await getUserById(userId, agencyId);
+  if (!user?.assigned_template_id) {
+    return;
+  }
+  const template = await getUserPermissionTemplate(user.assigned_template_id, agencyId);
+  if (!template) {
+    return;
+  }
+  const valid: TemplateMembershipEntry[] = [];
+  for (const entry of template.memberships) {
+    if (await getChannelById(entry.channel_id, agencyId)) {
+      valid.push(entry);
+    }
+  }
+  const client = await requirePool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`DELETE FROM channel_members WHERE user_id = $1;`, [userId]);
+    for (const entry of valid) {
+      await client.query(
+        `INSERT INTO channel_members (user_id, channel_id, permission)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (user_id, channel_id) DO UPDATE SET permission = EXCLUDED.permission;`,
+        [userId, entry.channel_id, entry.permission],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Bind (or unbind, with `null`) a user to a template. Binding immediately
+ * full-syncs the user's memberships to the template; unbinding leaves their
+ * current memberships untouched (they just stop tracking the template).
+ */
+export async function assignUserTemplate(
+  userId: number,
+  templateId: number | null,
+  agencyId: number,
+): Promise<UserRow | null> {
+  const user = await getUserById(userId, agencyId);
+  if (!user) {
+    return null;
+  }
+  if (templateId !== null && !(await getUserPermissionTemplate(templateId, agencyId))) {
+    throw new Error("not_found");
+  }
+  await requirePool().query(
+    `UPDATE users SET assigned_template_id = $1 WHERE id = $2 AND agency_id = $3;`,
+    [templateId, userId, agencyId],
+  );
+  if (templateId !== null) {
+    await syncUserToAssignedTemplate(userId, agencyId);
+  }
+  return getUserById(userId, agencyId);
+}
+
+/** Re-sync every user bound to a template (after its channels/permissions change). */
+export async function resyncTemplateAssignedUsers(templateId: number, agencyId: number): Promise<number> {
+  const res = await requirePool().query<{ id: number }>(
+    `SELECT id FROM users WHERE agency_id = $1 AND assigned_template_id = $2;`,
+    [agencyId, templateId],
+  );
+  for (const row of res.rows) {
+    await syncUserToAssignedTemplate(row.id, agencyId);
+  }
+  return res.rows.length;
 }
 
 /** Applies a template's channel permissions to one user (skips channels that no longer exist). */

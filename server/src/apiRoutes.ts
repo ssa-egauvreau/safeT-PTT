@@ -131,6 +131,7 @@ import {
   removeMembership,
   setMembership,
   updateUserPermissionTemplate,
+  assignUserTemplate,
   setUnitAlias,
   uniqueAgencySlug,
   agencyAllowsAiDispatch,
@@ -1190,6 +1191,20 @@ export function createApiRouter(): Router {
         return;
       }
 
+      // Bind/unbind a permission template. Binding full-syncs the user's channel
+      // memberships to it now; the template's own edits propagate from then on.
+      let assignedTemplate = false;
+      if (req.body?.assignedTemplateId !== undefined) {
+        const raw = req.body.assignedTemplateId;
+        const templateId = raw === null || raw === "" ? null : Number(raw);
+        if (templateId !== null && !Number.isInteger(templateId)) {
+          res.status(400).json({ error: "not_found" });
+          return;
+        }
+        await assignUserTemplate(id, templateId, agencyId);
+        assignedTemplate = true;
+      }
+
       const user = await updateUser(id, patch);
       if (existing.role === "radio" || patch.role === "radio" || patch.disabled !== undefined) {
         void syncSeatsForAgency(agencyId).catch((e) => console.warn("[billing] seat sync failed", e));
@@ -1200,7 +1215,7 @@ export function createApiRouter(): Router {
         actorName: req.authUser!.username,
         action: "user_update",
         target: existing.username,
-        detail: { fields: Object.keys(patch) },
+        detail: { fields: [...Object.keys(patch), ...(assignedTemplate ? ["assignedTemplateId"] : [])] },
         ip: clientIp(req),
       });
       res.json({ user });

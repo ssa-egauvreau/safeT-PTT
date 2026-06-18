@@ -236,6 +236,13 @@ export async function ensureSchema(): Promise<void> {
       UNIQUE (agency_id, name)
     );
   `);
+  // A user can be bound to one template; their channel memberships then mirror it
+  // and re-sync whenever the template changes. SET NULL so deleting a template
+  // just unbinds its users (their current memberships stay put).
+  await p.query(
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS assigned_template_id INT
+       REFERENCES user_permission_templates(id) ON DELETE SET NULL;`,
+  );
 
   await p.query(`
     CREATE TABLE IF NOT EXISTS audit_log (
