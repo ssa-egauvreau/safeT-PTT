@@ -423,12 +423,19 @@ export function BridgesPanel({ embedded = false }: { embedded?: boolean }) {
                   while it runs.
                 </p>
               ) : (
-                <BridgeMeter
-                  level={status?.level ?? 0}
-                  threshold={bridge.vox_threshold}
-                  keyed={status?.keyed ?? false}
-                  active={status?.running ?? false}
-                />
+                <>
+                  <BridgeMeter
+                    level={status?.level ?? 0}
+                    threshold={bridge.vox_threshold}
+                    keyed={status?.keyed ?? false}
+                    active={status?.running ?? false}
+                  />
+                  {bridge.enabled && !status?.running && status?.reason ? (
+                    <p className="field-hint bridge-status-note bridge-status-error" role="status">
+                      {status.reason}
+                    </p>
+                  ) : null}
+                </>
               )}
               <BridgeForm
                 initial={toInput(bridge)}

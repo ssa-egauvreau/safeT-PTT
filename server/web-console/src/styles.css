@@ -737,6 +737,10 @@ a {
   margin: 6px 0 10px;
 }
 
+.bridge-status-error {
+  color: var(--danger-text);
+}
+
 /* --- tables --- */
 table {
   width: 100%;
