@@ -73,6 +73,8 @@ data class ChannelDto(
     @SerializedName("zone") val zone: String? = null,
     /** Zone bank number; shown in front of the channel name on the display ("1 GREEN 1"). */
     @SerializedName("zone_number") val zoneNumber: Int? = null,
+    /** True when the AI dispatcher is enabled on this channel — radios show an AI badge. */
+    @SerializedName("ai_dispatch_enabled") val aiDispatchEnabled: Boolean = false,
 )
 
 data class AirStateDto(

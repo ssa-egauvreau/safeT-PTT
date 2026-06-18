@@ -9,6 +9,8 @@ struct ChannelOption: Identifiable, Equatable {
     let name: String
     let zoneNumber: Int?
     let zoneName: String?
+    /// True when the AI dispatcher is enabled on this channel (radios show an AI badge).
+    var aiDispatchEnabled: Bool = false
 
     var id: Int { index }
 
@@ -52,6 +54,10 @@ struct RadioUiState {
     var channels: [ChannelOption] = []
     /// Index into `channels` of the currently tuned channel.
     var channelIndex = 0
+    /// True when the tuned channel runs the AI dispatcher — the shell shows an AI badge.
+    var aiDispatchEnabled: Bool {
+        channels.indices.contains(channelIndex) ? channels[channelIndex].aiDispatchEnabled : false
+    }
     var channelPosition = "-- / --"
     var statusMessage = "STARTING"
     var isPttPressed = false

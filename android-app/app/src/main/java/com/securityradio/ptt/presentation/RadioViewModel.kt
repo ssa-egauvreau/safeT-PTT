@@ -159,6 +159,9 @@ class RadioViewModel(
     /** Zone by lowercased channel name (from the portal); missing = the default zone. */
     private var channelZonesByName: Map<String, ChannelZone> = emptyMap()
 
+    /** Lowercased names of channels with the AI dispatcher enabled (shown as an AI badge). */
+    private var channelAiByName: Set<String> = emptySet()
+
     /** Cursor into [zoneNames] while zone-select mode previews a zone. */
     private var zoneSelectCursor: Int = 0
 
@@ -2018,6 +2021,7 @@ class RadioViewModel(
         channelNames = catalog.channels
         channelPermissions = catalog.permissions
         channelZonesByName = catalog.zones
+        channelAiByName = catalog.aiDispatch
         if (channelNames.isNotEmpty()) {
             channelIndex = channelIndex.coerceIn(0, channelNames.lastIndex)
         } else {
@@ -2412,6 +2416,7 @@ class RadioViewModel(
             zoneCount = zones.size.coerceAtLeast(1),
             channelLabel = label,
             channelDisplayLabel = display,
+            aiDispatchEnabled = channelAiByName.contains(label.lowercase()),
             channelPosition = "%02d / %02d".format(
                 (zoneIndices.indexOf(safeIndex) + 1).coerceAtLeast(1),
                 zoneIndices.size,

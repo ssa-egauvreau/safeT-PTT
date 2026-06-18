@@ -67,6 +67,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
@@ -591,6 +592,34 @@ private fun UniversalCockpitScanBanner(state: RadioUiState, styles: LcdTextStyle
     }
 }
 
+/** Rainbow "AI DISPATCH" pill shown under the channel name when the tuned channel runs the AI dispatcher. */
+@Composable
+private fun AiDispatchBadge(visible: Boolean, styles: LcdTextStyles) {
+    if (!visible) return
+    val rainbow = Brush.horizontalGradient(
+        listOf(
+            Color(0xFFFF5F6D),
+            Color(0xFFFFC371),
+            Color(0xFF38F9D7),
+            Color(0xFF7F7FD5),
+            Color(0xFFFF5F6D),
+        ),
+    )
+    Box(
+        modifier = Modifier
+            .background(rainbow, RoundedCornerShape(50))
+            .padding(horizontal = 12.dp, vertical = 3.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "✦ AI DISPATCH",
+            style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 12.sp),
+            color = Color(0xFF0B0B12),
+            maxLines = 1,
+        )
+    }
+}
+
 @Composable
 private fun UniversalCockpitMainPanel(
     state: RadioUiState,
@@ -665,6 +694,7 @@ private fun UniversalCockpitMainPanel(
                 textAlign = TextAlign.Center,
             )
         }
+        AiDispatchBadge(visible = state.aiDispatchEnabled, styles = styles)
         if (state.channelCodecLabel.isNotBlank()) {
             Text(
                 text = state.channelCodecLabel.uppercase(Locale.US),

@@ -15,6 +15,9 @@ struct ChannelDTO: Decodable, Identifiable {
     /// Server permission grant for this channel — "listen_only" | "talk" |
     /// "talk_priority". Drives the PTT gate (listen-only channels can't key).
     let permission: String?
+    /// True when the AI dispatcher is enabled on this channel (radios show an AI badge).
+    /// Decoded from JSON `ai_dispatch_enabled` via `convertFromSnakeCase`.
+    let aiDispatchEnabled: Bool?
 }
 
 struct AirState: Decodable {
