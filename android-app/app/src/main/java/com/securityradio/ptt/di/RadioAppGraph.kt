@@ -94,6 +94,9 @@ class RadioAppGraph(val application: Application) {
 
     private val inboundVoicePlayer = InboundVoicePlayer(
         lastRxRecorder = lastRxAudioRecorder,
+        // Read on every inbound chunk so an admin-pushed RX-gain change (or a
+        // local volume setting) takes effect live without rebuilding the player.
+        listenGainProvider = { radioPreferences.getRxGainMultiplier() },
         onScanRxActivity = { channel -> _scanRxActivity.tryEmit(channel) },
     )
 

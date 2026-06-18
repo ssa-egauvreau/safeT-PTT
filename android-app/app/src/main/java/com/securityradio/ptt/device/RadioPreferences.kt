@@ -142,6 +142,20 @@ class RadioPreferences(context: Context) {
         ).apply()
     }
 
+    /** Software gain multiplier applied to inbound (RX) PCM before playout, so a
+     *  "low / far away" radio can be boosted. 1.0 = no change. Range [0.5, 4.0].
+     *  Set locally or pushed over the air by an admin (apply_audio_settings). */
+    fun getRxGainMultiplier(): Float =
+        prefs.getFloat(KEY_RX_GAIN_MULTIPLIER, DEFAULT_RX_GAIN_MULTIPLIER)
+            .coerceIn(MIN_RX_GAIN, MAX_RX_GAIN)
+
+    fun setRxGainMultiplier(multiplier: Float) {
+        prefs.edit().putFloat(
+            KEY_RX_GAIN_MULTIPLIER,
+            multiplier.coerceIn(MIN_RX_GAIN, MAX_RX_GAIN),
+        ).apply()
+    }
+
     /**
      * MP22 dual-display: false = virtual Display 0 (PC/scrcpy can type); true = physical Display 1
      * (hardware keys). IRC590 and normal devices ignore this.
@@ -212,6 +226,9 @@ class RadioPreferences(context: Context) {
         const val MIN_MIC_GAIN: Float = 0.5f
         const val MAX_MIC_GAIN: Float = 3.0f
         const val DEFAULT_MIC_GAIN_MULTIPLIER: Float = MAX_MIC_GAIN
+        const val MIN_RX_GAIN: Float = 0.5f
+        const val MAX_RX_GAIN: Float = 4.0f
+        const val DEFAULT_RX_GAIN_MULTIPLIER: Float = 1.0f
         const val DEFAULT_MIC_NOISE_SUPPRESSION: Boolean = false
         const val DEFAULT_MIC_AUTO_GAIN: Boolean = false
 
@@ -231,6 +248,7 @@ class RadioPreferences(context: Context) {
         private const val KEY_MIC_NOISE_SUPPRESSION = "mic_noise_suppression"
         private const val KEY_MIC_AUTO_GAIN = "mic_auto_gain"
         private const val KEY_MIC_GAIN_MULTIPLIER = "mic_gain_multiplier"
+        private const val KEY_RX_GAIN_MULTIPLIER = "rx_gain_multiplier"
         private const val KEY_MP22_USE_PHYSICAL_DISPLAY = "mp22_use_physical_display"
         private const val DEFAULT_VOICE_ANNOUNCE = true
         // Server-pushed audio config
