@@ -568,7 +568,14 @@ class VoiceRelayTransport(
      * agency audit trail). Safe to call from any thread; a no-op when the
      * socket is down (the admin sees the command never reached / completed).
      */
-    fun sendDeviceAck(commandId: String?, command: String, status: String, detail: String? = null) {
+    fun sendDeviceAck(commandId: String?, command: String, status: String, detail: String? = null) =
+        sendDeviceAckInternal(commandId, command, status, detail)
+
+    /** Ack carrying a structured detail payload (e.g. a diagnostics snapshot). */
+    fun sendDeviceAck(commandId: String?, command: String, status: String, detail: JSONObject) =
+        sendDeviceAckInternal(commandId, command, status, detail)
+
+    private fun sendDeviceAckInternal(commandId: String?, command: String, status: String, detail: Any?) {
         val ws = webSocketRef.get() ?: return
         if (!socketReady.get()) return
         try {
