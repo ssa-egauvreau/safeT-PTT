@@ -36,7 +36,7 @@ import {
   incidentPayloadHasUnit,
   infoRequestNeedsAsync,
 } from "./infoRequest.js";
-import { synthesizeElevenLabsMp3, type TtsSpeechKind } from "./tts.js";
+import { synthesizeElevenLabsMp3, type TtsFailureInfo, type TtsSpeechKind } from "./tts.js";
 import { postOutboundWebhook } from "./webhook.js";
 import {
   applyChannelTen33Marker,
@@ -374,6 +374,7 @@ async function processTransmission(transmissionId: number): Promise<void> {
   let transcript = "";
   let outcome: AiDispatchOutcome = "processed";
   let spokeOnAir = false;
+  const ttsFailure: TtsFailureInfo = {};
   let tx: NonNullable<Awaited<ReturnType<typeof getTransmissionDispatchContext>>> | null = null;
   let unitId = "UNIT";
   let yieldsToUnits = true;
@@ -696,6 +697,7 @@ async function processTransmission(transmissionId: number): Promise<void> {
               reply,
               yieldsToUnits,
               ttsKind,
+              ttsFailure,
             );
             void runAsyncInfoLookup(tx, transmissionId, unitId, transcript, parsed, yieldsToUnits);
           }
@@ -744,6 +746,7 @@ async function processTransmission(transmissionId: number): Promise<void> {
           reply,
           yieldsToUnits,
           ttsKind,
+          ttsFailure,
         );
         if (plate.followUpSpeak?.trim()) {
           const tail = adaptDispatcherResponseForChannel(plate.followUpSpeak.trim(), tx.channel_name);
@@ -768,6 +771,7 @@ async function processTransmission(transmissionId: number): Promise<void> {
           reply,
           yieldsToUnits,
           ttsKind,
+          ttsFailure,
         );
       }
 
@@ -789,7 +793,9 @@ async function processTransmission(transmissionId: number): Promise<void> {
           outcome = "tts_failed";
           error =
             error ??
-            "TTS or on-channel playback failed. Check ElevenLabs API key and voice ID under Admin → Integrations.";
+            (ttsFailure.detail
+              ? `Reply not aired — ${ttsFailure.detail}`
+              : "TTS or on-channel playback failed. Check ElevenLabs API key and voice ID under Admin → Integrations.");
         }
       }
 
@@ -968,11 +974,13 @@ async function speakDispatcherReply(
   reply: string,
   yieldsToUnits: boolean,
   speechKind: TtsSpeechKind = "auto",
+  failureSink?: TtsFailureInfo,
 ): Promise<boolean> {
-  const mp3 = await synthesizeElevenLabsMp3(tx.agency_id, reply, { speechKind });
+  const failure: TtsFailureInfo = failureSink ?? {};
+  const mp3 = await synthesizeElevenLabsMp3(tx.agency_id, reply, { speechKind, failure });
   if (!mp3) {
     console.warn(
-      `[ai-dispatch] ElevenLabs returned no audio agency=${tx.agency_id} channel=${tx.channel_name}`,
+      `[ai-dispatch] ElevenLabs returned no audio agency=${tx.agency_id} channel=${tx.channel_name}: ${failure.detail ?? "unknown reason"}`,
     );
     return false;
   }
@@ -991,6 +999,7 @@ async function speakDispatcherReply(
     });
   } catch (playErr) {
     console.warn(`[ai-dispatch] playback failed channel=${tx.channel_name}`, playErr);
+    failure.detail = `On-channel playback failed: ${playErr instanceof Error ? playErr.message : String(playErr)}`;
     return false;
   } finally {
     await unlink(tmpPath).catch(() => undefined);
