@@ -25,7 +25,7 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 
-import { describeBridgeIngestError } from "../src/bridgeWorker.js";
+import { describeBridgeIngestError, describeBridgeSpawnError } from "../src/bridgeWorker.js";
 
 test("a 403 is a refused connection and names the concurrent-listener limit", (_t: TestContext) => {
   const fromStatus = describeBridgeIngestError("Server returned 403 Forbidden (access denied)");
@@ -76,4 +76,35 @@ test("an unrecognized error is surfaced verbatim, length-capped to one line", (_
 test("blank input yields null so no reason is recorded", (_t: TestContext) => {
   assert.equal(describeBridgeIngestError(""), null);
   assert.equal(describeBridgeIngestError("   \n  "), null);
+});
+
+/**
+ * `describeBridgeSpawnError` covers the *spawn* failure path (the ffmpeg child
+ * couldn't start) — distinct from the stderr path above. The bug it fixes: a
+ * resource-starved spawn (ENOMEM/EAGAIN) used to be reported as "ffmpeg is not
+ * available", which is flatly wrong when other bridges on the same server are
+ * running ffmpeg fine. Only a true ENOENT means the binary is missing.
+ */
+test("ENOENT is the only code reported as a missing ffmpeg binary", (_t: TestContext) => {
+  assert.match(describeBridgeSpawnError("ENOENT", "spawn ffmpeg ENOENT"), /not installed/i);
+});
+
+test("ENOMEM / EAGAIN are reported as a resource shortage, not a missing binary", (_t: TestContext) => {
+  for (const code of ["ENOMEM", "EAGAIN"]) {
+    const detail = describeBridgeSpawnError(code, `spawn ffmpeg ${code}`);
+    assert.match(detail, /resource|memory|cpu/i);
+    assert.match(detail, new RegExp(code));
+    // The misleading old message must not reappear for a server that clearly has ffmpeg.
+    assert.doesNotMatch(detail, /not installed|not available/i);
+  }
+});
+
+test("an unknown spawn error is surfaced with its code and message, length-capped", (_t: TestContext) => {
+  const detail = describeBridgeSpawnError("EACCES", "permission denied");
+  assert.match(detail, /EACCES/);
+  assert.match(detail, /permission denied/i);
+  assert.ok(detail.length <= 200);
+
+  // No code at all still yields a usable message.
+  assert.match(describeBridgeSpawnError(undefined, "weird failure"), /weird failure/);
 });
