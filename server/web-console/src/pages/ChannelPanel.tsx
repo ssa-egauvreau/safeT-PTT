@@ -1071,7 +1071,7 @@ export function ChannelPanel({
         <div className="ch-tone-grid">
           <button
             type="button"
-            className="toneout-btn ch-action-cell"
+            className="toneout-btn routine ch-action-cell"
             disabled={!connected || !canTransmit}
             onClick={() => sendTone("routine")}
             aria-label="Routine tone"
@@ -1093,7 +1093,7 @@ export function ChannelPanel({
           </button>
           <button
             type="button"
-            className="toneout-btn ch-action-cell"
+            className="toneout-btn status ch-action-cell"
             disabled={!connected || !canTransmit}
             onClick={() => sendTone("status")}
             aria-label="Status tone"
@@ -1112,6 +1112,7 @@ export function ChannelPanel({
                   key={toneOut.id}
                   type="button"
                   className={looping ? "toneout-btn custom looping ch-action-cell" : "toneout-btn custom ch-action-cell"}
+                  style={{ ["--tone-color" as string]: toneOut.icon_color }}
                   disabled={!connected || !canTransmit}
                   onClick={() => void fireToneOut(toneOut)}
                   title={
