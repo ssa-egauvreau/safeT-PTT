@@ -132,12 +132,17 @@ async function finalize(rec: ActiveRecording): Promise<void> {
       sampleRate: SAMPLE_RATE,
       audio: encodeWavPcm16(pcm, SAMPLE_RATE),
     });
-    if (rec.fromBridge && !TRANSCRIBE_BRIDGE) {
-      // Recording is saved and playable; just don't queue scanner audio for
-      // Whisper (terminal 'skipped' renders as a neutral "—" on the console).
+    const aiOn = isAiDispatchChannelCached(rec.agencyId, rec.channelName);
+    if (rec.fromBridge && !TRANSCRIBE_BRIDGE && !aiOn) {
+      // Recording is saved and playable; just don't queue plain scanner audio
+      // for Whisper (terminal 'skipped' renders as a neutral "—" on the console).
       void setTranscript(id, "skipped", null).catch(() => undefined);
     } else {
-      enqueueTranscription(id);
+      // Handset audio, and ANY clip on an AI-dispatch channel (incl. a bridge-fed
+      // one — otherwise the AI dispatcher gets no transcript and never runs), go
+      // in the high lane so the AI reply isn't stuck behind a bridge firehose.
+      // A plain bridge clip (TRANSCRIBE_BRIDGE=on, no AI) stays in the low lane.
+      enqueueTranscription(id, { priority: !rec.fromBridge || aiOn });
     }
   } catch (error) {
     console.warn("Failed to save transmission recording", error);

@@ -71,6 +71,13 @@ type TranscriberState = "idle" | "loading" | "ready" | "broken";
 
 let state: TranscriberState = "idle";
 let lastLoadFailedAt = 0;
+/**
+ * Two lanes, drained high-then-low. The high lane carries handset audio and any
+ * clip on an AI-dispatch channel, so the AI dispatcher's transcripts never wait
+ * behind a busy scanner/SDR bridge firehose in the low lane. Both share the
+ * `inQueue` dedup below.
+ */
+const priorityQueue: number[] = [];
 const queue: number[] = [];
 /**
  * Ids currently queued or in flight. Without this, the periodic recovery sweep
@@ -126,7 +133,7 @@ export function getTranscriptionDiagnostics(): TranscriptionDiagnostics {
     model: MODEL,
     state,
     database_configured: getPool() !== null,
-    queue_depth: queue.length,
+    queue_depth: priorityQueue.length + queue.length,
     workers: WORKER_COUNT,
     workers_busy: slots.filter((s) => s.busy).length,
     last_load_failed_at: lastLoadFailedAt > 0 ? new Date(lastLoadFailedAt).toISOString() : null,
@@ -287,7 +294,7 @@ async function runOnSlot(slot: WorkerSlot, w: ChildProcess, id: number): Promise
 /** Assigns queued clips to every idle, spawnable worker — the pool's scheduler. */
 function dispatch(): void {
   for (const slot of slots) {
-    if (queue.length === 0) {
+    if (priorityQueue.length === 0 && queue.length === 0) {
       break;
     }
     if (slot.busy) {
@@ -306,15 +313,17 @@ function dispatch(): void {
     if (needsSpawn && !modelWarmed) {
       coldLoader = slot; // this slot owns the one-time cold load
     }
-    const id = queue.shift()!;
+    // High lane first so AI / handset clips beat the low-priority bridge firehose.
+    const id = (priorityQueue.length > 0 ? priorityQueue.shift() : queue.shift())!;
     slot.busy = true;
     void runOnSlot(slot, w, id);
   }
 }
 
 /** Queues a freshly recorded transmission for transcription. Deduped so a
- *  recovery sweep can't double-enqueue an id already waiting in the queue. */
-export function enqueueTranscription(id: number): void {
+ *  recovery sweep can't double-enqueue an id already waiting in the queue.
+ *  `priority` puts it in the high lane (handset / AI-dispatch audio). */
+export function enqueueTranscription(id: number, opts?: { priority?: boolean }): void {
   if (!ENABLED) {
     void setTranscript(id, "disabled", null)
       .then(() => enqueueAiDispatchForTransmission(id))
@@ -325,7 +334,11 @@ export function enqueueTranscription(id: number): void {
     return;
   }
   inQueue.add(id);
-  queue.push(id);
+  if (opts?.priority) {
+    priorityQueue.push(id);
+  } else {
+    queue.push(id);
+  }
   dispatch();
 }
 
