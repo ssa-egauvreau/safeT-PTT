@@ -207,24 +207,25 @@ function BridgeForm({
             How long the gate stays open after audio stops, so word endings aren't clipped.
           </p>
         </div>
-        {f.sourceType === "stream_url" && (
-          <div className="field">
-            <label>Noise suppression</label>
-            <select
-              value={f.noiseSuppression}
-              onChange={(e) => set("noiseSuppression", e.target.value)}
-            >
-              <option value="off">Off</option>
-              <option value="light">Light — voice band-pass</option>
-              <option value="strong">Strong — band-pass + denoiser</option>
-            </select>
-            <p className="field-hint">
-              Filters static/hiss on this feed. Light keeps a 200–3400 Hz voice band (cuts hum and
-              high hiss). Strong adds an FFT denoiser for steady static. Start with Light; use
-              Strong on noisy analog feeds.
-            </p>
-          </div>
-        )}
+        <div className="field">
+          <label>Noise suppression</label>
+          <select
+            value={f.noiseSuppression}
+            onChange={(e) => set("noiseSuppression", e.target.value)}
+          >
+            <option value="off">Off</option>
+            <option value="light">Light — voice band-pass</option>
+            <option value="strong">Strong — heavier filtering</option>
+          </select>
+          <p className="field-hint">
+            Filters static/hiss/hum. Light keeps a 200–3400 Hz voice band (a 200 Hz high-pass also
+            kills line-in mains hum). Strong filters more aggressively for steady static. Start with
+            Light; use Strong on noisy analog feeds.{" "}
+            {f.sourceType === "audio_device"
+              ? "Applied live in the bridge runner on the machine wired to the radio."
+              : "Applied on the server as it ingests the stream."}
+          </p>
+        </div>
       </div>
       <div className="sim-channels" style={{ marginTop: 4 }}>
         <label>
