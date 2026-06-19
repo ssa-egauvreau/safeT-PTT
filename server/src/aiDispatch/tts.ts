@@ -163,6 +163,39 @@ export async function synthesizeElevenLabsMp3(
     failure?: TtsFailureInfo;
   },
 ): Promise<Buffer | null> {
+  return synthesizeElevenLabs(agencyId, text, "mp3", opts);
+}
+
+/**
+ * Like [synthesizeElevenLabsMp3] but asks ElevenLabs for raw 16 kHz mono PCM
+ * (s16le) instead of MP3. The on-air reply path uses this so it can hand the
+ * bytes straight to the channel player WITHOUT shelling out to ffmpeg to decode
+ * — on memory/PID-constrained boxes the ffmpeg fork was failing (EAGAIN) and
+ * silently dropping the dispatcher's reply. No ffmpeg, no spawn, no failure.
+ */
+export async function synthesizeElevenLabsPcm16(
+  agencyId: number,
+  text: string,
+  opts?: {
+    speechKind?: TtsSpeechKind;
+    profile?: TtsProfile;
+    failure?: TtsFailureInfo;
+  },
+): Promise<Buffer | null> {
+  return synthesizeElevenLabs(agencyId, text, "pcm_16000", opts);
+}
+
+async function synthesizeElevenLabs(
+  agencyId: number,
+  text: string,
+  outputFormat: "mp3" | "pcm_16000",
+  opts?: {
+    skipPrecache?: boolean;
+    speechKind?: TtsSpeechKind;
+    profile?: TtsProfile;
+    failure?: TtsFailureInfo;
+  },
+): Promise<Buffer | null> {
   const apiKey = await resolveElevenLabsApiKey(agencyId);
   const voiceId = await resolveElevenLabsVoiceId(agencyId);
   if (!apiKey) {
@@ -176,33 +209,42 @@ export async function synthesizeElevenLabsMp3(
   const profile = opts?.profile ?? resolveTtsProfile(text, opts?.speechKind ?? "auto");
   const pacedText = prepareTextForTts(text).slice(0, 2_000);
 
-  scheduleAgencyTtsPrecache(agencyId);
-
-  if (!opts?.skipPrecache) {
-    const cached = getTtsPrecacheHit(agencyId, text);
-    if (cached && cached.length > 0) {
-      return cached;
+  // The precache stores MP3 buffers, so it only serves the MP3 format.
+  const isMp3 = outputFormat === "mp3";
+  if (isMp3) {
+    scheduleAgencyTtsPrecache(agencyId);
+    if (!opts?.skipPrecache) {
+      const cached = getTtsPrecacheHit(agencyId, text);
+      if (cached && cached.length > 0) {
+        return cached;
+      }
     }
   }
 
   const { model_id: primaryModel, voice_settings } = modelAndSettings(profile);
   const models = fallbackModels(primaryModel);
+  // pcm_16000 is a query param; mp3 is ElevenLabs' default so the URL stays bare.
+  const formatQuery = isMp3 ? "" : `?output_format=${outputFormat}`;
+  const accept = isMp3 ? "audio/mpeg" : "audio/pcm";
 
   for (let i = 0; i < models.length; i++) {
     const model_id = models[i]!;
-    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "xi-api-key": apiKey,
-        accept: "audio/mpeg",
+    const res = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}${formatQuery}`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "xi-api-key": apiKey,
+          accept,
+        },
+        body: JSON.stringify({
+          text: pacedText,
+          model_id,
+          voice_settings,
+        }),
       },
-      body: JSON.stringify({
-        text: pacedText,
-        model_id,
-        voice_settings,
-      }),
-    });
+    );
     if (res.ok) {
       recordElevenLabsCall(agencyId, true);
       const buf = Buffer.from(await res.arrayBuffer());

@@ -1,7 +1,3 @@
-import { writeFile, unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { randomBytes } from "node:crypto";
 import {
   getChannelAiDispatchRow,
   getTransmissionDispatchContext,
@@ -21,7 +17,7 @@ import {
   isAiDispatchUnit,
   resolveAiDispatchSystemPrompt,
 } from "./platformConfig.js";
-import { playMp3UrlOnChannel } from "./playback.js";
+import { playPcmOnChannel } from "./playback.js";
 import { buildDeterministicDispatchAck } from "./dispatchAck.js";
 import { applyOutWithCadRules } from "./outWithCad.js";
 import { applyCadDispatchRules } from "./cadDispatchRules.js";
@@ -36,7 +32,7 @@ import {
   incidentPayloadHasUnit,
   infoRequestNeedsAsync,
 } from "./infoRequest.js";
-import { synthesizeElevenLabsMp3, type TtsFailureInfo, type TtsSpeechKind } from "./tts.js";
+import { synthesizeElevenLabsPcm16, type TtsFailureInfo, type TtsSpeechKind } from "./tts.js";
 import { postOutboundWebhook } from "./webhook.js";
 import {
   applyChannelTen33Marker,
@@ -977,8 +973,8 @@ async function speakDispatcherReply(
   failureSink?: TtsFailureInfo,
 ): Promise<boolean> {
   const failure: TtsFailureInfo = failureSink ?? {};
-  const mp3 = await synthesizeElevenLabsMp3(tx.agency_id, reply, { speechKind, failure });
-  if (!mp3) {
+  const pcm = await synthesizeElevenLabsPcm16(tx.agency_id, reply, { speechKind, failure });
+  if (!pcm) {
     console.warn(
       `[ai-dispatch] ElevenLabs returned no audio agency=${tx.agency_id} channel=${tx.channel_name}: ${failure.detail ?? "unknown reason"}`,
     );
@@ -986,23 +982,22 @@ async function speakDispatcherReply(
   }
 
   const platform = getAiDispatchPlatformConfig();
-  const tmpPath = join(tmpdir(), `ai-dispatch-${randomBytes(8).toString("hex")}.mp3`);
-  await writeFile(tmpPath, mp3);
   try {
-    await playMp3UrlOnChannel({
+    // Play the PCM straight to the channel — no MP3 temp file, no ffmpeg decode
+    // (the ffmpeg fork was failing with EAGAIN on memory/PID-tight boxes and
+    // silently dropping the reply).
+    await playPcmOnChannel({
       loopbackPort,
       agencyId: tx.agency_id,
       channelName: tx.channel_name,
       unitId: platform.dispatchUnitId,
       yieldsToUnits,
-      mp3Url: tmpPath,
+      pcm,
     });
   } catch (playErr) {
     console.warn(`[ai-dispatch] playback failed channel=${tx.channel_name}`, playErr);
     failure.detail = `On-channel playback failed: ${playErr instanceof Error ? playErr.message : String(playErr)}`;
     return false;
-  } finally {
-    await unlink(tmpPath).catch(() => undefined);
   }
 
   void postOutboundWebhook(tx.agency_id, {
