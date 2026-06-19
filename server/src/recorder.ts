@@ -142,7 +142,9 @@ async function finalize(rec: ActiveRecording): Promise<void> {
       // one — otherwise the AI dispatcher gets no transcript and never runs), go
       // in the high lane so the AI reply isn't stuck behind a bridge firehose.
       // A plain bridge clip (TRANSCRIBE_BRIDGE=on, no AI) stays in the low lane.
-      enqueueTranscription(id, { priority: !rec.fromBridge || aiOn });
+      // Golden rule: an AI-dispatch clip routes to the (more accurate) cloud
+      // Whisper when a cloud key is set; everything else stays on local Whisper.
+      enqueueTranscription(id, { priority: !rec.fromBridge || aiOn, cloud: aiOn });
     }
   } catch (error) {
     console.warn("Failed to save transmission recording", error);

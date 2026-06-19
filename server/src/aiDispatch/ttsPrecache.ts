@@ -1,5 +1,5 @@
 import { getPool } from "../db.js";
-import { getAgencyIntegrationValue } from "../store.js";
+import { resolveElevenLabsApiKey } from "./elevenLabsCreds.js";
 import { buildPrecachePhraseList, normalizeForTtsPrecache } from "./speech/precachePhrases.js";
 import { synthesizeElevenLabsMp3 } from "./tts.js";
 
@@ -37,7 +37,7 @@ async function precachePhrase(agencyId: number, phrase: string): Promise<void> {
 }
 
 async function runPrecacheJob(agencyId: number): Promise<void> {
-  const apiKey = await getAgencyIntegrationValue(agencyId, "elevenlabs_api_key");
+  const apiKey = await resolveElevenLabsApiKey(agencyId);
   if (!apiKey?.trim()) {
     return;
   }
