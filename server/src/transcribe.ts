@@ -67,6 +67,98 @@ function safeParallelism(): number {
   }
 }
 
+/**
+ * Cloud transcription fallback (OpenAI Whisper API). When the local ONNX pool is
+ * OOM/broken on a small Railway box, a clip would otherwise be recorded as
+ * "failed" and the AI dispatcher would never see it. With a key configured we
+ * instead transcribe in the cloud, so radio checks keep working regardless of
+ * container memory. Enabled whenever a key is present, unless explicitly turned
+ * off. Key: TRANSCRIBE_CLOUD_API_KEY, else OPENAI_API_KEY.
+ */
+const CLOUD_FALLBACK_FLAG = (process.env.TRANSCRIBE_CLOUD_FALLBACK ?? "auto").trim().toLowerCase();
+const CLOUD_API_KEY =
+  process.env.TRANSCRIBE_CLOUD_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim() || "";
+const CLOUD_MODEL = process.env.TRANSCRIBE_CLOUD_MODEL?.trim() || "whisper-1";
+const CLOUD_API_URL =
+  process.env.TRANSCRIBE_CLOUD_URL?.trim() || "https://api.openai.com/v1/audio/transcriptions";
+/** Bound concurrent cloud requests so an OOM'd box draining a backlog doesn't fan out unboundedly. */
+const CLOUD_MAX_CONCURRENCY = Math.max(1, Number(process.env.TRANSCRIBE_CLOUD_CONCURRENCY) || 2);
+let cloudInflight = 0;
+
+function cloudFallbackEnabled(): boolean {
+  return CLOUD_FALLBACK_FLAG !== "off" && CLOUD_API_KEY.length > 0;
+}
+
+/**
+ * Transcribes one WAV clip via the cloud Whisper API. Returns the text (possibly
+ * empty for silence), or null on any failure so the caller records "failed".
+ */
+async function transcribeViaCloud(wav: Buffer): Promise<string | null> {
+  if (!CLOUD_API_KEY) {
+    return null;
+  }
+  try {
+    const form = new FormData();
+    // Copy into a plain Uint8Array (fresh ArrayBuffer) — Buffer's backing store
+    // can be a SharedArrayBuffer, which BlobPart's types reject.
+    form.append("file", new Blob([new Uint8Array(wav)], { type: "audio/wav" }), "audio.wav");
+    form.append("model", CLOUD_MODEL);
+    form.append("response_format", "json");
+    form.append("language", "en");
+    const res = await fetch(CLOUD_API_URL, {
+      method: "POST",
+      headers: { authorization: `Bearer ${CLOUD_API_KEY}` },
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.warn(`[transcribe] cloud fallback ${res.status}: ${body.slice(0, 200)}`);
+      return null;
+    }
+    const data = (await res.json()) as { text?: string };
+    return (data.text ?? "").trim();
+  } catch (error) {
+    console.warn("[transcribe] cloud fallback request failed", error);
+    return null;
+  }
+}
+
+/** Runs one transmission entirely through the cloud (local pool unavailable). */
+async function runViaCloud(id: number): Promise<void> {
+  cloudInflight++;
+  try {
+    const record = await getTransmissionAudio(id);
+    if (!record) {
+      return;
+    }
+    const text = await transcribeViaCloud(record.audio);
+    await setTranscript(id, text === null ? "failed" : "done", text);
+    enqueueAiDispatchForTransmission(id);
+  } catch (error) {
+    console.warn(`Cloud transcription failed for transmission ${id}`, error);
+    await setTranscript(id, "failed", null).catch(() => undefined);
+    enqueueAiDispatchForTransmission(id);
+  } finally {
+    cloudInflight--;
+    inQueue.delete(id);
+    // Cloud-only mode has no worker pool to schedule — drain the next clip
+    // through the cloud directly. Otherwise hand back to the local scheduler.
+    if (!ENABLED) {
+      drainCloudQueue();
+    } else {
+      dispatch();
+    }
+  }
+}
+
+/** Cloud-only scheduler: starts queued clips up to the cloud concurrency cap. */
+function drainCloudQueue(): void {
+  while (cloudInflight < CLOUD_MAX_CONCURRENCY && (priorityQueue.length > 0 || queue.length > 0)) {
+    const id = (priorityQueue.length > 0 ? priorityQueue.shift() : queue.shift())!;
+    void runViaCloud(id);
+  }
+}
+
 type TranscriberState = "idle" | "loading" | "ready" | "broken";
 
 let state: TranscriberState = "idle";
@@ -125,6 +217,8 @@ export interface TranscriptionDiagnostics {
   workers: number;
   workers_busy: number;
   last_load_failed_at: string | null;
+  /** Cloud Whisper fallback configured (key present + not turned off). */
+  cloud_fallback: boolean;
 }
 
 export function getTranscriptionDiagnostics(): TranscriptionDiagnostics {
@@ -137,6 +231,7 @@ export function getTranscriptionDiagnostics(): TranscriptionDiagnostics {
     workers: WORKER_COUNT,
     workers_busy: slots.filter((s) => s.busy).length,
     last_load_failed_at: lastLoadFailedAt > 0 ? new Date(lastLoadFailedAt).toISOString() : null,
+    cloud_fallback: cloudFallbackEnabled(),
   };
 }
 
@@ -275,7 +370,15 @@ async function runOnSlot(slot: WorkerSlot, w: ChildProcess, id: number): Promise
     if (!record) {
       return;
     }
-    const text = await sendToSlot(slot, w, id, record.audio);
+    let text = await sendToSlot(slot, w, id, record.audio);
+    // Local worker couldn't produce text (OOM, crash, timeout) — try the cloud
+    // before giving up, so the AI dispatcher still gets a transcript to answer.
+    if (text === null && cloudFallbackEnabled()) {
+      const cloud = await transcribeViaCloud(record.audio);
+      if (cloud !== null) {
+        text = cloud;
+      }
+    }
     await setTranscript(id, text === null ? "failed" : "done", text);
     // Queue AI even on empty/failed STT so the activity log can record the skip
     // instead of the transmission silently vanishing from the AI dispatch log.
@@ -308,7 +411,17 @@ function dispatch(): void {
     }
     const w = ensureSlotWorker(slot);
     if (!w) {
-      continue; // in crash cooldown / failed to spawn — another slot may take it
+      // This slot can't spawn (OOM crash cooldown / failed to start). If the
+      // cloud fallback is on, drain a clip through it rather than leaving the
+      // queue stuck until the local pool recovers — this is the case that keeps
+      // radio checks answered while Whisper is OOM on a small Railway box.
+      if (cloudFallbackEnabled() && cloudInflight < CLOUD_MAX_CONCURRENCY) {
+        const cloudId = (priorityQueue.length > 0 ? priorityQueue.shift() : queue.shift());
+        if (cloudId !== undefined) {
+          void runViaCloud(cloudId);
+        }
+      }
+      continue; // another slot may still take the next clip
     }
     if (needsSpawn && !modelWarmed) {
       coldLoader = slot; // this slot owns the one-time cold load
@@ -324,7 +437,7 @@ function dispatch(): void {
  *  recovery sweep can't double-enqueue an id already waiting in the queue.
  *  `priority` puts it in the high lane (handset / AI-dispatch audio). */
 export function enqueueTranscription(id: number, opts?: { priority?: boolean }): void {
-  if (!ENABLED) {
+  if (!ENABLED && !cloudFallbackEnabled()) {
     void setTranscript(id, "disabled", null)
       .then(() => enqueueAiDispatchForTransmission(id))
       .catch(() => undefined);
@@ -334,6 +447,14 @@ export function enqueueTranscription(id: number, opts?: { priority?: boolean }):
     return;
   }
   inQueue.add(id);
+  // Cloud-only mode (local pool disabled): there are no worker slots to schedule,
+  // so transcribe directly in the cloud instead of queueing for a pool that
+  // never drains.
+  if (!ENABLED) {
+    queue.push(id);
+    drainCloudQueue();
+    return;
+  }
   if (opts?.priority) {
     priorityQueue.push(id);
   } else {
@@ -351,7 +472,7 @@ export function enqueueTranscription(id: number, opts?: { priority?: boolean }):
  * skipped, so it converges as the worker drains.
  */
 export async function recoverPendingTranscriptions(): Promise<void> {
-  if (!ENABLED) {
+  if (!ENABLED && !cloudFallbackEnabled()) {
     return;
   }
   try {
@@ -372,7 +493,11 @@ export async function recoverPendingTranscriptions(): Promise<void> {
     }
     if (fresh.length > 0) {
       console.log(`Re-queued ${fresh.length} pending transcription(s).`);
-      dispatch();
+      if (ENABLED) {
+        dispatch();
+      } else {
+        drainCloudQueue();
+      }
     }
   } catch (error) {
     console.warn("Could not recover pending transcriptions", error);
