@@ -1,12 +1,13 @@
 package com.securityradio.ptt.device
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import androidx.core.content.FileProvider
 import com.securityradio.ptt.data.remote.normalizeApiBaseUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -406,13 +407,44 @@ class AppUpdater(
     fun canInstall(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
 
+    /**
+     * Installs the downloaded APK via the [PackageInstaller] session API rather
+     * than the legacy `ACTION_VIEW` package-archive intent. The old intent was
+     * routed by some OEM builds through a Google Play "scan before install"
+     * interstitial; on devices where the Play Store itself crashes that dialog
+     * never resolved, and because the OTA re-fires the installer every launch the
+     * device got stuck in a never-installing loop. The session API hands the APK
+     * straight to the system package installer instead.
+     *
+     * The confirmation still comes from the system `packageinstaller` package, so
+     * the touchless accessibility auto-confirm ([AppUpdateInstallGate] +
+     * [InricoHardwareService]) drives it exactly as before. Status (incl. the
+     * "user action needed" hand-off that shows the confirm dialog) is delivered
+     * to [AppUpdateInstallReceiver].
+     */
     private fun launchInstall(apk: File) {
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apk)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val installer = context.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(
+            PackageInstaller.SessionParams.MODE_FULL_INSTALL,
+        ).apply { setAppPackageName(context.packageName) }
+        val sessionId = installer.createSession(params)
+        installer.openSession(sessionId).use { session ->
+            apk.inputStream().use { input ->
+                session.openWrite("base.apk", 0, apk.length()).use { out ->
+                    input.copyTo(out)
+                    session.fsync(out)
+                }
+            }
+            val statusIntent = Intent(context, AppUpdateInstallReceiver::class.java).apply {
+                action = AppUpdateInstallReceiver.ACTION_INSTALL_STATUS
+                setPackage(context.packageName)
+            }
+            val piFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+            val statusSender =
+                PendingIntent.getBroadcast(context, sessionId, statusIntent, piFlags)
+            session.commit(statusSender.intentSender)
         }
-        context.startActivity(intent)
     }
 
     private fun throttleElapsed(): Boolean =
