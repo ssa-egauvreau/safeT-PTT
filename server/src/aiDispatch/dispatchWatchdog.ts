@@ -4,14 +4,10 @@ import { listTen8ActiveIncidents } from "../ten8/store.js";
 import { getAiDispatchPlatformConfig } from "./platformConfig.js";
 import { callCodeForRadio, incidentHasAssignedUnits } from "./infoRequest.js";
 import { shortenLocationForRadio } from "../ten8/cadRadioLookup.js";
-import { synthesizeElevenLabsMp3 } from "./tts.js";
-import { playMp3UrlOnChannel } from "./playback.js";
+import { synthesizeElevenLabsPcm16 } from "./tts.js";
+import { playPcmOnChannel } from "./playback.js";
 import { getChannelAiDispatchRow } from "../store.js";
 import { getAiDispatchLoopbackPort } from "./engine.js";
-import { writeFile, unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { randomBytes } from "node:crypto";
 
 /** Unassigned open calls past these ages get a radio reminder (by 10-8 priority 1–4). */
 const STALE_UNASSIGNED_MS: Record<number, number> = {
@@ -66,24 +62,20 @@ async function speakOnChannel(
   if (!row?.enabled) {
     return;
   }
-  const mp3 = await synthesizeElevenLabsMp3(agencyId, text, { speechKind: "callout" });
-  if (!mp3) {
+  // Raw PCM straight to the channel — no ffmpeg decode (avoids the EAGAIN
+  // spawn failure on resource-tight boxes).
+  const pcm = await synthesizeElevenLabsPcm16(agencyId, text, { speechKind: "callout" });
+  if (!pcm) {
     return;
   }
-  const tmpPath = join(tmpdir(), `ai-dispatch-watchdog-${randomBytes(8).toString("hex")}.mp3`);
-  await writeFile(tmpPath, mp3);
-  try {
-    await playMp3UrlOnChannel({
-      loopbackPort: getAiDispatchLoopbackPort(),
-      agencyId,
-      channelName,
-      unitId: platform.dispatchUnitId,
-      yieldsToUnits: row.yields_to_units !== false,
-      mp3Url: tmpPath,
-    });
-  } finally {
-    await unlink(tmpPath).catch(() => undefined);
-  }
+  await playPcmOnChannel({
+    loopbackPort: getAiDispatchLoopbackPort(),
+    agencyId,
+    channelName,
+    unitId: platform.dispatchUnitId,
+    yieldsToUnits: row.yields_to_units !== false,
+    pcm,
+  });
 }
 
 async function tickStaleUnassignedCalls(): Promise<void> {
