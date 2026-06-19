@@ -484,6 +484,7 @@ fun RadioScreen(
             ScanChannelPickerDialog(state = state, onEvent = onEvent, styles = styles)
         }
         MessageHistoryScreen(state = state, onEvent = onEvent, styles = styles)
+        AiActivityOverlay(activity = state.aiActivity, styles = styles)
         HardwareMappingDialog(state = state, onEvent = onEvent, styles = styles)
         SetupRequiredDialog(state = state, onEvent = onEvent)
     }
@@ -630,58 +631,104 @@ private fun AiDispatchBadge(visible: Boolean, styles: LcdTextStyles, modifier: M
 }
 
 /**
- * Siri-style cue for live AI-dispatcher activity, shown under the AI badge.
- * Thinking → a pulsing "AI LISTENING…" (bright for the radio she's answering,
- * dimmer net-wide). Speaking → her reply text + a short action tag.
+ * Full-screen live AI-dispatcher overlay (drawn over the radio UI, like the
+ * message-history screen). Thinking → a large, centered "AI LISTENING" so it's
+ * readable in the channel area. Speaking → her response fills the screen (and
+ * covers the normal "27 AI" RX talker screen). Cleared when activity ends.
  */
 @Composable
-private fun AiActivityCue(
+private fun AiActivityOverlay(
     activity: AiActivityUi?,
     styles: LcdTextStyles,
-    modifier: Modifier = Modifier,
 ) {
     if (activity == null) return
+    // While she's only *thinking*, take over the screen just for the radio she's
+    // answering — don't blank the whole net for traffic that isn't theirs. Once
+    // she *speaks*, every radio on the channel sees the response (it's on-air).
+    if (activity.phase == AiActivityPhase.Thinking && !activity.forYou) return
     val p = RadioLcdTheme.palette
-    when (activity.phase) {
-        AiActivityPhase.Thinking -> {
-            val pulse = rememberTen33PulseAlpha(true)
-            val color = if (activity.forYou) p.statusBlue else p.textMuted
-            val label = if (activity.forYou) "AI LISTENING" else "AI WORKING"
-            Row(
-                modifier = modifier.graphicsLayer { alpha = 0.55f + 0.45f * pulse },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = "✦ $label",
-                    style = styles.status.copy(fontWeight = FontWeight.SemiBold, fontSize = 11.sp),
-                    color = color,
-                    maxLines = 1,
-                )
-                Text("•••", style = styles.status.copy(fontSize = 11.sp), color = color)
-            }
+    val rainbow = Brush.horizontalGradient(
+        listOf(
+            Color(0xFFFF5F6D),
+            Color(0xFFFFC371),
+            Color(0xFF38F9D7),
+            Color(0xFF7F7FD5),
+            Color(0xFFFF5F6D),
+        ),
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(p.lcdMain)
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        // Rainbow "AI DISPATCH" chip pinned to the top so the source is always clear.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .background(rainbow, RoundedCornerShape(50))
+                .padding(horizontal = 14.dp, vertical = 4.dp),
+        ) {
+            Text(
+                text = "✦ AI DISPATCH",
+                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 13.sp),
+                color = Color(0xFF0B0B12),
+                maxLines = 1,
+            )
         }
-        AiActivityPhase.Speaking -> {
-            Column(
-                modifier = modifier,
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                if (activity.tag.isNotEmpty()) {
+
+        when (activity.phase) {
+            AiActivityPhase.Thinking -> {
+                val pulse = rememberTen33PulseAlpha(true)
+                val color = if (activity.forYou) p.statusBlue else p.textMuted
+                val label = if (activity.forYou) "AI LISTENING" else "AI WORKING"
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.graphicsLayer { alpha = 0.6f + 0.4f * pulse },
+                ) {
                     Text(
-                        text = activity.tag,
-                        style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp),
-                        color = p.statusBlue,
+                        text = label,
+                        style = styles.channel.copy(fontWeight = FontWeight.Bold, fontSize = 34.sp),
+                        color = color,
                         maxLines = 1,
                     )
-                }
-                if (activity.text.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = activity.text,
-                        style = styles.status.copy(fontSize = 12.sp),
+                        text = "• • •",
+                        style = styles.channel.copy(fontSize = 28.sp),
+                        color = color,
+                    )
+                }
+            }
+            AiActivityPhase.Speaking -> {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    if (activity.tag.isNotEmpty()) {
+                        Text(
+                            text = activity.tag,
+                            style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp),
+                            color = p.statusBlue,
+                            maxLines = 1,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+                    Text(
+                        text = activity.text.ifBlank { "…" },
+                        style = styles.channel.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 26.sp,
+                            lineHeight = 32.sp,
+                        ),
                         color = p.textPrimary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -764,7 +811,6 @@ private fun UniversalCockpitMainPanel(
             )
         }
         AiDispatchBadge(visible = state.aiDispatchEnabled, styles = styles)
-        AiActivityCue(activity = state.aiActivity, styles = styles, modifier = Modifier.padding(top = 3.dp))
         if (state.channelCodecLabel.isNotBlank()) {
             Text(
                 text = state.channelCodecLabel.uppercase(Locale.US),
@@ -1482,11 +1528,6 @@ private fun LcdMainChannelBlock(
                 styles = styles,
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
-            AiActivityCue(
-                activity = state.aiActivity,
-                styles = styles,
-                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 3.dp),
-            )
             val remoteEmergency = state.remoteEmergencyUnit?.trim()?.takeIf { it.isNotEmpty() }
             if (remoteEmergency != null && !state.isEmergencyActive) {
                 Text(
@@ -1880,11 +1921,6 @@ private fun LcdHandsetFillChannelBlock(
                             visible = state.aiDispatchEnabled,
                             styles = styles,
                             modifier = Modifier.padding(top = 4.dp),
-                        )
-                        AiActivityCue(
-                            activity = state.aiActivity,
-                            styles = styles,
-                            modifier = Modifier.padding(top = 3.dp),
                         )
                         if (scanRxLive) {
                             LcdHandsetScanRxStrip(
