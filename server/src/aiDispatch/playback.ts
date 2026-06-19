@@ -8,7 +8,15 @@ const SAMPLE_RATE = 16_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function decodeMp3ToPcm(url: string): Promise<Buffer> {
+/** Spawn-failure codes that mean "couldn't fork ffmpeg right now" rather than a
+ *  real decode error — transient under memory/process pressure, worth a retry. */
+function isTransientSpawnError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException)?.code;
+  return code === "EAGAIN" || code === "ENOMEM";
+}
+
+/** One ffmpeg decode attempt: MP3 (URL) → raw 16 kHz mono s16le PCM. */
+function spawnMp3Decode(url: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const ff = spawn("ffmpeg", [
       "-hide_banner",
@@ -31,6 +39,35 @@ function decodeMp3ToPcm(url: string): Promise<Buffer> {
     ff.on("error", reject);
     ff.on("close", (code) => (code === 0 ? resolve(Buffer.concat(out)) : reject(new Error(`ffmpeg ${code}`))));
   });
+}
+
+/**
+ * Decode the TTS MP3 to PCM, retrying when the container can't fork ffmpeg
+ * (EAGAIN/ENOMEM) under momentary memory/process pressure. Without this a single
+ * transient spawn failure silenced the dispatcher's reply ("On-channel playback
+ * failed: spawn ffmpeg EAGAIN"); a few backed-off retries ride out the spike.
+ */
+async function decodeMp3ToPcm(url: string): Promise<Buffer> {
+  const MAX_ATTEMPTS = 4;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await spawnMp3Decode(url);
+    } catch (err) {
+      lastErr = err;
+      if (isTransientSpawnError(err) && attempt < MAX_ATTEMPTS) {
+        const backoffMs = 300 * attempt;
+        console.warn(
+          `[ai-dispatch] ffmpeg spawn ${(err as NodeJS.ErrnoException).code} ` +
+            `(attempt ${attempt}/${MAX_ATTEMPTS}); retrying in ${backoffMs}ms`,
+        );
+        await sleep(backoffMs);
+        continue;
+      }
+      break;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("ffmpeg decode failed");
 }
 
 async function playPcmOnChannelUnlocked(opts: {
