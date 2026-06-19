@@ -33,6 +33,13 @@ interface RadioApi {
     @GET("/v1/radio/alerts/{id}/image")
     suspend fun alertImage(@Path("id") id: Long): ResponseBody
 
+    /** Reply to a page — an ACK or a short canned response. */
+    @POST("/v1/radio/alerts/{id}/ack-response")
+    suspend fun respondToAlert(
+        @Path("id") id: Long,
+        @Body body: AlertResponseDto,
+    ): RadioOkDto
+
     /** Live profile read — picks up display-name and unit-id changes made on the portal. */
     @GET("/v1/auth/me")
     suspend fun me(): MeResponseDto
@@ -155,6 +162,11 @@ data class RadioTransmissionDto(
     @SerializedName("transcript_status") val transcriptStatus: String = "",
     @SerializedName("unit_id") val unitId: String? = null,
     @SerializedName("display_name") val displayName: String? = null,
+)
+
+data class AlertResponseDto(
+    @SerializedName("unit") val unit: String,
+    @SerializedName("response") val response: String,
 )
 
 data class InboxAlertDto(

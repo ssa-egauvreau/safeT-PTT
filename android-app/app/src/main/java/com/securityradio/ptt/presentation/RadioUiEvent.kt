@@ -75,6 +75,8 @@ sealed interface RadioUiEvent {
     data object MarkMessagesRead : RadioUiEvent
     /** Lazily fetch a page's picture attachment. */
     data class LoadPageImage(val pageId: Long) : RadioUiEvent
+    /** Reply to a page with an ACK or a short canned response. */
+    data class RespondToPage(val pageId: Long, val response: String) : RadioUiEvent
     /** Bind this handset to an agency (tenant) by its radio key; blank clears the override. */
     data class SaveAgencyRadioKey(val key: String) : RadioUiEvent
 

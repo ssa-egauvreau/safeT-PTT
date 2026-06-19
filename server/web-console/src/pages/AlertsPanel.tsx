@@ -5,6 +5,7 @@ import {
   uploadAlertImage,
   fetchAlertImage,
   type Alert,
+  type AlertResponse,
   type UserChannel,
 } from "../api";
 import { sounds } from "../sounds";
@@ -69,6 +70,7 @@ function AlertThumb({ id }: { id: number }) {
 
 export function AlertsPanel({ variant = "embedded", onPopOut }: SectionProps) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [responsesByAlert, setResponsesByAlert] = useState<Record<number, AlertResponse[]>>({});
   const [channels, setChannels] = useState<UserChannel[]>([]);
   const [kind, setKind] = useState<AlertKind>("page");
   const [channelName, setChannelName] = useState("");
@@ -96,6 +98,16 @@ export function AlertsPanel({ variant = "embedded", onPopOut }: SectionProps) {
         sounds.emergency();
         fresh.forEach(notifyEmergency);
       }
+    } catch {
+      /* keep last snapshot */
+    }
+    try {
+      const { responses } = await api.alertResponses();
+      const grouped: Record<number, AlertResponse[]> = {};
+      for (const r of responses) {
+        (grouped[r.alert_id] ??= []).push(r);
+      }
+      setResponsesByAlert(grouped);
     } catch {
       /* keep last snapshot */
     }
@@ -263,6 +275,15 @@ export function AlertsPanel({ variant = "embedded", onPopOut }: SectionProps) {
               </div>
               {alert.message && <div className="alert-msg">{alert.message}</div>}
               {alert.has_image && <AlertThumb id={alert.id} />}
+              {(responsesByAlert[alert.id]?.length ?? 0) > 0 && (
+                <div className="alert-replies">
+                  {responsesByAlert[alert.id]!.map((r) => (
+                    <span className="alert-reply" key={r.id}>
+                      <strong>{aliasFor(r.unit) || r.unit}</strong>: {r.response}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             {alert.active && (
               <button className="btn sm" onClick={() => clear(alert.id)}>

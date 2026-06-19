@@ -1108,6 +1108,7 @@ class RadioViewModel(
             is RadioUiEvent.SelectMessageHistoryTab -> selectMessageHistoryTab(event.tab)
             RadioUiEvent.MarkMessagesRead -> markMessagesRead()
             is RadioUiEvent.LoadPageImage -> loadPageImage(event.pageId)
+            is RadioUiEvent.RespondToPage -> respondToPage(event.pageId, event.response)
             is RadioUiEvent.SaveAgencyRadioKey -> {
                 val key = event.key.trim()
                 radioPreferences.setAgencyRadioKey(key)
@@ -2441,6 +2442,36 @@ class RadioViewModel(
         }
     }
 
+    /** Sends a reply (ACK / canned response) to a page and marks it locally. */
+    private fun respondToPage(pageId: Long, response: String) {
+        val reply = response.trim().take(60)
+        if (reply.isEmpty()) return
+        // Optimistically mark responded so the row updates immediately.
+        _uiState.update { state ->
+            val next = state.pageMessages.map {
+                if (it.id == pageId) it.copy(responded = reply) else it
+            }
+            persistPages(next)
+            state.copy(pageMessages = next)
+        }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    radioApi.respondToAlert(
+                        pageId,
+                        com.securityradio.ptt.data.remote.AlertResponseDto(
+                            unit = unitIdUpper,
+                            response = reply,
+                        ),
+                    )
+                }
+                _uiState.update { it.copy(statusMessage = "REPLY SENT: ${reply.uppercase(Locale.US)}") }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(statusMessage = "REPLY FAILED — RETRY") }
+            }
+        }
+    }
+
     private fun selectMessageHistoryTab(tab: MessageHistoryTab) {
         _uiState.update { it.copy(messageHistoryTab = tab) }
         if (tab == MessageHistoryTab.Messages) markMessagesRead()
@@ -2466,7 +2497,8 @@ class RadioViewModel(
                     .put("message", p.message)
                     .put("targetedToMe", p.targetedToMe)
                     .put("hasImage", p.hasImage)
-                    .put("read", p.read),
+                    .put("read", p.read)
+                    .put("responded", p.responded ?: JSONObject.NULL),
             )
         }
         radioPreferences.setStoredPagesJson(arr.toString())
@@ -2485,6 +2517,7 @@ class RadioViewModel(
                     targetedToMe = o.optBoolean("targetedToMe"),
                     hasImage = o.optBoolean("hasImage"),
                     read = o.optBoolean("read", true),
+                    responded = if (o.isNull("responded")) null else o.optString("responded").ifEmpty { null },
                 )
             }
         } catch (_: Exception) {
