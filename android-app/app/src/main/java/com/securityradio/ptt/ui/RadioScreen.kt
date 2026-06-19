@@ -600,7 +600,7 @@ private fun UniversalCockpitScanBanner(state: RadioUiState, styles: LcdTextStyle
 
 /** Rainbow "AI DISPATCH" pill shown under the channel name when the tuned channel runs the AI dispatcher. */
 @Composable
-private fun AiDispatchBadge(visible: Boolean, styles: LcdTextStyles) {
+private fun AiDispatchBadge(visible: Boolean, styles: LcdTextStyles, modifier: Modifier = Modifier) {
     if (!visible) return
     val rainbow = Brush.horizontalGradient(
         listOf(
@@ -612,7 +612,7 @@ private fun AiDispatchBadge(visible: Boolean, styles: LcdTextStyles) {
         ),
     )
     Box(
-        modifier = Modifier
+        modifier = modifier
             .background(rainbow, RoundedCornerShape(50))
             .padding(horizontal = 12.dp, vertical = 3.dp),
         contentAlignment = Alignment.Center,
@@ -1413,6 +1413,11 @@ private fun LcdMainChannelBlock(
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
             )
+            AiDispatchBadge(
+                visible = state.aiDispatchEnabled,
+                styles = styles,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            )
             val remoteEmergency = state.remoteEmergencyUnit?.trim()?.takeIf { it.isNotEmpty() }
             if (remoteEmergency != null && !state.isEmergencyActive) {
                 Text(
@@ -1802,6 +1807,11 @@ private fun LcdHandsetFillChannelBlock(
                                     .padding(horizontal = 4.dp),
                             )
                         }
+                        AiDispatchBadge(
+                            visible = state.aiDispatchEnabled,
+                            styles = styles,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
                         if (scanRxLive) {
                             LcdHandsetScanRxStrip(
                                 channelName = state.scanBackgroundChannel,
