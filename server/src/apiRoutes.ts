@@ -91,7 +91,6 @@ import {
   setChannelAiDispatch,
   listChannelAiDispatchEnabled,
   getChannelAiDispatchRow,
-  getAgencyIntegrationValue,
   listMemberships,
   listPositions,
   listPositionHistory,
@@ -191,6 +190,7 @@ import {
   getAiDispatchPlatformStatus,
 } from "./aiDispatch/platformConfig.js";
 import { applyChannelTen33Marker } from "./aiDispatch/ten33Marker.js";
+import { resolveElevenLabsApiKey, resolveElevenLabsVoiceId } from "./aiDispatch/elevenLabsCreds.js";
 import { listAiDispatchLog } from "./aiDispatch/activityLog.js";
 import { enqueueKbIngest } from "./aiDispatch/knowledgeBase/ingest.js";
 import { getEmbeddingModelName } from "./aiDispatch/knowledgeBase/embeddings.js";
@@ -3138,8 +3138,8 @@ export function createApiRouter(): Router {
     try {
       const agencyId = req.authUser!.agencyId!;
       const platform = getAiDispatchPlatformStatus();
-      const elevenKey = await getAgencyIntegrationValue(agencyId, "elevenlabs_api_key");
-      const voiceId = await getAgencyIntegrationValue(agencyId, "elevenlabs_voice_id");
+      const elevenKey = await resolveElevenLabsApiKey(agencyId);
+      const voiceId = await resolveElevenLabsVoiceId(agencyId);
       const promptSource = await agencyPromptSource(agencyId);
       res.json({
         platform_enabled: platform.enabled,

@@ -1,7 +1,7 @@
-import { getAgencyIntegrationValue } from "../store.js";
 import { classifyFailure, recordElevenLabsCall } from "../integrations/health.js";
 import { prepareTextForTts } from "./speech/prepareTextForTts.js";
 import { getTtsPrecacheHit, scheduleAgencyTtsPrecache } from "./ttsPrecache.js";
+import { resolveElevenLabsApiKey, resolveElevenLabsVoiceId } from "./elevenLabsCreds.js";
 
 /** Legacy Flash path — only when [resolveTtsProfile] returns `fast` and env overrides model. */
 const DEFAULT_FAST_MODEL_ID = "eleven_v3";
@@ -163,12 +163,12 @@ export async function synthesizeElevenLabsMp3(
     failure?: TtsFailureInfo;
   },
 ): Promise<Buffer | null> {
-  const apiKey = await getAgencyIntegrationValue(agencyId, "elevenlabs_api_key");
-  const voiceId =
-    (await getAgencyIntegrationValue(agencyId, "elevenlabs_voice_id")) ?? "21m00Tcm4TlvDq8ikWAM";
+  const apiKey = await resolveElevenLabsApiKey(agencyId);
+  const voiceId = await resolveElevenLabsVoiceId(agencyId);
   if (!apiKey) {
     if (opts?.failure) {
-      opts.failure.detail = "No ElevenLabs API key configured for this agency (Admin → Integrations).";
+      opts.failure.detail =
+        "No ElevenLabs API key configured (set ELEVENLABS_API_KEY, or Admin → Integrations).";
     }
     return null;
   }

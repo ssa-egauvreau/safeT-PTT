@@ -9,6 +9,7 @@
  */
 
 import { getAgencyIntegrationValue } from "../store.js";
+import { resolveElevenLabsApiKey } from "../aiDispatch/elevenLabsCreds.js";
 import { getAiDispatchPlatformStatus } from "../aiDispatch/platformConfig.js";
 
 export type ProviderStatus = "ok" | "low" | "out" | "error" | "unknown";
@@ -212,7 +213,7 @@ export async function getIntegrationHealth(agencyId: number): Promise<Integratio
     providers.push(reactiveToHealth(provider, label, platformReactive.get(provider)));
   }
 
-  const elKey = (await getAgencyIntegrationValue(agencyId, "elevenlabs_api_key"))?.trim();
+  const elKey = (await resolveElevenLabsApiKey(agencyId))?.trim();
   if (elKey) {
     providers.push(await elevenLabsHealth(agencyId, elKey));
   }
