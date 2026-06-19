@@ -2110,6 +2110,43 @@ export async function getAlertImage(
   return res.rows[0] ?? null;
 }
 
+export interface AlertResponseRow {
+  id: number;
+  alert_id: number;
+  unit: string;
+  response: string;
+  created_at: string;
+}
+
+/** Records a radio's reply (ACK / canned response) to a page. */
+export async function addAlertResponse(
+  agencyId: number,
+  alertId: number,
+  unit: string,
+  response: string,
+): Promise<AlertResponseRow | null> {
+  // Only allow a reply to a page that exists in this agency.
+  const res = await requirePool().query<AlertResponseRow>(
+    `INSERT INTO alert_responses (agency_id, alert_id, unit, response)
+     SELECT $1, $2, $3, $4
+     WHERE EXISTS (SELECT 1 FROM alerts WHERE id = $2 AND agency_id = $1)
+     RETURNING id, alert_id, unit, response, created_at;`,
+    [agencyId, alertId, unit, response],
+  );
+  return res.rows[0] ?? null;
+}
+
+/** Recent page replies for one agency (dispatcher view), newest first. */
+export async function listAlertResponses(agencyId: number, limit = 200): Promise<AlertResponseRow[]> {
+  const capped = Math.min(Math.max(Math.trunc(limit) || 200, 1), 500);
+  const res = await requirePool().query<AlertResponseRow>(
+    `SELECT id, alert_id, unit, response, created_at
+     FROM alert_responses WHERE agency_id = $1 ORDER BY created_at DESC LIMIT $2;`,
+    [agencyId, capped],
+  );
+  return res.rows;
+}
+
 /** Active alerts plus anything from the last 24h for one agency, newest first. */
 export async function listAlerts(agencyId: number, limit = 100): Promise<AlertRow[]> {
   const capped = Math.min(Math.max(Math.trunc(limit) || 100, 1), 200);

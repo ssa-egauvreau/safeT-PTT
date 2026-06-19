@@ -3877,7 +3877,41 @@ private fun PageMessageRow(
                 Text(text = "📷 loading image…", style = styles.body, color = p.textMuted)
             }
         }
+        Spacer(modifier = Modifier.height(6.dp))
+        if (page.responded != null) {
+            Text(
+                text = "✓ REPLIED: ${page.responded.uppercase(Locale.US)}",
+                style = styles.body,
+                color = p.statusGreen,
+            )
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (reply in PAGE_QUICK_REPLIES) {
+                    ReplyChip(
+                        text = reply,
+                        styles = styles,
+                        onClick = { onEvent(RadioUiEvent.RespondToPage(page.id, reply)) },
+                    )
+                }
+            }
+        }
     }
+}
+
+private val PAGE_QUICK_REPLIES = listOf("ACK", "EN ROUTE", "UNABLE")
+
+@Composable
+private fun ReplyChip(text: String, styles: LcdTextStyles, onClick: () -> Unit) {
+    val p = RadioLcdTheme.palette
+    Text(
+        text = text,
+        style = styles.body,
+        color = p.textSecondary,
+        modifier = Modifier
+            .border(width = 1.dp, color = p.textSecondary, shape = RoundedCornerShape(4.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    )
 }
 
 @Composable

@@ -74,6 +74,8 @@ import {
   listAlerts,
   setAlertImage,
   getAlertImage,
+  addAlertResponse,
+  listAlertResponses,
   listDeviceAcks,
   listAudit,
   listChannels,
@@ -3072,6 +3074,32 @@ export function createApiRouter(): Router {
     }
   });
 
+  // Radio reply to a page — an ACK or a short canned response. Radio-key auth.
+  router.post("/radio/alerts/:id/ack-response", async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const unit = String(body.unit ?? body.unit_id ?? "").trim().toUpperCase();
+      const response = String(body.response ?? "").trim().slice(0, 60);
+      if (!unit || !response) {
+        res.status(400).json({ error: "missing_unit_or_response" });
+        return;
+      }
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) {
+        res.status(400).json({ error: "bad_id" });
+        return;
+      }
+      const row = await addAlertResponse(radioAgencyId(req), id, unit, response);
+      if (!row) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      res.status(201).json({ response: row });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
   router.post("/radio/emergency", async (req, res) => {
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;
@@ -4064,6 +4092,21 @@ export function createApiRouter(): Router {
       res.setHeader("Content-Type", record.mime);
       res.setHeader("Cache-Control", "private, max-age=86400");
       res.send(record.image);
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Dispatcher view of radio replies to pages (recent, agency-scoped).
+  router.get("/alerts/responses", requireAgencyMember, async (req, res) => {
+    try {
+      const limit = Number(req.query.limit ?? 200);
+      res.json({
+        responses: await listAlertResponses(
+          req.authUser!.agencyId!,
+          Number.isFinite(limit) ? limit : 200,
+        ),
+      });
     } catch (error) {
       fail(res, error);
     }

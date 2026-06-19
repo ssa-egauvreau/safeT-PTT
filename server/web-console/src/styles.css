@@ -4880,6 +4880,20 @@ button.ch-kbd-chip:hover {
   object-fit: cover;
   display: block;
 }
+.alert-replies {
+  margin-top: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.alert-reply {
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 8px;
+}
 .alert-history {
   margin-top: 4px;
 }

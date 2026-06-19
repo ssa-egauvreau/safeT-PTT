@@ -27,6 +27,8 @@ data class PageMessage(
     val targetedToMe: Boolean,
     val hasImage: Boolean,
     val read: Boolean,
+    /** Label of the reply this radio sent back (ACK / canned), or null. */
+    val responded: String? = null,
 )
 
 /**

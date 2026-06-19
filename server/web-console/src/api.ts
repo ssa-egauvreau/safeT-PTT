@@ -413,6 +413,14 @@ export interface Alert {
   has_image?: boolean;
 }
 
+export interface AlertResponse {
+  id: number;
+  alert_id: number;
+  unit: string;
+  response: string;
+  created_at: string;
+}
+
 /** Auto-derived activity status for a roster member. */
 export type PresenceStatus = "idle" | "transmitting" | "driving" | "emergency";
 
@@ -1100,6 +1108,7 @@ export const api = {
   deleteGeofence: (id: number) => request<{ ok: boolean }>("DELETE", `/v1/geofences/${id}`),
 
   alerts: () => request<{ alerts: Alert[] }>("GET", "/v1/alerts"),
+  alertResponses: () => request<{ responses: AlertResponse[] }>("GET", "/v1/alerts/responses"),
   sendAlert: (input: { kind: string; channelName: string | null; targetUnit?: string | null; message: string | null }) =>
     request<{ alert: Alert }>("POST", "/v1/alerts", input),
   clearAlert: (id: number) => request<{ alert: Alert }>("POST", `/v1/alerts/${id}/clear`),

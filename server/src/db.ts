@@ -342,6 +342,24 @@ export async function ensureSchema(): Promise<void> {
   // lazily via GET /alerts/:id/image. Mirrors the agency-logo / tone-out-icon pattern.
   await p.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS image BYTEA;`);
   await p.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS image_mime TEXT;`);
+
+  // Radio replies to a page — an ACK or a short canned response. Kept in a
+  // sidecar table (not the inbox) so a reply reaches the dispatcher without
+  // being re-broadcast to every other handset.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS alert_responses (
+      id SERIAL PRIMARY KEY,
+      agency_id INT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      alert_id INT NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
+      unit TEXT NOT NULL,
+      response TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS alert_responses_agency_created_idx
+       ON alert_responses (agency_id, created_at DESC);`,
+  );
   // Guard the state column at the DB layer too (belt-and-suspenders alongside the
   // app-level state machine). ADD CONSTRAINT has no IF NOT EXISTS, so gate on
   // pg_constraint to keep this idempotent across boots.
