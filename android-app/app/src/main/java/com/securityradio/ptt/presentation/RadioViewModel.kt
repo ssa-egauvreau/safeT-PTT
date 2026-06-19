@@ -2374,6 +2374,7 @@ class RadioViewModel(
                     )
                 }
             }
+            applyAiActivity(response.aiActivity)
             if (primed) {
                 response.alerts
                     .filter { it.fromUnit?.trim()?.uppercase(Locale.US) != unitIdUpper }
@@ -2381,6 +2382,23 @@ class RadioViewModel(
             }
             since = if (response.lastId > since) response.lastId else since
             primed = true
+        }
+    }
+
+    /** Maps the inbox poll's ai_activity into UI state (the Siri-style cue). */
+    private fun applyAiActivity(dto: com.securityradio.ptt.data.remote.AiActivityDto?) {
+        val next = when (dto?.phase?.lowercase(Locale.US)) {
+            "thinking" -> AiActivityUi(phase = AiActivityPhase.Thinking, forYou = dto.forYou)
+            "speaking" -> AiActivityUi(
+                phase = AiActivityPhase.Speaking,
+                forYou = dto.forYou,
+                text = dto.text?.trim().orEmpty(),
+                tag = dto.tag?.trim().orEmpty(),
+            )
+            else -> null
+        }
+        if (_uiState.value.aiActivity != next) {
+            _uiState.update { it.copy(aiActivity = next) }
         }
     }
 

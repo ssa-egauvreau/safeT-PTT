@@ -72,6 +72,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
@@ -95,6 +96,8 @@ import com.securityradio.ptt.device.ResolvedDeviceProfile
 import com.securityradio.ptt.presentation.RxMessageHistoryItem
 import com.securityradio.ptt.presentation.MessageHistoryTab
 import com.securityradio.ptt.presentation.PageMessage
+import com.securityradio.ptt.presentation.AiActivityUi
+import com.securityradio.ptt.presentation.AiActivityPhase
 import com.securityradio.ptt.domain.ChannelPermission
 import com.securityradio.ptt.presentation.RadioUiEvent
 import com.securityradio.ptt.presentation.RadioUiState
@@ -626,6 +629,66 @@ private fun AiDispatchBadge(visible: Boolean, styles: LcdTextStyles, modifier: M
     }
 }
 
+/**
+ * Siri-style cue for live AI-dispatcher activity, shown under the AI badge.
+ * Thinking → a pulsing "AI LISTENING…" (bright for the radio she's answering,
+ * dimmer net-wide). Speaking → her reply text + a short action tag.
+ */
+@Composable
+private fun AiActivityCue(
+    activity: AiActivityUi?,
+    styles: LcdTextStyles,
+    modifier: Modifier = Modifier,
+) {
+    if (activity == null) return
+    val p = RadioLcdTheme.palette
+    when (activity.phase) {
+        AiActivityPhase.Thinking -> {
+            val pulse = rememberTen33PulseAlpha(true)
+            val color = if (activity.forYou) p.statusBlue else p.textMuted
+            val label = if (activity.forYou) "AI LISTENING" else "AI WORKING"
+            Row(
+                modifier = modifier.graphicsLayer { alpha = 0.55f + 0.45f * pulse },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = "✦ $label",
+                    style = styles.status.copy(fontWeight = FontWeight.SemiBold, fontSize = 11.sp),
+                    color = color,
+                    maxLines = 1,
+                )
+                Text("•••", style = styles.status.copy(fontSize = 11.sp), color = color)
+            }
+        }
+        AiActivityPhase.Speaking -> {
+            Column(
+                modifier = modifier,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (activity.tag.isNotEmpty()) {
+                    Text(
+                        text = activity.tag,
+                        style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp),
+                        color = p.statusBlue,
+                        maxLines = 1,
+                    )
+                }
+                if (activity.text.isNotEmpty()) {
+                    Text(
+                        text = activity.text,
+                        style = styles.status.copy(fontSize = 12.sp),
+                        color = p.textPrimary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun UniversalCockpitMainPanel(
     state: RadioUiState,
@@ -701,6 +764,7 @@ private fun UniversalCockpitMainPanel(
             )
         }
         AiDispatchBadge(visible = state.aiDispatchEnabled, styles = styles)
+        AiActivityCue(activity = state.aiActivity, styles = styles, modifier = Modifier.padding(top = 3.dp))
         if (state.channelCodecLabel.isNotBlank()) {
             Text(
                 text = state.channelCodecLabel.uppercase(Locale.US),
@@ -1418,6 +1482,11 @@ private fun LcdMainChannelBlock(
                 styles = styles,
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
+            AiActivityCue(
+                activity = state.aiActivity,
+                styles = styles,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 3.dp),
+            )
             val remoteEmergency = state.remoteEmergencyUnit?.trim()?.takeIf { it.isNotEmpty() }
             if (remoteEmergency != null && !state.isEmergencyActive) {
                 Text(
@@ -1811,6 +1880,11 @@ private fun LcdHandsetFillChannelBlock(
                             visible = state.aiDispatchEnabled,
                             styles = styles,
                             modifier = Modifier.padding(top = 4.dp),
+                        )
+                        AiActivityCue(
+                            activity = state.aiActivity,
+                            styles = styles,
+                            modifier = Modifier.padding(top = 3.dp),
                         )
                         if (scanRxLive) {
                             LcdHandsetScanRxStrip(

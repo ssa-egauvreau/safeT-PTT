@@ -192,6 +192,7 @@ import {
 import { applyChannelTen33Marker } from "./aiDispatch/ten33Marker.js";
 import { resolveElevenLabsApiKey, resolveElevenLabsVoiceId } from "./aiDispatch/elevenLabsCreds.js";
 import { listAiDispatchLog } from "./aiDispatch/activityLog.js";
+import { getAiActivity } from "./aiDispatch/aiActivity.js";
 import { enqueueKbIngest } from "./aiDispatch/knowledgeBase/ingest.js";
 import { getEmbeddingModelName } from "./aiDispatch/knowledgeBase/embeddings.js";
 import { handleTen8Webhook, handleTen8WebhookGet } from "./ten8/webhook.js";
@@ -3052,7 +3053,18 @@ export function createApiRouter(): Router {
       const alerts = await listInboxAlerts(radioAgencyId(req), unit, channel, Number.isFinite(since) ? since : 0);
       const lastId = alerts.length > 0 ? alerts[alerts.length - 1]!.id : Number.isFinite(since) ? since : 0;
       const ten33 = await listTen33Channels(radioAgencyId(req));
-      res.json({ alerts, lastId, ten33 });
+      const activity = getAiActivity(radioAgencyId(req), channel);
+      const ai_activity = activity
+        ? {
+            phase: activity.phase,
+            unit: activity.unitId,
+            // True when this poll's radio is the unit she's responding to.
+            for_you: activity.unitId === unit,
+            text: activity.text ?? null,
+            tag: activity.tag ?? null,
+          }
+        : null;
+      res.json({ alerts, lastId, ten33, ai_activity });
     } catch (error) {
       fail(res, error);
     }
