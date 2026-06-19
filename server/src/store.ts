@@ -2045,12 +2045,15 @@ export interface AlertRow {
   ack_at: string | null;
   resolved_by_user_id: number | null;
   resolved_at: string | null;
+  /** True when this alert carries a picture attachment (served via /alerts/:id/image). */
+  has_image: boolean;
 }
 
 const ALERT_COLS =
   "id, kind, channel_name, target_unit, from_user_id, from_name, from_unit, message, " +
   "active, created_at, cleared_by, cleared_at, " +
-  "lifecycle_state, ack_by_user_id, ack_at, resolved_by_user_id, resolved_at";
+  "lifecycle_state, ack_by_user_id, ack_at, resolved_by_user_id, resolved_at, " +
+  "(image IS NOT NULL) AS has_image";
 
 export async function createAlert(input: {
   agencyId: number;
@@ -2078,6 +2081,33 @@ export async function createAlert(input: {
     ],
   );
   return res.rows[0]!;
+}
+
+/** Attaches a picture to a page/alert (agency-scoped). Mirrors the tone-out
+ *  icon BYTEA pattern. */
+export async function setAlertImage(
+  id: number,
+  agencyId: number,
+  image: Buffer,
+  mime: string,
+): Promise<boolean> {
+  const res = await requirePool().query(
+    `UPDATE alerts SET image = $1, image_mime = $2 WHERE id = $3 AND agency_id = $4;`,
+    [image, mime, id, agencyId],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function getAlertImage(
+  id: number,
+  agencyId: number,
+): Promise<{ image: Buffer; mime: string } | null> {
+  const res = await requirePool().query<{ image: Buffer; mime: string }>(
+    `SELECT image, COALESCE(image_mime, 'image/jpeg') AS mime
+     FROM alerts WHERE id = $1 AND agency_id = $2 AND image IS NOT NULL;`,
+    [id, agencyId],
+  );
+  return res.rows[0] ?? null;
 }
 
 /** Active alerts plus anything from the last 24h for one agency, newest first. */

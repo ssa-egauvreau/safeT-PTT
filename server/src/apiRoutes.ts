@@ -72,6 +72,8 @@ import {
   getUserByUsername,
   listAgencies,
   listAlerts,
+  setAlertImage,
+  getAlertImage,
   listDeviceAcks,
   listAudit,
   listChannels,
@@ -229,6 +231,9 @@ const SOUND_MAX_BYTES = "1mb";
 
 /** Upper bound for an uploaded agency logo. */
 const LOGO_MAX_BYTES = "512kb";
+
+/** Upper bound for a page/message picture attachment. */
+const ALERT_IMAGE_MAX_BYTES = "4mb";
 
 /** Upper bound for an uploaded soundboard tone-out clip. */
 const TONE_OUT_AUDIO_MAX = "4mb";
@@ -3051,6 +3056,22 @@ export function createApiRouter(): Router {
     }
   });
 
+  // Picture attachment for a page, fetched lazily by handsets (radio-key auth).
+  router.get("/radio/alerts/:id/image", async (req, res) => {
+    try {
+      const record = await getAlertImage(Number(req.params.id), radioAgencyId(req));
+      if (!record) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      res.setHeader("Content-Type", record.mime);
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      res.send(record.image);
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
   router.post("/radio/emergency", async (req, res) => {
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;
@@ -3991,6 +4012,58 @@ export function createApiRouter(): Router {
         ip: clientIp(req),
       });
       res.status(201).json({ alert });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Attach a picture to a page (compose side). Two-step: POST /alerts returns an
+  // id, then this PUTs the raw image bytes. Same dispatcher/admin gate as paging.
+  router.put(
+    "/alerts/:id/image",
+    requireAgencyMember,
+    raw({ type: () => true, limit: ALERT_IMAGE_MAX_BYTES }),
+    async (req, res) => {
+      try {
+        const me = req.authUser!;
+        if (me.role !== "admin" && me.role !== "dispatcher") {
+          res.status(403).json({ error: "forbidden" });
+          return;
+        }
+        const mime = (req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+        if (!mime.startsWith("image/")) {
+          res.status(415).json({ error: "bad_image_type" });
+          return;
+        }
+        const body: unknown = req.body;
+        if (!Buffer.isBuffer(body) || body.length === 0) {
+          res.status(400).json({ error: "missing_image" });
+          return;
+        }
+        const ok = await setAlertImage(Number(req.params.id), me.agencyId!, body, mime);
+        if (!ok) {
+          res.status(404).json({ error: "not_found" });
+          return;
+        }
+        res.json({ ok: true, mime, byte_size: body.length });
+      } catch (error) {
+        fail(res, error);
+      }
+    },
+  );
+
+  // Console-side image fetch (dispatch history). Handsets use the radio-scoped
+  // GET /radio/alerts/:id/image below.
+  router.get("/alerts/:id/image", requireAgencyMember, async (req, res) => {
+    try {
+      const record = await getAlertImage(Number(req.params.id), req.authUser!.agencyId!);
+      if (!record) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      res.setHeader("Content-Type", record.mime);
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      res.send(record.image);
     } catch (error) {
       fail(res, error);
     }

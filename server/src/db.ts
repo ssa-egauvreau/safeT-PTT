@@ -338,6 +338,10 @@ export async function ensureSchema(): Promise<void> {
   await p.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_at TIMESTAMPTZ;`);
   await p.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS resolved_by_user_id INT REFERENCES users(id) ON DELETE SET NULL;`);
   await p.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;`);
+  // Optional picture attachment for pages/messages (BYTEA blob + mime), served
+  // lazily via GET /alerts/:id/image. Mirrors the agency-logo / tone-out-icon pattern.
+  await p.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS image BYTEA;`);
+  await p.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS image_mime TEXT;`);
   // Guard the state column at the DB layer too (belt-and-suspenders alongside the
   // app-level state machine). ADD CONSTRAINT has no IF NOT EXISTS, so gate on
   // pg_constraint to keep this idempotent across boots.
