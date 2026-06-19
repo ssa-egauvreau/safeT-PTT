@@ -260,6 +260,31 @@ export function buildPlateDmvTailReadback(
   return `${csPart}to a ${vehicle}${vinPart}.`;
 }
 
+/**
+ * Single fluid plate readback: the 10-8 (CAD) lead and the DMV/PlateToVin tail
+ * spoken as ONE transmission instead of two. The tail's repeated call-sign prefix
+ * is stripped so it reads as one continuous sentence rather than two separate
+ * calls with a pause between them.
+ */
+export function buildPlateCombinedReadback(
+  unitId: string,
+  plate: string,
+  state: string | null | undefined,
+  cad: CadPlateLookupHit | null,
+  dmv: PlateLookupResult,
+): string {
+  const lead = buildPlateCadLeadReadback(unitId, plate, state, cad);
+  const tail = buildPlateDmvTailReadback(unitId, dmv, cad);
+  const leadClean = lead.replace(/[.\s]+$/, "");
+  if (!tail?.trim()) {
+    return `${leadClean}.`;
+  }
+  const cs = callSignForReadback(unitId);
+  const prefix = cs ? `${cs}, ` : "";
+  const tailBody = prefix && tail.startsWith(prefix) ? tail.slice(prefix.length) : tail;
+  return `${leadClean}. ${tailBody.trim()}`;
+}
+
 export function buildPlateReadback(unitId: string, lookup: PlateLookupResult): string {
   const cs = callSignForReadback(unitId);
   const csPart = cs ? `${cs}, ` : "";
