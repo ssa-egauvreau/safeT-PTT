@@ -85,3 +85,31 @@ curl -fsS -X POST "$URL/v1/app/android/publish" \
   -H "Content-Type: application/vnd.android.package-archive" \
   --data-binary @app-release.apk
 ```
+
+## Troubleshooting: install loops / "Scan with Play Protect"
+
+On some sideloaded devices an install (first install or an OTA update) stalls on
+a Google **Play Protect** "scan before install" prompt. On devices where the
+Play Store itself crashes, that prompt never resolves — and because the OTA
+re-fires the installer on every launch, the device gets stuck in a loop where
+the update never installs.
+
+The app installs via the **`PackageInstaller` session API** (not the legacy
+`ACTION_VIEW` package-archive intent that some OEM builds route through Play),
+which avoids that interstitial in most cases. If a device is still affected,
+disable Play Protect scanning on it:
+
+1. **Play Store** → profile icon → **Play Protect** → **⚙ Settings** →
+   turn **off** *Scan apps with Play Protect* (and *Improve harmful app
+   detection* if shown).
+2. If the Play Store crashes before you can reach that:
+   **Settings → Apps → Google Play Store → Disable** (or clear its cache/data),
+   and **Settings → Apps → Google Play services → Storage → Clear cache**. With
+   Play disabled the system installer stops waiting on the Play Protect scan and
+   the OTA auto-install completes.
+
+For touchless radios (e.g. IRC590) the accessibility auto-confirm
+(`AppUpdateInstallGate` + `InricoHardwareService`) clicks the system installer's
+confirm button; the `PackageInstaller` confirm dialog comes from the same
+`packageinstaller` package, so the auto-confirm works unchanged. Make this part
+of device provisioning so new handsets never hit the loop.

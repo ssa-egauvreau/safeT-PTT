@@ -108,6 +108,12 @@
                 <action android:name="com.android.intent.action.CHANNEL_DOWN" />
             </intent-filter>
         </receiver>
+
+        <!-- PackageInstaller session status callbacks for OTA self-updates.
+             Not exported: only ever invoked via our own PendingIntent. -->
+        <receiver
+            android:name=".device.AppUpdateInstallReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>
