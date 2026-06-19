@@ -233,6 +233,34 @@ export function normalizeAiDispatchParse(raw: unknown): AiDispatchParseResult | 
   };
 }
 
+/**
+ * Heuristic: does this transmission look like a database/CAD lookup (plate, person,
+ * vehicle, incident, warrant) rather than routine chatter? We can't know the intent
+ * before the LLM runs, so we keyword-scan the transcript to decide whether to use the
+ * faster routine tier or the more thorough "complex" tier (higher effort + optional
+ * stronger model). Routine traffic (radio checks, status, acks) stays fast.
+ */
+const COMPLEX_TRANSMISSION_PATTERNS: RegExp[] = [
+  // Plate / vehicle / registration lookups (10-codes only — bare 27/28/29 would
+  // match unit IDs like "27-010").
+  /\b(plate|license plate|licence plate|tag|registration|vin|10-?28|10-?29)\b/i,
+  /\brun (this|the|a|that|his|her|my)?\s*(plate|tag|name|driver|vehicle|car|reg)\b/i,
+  // Person / warrant / records
+  /\b(wanted|warrant|10-?27|ncic|criminal history|records?|d\.?o\.?b\.?|date of birth|driver'?s? licen[cs]e|\bdl\b)\b/i,
+  /\b(check (for )?(wants|warrants|priors|record)|person check|name check|id check)\b/i,
+  // Incident / call lookups
+  /\b(incident|case|call) (number|#|lookup)\b/i,
+  /\b(look ?up|pull up|search) (the|a|this|that|his|her)?\s*(plate|name|person|vehicle|incident|case|address|history)\b/i,
+];
+
+export function transmissionLooksComplex(transcript: string): boolean {
+  const t = transcript.trim();
+  if (!t) {
+    return false;
+  }
+  return COMPLEX_TRANSMISSION_PATTERNS.some((re) => re.test(t));
+}
+
 export async function parseDispatcherTransmission(opts: {
   systemPrompt: string;
   unitId: string;
@@ -272,6 +300,7 @@ export async function parseDispatcherTransmission(opts: {
     systemPrompt: opts.systemPrompt,
     userContent,
     maxTokens: 2500,
+    complex: transmissionLooksComplex(opts.transcript),
   });
   if (!result?.text) {
     console.warn(

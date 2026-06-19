@@ -18,8 +18,10 @@ async function completeAnthropic(opts: {
   userContent: string;
   maxTokens: number;
   cacheTtl: "5m" | "1h";
+  /** "" = omit (model default); low/medium for snappy replies, high/max for thorough lookups. */
+  effort?: string;
 }): Promise<LlmCompletionResult | null> {
-  const body = {
+  const body: Record<string, unknown> = {
     model: opts.model,
     max_tokens: opts.maxTokens,
     system: [
@@ -31,6 +33,11 @@ async function completeAnthropic(opts: {
     ],
     messages: [{ role: "user", content: opts.userContent }],
   };
+  // Lower effort = fewer reasoning tokens = faster on-air reply. Goes inside
+  // output_config (not top-level). Omitted when blank so the model uses its default.
+  if (opts.effort) {
+    body.output_config = { effort: opts.effort };
+  }
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -117,28 +124,34 @@ export async function completeDispatcherLlm(opts: {
   systemPrompt: string;
   userContent: string;
   maxTokens?: number;
+  /** When true, use the complex-tier model + effort (lookups). Defaults to routine. */
+  complex?: boolean;
 }): Promise<LlmCompletionResult | null> {
   const platform = getAiDispatchPlatformConfig();
   if (!platform.llmApiKey) {
     return null;
   }
   const maxTokens = opts.maxTokens ?? 2500;
+  const model = opts.complex ? platform.llmModelComplex : platform.llmModel;
+  const effort = opts.complex ? platform.llmEffortComplex : platform.llmEffort;
 
   if (platform.llmProvider === "anthropic") {
     return completeAnthropic({
       apiKey: platform.llmApiKey,
-      model: platform.llmModel,
+      model,
       systemPrompt: opts.systemPrompt,
       userContent: opts.userContent,
       maxTokens,
       cacheTtl: platform.promptCacheTtl,
+      effort,
     });
   }
 
+  // OpenAI provider ignores effort; the complex tier still swaps the model.
   return completeOpenAi({
     apiKey: platform.llmApiKey,
     baseUrl: platform.llmBaseUrl,
-    model: platform.llmModel,
+    model,
     systemPrompt: opts.systemPrompt,
     userContent: opts.userContent,
     maxTokens,
