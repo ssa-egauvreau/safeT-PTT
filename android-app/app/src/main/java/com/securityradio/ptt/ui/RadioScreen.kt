@@ -6,7 +6,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -69,7 +71,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -3689,7 +3693,12 @@ private fun MessageHistoryScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             items(items = state.pageMessages, key = { it.id }) { page ->
-                                PageMessageRow(page = page, styles = styles)
+                                PageMessageRow(
+                                    page = page,
+                                    imageBytes = state.pageImages[page.id],
+                                    onEvent = onEvent,
+                                    styles = styles,
+                                )
                             }
                         }
                     }
@@ -3814,8 +3823,21 @@ private fun TabPill(
 }
 
 @Composable
-private fun PageMessageRow(page: PageMessage, styles: LcdTextStyles) {
+private fun PageMessageRow(
+    page: PageMessage,
+    imageBytes: ByteArray?,
+    onEvent: (RadioUiEvent) -> Unit,
+    styles: LcdTextStyles,
+) {
     val p = RadioLcdTheme.palette
+    if (page.hasImage) {
+        LaunchedEffect(page.id) { onEvent(RadioUiEvent.LoadPageImage(page.id)) }
+    }
+    val bitmap = remember(imageBytes) {
+        imageBytes?.let {
+            runCatching { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }.getOrNull()
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -3840,8 +3862,20 @@ private fun PageMessageRow(page: PageMessage, styles: LcdTextStyles) {
             Text(text = page.message, style = styles.body, color = p.textPrimary)
         }
         if (page.hasImage) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(text = "📷 image attached", style = styles.body, color = p.textMuted)
+            Spacer(modifier = Modifier.height(6.dp))
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = "page attachment",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 220.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    contentScale = ContentScale.Fit,
+                )
+            } else {
+                Text(text = "📷 loading image…", style = styles.body, color = p.textMuted)
+            }
         }
     }
 }

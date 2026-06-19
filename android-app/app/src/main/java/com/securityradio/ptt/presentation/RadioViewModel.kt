@@ -210,6 +210,9 @@ class RadioViewModel(
     /** Plays the update-alert jingle only once per download (not on every progress tick). */
     private var updateJinglePlayed = false
 
+    /** Page-image fetches currently in flight, so a recomposition can't double-fetch. */
+    private val pageImageLoadsInFlight = java.util.Collections.synchronizedSet(mutableSetOf<Long>())
+
     init {
         loadPersistedPages()
         if (radioPreferences.isLoggedIn() && radioPreferences.getSessionUnitId().isBlank()) {
@@ -1104,6 +1107,7 @@ class RadioViewModel(
             is RadioUiEvent.PlayHistoryMessage -> playHistoryMessage(event.entryId)
             is RadioUiEvent.SelectMessageHistoryTab -> selectMessageHistoryTab(event.tab)
             RadioUiEvent.MarkMessagesRead -> markMessagesRead()
+            is RadioUiEvent.LoadPageImage -> loadPageImage(event.pageId)
             is RadioUiEvent.SaveAgencyRadioKey -> {
                 val key = event.key.trim()
                 radioPreferences.setAgencyRadioKey(key)
@@ -2414,6 +2418,26 @@ class RadioViewModel(
                 pageMessages = next,
                 unreadMessageCount = next.count { !it.read },
             )
+        }
+    }
+
+    /** Fetches a page's picture once and caches the bytes in UI state. No-op when
+     *  already loaded or in flight. */
+    private fun loadPageImage(pageId: Long) {
+        if (_uiState.value.pageImages.containsKey(pageId)) return
+        if (pageImageLoadsInFlight.contains(pageId)) return
+        pageImageLoadsInFlight.add(pageId)
+        viewModelScope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) { radioApi.alertImage(pageId).bytes() }
+                if (bytes.isNotEmpty()) {
+                    _uiState.update { it.copy(pageImages = it.pageImages + (pageId to bytes)) }
+                }
+            } catch (_: Exception) {
+                /* leave unloaded; the row just shows the 📷 hint */
+            } finally {
+                pageImageLoadsInFlight.remove(pageId)
+            }
         }
     }
 
