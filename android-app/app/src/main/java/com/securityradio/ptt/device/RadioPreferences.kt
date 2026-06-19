@@ -156,6 +156,20 @@ class RadioPreferences(context: Context) {
         ).apply()
     }
 
+    /** Persisted dispatcher pages (JSON array), so the inbox survives reboots. */
+    fun getStoredPagesJson(): String = prefs.getString(KEY_PAGES_JSON, "[]") ?: "[]"
+
+    fun setStoredPagesJson(json: String) {
+        prefs.edit().putString(KEY_PAGES_JSON, json).apply()
+    }
+
+    /** Highest page id this radio has already ingested (inbox de-dupe across boots). */
+    fun getLastPageId(): Long = prefs.getLong(KEY_LAST_PAGE_ID, 0L)
+
+    fun setLastPageId(id: Long) {
+        prefs.edit().putLong(KEY_LAST_PAGE_ID, id).apply()
+    }
+
     /**
      * MP22 dual-display: false = virtual Display 0 (PC/scrcpy can type); true = physical Display 1
      * (hardware keys). IRC590 and normal devices ignore this.
@@ -249,6 +263,8 @@ class RadioPreferences(context: Context) {
         private const val KEY_MIC_AUTO_GAIN = "mic_auto_gain"
         private const val KEY_MIC_GAIN_MULTIPLIER = "mic_gain_multiplier"
         private const val KEY_RX_GAIN_MULTIPLIER = "rx_gain_multiplier"
+        private const val KEY_PAGES_JSON = "page_messages_json"
+        private const val KEY_LAST_PAGE_ID = "page_messages_last_id"
         private const val KEY_MP22_USE_PHYSICAL_DISPLAY = "mp22_use_physical_display"
         private const val DEFAULT_VOICE_ANNOUNCE = true
         // Server-pushed audio config

@@ -89,6 +89,8 @@ import com.securityradio.ptt.device.RadioLayoutPolicy
 import com.securityradio.ptt.device.RadioPreferences
 import com.securityradio.ptt.device.ResolvedDeviceProfile
 import com.securityradio.ptt.presentation.RxMessageHistoryItem
+import com.securityradio.ptt.presentation.MessageHistoryTab
+import com.securityradio.ptt.presentation.PageMessage
 import com.securityradio.ptt.domain.ChannelPermission
 import com.securityradio.ptt.presentation.RadioUiEvent
 import com.securityradio.ptt.presentation.RadioUiState
@@ -808,12 +810,20 @@ private fun UniversalCockpitControlsRow(
             styles = styles,
         )
         UniversalCockpitButton(
-            label = "REPLAY",
+            label = if (state.unreadMessageCount > 0) {
+                "REPLAY (${if (state.unreadMessageCount > 99) "99+" else state.unreadMessageCount})"
+            } else {
+                "REPLAY"
+            },
             onClick = { onEvent(RadioUiEvent.PlayLastTransmission) },
             onLongClick = { onEvent(RadioUiEvent.ToggleMessageHistory) },
             modifier = Modifier.weight(1f),
             styles = styles,
-            accent = if (state.replayBanner.isNotEmpty()) p.statusAmber else null,
+            accent = when {
+                state.unreadMessageCount > 0 -> p.statusBlue
+                state.replayBanner.isNotEmpty() -> p.statusAmber
+                else -> null
+            },
         )
         UniversalCockpitButton(
             label = if (state.scanActive) "SCAN •" else "SCAN",
@@ -3667,40 +3677,171 @@ private fun MessageHistoryScreen(
                 .fillMaxSize()
                 .padding(horizontal = 10.dp, vertical = 8.dp),
         ) {
-            if (state.rxMessageHistory.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "No messages yet.",
-                        style = styles.body,
-                        color = p.textMuted,
-                    )
+            MessageHistoryTabs(state = state, onEvent = onEvent, styles = styles)
+            Spacer(modifier = Modifier.height(8.dp))
+            when (state.messageHistoryTab) {
+                MessageHistoryTab.Messages -> {
+                    if (state.pageMessages.isEmpty()) {
+                        EmptyHistory(text = "No messages yet.", styles = styles)
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(items = state.pageMessages, key = { it.id }) { page ->
+                                PageMessageRow(page = page, styles = styles)
+                            }
+                        }
+                    }
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(
-                        items = state.rxMessageHistory,
-                        key = { it.id },
-                    ) { item ->
-                        MessageHistoryRow(
-                            item = item,
-                            playing = state.historyPlayingId == item.id && !state.historyPlaybackPaused,
-                            paused = state.historyPlayingId == item.id && state.historyPlaybackPaused,
-                            onPlay = { onEvent(RadioUiEvent.PlayHistoryMessage(item.id)) },
-                            styles = styles,
-                        )
+                MessageHistoryTab.Transcriptions -> {
+                    if (state.rxMessageHistory.isEmpty()) {
+                        EmptyHistory(text = "No transcriptions yet.", styles = styles)
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(items = state.rxMessageHistory, key = { it.id }) { item ->
+                                MessageHistoryRow(
+                                    item = item,
+                                    playing = state.historyPlayingId == item.id && !state.historyPlaybackPaused,
+                                    paused = state.historyPlayingId == item.id && state.historyPlaybackPaused,
+                                    onPlay = { onEvent(RadioUiEvent.PlayHistoryMessage(item.id)) },
+                                    styles = styles,
+                                )
+                            }
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun EmptyHistory(text: String, styles: LcdTextStyles) {
+    val p = RadioLcdTheme.palette
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = text, style = styles.body, color = p.textMuted)
+    }
+}
+
+@Composable
+private fun MessageHistoryTabs(
+    state: RadioUiState,
+    onEvent: (RadioUiEvent) -> Unit,
+    styles: LcdTextStyles,
+) {
+    val p = RadioLcdTheme.palette
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TabPill(
+            text = "MESSAGES",
+            selected = state.messageHistoryTab == MessageHistoryTab.Messages,
+            badge = state.unreadMessageCount,
+            styles = styles,
+            onClick = { onEvent(RadioUiEvent.SelectMessageHistoryTab(MessageHistoryTab.Messages)) },
+        )
+        TabPill(
+            text = "TRANSCRIPTIONS",
+            selected = state.messageHistoryTab == MessageHistoryTab.Transcriptions,
+            badge = 0,
+            styles = styles,
+            onClick = { onEvent(RadioUiEvent.SelectMessageHistoryTab(MessageHistoryTab.Transcriptions)) },
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            text = "CLOSE",
+            style = styles.body,
+            color = p.textMuted,
+            modifier = Modifier
+                .clickable { onEvent(RadioUiEvent.CloseMessageHistory) }
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun TabPill(
+    text: String,
+    selected: Boolean,
+    badge: Int,
+    styles: LcdTextStyles,
+    onClick: () -> Unit,
+) {
+    val p = RadioLcdTheme.palette
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .border(
+                width = 1.dp,
+                color = if (selected) p.statusBlue else p.textMuted,
+                shape = RoundedCornerShape(4.dp),
+            )
+            .background(
+                color = if (selected) p.statusBlue.copy(alpha = 0.18f) else androidx.compose.ui.graphics.Color.Transparent,
+                shape = RoundedCornerShape(4.dp),
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    ) {
+        Text(
+            text = text,
+            style = styles.body,
+            color = if (selected) p.statusBlue else p.textMuted,
+        )
+        if (badge > 0) {
+            Spacer(modifier = Modifier.width(6.dp))
+            Box(
+                modifier = Modifier
+                    .background(color = p.statusBlue, shape = CircleShape)
+                    .padding(horizontal = 5.dp, vertical = 1.dp),
+            ) {
+                Text(
+                    text = if (badge > 99) "99+" else badge.toString(),
+                    style = styles.body,
+                    color = p.lcdMain,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PageMessageRow(page: PageMessage, styles: LcdTextStyles) {
+    val p = RadioLcdTheme.palette
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = if (!page.read) p.statusBlue else p.textMuted,
+                shape = RoundedCornerShape(4.dp),
+            )
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = if (page.targetedToMe) "DIRECT • ${page.fromLabel}" else "PAGE • ${page.fromLabel}",
+                style = styles.body,
+                color = if (page.targetedToMe) p.statusBlue else p.textPrimary,
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text(text = page.timeLabel, style = styles.body, color = p.textMuted)
+        }
+        if (page.message.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = page.message, style = styles.body, color = p.textPrimary)
+        }
+        if (page.hasImage) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = "📷 image attached", style = styles.body, color = p.textMuted)
         }
     }
 }
