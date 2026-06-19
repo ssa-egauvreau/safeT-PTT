@@ -18,6 +18,19 @@ data class RxMessageHistoryItem(
 /** Which tab of the message-history screen is showing. */
 enum class MessageHistoryTab { Messages, Transcriptions }
 
+/** Live AI-dispatcher activity for the Siri-style on-screen cue. */
+enum class AiActivityPhase { Thinking, Speaking }
+
+data class AiActivityUi(
+    val phase: AiActivityPhase,
+    /** True when she's responding to THIS radio (full cue vs. a dimmer net-wide cue). */
+    val forYou: Boolean,
+    /** Her reply text, shown on the RX screen while Speaking. */
+    val text: String = "",
+    /** Short action tag, e.g. "LOOKUP: PLATE". */
+    val tag: String = "",
+)
+
 /** A dispatcher page/message delivered to this radio (text + optional picture). */
 data class PageMessage(
     val id: Long,
@@ -56,6 +69,8 @@ data class RadioUiState(
     val channelDisplayLabel: String = "",
     /** True when the AI dispatcher is enabled on the tuned channel — the shell shows an AI badge. */
     val aiDispatchEnabled: Boolean = false,
+    /** Live AI-dispatcher activity on the tuned channel (Siri-style cue), or null. */
+    val aiActivity: AiActivityUi? = null,
     val channelPosition: String,
     val totalChannels: Int,
     /** Channel names from catalog (for scan picker labels). */

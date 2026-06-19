@@ -147,6 +147,21 @@ data class InboxResponseDto(
     @SerializedName("lastId") val lastId: Long = 0,
     /** Channel names a dispatcher has flagged 10-33. */
     @SerializedName("ten33") val ten33: List<String> = emptyList(),
+    /** What the AI dispatcher is doing on the tuned channel right now, if anything. */
+    @SerializedName("ai_activity") val aiActivity: AiActivityDto? = null,
+)
+
+data class AiActivityDto(
+    /** "thinking" while she processes, "speaking" while she replies. */
+    @SerializedName("phase") val phase: String = "",
+    /** The unit she's responding to. */
+    @SerializedName("unit") val unit: String? = null,
+    /** True when this radio is the unit she's responding to. */
+    @SerializedName("for_you") val forYou: Boolean = false,
+    /** Her reply text (only while speaking). */
+    @SerializedName("text") val text: String? = null,
+    /** Short action tag, e.g. "LOOKUP: PLATE", "ACK". */
+    @SerializedName("tag") val tag: String? = null,
 )
 
 data class RadioTransmissionsResponseDto(

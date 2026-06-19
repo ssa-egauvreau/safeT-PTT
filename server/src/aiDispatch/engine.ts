@@ -7,6 +7,7 @@ import {
   listRecentChannelDispatchTurns,
   type AiDispatchOutcome,
 } from "./activityLog.js";
+import { setAiThinking, setAiSpeaking, clearAiActivity } from "./aiActivity.js";
 import { adaptDispatcherResponseForChannel, detectEmergencyCodeFromTranscript } from "./emergencyCodes.js";
 import {
   applyDistressDispatchRules,
@@ -471,6 +472,10 @@ async function processTransmission(transmissionId: number): Promise<void> {
 
     const platform = getAiDispatchPlatformConfig();
 
+    // Push a "she heard you, thinking…" cue to handsets on this channel while we
+    // run the LLM + TTS. Cleared/replaced in finalize.
+    setAiThinking(tx.agency_id, tx.channel_name, unitId);
+
     const emergencyRegex = detectEmergencyCodeFromTranscript(transcript);
     const officerDistress = detectOfficerDistressFromTranscript(transcript);
     const systemPrompt = await resolveAiDispatchSystemPrompt(tx.agency_id);
@@ -777,6 +782,7 @@ async function processTransmission(transmissionId: number): Promise<void> {
       if (allowOnAir && speakText && parsed.intent !== "request_info") {
         const reply = adaptDispatcherResponseForChannel(speakText, tx.channel_name);
         parsed = { ...parsed, dispatcher_response: reply };
+        setAiSpeaking(tx.agency_id, tx.channel_name, unitId, reply, aiActionTag(parsed));
         spokeOnAir = await speakDispatcherReply(
           tx,
           transmissionId,
@@ -802,6 +808,7 @@ async function processTransmission(transmissionId: number): Promise<void> {
       } else if (allowOnAir && speakText && parsed.intent === "request_info" && !infoRequestNeedsAsync(parsed.info_request!)) {
         const reply = adaptDispatcherResponseForChannel(speakText, tx.channel_name);
         parsed = { ...parsed, dispatcher_response: reply };
+        setAiSpeaking(tx.agency_id, tx.channel_name, unitId, reply, aiActionTag(parsed));
         spokeOnAir = await speakDispatcherReply(
           tx,
           transmissionId,
@@ -894,6 +901,12 @@ async function processTransmission(transmissionId: number): Promise<void> {
       stopTen33MarkerLoop(tx.agency_id, tx.channel_name);
     }
   } finally {
+    // If we put up a "thinking" cue but never aired a reply, clear it so the
+    // handset doesn't sit on a stale dots animation. (A real reply leaves the
+    // "speaking" state in place to expire on its own TTL.)
+    if (tx && !spokeOnAir) {
+      clearAiActivity(tx.agency_id, tx.channel_name);
+    }
     if (tx && transcript) {
       await persistAiDispatchLog({
         agencyId: tx.agency_id,
@@ -909,6 +922,28 @@ async function processTransmission(transmissionId: number): Promise<void> {
         durationMs: Date.now() - t0,
       });
     }
+  }
+}
+
+/** A short tag describing what the dispatcher is doing, for the handset cue. */
+function aiActionTag(parsed: { intent?: string; info_request?: { type?: string } | null }): string | undefined {
+  const lookup = parsed.info_request?.type?.trim();
+  if (lookup && lookup !== "unknown") {
+    return `LOOKUP: ${lookup.replace(/_/g, " ").toUpperCase()}`.slice(0, 24);
+  }
+  switch (parsed.intent) {
+    case "emergency":
+      return "EMERGENCY";
+    case "on_scene":
+      return "ON SCENE";
+    case "status_change":
+      return "STATUS";
+    case "request_info":
+      return "LOOKUP";
+    case "acknowledgment":
+      return "ACK";
+    default:
+      return undefined;
   }
 }
 
