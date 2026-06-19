@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildPlateCadLeadReadback,
+  buildPlateCombinedReadback,
   buildPlateDmvTailReadback,
   cadMissingDmvVehicleFields,
 } from "../../src/aiDispatch/plateLookup.js";
@@ -103,4 +104,54 @@ test("incidentHasAssignedUnits is true when a unit is listed", () => {
     }),
     true,
   );
+});
+
+test("buildPlateCombinedReadback: NO MAKE + DMV return is one fluid line, single call sign", () => {
+  const cad: CadPlateLookupHit = {
+    found: false,
+    vehicleSummary: null,
+    stateOnFile: null,
+    historyLine: null,
+  };
+  const dmv = {
+    ok: true as const,
+    plate: "8VWV621",
+    state: "CA",
+    color: "blue",
+    year: "2018",
+    make: "Honda",
+    model: "Civic",
+    vin: "1HGBH41JXMN109186",
+  };
+  const out = buildPlateCombinedReadback("27-205", "8VWV621", "CA", cad, dmv);
+  // One transmission: NO MAKE lead AND the DMV/vin tail in the same string.
+  assert.match(out, /comes back NO MAKE/i);
+  assert.match(out, /vin/i);
+  // Call sign appears exactly once (no repeated prefix from the old 2nd transmission).
+  // callSignForReadback shortens "27-205" → "205".
+  const callSignHits = (out.match(/\b205\b/g) ?? []).length;
+  assert.equal(callSignHits, 1, `call sign should appear once, got ${callSignHits}: ${out}`);
+});
+
+test("buildPlateCombinedReadback: 10-8 hit + DMV confirm reads as one line", () => {
+  const cad: CadPlateLookupHit = {
+    found: true,
+    vehicleSummary: "2018 white Honda Civic",
+    stateOnFile: "CA",
+    historyLine: "CA on file; 961 3/15/24 call 25-0100",
+  };
+  const dmv = {
+    ok: true as const,
+    plate: "8VWV621",
+    state: "CA",
+    color: "white",
+    year: "2018",
+    make: "Honda",
+    model: "Civic",
+    vin: "1HGBH41JXMN109186",
+  };
+  const out = buildPlateCombinedReadback("27-205", "8VWV621", "CA", cad, dmv);
+  assert.match(out, /2018 white Honda Civic/i);
+  assert.match(out, /CA on file/i);
+  assert.match(out, /vin/i);
 });

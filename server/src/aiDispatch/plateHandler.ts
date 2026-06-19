@@ -2,8 +2,7 @@ import type { AiDispatchParseResult } from "./parse.js";
 import { ten8Configured } from "../ten8/client.js";
 import { fetchCadPlateLookup } from "../ten8/cadRadioLookup.js";
 import {
-  buildPlateCadLeadReadback,
-  buildPlateDmvTailReadback,
+  buildPlateCombinedReadback,
   buildPlateReadback,
   buildVinReadback,
   consumePendingPlateRequest,
@@ -65,9 +64,9 @@ export async function handlePlateFromParse(opts: {
         });
     const dmvPromise = runPlateLookup(agencyId, plate, state);
     const [cad, lookup] = await Promise.all([cadPromise, dmvPromise]);
-    const speakText = buildPlateCadLeadReadback(unitId, plate, state, cad);
-    const followUpSpeak = buildPlateDmvTailReadback(unitId, lookup, cad);
-    return { lookup, speakText, followUpSpeak };
+    // Speak the 10-8 lead and the DMV/VIN tail as ONE fluid transmission, not two.
+    const speakText = buildPlateCombinedReadback(unitId, plate, state, cad, lookup);
+    return { lookup, speakText, followUpSpeak: null };
   }
 
   if (intent === "plate_request" || intent === "plate_transmit") {
