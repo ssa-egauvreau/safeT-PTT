@@ -1,9 +1,11 @@
 package com.securityradio.ptt.data.remote
 
 import com.google.gson.annotations.SerializedName
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 /** Handset-facing endpoints: GPS reporting and emergency / page alerts. */
@@ -26,6 +28,10 @@ interface RadioApi {
 
     @POST("/v1/radio/emergency")
     suspend fun emergency(@Body body: EmergencyDto): RadioOkDto
+
+    /** Lazily fetch a page's picture attachment (raw image bytes). */
+    @GET("/v1/radio/alerts/{id}/image")
+    suspend fun alertImage(@Path("id") id: Long): ResponseBody
 
     /** Live profile read — picks up display-name and unit-id changes made on the portal. */
     @GET("/v1/auth/me")

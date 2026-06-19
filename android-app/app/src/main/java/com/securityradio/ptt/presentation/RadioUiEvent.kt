@@ -73,6 +73,8 @@ sealed interface RadioUiEvent {
     data class SelectMessageHistoryTab(val tab: MessageHistoryTab) : RadioUiEvent
     /** Mark all delivered pages as read (clears the unread badge). */
     data object MarkMessagesRead : RadioUiEvent
+    /** Lazily fetch a page's picture attachment. */
+    data class LoadPageImage(val pageId: Long) : RadioUiEvent
     /** Bind this handset to an agency (tenant) by its radio key; blank clears the override. */
     data class SaveAgencyRadioKey(val key: String) : RadioUiEvent
 

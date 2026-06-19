@@ -223,6 +223,8 @@ data class RadioUiState(
     val pageMessages: List<PageMessage> = emptyList(),
     /** Count of unread pages — drives the REPLAY badge. */
     val unreadMessageCount: Int = 0,
+    /** Lazily-loaded page picture attachments, keyed by page id (raw bytes). */
+    val pageImages: Map<Long, ByteArray> = emptyMap(),
 
     /** Scan traffic on a monitored channel while tuned elsewhere (scan icon pulse). */
     val scanBackgroundActive: Boolean = false,
