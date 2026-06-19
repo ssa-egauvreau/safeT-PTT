@@ -25,6 +25,27 @@ class RadioPreferences(context: Context) {
         prefs.edit().putBoolean(KEY_VOICE_ANNOUNCE_TUNING, enabled).apply()
     }
 
+    /** Whether scan was left on. Persisted so it survives reboots / app updates. */
+    fun isScanActive(): Boolean = prefs.getBoolean(KEY_SCAN_ACTIVE, false)
+
+    fun setScanActive(active: Boolean) {
+        prefs.edit().putBoolean(KEY_SCAN_ACTIVE, active).apply()
+    }
+
+    /**
+     * Scanned side-channels, stored by lowercased NAME (not catalog index) so the
+     * selection survives a catalog reorder across an app update. Returns an empty
+     * set when nothing was saved.
+     */
+    fun getScanChannelNames(): Set<String> =
+        prefs.getStringSet(KEY_SCAN_CHANNELS, emptySet())?.toSet() ?: emptySet()
+
+    fun setScanChannelNames(names: Set<String>) {
+        // Pass a fresh copy: SharedPreferences must not be handed a set it keeps a
+        // live reference to (mutating it later corrupts the stored value).
+        prefs.edit().putStringSet(KEY_SCAN_CHANNELS, HashSet(names)).apply()
+    }
+
     /**
      * On-device agency radio key. Binds this handset to one agency (tenant) on
      * the server. Blank means fall back to the key baked in at build time.
@@ -249,6 +270,8 @@ class RadioPreferences(context: Context) {
         private const val PREFS_NAME = "security_radio_prefs"
         private const val KEY_THEME = "theme_mode"
         private const val KEY_VOICE_ANNOUNCE_TUNING = "voice_announce_tune"
+        private const val KEY_SCAN_ACTIVE = "scan_active"
+        private const val KEY_SCAN_CHANNELS = "scan_channels"
         private const val KEY_AGENCY_RADIO_KEY = "agency_radio_key"
         private const val KEY_DEVICE_PROFILE = "device_profile_preference"
         private const val KEY_AUTH_TOKEN = "auth_token"

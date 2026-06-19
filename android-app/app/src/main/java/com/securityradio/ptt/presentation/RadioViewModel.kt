@@ -863,6 +863,7 @@ class RadioViewModel(
                 statusMessage = if (next.scanActive) "SCAN ON" else "SCAN OFF",
             )
         }
+        persistScanState()
         reconcileVoiceTransport()
     }
 
@@ -879,6 +880,7 @@ class RadioViewModel(
                 statusMessage = "SCAN OFF",
             )
         }
+        persistScanState()
         reconcileVoiceTransport()
     }
 
@@ -964,6 +966,7 @@ class RadioViewModel(
             RadioUiEvent.ToggleScanSoftKey -> {
                 soundPlayer.playChannelSwitch()
                 _uiState.update { onScanSoftKeyToggle(it) }
+                persistScanState()
                 reconcileVoiceTransport()
             }
             RadioUiEvent.OpenScanPicker -> {
@@ -1499,7 +1502,29 @@ class RadioViewModel(
             }
             s.copy(scanIncludedChannelIndices = next)
         }
+        persistScanState()
         reconcileVoiceTransport()
+    }
+
+    /** Persists scan on/off and the picked side-channels (by name) so the
+     *  selection and state survive reboots and app updates. */
+    private fun persistScanState() {
+        val s = _uiState.value
+        radioPreferences.setScanActive(s.scanActive)
+        val names = s.scanIncludedChannelIndices
+            .mapNotNull { channelNames.getOrNull(it)?.lowercase(Locale.US) }
+            .toSet()
+        radioPreferences.setScanChannelNames(names)
+    }
+
+    /** Maps persisted scan-channel names back to indices in the current catalog. */
+    private fun restoreScanIndices(names: List<String>): Set<Int> {
+        val saved = radioPreferences.getScanChannelNames()
+        if (saved.isEmpty()) return emptySet()
+        return names.withIndex()
+            .filter { it.value.lowercase(Locale.US) in saved }
+            .map { it.index }
+            .toSet()
     }
 
     private fun onPttPressed() {
@@ -2071,8 +2096,19 @@ class RadioViewModel(
             else -> "CHANNELS: LOCAL LIST"
         }
 
+        // Restore the persisted scan selection (by name) + on/off so it survives
+        // reboots and app updates. pruneScanSets() then drops any saved channel
+        // that's no longer in the catalog or coincides with the tuned home slot.
+        val restoredScanIndices = restoreScanIndices(channelNames)
+        val restoredScanActive = radioPreferences.isScanActive()
         _uiState.update { state ->
-            state.withTuning(channelNames, channelIndex).pruneScanSets().copy(
+            state.withTuning(channelNames, channelIndex)
+                .copy(
+                    scanActive = restoredScanActive,
+                    scanIncludedChannelIndices = restoredScanIndices,
+                )
+                .pruneScanSets()
+                .copy(
                 channelsLoading = false,
                 channelSyncError = catalog.errorMessage,
                 channelSourceLabel = sourceLabel,
