@@ -17,11 +17,30 @@ export interface AiDispatchPlatformConfig {
   llmApiKey: string;
   llmBaseUrl: string;
   llmModel: string;
+  /** Model for complex transmissions (plate/person/incident lookups). Falls back to llmModel. */
+  llmModelComplex: string;
+  /** Anthropic effort for routine traffic — lower = faster, snappier on-air replies. */
+  llmEffort: AiDispatchEffort;
+  /** Anthropic effort for complex transmissions — higher = more thorough lookups. */
+  llmEffortComplex: AiDispatchEffort;
   /** Anthropic ephemeral prompt cache TTL (large SSA system prompt). */
   promptCacheTtl: "5m" | "1h";
   defaultSystemPrompt: string;
   dispatchUnitId: string;
   yieldsToUnitsDefault: boolean;
+}
+
+/** Empty string = don't send an effort param (let the model use its default). */
+export type AiDispatchEffort = "" | "low" | "medium" | "high" | "max";
+
+function readEffort(name: string, fallback: AiDispatchEffort): AiDispatchEffort {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
+  return raw === "low" || raw === "medium" || raw === "high" || raw === "max" || raw === ""
+    ? (raw as AiDispatchEffort)
+    : fallback;
 }
 
 function envFlag(name: string, defaultOn = false): boolean {
@@ -63,6 +82,13 @@ export function getAiDispatchPlatformConfig(): AiDispatchPlatformConfig {
     llmModel:
       process.env.AI_DISPATCH_LLM_MODEL?.trim() ||
       (llmProvider === "anthropic" ? "claude-sonnet-4-6" : "gpt-4o-mini"),
+    llmModelComplex:
+      process.env.AI_DISPATCH_LLM_MODEL_COMPLEX?.trim() ||
+      process.env.AI_DISPATCH_LLM_MODEL?.trim() ||
+      (llmProvider === "anthropic" ? "claude-sonnet-4-6" : "gpt-4o-mini"),
+    // Routine radio traffic runs fast (low effort); lookups bump to high. Anthropic only.
+    llmEffort: readEffort("AI_DISPATCH_LLM_EFFORT", "low"),
+    llmEffortComplex: readEffort("AI_DISPATCH_LLM_EFFORT_COMPLEX", "high"),
     promptCacheTtl,
     defaultSystemPrompt:
       process.env.AI_DISPATCH_SYSTEM_PROMPT?.trim() ||
