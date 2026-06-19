@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, describeError, type Alert, type UserChannel } from "../api";
+import {
+  api,
+  describeError,
+  uploadAlertImage,
+  fetchAlertImage,
+  type Alert,
+  type UserChannel,
+} from "../api";
 import { sounds } from "../sounds";
 import { useUnitAliasResolver } from "../unitAliases";
 import { IconAlertTriangle, IconBell } from "../icons";
@@ -36,12 +43,40 @@ function notifyEmergency(alert: Alert): void {
   }
 }
 
+/** Lazy-loads and shows a page's picture attachment; click opens it full-size. */
+function AlertThumb({ id }: { id: number }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let revoked: string | null = null;
+    fetchAlertImage(id)
+      .then((blob) => {
+        const objUrl = URL.createObjectURL(blob);
+        revoked = objUrl;
+        setUrl(objUrl);
+      })
+      .catch(() => undefined);
+    return () => {
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
+  }, [id]);
+  if (!url) return null;
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="alert-thumb">
+      <img src={url} alt="attachment" />
+    </a>
+  );
+}
+
 export function AlertsPanel({ variant = "embedded", onPopOut }: SectionProps) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [channels, setChannels] = useState<UserChannel[]>([]);
   const [kind, setKind] = useState<AlertKind>("page");
   const [channelName, setChannelName] = useState("");
   const [message, setMessage] = useState("");
+  const [audience, setAudience] = useState<"broadcast" | "unit">("broadcast");
+  const [targetUnit, setTargetUnit] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const seenEmergencies = useRef<Set<number>>(new Set());
@@ -86,10 +121,27 @@ export function AlertsPanel({ variant = "embedded", onPopOut }: SectionProps) {
       setError("Enter a page message.");
       return;
     }
+    const unit = audience === "unit" ? targetUnit.trim().toUpperCase() : null;
+    if (audience === "unit" && !unit) {
+      setError("Enter a unit ID, or switch to broadcast.");
+      return;
+    }
     setSending(true);
     try {
-      await api.sendAlert({ kind, channelName: channelName || null, message: message.trim() || null });
+      const { alert } = await api.sendAlert({
+        kind,
+        // A targeted page goes to one unit regardless of channel; a broadcast
+        // can still be scoped to a channel.
+        channelName: unit ? null : channelName || null,
+        targetUnit: unit,
+        message: message.trim() || null,
+      });
+      if (imageFile && alert?.id) {
+        await uploadAlertImage(alert.id, imageFile);
+      }
       setMessage("");
+      setImageFile(null);
+      if (imageInputRef.current) imageInputRef.current.value = "";
       // Emergencies get their own loud tone via refresh(); a page just needs the cue.
       if (kind === "page") {
         sounds.success();
@@ -146,20 +198,49 @@ export function AlertsPanel({ variant = "embedded", onPopOut }: SectionProps) {
             <option value="page">Page</option>
             <option value="emergency">Emergency</option>
           </select>
-          <select value={channelName} onChange={(e) => setChannelName(e.target.value)}>
-            <option value="">All channels</option>
-            {channels.map((channel) => (
-              <option key={channel.id} value={channel.name}>
-                {channel.name}
-              </option>
-            ))}
+          <select value={audience} onChange={(e) => setAudience(e.target.value as "broadcast" | "unit")}>
+            <option value="broadcast">Broadcast</option>
+            <option value="unit">Specific unit</option>
           </select>
+          {audience === "unit" ? (
+            <input
+              className="alert-unit-input"
+              placeholder="Unit ID"
+              value={targetUnit}
+              onChange={(e) => setTargetUnit(e.target.value.toUpperCase())}
+            />
+          ) : (
+            <select value={channelName} onChange={(e) => setChannelName(e.target.value)}>
+              <option value="">All channels</option>
+              {channels.map((channel) => (
+                <option key={channel.id} value={channel.name}>
+                  {channel.name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <input
           placeholder={kind === "page" ? "Page message" : "Note (optional)"}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
         />
+        <div className="alert-send-row">
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
+          />
+          {imageFile ? (
+            <button type="button" className="btn sm" onClick={() => {
+              setImageFile(null);
+              if (imageInputRef.current) imageInputRef.current.value = "";
+            }}>
+              Remove image
+            </button>
+          ) : null}
+        </div>
         <button className="btn primary icon-btn" type="submit" disabled={sending}>
           {kind === "emergency" ? <IconAlertTriangle size={15} /> : <IconBell size={15} />}
           {sending ? "Sending…" : kind === "emergency" ? "Broadcast emergency" : "Send page"}
@@ -181,6 +262,7 @@ export function AlertsPanel({ variant = "embedded", onPopOut }: SectionProps) {
                 {!alert.active && alert.cleared_by ? ` · cleared by ${alert.cleared_by}` : ""}
               </div>
               {alert.message && <div className="alert-msg">{alert.message}</div>}
+              {alert.has_image && <AlertThumb id={alert.id} />}
             </div>
             {alert.active && (
               <button className="btn sm" onClick={() => clear(alert.id)}>

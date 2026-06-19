@@ -409,6 +409,8 @@ export interface Alert {
   created_at: string;
   cleared_by: string | null;
   cleared_at: string | null;
+  /** True when this page/alert carries a picture attachment. */
+  has_image?: boolean;
 }
 
 /** Auto-derived activity status for a roster member. */
@@ -1500,6 +1502,25 @@ async function uploadRaw(path: string, file: File, fallbackType: string): Promis
 /** Uploads a soundboard tone-out's audio clip (raw body — not JSON). */
 export function uploadToneOutAudio(id: number, file: File): Promise<void> {
   return uploadRaw(`/v1/admin/tone-outs/${id}/audio`, file, "audio/wav");
+}
+
+/** Attaches a picture to a page/alert (raw image body — not JSON). */
+export function uploadAlertImage(id: number, file: File): Promise<void> {
+  return uploadRaw(`/v1/alerts/${id}/image`, file, "image/jpeg");
+}
+
+/** Fetches a page/alert's picture attachment as a Blob. */
+export async function fetchAlertImage(id: number): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+  const res = await fetch(`/v1/alerts/${id}/image`, { headers });
+  if (!res.ok) {
+    handle401IfNeeded(res.status);
+    throw new ApiError(`http_${res.status}`, res.status);
+  }
+  return res.blob();
 }
 
 /** Uploads a soundboard tone-out's custom icon image (raw body — not JSON). */
