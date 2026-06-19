@@ -69,6 +69,10 @@ sealed interface RadioUiEvent {
     data object ToggleMessageHistory : RadioUiEvent
     data object CloseMessageHistory : RadioUiEvent
     data class PlayHistoryMessage(val entryId: Long) : RadioUiEvent
+    /** Switch between the Messages and Transcriptions tabs of the history screen. */
+    data class SelectMessageHistoryTab(val tab: MessageHistoryTab) : RadioUiEvent
+    /** Mark all delivered pages as read (clears the unread badge). */
+    data object MarkMessagesRead : RadioUiEvent
     /** Bind this handset to an agency (tenant) by its radio key; blank clears the override. */
     data class SaveAgencyRadioKey(val key: String) : RadioUiEvent
 

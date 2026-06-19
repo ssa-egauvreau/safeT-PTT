@@ -68,6 +68,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 class RadioViewModel(
@@ -210,6 +211,7 @@ class RadioViewModel(
     private var updateJinglePlayed = false
 
     init {
+        loadPersistedPages()
         if (radioPreferences.isLoggedIn() && radioPreferences.getSessionUnitId().isBlank()) {
             val fromUsername = radioPreferences.getSessionUsername().trim().uppercase(Locale.US)
             if (fromUsername.isNotEmpty()) {
@@ -1100,6 +1102,8 @@ class RadioViewModel(
             RadioUiEvent.ToggleMessageHistory -> toggleMessageHistory()
             RadioUiEvent.CloseMessageHistory -> closeMessageHistory()
             is RadioUiEvent.PlayHistoryMessage -> playHistoryMessage(event.entryId)
+            is RadioUiEvent.SelectMessageHistoryTab -> selectMessageHistoryTab(event.tab)
+            RadioUiEvent.MarkMessagesRead -> markMessagesRead()
             is RadioUiEvent.SaveAgencyRadioKey -> {
                 val key = event.key.trim()
                 radioPreferences.setAgencyRadioKey(key)
@@ -2366,17 +2370,114 @@ class RadioViewModel(
                 }
             }
         } else {
+            // Already ingested (inbox cursor can re-deliver across sessions) — don't
+            // re-tone or re-badge a page we've already shown.
+            val alreadySeen = alert.id <= radioPreferences.getLastPageId() ||
+                _uiState.value.pageMessages.any { it.id == alert.id }
+            if (alreadySeen) return
+            // Subtle tone + badge only — never interrupts audio or covers the radio screen.
             soundPlayer.playChannelSwitch()
-            val message = alert.message?.trim()?.takeIf { it.isNotEmpty() }
-            val line = if (message != null) {
+            val message = alert.message?.trim()?.takeIf { it.isNotEmpty() } ?: ""
+            val targetedToMe = alert.targetUnit?.trim()?.uppercase(Locale.US) == unitIdUpper &&
+                !alert.targetUnit.isNullOrBlank()
+            val page = PageMessage(
+                id = alert.id,
+                timeLabel = pageTimeLabel(alert.createdAt),
+                fromLabel = fromUpper,
+                message = message,
+                targetedToMe = targetedToMe,
+                hasImage = alert.hasImage,
+                read = false,
+            )
+            addPageMessage(page)
+            val line = if (message.isNotEmpty()) {
                 "PAGE: ${message.take(40).uppercase(Locale.US)}"
             } else {
-                "PAGE • ${from.uppercase(Locale.US)}"
+                "PAGE • ${fromUpper}"
             }
             _uiState.update { it.copy(statusMessage = line) }
             enqueueBackgroundWakeIfNeeded("inbox_page")
         }
     }
+
+    /** Prepends a page to the persisted inbox (capped), bumps the unread badge,
+     *  and de-dupes by id. Persisted so the inbox survives reboots. */
+    private fun addPageMessage(page: PageMessage) {
+        _uiState.update { state ->
+            if (state.pageMessages.any { it.id == page.id }) return@update state
+            val next = (listOf(page) + state.pageMessages).take(MAX_STORED_PAGES)
+            persistPages(next)
+            if (page.id > radioPreferences.getLastPageId()) {
+                radioPreferences.setLastPageId(page.id)
+            }
+            state.copy(
+                pageMessages = next,
+                unreadMessageCount = next.count { !it.read },
+            )
+        }
+    }
+
+    private fun selectMessageHistoryTab(tab: MessageHistoryTab) {
+        _uiState.update { it.copy(messageHistoryTab = tab) }
+        if (tab == MessageHistoryTab.Messages) markMessagesRead()
+    }
+
+    private fun markMessagesRead() {
+        _uiState.update { state ->
+            if (state.unreadMessageCount == 0) return@update state
+            val next = state.pageMessages.map { if (it.read) it else it.copy(read = true) }
+            persistPages(next)
+            state.copy(pageMessages = next, unreadMessageCount = 0)
+        }
+    }
+
+    private fun persistPages(pages: List<PageMessage>) {
+        val arr = JSONArray()
+        pages.forEach { p ->
+            arr.put(
+                JSONObject()
+                    .put("id", p.id)
+                    .put("timeLabel", p.timeLabel)
+                    .put("fromLabel", p.fromLabel)
+                    .put("message", p.message)
+                    .put("targetedToMe", p.targetedToMe)
+                    .put("hasImage", p.hasImage)
+                    .put("read", p.read),
+            )
+        }
+        radioPreferences.setStoredPagesJson(arr.toString())
+    }
+
+    private fun loadPersistedPages() {
+        val pages = try {
+            val arr = JSONArray(radioPreferences.getStoredPagesJson())
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                PageMessage(
+                    id = o.optLong("id"),
+                    timeLabel = o.optString("timeLabel"),
+                    fromLabel = o.optString("fromLabel"),
+                    message = o.optString("message"),
+                    targetedToMe = o.optBoolean("targetedToMe"),
+                    hasImage = o.optBoolean("hasImage"),
+                    read = o.optBoolean("read", true),
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+        if (pages.isNotEmpty()) {
+            _uiState.update {
+                it.copy(pageMessages = pages, unreadMessageCount = pages.count { p -> !p.read })
+            }
+        }
+    }
+
+    /** Receipt-time label for a page. Server `created_at` is ISO-8601, but
+     *  java.time isn't available pre-API-26 here, and a delivered page's
+     *  arrival time is what the operator cares about — so label it on receipt. */
+    private fun pageTimeLabel(@Suppress("UNUSED_PARAMETER") iso: String?): String =
+        SimpleDateFormat("MMM d, HH:mm", Locale.US).format(Date())
 
     /**
      * Heartbeat tuned channel then read population; skips when offline/loading/[----].
@@ -2894,6 +2995,8 @@ class RadioViewModel(
         /** Device clocks reading before this are almost certainly wrong (reset on reboot),
          *  which fails TLS — surface a "check date/time" hint. 2025-01-01 UTC in millis. */
         const val MIN_SANE_CLOCK_MS = 1_735_689_600_000L
+        /** Cap on the locally-retained dispatcher page inbox. */
+        const val MAX_STORED_PAGES = 100
         /** How long the "MOVED TO" banner survives the immediate re-join "VOICE ON" ack. */
         const val MOVE_BANNER_MS = 6_000L
         const val AIR_POLL_MS = 250L

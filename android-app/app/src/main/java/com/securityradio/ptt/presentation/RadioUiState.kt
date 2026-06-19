@@ -15,6 +15,20 @@ data class RxMessageHistoryItem(
     val durationMs: Long,
 )
 
+/** Which tab of the message-history screen is showing. */
+enum class MessageHistoryTab { Messages, Transcriptions }
+
+/** A dispatcher page/message delivered to this radio (text + optional picture). */
+data class PageMessage(
+    val id: Long,
+    val timeLabel: String,
+    val fromLabel: String,
+    val message: String,
+    val targetedToMe: Boolean,
+    val hasImage: Boolean,
+    val read: Boolean,
+)
+
 /**
  * Immutable snapshot of the radio shell. The [RadioViewModel] is the single source of truth.
  */
@@ -203,6 +217,12 @@ data class RadioUiState(
     val historyPlayingId: Long? = null,
     /** True when [historyPlayingId] is set but playback is paused. */
     val historyPlaybackPaused: Boolean = false,
+    /** Which tab of the history screen is active (Messages | Transcriptions). */
+    val messageHistoryTab: MessageHistoryTab = MessageHistoryTab.Transcriptions,
+    /** Dispatcher pages/messages delivered to this radio, newest first. */
+    val pageMessages: List<PageMessage> = emptyList(),
+    /** Count of unread pages — drives the REPLAY badge. */
+    val unreadMessageCount: Int = 0,
 
     /** Scan traffic on a monitored channel while tuned elsewhere (scan icon pulse). */
     val scanBackgroundActive: Boolean = false,

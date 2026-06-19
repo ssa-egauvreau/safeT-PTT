@@ -155,8 +155,11 @@ data class InboxAlertDto(
     @SerializedName("id") val id: Long = 0,
     @SerializedName("kind") val kind: String = "",
     @SerializedName("channel_name") val channelName: String? = null,
+    @SerializedName("target_unit") val targetUnit: String? = null,
     @SerializedName("from_unit") val fromUnit: String? = null,
     @SerializedName("from_name") val fromName: String? = null,
     @SerializedName("message") val message: String? = null,
     @SerializedName("active") val active: Boolean = true,
+    @SerializedName("created_at") val createdAt: String? = null,
+    @SerializedName("has_image") val hasImage: Boolean = false,
 )
