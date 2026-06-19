@@ -97,6 +97,33 @@ export async function listAiDispatchLog(agencyId: number, limit: number): Promis
   }));
 }
 
+/**
+ * The last few dispatch turns on one channel, oldest-to-newest, for conversational
+ * context. Feeding the unit's recent transcripts AND the dispatcher's own replies
+ * back into the LLM lets it resolve follow-ups ("what's on that call?", "the 415
+ * you just gave me") instead of treating every transmission in isolation.
+ */
+export async function listRecentChannelDispatchTurns(
+  agencyId: number,
+  channelName: string,
+  limit: number,
+): Promise<Pick<AiDispatchLogRow, "unit_id" | "transcript" | "dispatcher_response" | "summary" | "created_at">[]> {
+  const cap = Math.min(Math.max(limit, 1), 20);
+  const res = await requirePool().query<
+    Pick<AiDispatchLogRow, "unit_id" | "transcript" | "dispatcher_response" | "summary" | "created_at">
+  >(
+    `SELECT unit_id, transcript, dispatcher_response, summary, created_at
+       FROM ai_dispatch_log
+      WHERE agency_id = $1 AND channel_name = $2
+        AND (transcript <> '' OR dispatcher_response IS NOT NULL)
+      ORDER BY created_at DESC
+      LIMIT $3;`,
+    [agencyId, channelName, cap],
+  );
+  // Reverse to chronological order so the LLM reads it as a conversation.
+  return res.rows.reverse();
+}
+
 /** Deletes AI dispatch activity rows older than `retentionMs`. */
 export async function sweepAiDispatchLog(retentionMs: number): Promise<number> {
   const p = getPool();

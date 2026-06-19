@@ -2,7 +2,11 @@ import {
   getChannelAiDispatchRow,
   getTransmissionDispatchContext,
 } from "../store.js";
-import { insertAiDispatchLog, type AiDispatchOutcome } from "./activityLog.js";
+import {
+  insertAiDispatchLog,
+  listRecentChannelDispatchTurns,
+  type AiDispatchOutcome,
+} from "./activityLog.js";
 import { adaptDispatcherResponseForChannel, detectEmergencyCodeFromTranscript } from "./emergencyCodes.js";
 import {
   applyDistressDispatchRules,
@@ -79,6 +83,43 @@ let loopbackPort = 8080;
  * and replay every missed message on the air. Stale items are still logged, just not spoken.
  */
 const MAX_ON_AIR_REPLY_AGE_MS = Number(process.env.AI_DISPATCH_MAX_REPLY_AGE_MS) || 120_000;
+
+/** How many recent channel turns to feed back as conversational memory. */
+const CONVERSATION_CONTEXT_TURNS = Number(process.env.AI_DISPATCH_CONTEXT_TURNS) || 6;
+
+/**
+ * Renders the last few dispatch turns on a channel into a compact transcript so
+ * the LLM can resolve follow-ups ("what's on that call?", "the 415 you just gave
+ * me"). Each line is `[HH:MM] UNIT: "what they said" → DISPATCH: "what she said"`.
+ * Returns "" when there's no prior traffic (or no DB) so the prompt stays lean.
+ */
+async function buildConversationContext(agencyId: number, channelName: string): Promise<string> {
+  let turns: Awaited<ReturnType<typeof listRecentChannelDispatchTurns>>;
+  try {
+    turns = await listRecentChannelDispatchTurns(agencyId, channelName, CONVERSATION_CONTEXT_TURNS);
+  } catch {
+    return ""; // in-memory mode / DB hiccup — context is best-effort
+  }
+  const clip = (s: string | null, n: number): string =>
+    (s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
+  const lines: string[] = [];
+  for (const t of turns) {
+    const said = clip(t.transcript, 200);
+    const reply = clip(t.dispatcher_response, 200);
+    if (!said && !reply) continue;
+    const time = new Date(t.created_at).toLocaleTimeString("en-US", {
+      timeZone: "America/Los_Angeles",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const who = (t.unit_id ?? "UNIT").trim().toUpperCase() || "UNIT";
+    let line = `[${time}] ${who}: "${said}"`;
+    if (reply) line += ` → DISPATCH: "${reply}"`;
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
 
 export function configureAiDispatchEngine(options: { port: number }): void {
   loopbackPort = options.port;
@@ -436,12 +477,14 @@ async function processTransmission(transmissionId: number): Promise<void> {
     const knowledgeContext = await retrieveKnowledge(tx.agency_id, transcript, {
       propertyCode: detectPropertyCode(transcript),
     });
+    const conversationContext = await buildConversationContext(tx.agency_id, tx.channel_name);
     parsed = await parseDispatcherTransmission({
       systemPrompt,
       unitId,
       channelName: tx.channel_name,
       transcript,
       knowledgeContext,
+      conversationContext,
     });
 
     let activeIncidents: Ten8ActiveIncident[] = [];
