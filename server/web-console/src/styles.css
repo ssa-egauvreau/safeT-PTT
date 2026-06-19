@@ -4864,6 +4864,22 @@ button.ch-kbd-chip:hover {
 .alert-send input {
   width: 100%;
 }
+.alert-send-row .alert-unit-input {
+  flex: 1;
+  width: auto;
+}
+.alert-thumb {
+  display: inline-block;
+  margin-top: 6px;
+}
+.alert-thumb img {
+  max-height: 64px;
+  max-width: 120px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  object-fit: cover;
+  display: block;
+}
 .alert-history {
   margin-top: 4px;
 }
