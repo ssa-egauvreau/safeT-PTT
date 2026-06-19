@@ -7,7 +7,7 @@ import {
   listRecentChannelDispatchTurns,
   type AiDispatchOutcome,
 } from "./activityLog.js";
-import { setAiThinking, setAiSpeaking, clearAiActivity } from "./aiActivity.js";
+import { setAiThinking, setAiSpeaking, markAiSpeakingDone, clearAiActivity } from "./aiActivity.js";
 import { adaptDispatcherResponseForChannel, detectEmergencyCodeFromTranscript } from "./emergencyCodes.js";
 import {
   applyDistressDispatchRules,
@@ -1072,6 +1072,10 @@ async function speakDispatcherReply(
       yieldsToUnits,
       pcm,
     });
+    // Playback finished — hold the response on the handset for a short tail,
+    // then it clears (the radio returns to normal a few seconds after she
+    // stops talking).
+    markAiSpeakingDone(tx.agency_id, tx.channel_name);
   } catch (playErr) {
     console.warn(`[ai-dispatch] playback failed channel=${tx.channel_name}`, playErr);
     failure.detail = `On-channel playback failed: ${playErr instanceof Error ? playErr.message : String(playErr)}`;

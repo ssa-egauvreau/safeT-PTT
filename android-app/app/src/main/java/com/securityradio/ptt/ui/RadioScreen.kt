@@ -69,6 +69,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -484,7 +485,11 @@ fun RadioScreen(
             ScanChannelPickerDialog(state = state, onEvent = onEvent, styles = styles)
         }
         MessageHistoryScreen(state = state, onEvent = onEvent, styles = styles)
-        AiActivityOverlay(activity = state.aiActivity, styles = styles)
+        AiActivityOverlay(
+            activity = state.aiActivity,
+            pttPressed = state.isPttPressed,
+            styles = styles,
+        )
         HardwareMappingDialog(state = state, onEvent = onEvent, styles = styles)
         SetupRequiredDialog(state = state, onEvent = onEvent)
     }
@@ -639,100 +644,209 @@ private fun AiDispatchBadge(visible: Boolean, styles: LcdTextStyles, modifier: M
 @Composable
 private fun AiActivityOverlay(
     activity: AiActivityUi?,
+    pttPressed: Boolean,
     styles: LcdTextStyles,
 ) {
     if (activity == null) return
-    // While she's only *thinking*, take over the screen just for the radio she's
-    // answering — don't blank the whole net for traffic that isn't theirs. Once
+    // Keying the radio always wins: the moment PTT is pressed the operator wants
+    // the normal transmit display, so drop the AI overlay entirely.
+    if (pttPressed) return
+    // While she's only *thinking*, show the cue just for the radio she's
+    // answering — don't take over screens for traffic that isn't theirs. Once
     // she *speaks*, every radio on the channel sees the response (it's on-air).
     if (activity.phase == AiActivityPhase.Thinking && !activity.forYou) return
     val p = RadioLcdTheme.palette
-    val rainbow = Brush.horizontalGradient(
-        listOf(
-            Color(0xFFFF5F6D),
-            Color(0xFFFFC371),
-            Color(0xFF38F9D7),
-            Color(0xFF7F7FD5),
-            Color(0xFFFF5F6D),
+
+    // Animated rainbow used for both the orb sweep and the response theme so the
+    // thinking screen melts into the response screen.
+    val shimmer = rememberInfiniteTransition(label = "ai_shimmer")
+    val sweep by shimmer.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2600),
+            repeatMode = RepeatMode.Restart,
         ),
+        label = "ai_sweep",
     )
+    val rainbowStops = listOf(
+        Color(0xFFFF5F6D),
+        Color(0xFFFFC371),
+        Color(0xFF38F9D7),
+        Color(0xFF7F7FD5),
+        Color(0xFFFF5F6D),
+    )
+    val rainbowChip = Brush.horizontalGradient(rainbowStops)
+
+    // MIDDLE-of-screen overlay only: no full-screen wash, so the channel name,
+    // status icons and buttons around it stay visible (and tappable). We center a
+    // self-sized card; everything outside it is the live radio screen.
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(p.lcdMain)
-            .padding(horizontal = 20.dp, vertical = 18.dp),
+            .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
-        // Rainbow "AI DISPATCH" chip pinned to the top so the source is always clear.
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .clip(RoundedCornerShape(22.dp))
+                .background(p.lcdMain.copy(alpha = 0.96f))
+                .padding(horizontal = 22.dp, vertical = 22.dp),
+        ) {
+            // Rainbow "AI DISPATCH" chip so the source is always unmistakable.
+            Box(
+                modifier = Modifier
+                    .background(rainbowChip, RoundedCornerShape(50))
+                    .padding(horizontal = 14.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = "✦ AI DISPATCH",
+                    style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 13.sp),
+                    color = Color(0xFF0B0B12),
+                    maxLines = 1,
+                )
+            }
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // Smooth thinking -> response transition.
+            Crossfade(
+                targetState = activity.phase,
+                animationSpec = tween(durationMillis = 320),
+                label = "ai_phase",
+            ) { phase ->
+                when (phase) {
+                    AiActivityPhase.Thinking -> AiThinkingVisual(
+                        sweep = sweep,
+                        rainbowStops = rainbowStops,
+                        forYou = activity.forYou,
+                        styles = styles,
+                    )
+                    AiActivityPhase.Speaking -> AiSpeakingVisual(
+                        activity = activity,
+                        sweep = sweep,
+                        rainbowStops = rainbowStops,
+                        styles = styles,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Siri/Gemini-style "thinking" visual: a breathing rainbow orb + animated dots. */
+@Composable
+private fun AiThinkingVisual(
+    sweep: Float,
+    rainbowStops: List<Color>,
+    forYou: Boolean,
+    styles: LcdTextStyles,
+) {
+    val p = RadioLcdTheme.palette
+    val pulse = rememberTen33PulseAlpha(true)
+    // Sweep the gradient around so the orb looks alive.
+    val orbBrush = Brush.sweepGradient(rainbowStops)
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .background(rainbow, RoundedCornerShape(50))
-                .padding(horizontal = 14.dp, vertical = 4.dp),
+                .size(96.dp)
+                .graphicsLayer {
+                    rotationZ = sweep * 360f
+                    val s = 0.9f + 0.1f * pulse
+                    scaleX = s
+                    scaleY = s
+                }
+                .clip(CircleShape)
+                .background(orbBrush),
+            contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = "✦ AI DISPATCH",
-                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 13.sp),
-                color = Color(0xFF0B0B12),
-                maxLines = 1,
+            // Soft dark core so it reads as a glowing ring, not a flat disc.
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(p.lcdMain.copy(alpha = 0.86f)),
             )
         }
-
-        when (activity.phase) {
-            AiActivityPhase.Thinking -> {
-                val pulse = rememberTen33PulseAlpha(true)
-                val color = if (activity.forYou) p.statusBlue else p.textMuted
-                val label = if (activity.forYou) "AI LISTENING" else "AI WORKING"
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.graphicsLayer { alpha = 0.6f + 0.4f * pulse },
-                ) {
-                    Text(
-                        text = label,
-                        style = styles.channel.copy(fontWeight = FontWeight.Bold, fontSize = 34.sp),
-                        color = color,
-                        maxLines = 1,
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "• • •",
-                        style = styles.channel.copy(fontSize = 28.sp),
-                        color = color,
-                    )
-                }
-            }
-            AiActivityPhase.Speaking -> {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = if (forYou) "LISTENING" else "WORKING",
+            style = styles.channel.copy(fontWeight = FontWeight.Bold, fontSize = 26.sp),
+            color = p.textPrimary,
+            maxLines = 1,
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        // Three dots that ripple in sequence with the sweep.
+        Row {
+            repeat(3) { i ->
+                val phase = (sweep * 3f - i).let { it - kotlin.math.floor(it) }
+                val a = 0.35f + 0.65f * (1f - kotlin.math.abs(phase - 0.5f) * 2f)
+                Text(
+                    text = "•",
+                    style = styles.channel.copy(fontSize = 30.sp),
+                    color = p.textPrimary,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    if (activity.tag.isNotEmpty()) {
-                        Text(
-                            text = activity.tag,
-                            style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp),
-                            color = p.statusBlue,
-                            maxLines = 1,
-                            textAlign = TextAlign.Center,
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                    }
-                    Text(
-                        text = activity.text.ifBlank { "…" },
-                        style = styles.channel.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 26.sp,
-                            lineHeight = 32.sp,
-                        ),
-                        color = p.textPrimary,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                        .padding(horizontal = 3.dp)
+                        .graphicsLayer { alpha = a },
+                )
             }
         }
+    }
+}
+
+/** Rainbow-themed response screen: what she said, with the AI accent. */
+@Composable
+private fun AiSpeakingVisual(
+    activity: AiActivityUi,
+    sweep: Float,
+    rainbowStops: List<Color>,
+    styles: LcdTextStyles,
+) {
+    val p = RadioLcdTheme.palette
+    // A gentle moving rainbow rule under the tag ties the response to the theme.
+    val movingRainbow = Brush.linearGradient(
+        colors = rainbowStops,
+        start = Offset(sweep * 600f - 300f, 0f),
+        end = Offset(sweep * 600f + 300f, 0f),
+    )
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 320.dp)
+            .verticalScroll(rememberScrollState()),
+    ) {
+        if (activity.tag.isNotEmpty()) {
+            Text(
+                text = activity.tag,
+                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp),
+                color = p.statusBlue,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+        Box(
+            modifier = Modifier
+                .width(120.dp)
+                .height(3.dp)
+                .clip(RoundedCornerShape(50))
+                .background(movingRainbow),
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+        Text(
+            text = activity.text.ifBlank { "…" },
+            style = styles.channel.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 26.sp,
+                lineHeight = 32.sp,
+            ),
+            color = p.textPrimary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
