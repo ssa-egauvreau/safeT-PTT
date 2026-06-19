@@ -240,6 +240,8 @@ export async function parseDispatcherTransmission(opts: {
   transcript: string;
   /** Relevant agency knowledge (RAG) appended to the user turn, not the cached system prompt. */
   knowledgeContext?: string;
+  /** Recent back-and-forth on this channel so the model can resolve follow-ups. */
+  conversationContext?: string;
 }): Promise<AiDispatchParseResult | null> {
   const pacific = new Date().toLocaleString("en-US", {
     timeZone: "America/Los_Angeles",
@@ -250,11 +252,18 @@ export async function parseDispatcherTransmission(opts: {
     ? `\nRelevant agency knowledge (use only if it applies to this transmission):\n${opts.knowledgeContext.trim()}\n`
     : "";
 
+  const conversation = opts.conversationContext?.trim()
+    ? `\nRecent radio traffic on this channel (oldest first) — use it to resolve follow-ups and ` +
+      `references like "that call" or "the one you just gave me"; do NOT ask for an incident/call number ` +
+      `the unit is clearly referring back to here:\n${opts.conversationContext.trim()}\n`
+    : "";
+
   const userContent =
     `Current Pacific time: ${pacific}\n` +
     `Radio channel (use this name on the air instead of "green-1"): ${opts.channelName}\n` +
     `Transmitting unit: ${opts.unitId}\n` +
     `STT confidence: 0.85\n` +
+    conversation +
     `Transcript: ${opts.transcript}\n` +
     knowledge +
     `\nReturn ONLY the JSON object described in the system prompt.`;
