@@ -25,6 +25,7 @@ import com.securityradio.ptt.device.HardwareMappingRepository
 import com.securityradio.ptt.device.BatteryStatusProbe
 import com.securityradio.ptt.device.BluetoothStatusProbe
 import com.securityradio.ptt.device.ConnectivityMonitor
+import com.securityradio.ptt.device.ExternalAudioOutputMonitor
 import com.securityradio.ptt.device.ExternalMicMonitor
 import com.securityradio.ptt.device.LastRxAudioRecorder
 import com.securityradio.ptt.device.RxMessageHistory
@@ -93,6 +94,7 @@ class RadioViewModel(
     private val connectivityMonitor: ConnectivityMonitor,
     private val serverReachabilityMonitor: ServerReachabilityMonitor,
     private val externalMicMonitor: ExternalMicMonitor,
+    private val externalAudioOutputMonitor: ExternalAudioOutputMonitor,
     private val appUpdater: AppUpdater,
 ) : ViewModel() {
 
@@ -243,7 +245,8 @@ class RadioViewModel(
                 },
                 externalMicConnected = externalMicAtStart,
                 batteryPercent = BatteryStatusProbe.percent(application),
-                bluetoothOn = BluetoothStatusProbe.isBluetoothOn(application),
+                bluetoothOn = BluetoothStatusProbe.isBluetoothOn(application) ||
+                    externalAudioOutputMonitor.bluetoothConnected.value,
                 hardwareMappings = hardwareMappingRepository.getAllMappings(),
                 themeMode = radioPreferences.getThemeMode(),
                 announceChannelNameOnTune = radioPreferences.isAnnounceChannelOnTuneEnabled(),
@@ -414,7 +417,12 @@ class RadioViewModel(
         viewModelScope.launch {
             while (isActive) {
                 delay(STATUS_REFRESH_MS)
-                val bt = BluetoothStatusProbe.isBluetoothOn(application)
+                // Light the icon when the adapter is on OR a Bluetooth audio
+                // output is connected — the adapter probe can throw/return false
+                // on head units (Android 12+ permission), leaving it greyed even
+                // with a BT speaker actively connected.
+                val bt = BluetoothStatusProbe.isBluetoothOn(application) ||
+                    externalAudioOutputMonitor.bluetoothConnected.value
                 val battery = BatteryStatusProbe.percent(application)
                 val snap = _uiState.value
                 if (bt != snap.bluetoothOn || battery != snap.batteryPercent) {
@@ -445,6 +453,20 @@ class RadioViewModel(
             externalMicMonitor.connected.collect { connected ->
                 if (_uiState.value.externalMicConnected != connected) {
                     _uiState.update { it.copy(externalMicConnected = connected) }
+                }
+            }
+        }
+        viewModelScope.launch {
+            // Update the BT icon the instant an audio output (dis)connects, not
+            // only on the slow status poll.
+            externalAudioOutputMonitor.bluetoothConnected.collect { connected ->
+                if (connected && !_uiState.value.bluetoothOn) {
+                    _uiState.update { it.copy(bluetoothOn = true) }
+                } else if (!connected) {
+                    val adapterOn = BluetoothStatusProbe.isBluetoothOn(application)
+                    if (_uiState.value.bluetoothOn != adapterOn) {
+                        _uiState.update { it.copy(bluetoothOn = adapterOn) }
+                    }
                 }
             }
         }
