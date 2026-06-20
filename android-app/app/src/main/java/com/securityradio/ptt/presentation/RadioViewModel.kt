@@ -895,11 +895,12 @@ class RadioViewModel(
     private fun disableScan() {
         soundPlayer.playChannelSwitch()
         scanRxBannerClearJob?.cancel()
+        // Keep scanIncludedChannelIndices so the picks survive off → on; only the
+        // live RX banner is cleared. (Listening is already gated on scanActive.)
         _uiState.update {
             it.copy(
                 scanActive = false,
                 scanPickerVisible = false,
-                scanIncludedChannelIndices = emptySet(),
                 scanBackgroundActive = false,
                 scanBackgroundChannel = "",
                 statusMessage = "SCAN OFF",
@@ -1511,11 +1512,17 @@ class RadioViewModel(
         }
     }
 
-    /** SCAN soft key toggles scan; enabling starts with no side channels until the user picks them. */
+    /** SCAN soft key toggles scan; enabling restores the channels you last picked. */
     private fun onScanSoftKeyToggle(state: RadioUiState): RadioUiState {
         val turningOn = !state.scanActive
         val nextScanOn = turningOn
-        val newIncludes = if (nextScanOn) emptySet() else state.scanIncludedChannelIndices
+        // Remember the previous selection across off/on: keep what's in memory, or
+        // fall back to the persisted picks if memory was cleared (e.g. fresh boot).
+        val newIncludes = if (nextScanOn) {
+            state.scanIncludedChannelIndices.ifEmpty { restoreScanIndices(channelNames) }
+        } else {
+            state.scanIncludedChannelIndices
+        }
         val status = when {
             !nextScanOn -> "SCAN OFF"
             newIncludes.isEmpty() -> "SCAN ON — PICK CHANNELS"
