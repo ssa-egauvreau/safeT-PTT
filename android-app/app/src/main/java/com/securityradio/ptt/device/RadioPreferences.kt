@@ -154,6 +154,24 @@ class RadioPreferences(context: Context) {
         prefs.edit().putBoolean(KEY_STEREO_CHANNEL_SPLIT, enabled).apply()
     }
 
+    /** Left-ear (main channel) volume for the stereo split. 1.0 = unchanged. Range [0, 2]. */
+    fun getStereoLeftVolume(): Float =
+        prefs.getFloat(KEY_STEREO_LEFT_VOLUME, DEFAULT_STEREO_VOLUME)
+            .coerceIn(MIN_STEREO_VOLUME, MAX_STEREO_VOLUME)
+
+    fun setStereoLeftVolume(volume: Float) {
+        prefs.edit().putFloat(KEY_STEREO_LEFT_VOLUME, volume.coerceIn(MIN_STEREO_VOLUME, MAX_STEREO_VOLUME)).apply()
+    }
+
+    /** Right-ear (scan channels) volume for the stereo split. 1.0 = unchanged. Range [0, 2]. */
+    fun getStereoRightVolume(): Float =
+        prefs.getFloat(KEY_STEREO_RIGHT_VOLUME, DEFAULT_STEREO_VOLUME)
+            .coerceIn(MIN_STEREO_VOLUME, MAX_STEREO_VOLUME)
+
+    fun setStereoRightVolume(volume: Float) {
+        prefs.edit().putFloat(KEY_STEREO_RIGHT_VOLUME, volume.coerceIn(MIN_STEREO_VOLUME, MAX_STEREO_VOLUME)).apply()
+    }
+
     /** When on: hand mic levelling to Android's AutomaticGainControl; manual gain ignored. */
     fun isMicAutoGainEnabled(): Boolean =
         prefs.getBoolean(KEY_MIC_AUTO_GAIN, DEFAULT_MIC_AUTO_GAIN)
@@ -278,6 +296,9 @@ class RadioPreferences(context: Context) {
         const val DEFAULT_MIC_NOISE_SUPPRESSION: Boolean = false
         const val DEFAULT_MIC_AUTO_GAIN: Boolean = false
         const val DEFAULT_STEREO_CHANNEL_SPLIT: Boolean = false
+        const val MIN_STEREO_VOLUME: Float = 0.0f
+        const val MAX_STEREO_VOLUME: Float = 2.0f
+        const val DEFAULT_STEREO_VOLUME: Float = 1.0f
 
         private const val PREFS_NAME = "security_radio_prefs"
         private const val KEY_THEME = "theme_mode"
@@ -297,6 +318,8 @@ class RadioPreferences(context: Context) {
         private const val KEY_MIC_NOISE_SUPPRESSION = "mic_noise_suppression"
         private const val KEY_MIC_AUTO_GAIN = "mic_auto_gain"
         private const val KEY_STEREO_CHANNEL_SPLIT = "stereo_channel_split"
+        private const val KEY_STEREO_LEFT_VOLUME = "stereo_left_volume"
+        private const val KEY_STEREO_RIGHT_VOLUME = "stereo_right_volume"
         private const val KEY_MIC_GAIN_MULTIPLIER = "mic_gain_multiplier"
         private const val KEY_RX_GAIN_MULTIPLIER = "rx_gain_multiplier"
         private const val KEY_PAGES_JSON = "page_messages_json"

@@ -442,6 +442,14 @@ async function processTransmission(transmissionId: number): Promise<void> {
     }
     yieldsToUnits = channelRow.yields_to_units;
 
+    // Show "she heard you, thinking…" on the handset the instant we pick the
+    // transmission up — BEFORE transcription, which is the slow part (often
+    // 3–5 s on local Whisper). Putting the cue after the transcript await made
+    // the radio sit on the normal screen for those seconds, so it felt like she
+    // never noticed you. The finally clears this if it turns out there was no
+    // speech / nothing to say.
+    setAiThinking(tx.agency_id, tx.channel_name, unitId);
+
     const ageMs = Date.now() - new Date(tx.started_at).getTime();
     const allowOnAir = Number.isFinite(ageMs) ? ageMs <= MAX_ON_AIR_REPLY_AGE_MS : true;
 
@@ -471,10 +479,6 @@ async function processTransmission(transmissionId: number): Promise<void> {
     }
 
     const platform = getAiDispatchPlatformConfig();
-
-    // Push a "she heard you, thinking…" cue to handsets on this channel while we
-    // run the LLM + TTS. Cleared/replaced in finalize.
-    setAiThinking(tx.agency_id, tx.channel_name, unitId);
 
     const emergencyRegex = detectEmergencyCodeFromTranscript(transcript);
     const officerDistress = detectOfficerDistressFromTranscript(transcript);

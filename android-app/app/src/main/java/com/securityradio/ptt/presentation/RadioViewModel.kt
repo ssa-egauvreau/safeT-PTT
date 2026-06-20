@@ -255,6 +255,8 @@ class RadioViewModel(
                 micAutoGainEnabled = radioPreferences.isMicAutoGainEnabled(),
                 micGainMultiplier = radioPreferences.getMicGainMultiplier(),
                 stereoChannelSplitEnabled = radioPreferences.isStereoChannelSplitEnabled(),
+                stereoLeftVolume = radioPreferences.getStereoLeftVolume(),
+                stereoRightVolume = radioPreferences.getStereoRightVolume(),
                 mp22DualDisplay = DisplayRouter.isMp22StyleDualDisplay(application),
                 mp22UsePhysicalDisplay = radioPreferences.isMp22UsePhysicalDisplay(),
             )
@@ -1064,6 +1066,18 @@ class RadioViewModel(
             is RadioUiEvent.SetStereoChannelSplit -> {
                 radioPreferences.setStereoChannelSplitEnabled(event.enabled)
                 _uiState.update { it.copy(stereoChannelSplitEnabled = event.enabled) }
+            }
+            is RadioUiEvent.SetStereoLeftVolume -> {
+                val clamped = event.volume
+                    .coerceIn(RadioPreferences.MIN_STEREO_VOLUME, RadioPreferences.MAX_STEREO_VOLUME)
+                radioPreferences.setStereoLeftVolume(clamped)
+                _uiState.update { it.copy(stereoLeftVolume = clamped) }
+            }
+            is RadioUiEvent.SetStereoRightVolume -> {
+                val clamped = event.volume
+                    .coerceIn(RadioPreferences.MIN_STEREO_VOLUME, RadioPreferences.MAX_STEREO_VOLUME)
+                radioPreferences.setStereoRightVolume(clamped)
+                _uiState.update { it.copy(stereoRightVolume = clamped) }
             }
             is RadioUiEvent.StartListeningForMapping -> {
                 soundPlayer.playChannelSwitch()

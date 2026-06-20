@@ -114,6 +114,9 @@ class RadioAppGraph(val application: Application) {
         // Hold the AudioTrack warm while a Bluetooth output is connected so the
         // link doesn't sleep and clip the start of the next transmission.
         keepWarmProvider = { externalAudioOutputMonitor.bluetoothConnected.value },
+        // Independent left/right trims for the stereo split (read live).
+        leftVolumeProvider = { radioPreferences.getStereoLeftVolume() },
+        rightVolumeProvider = { radioPreferences.getStereoRightVolume() },
     )
 
     private val authTokenProvider: () -> String = { radioPreferences.getAuthToken() }
