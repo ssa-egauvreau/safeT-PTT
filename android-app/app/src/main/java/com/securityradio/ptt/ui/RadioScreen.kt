@@ -720,7 +720,6 @@ private fun AiActivityOverlay(
                     AiActivityPhase.Thinking -> AiThinkingVisual(
                         sweep = sweep,
                         rainbowStops = rainbowStops,
-                        forYou = activity.forYou,
                         styles = styles,
                     )
                     AiActivityPhase.Speaking -> AiSpeakingVisual(
@@ -740,7 +739,6 @@ private fun AiActivityOverlay(
 private fun AiThinkingVisual(
     sweep: Float,
     rainbowStops: List<Color>,
-    forYou: Boolean,
     styles: LcdTextStyles,
 ) {
     val p = RadioLcdTheme.palette
@@ -771,7 +769,7 @@ private fun AiThinkingVisual(
         }
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = if (forYou) "LISTENING" else "WORKING",
+            text = "THINKING",
             style = styles.channel.copy(fontWeight = FontWeight.Bold, fontSize = 26.sp),
             color = p.textPrimary,
             maxLines = 1,

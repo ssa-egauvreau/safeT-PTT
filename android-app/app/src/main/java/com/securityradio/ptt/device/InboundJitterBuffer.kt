@@ -298,24 +298,11 @@ class InboundJitterBuffer(
             // would let the link sleep, and waking it on the next transmission
             // swallows the PTT tone and the first syllable. Keep feeding silence
             // so the link stays warm and playback starts instantly.
-            val keepWarm = keepWarmProvider()
-            if (!keepWarm &&
+            if (!keepWarmProvider() &&
                 lastEnqueueMs != 0L && now - lastEnqueueMs >= IDLE_RELEASE_MS
             ) {
                 running = false
                 return null
-            }
-
-            // Warm Bluetooth link, between transmissions: feed faint dither, not
-            // digital silence. Many A2DP stacks treat an all-zero PCM stream as
-            // silence and suspend the link to save power, then re-establish it on
-            // the next real audio — which clips the opening syllable even though
-            // the AudioTrack itself never went away. Inaudible low-level noise
-            // (~-72 dBFS) keeps the stack from ever seeing silence, so the link
-            // stays live and playback starts clean. (Idle, not mid-spurt, so this
-            // never colours actual concealment.)
-            if (keepWarm && !inActiveSpurt(now)) {
-                return KEEPWARM_FILL_FRAME
             }
 
             // Voice-link telemetry: only count concealment that happens DURING
@@ -489,21 +476,5 @@ class InboundJitterBuffer(
 
         // 20 ms of silence at 16 kHz mono PCM16 = 640 bytes.
         val SILENCE_FRAME = ByteArray(640)
-
-        // 20 ms of inaudible low-level dither (±8 LSB ≈ -72 dBFS) used to keep a
-        // Bluetooth A2DP link from detecting digital silence and suspending
-        // between transmissions. Deterministic pseudo-random fill so it reads as
-        // noise (not a tone an SBC codec might filter to silence at band edge).
-        val KEEPWARM_FILL_FRAME = ByteArray(640).also { buf ->
-            var seed = 0x2545F491.toInt()
-            var i = 0
-            while (i + 1 < buf.size) {
-                seed = seed * 1103515245 + 12345
-                val v = ((seed ushr 16) % 17) - 8 // [-8, 8]
-                buf[i] = (v and 0xFF).toByte()
-                buf[i + 1] = ((v shr 8) and 0xFF).toByte()
-                i += 2
-            }
-        }
     }
 }
