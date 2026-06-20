@@ -34,6 +34,7 @@ class RadioViewModelFactory(
                 serverReachabilityMonitor = graph.serverReachabilityMonitor,
                 externalMicMonitor = graph.externalMicMonitor,
                 externalAudioOutputMonitor = graph.externalAudioOutputMonitor,
+                bluetoothKeepAlive = graph.bluetoothKeepAlive,
                 appUpdater = graph.appUpdater,
             ) as T
         }
