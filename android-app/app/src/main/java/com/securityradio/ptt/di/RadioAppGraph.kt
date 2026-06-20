@@ -17,6 +17,7 @@ import com.securityradio.ptt.device.PostDecodeChain
 import com.securityradio.ptt.data.remote.AudioPostDecodeDto
 import com.securityradio.ptt.device.ChannelSpeechHelper
 import com.securityradio.ptt.device.ConnectivityMonitor
+import com.securityradio.ptt.device.BluetoothKeepAlive
 import com.securityradio.ptt.device.ExternalAudioOutputMonitor
 import com.securityradio.ptt.device.ExternalMicMonitor
 import com.securityradio.ptt.device.CustomSoundDownloader
@@ -87,6 +88,9 @@ class RadioAppGraph(val application: Application) {
     /** Watches the output route for Bluetooth (keep link warm) and stereo capability (channel split). */
     val externalAudioOutputMonitor: ExternalAudioOutputMonitor =
         ExternalAudioOutputMonitor(application).also { it.start() }
+
+    /** Holds the Bluetooth A2DP route awake so beeps/TTS/PTT tones don't get clipped. */
+    val bluetoothKeepAlive: BluetoothKeepAlive = BluetoothKeepAlive()
 
     val rxMessageHistory = RxMessageHistory()
 

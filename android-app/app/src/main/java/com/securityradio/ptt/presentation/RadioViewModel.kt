@@ -25,6 +25,7 @@ import com.securityradio.ptt.device.HardwareMappingRepository
 import com.securityradio.ptt.device.BatteryStatusProbe
 import com.securityradio.ptt.device.BluetoothStatusProbe
 import com.securityradio.ptt.device.ConnectivityMonitor
+import com.securityradio.ptt.device.BluetoothKeepAlive
 import com.securityradio.ptt.device.ExternalAudioOutputMonitor
 import com.securityradio.ptt.device.ExternalMicMonitor
 import com.securityradio.ptt.device.LastRxAudioRecorder
@@ -95,6 +96,7 @@ class RadioViewModel(
     private val serverReachabilityMonitor: ServerReachabilityMonitor,
     private val externalMicMonitor: ExternalMicMonitor,
     private val externalAudioOutputMonitor: ExternalAudioOutputMonitor,
+    private val bluetoothKeepAlive: BluetoothKeepAlive,
     private val appUpdater: AppUpdater,
 ) : ViewModel() {
 
@@ -460,6 +462,10 @@ class RadioViewModel(
             // Update the BT icon the instant an audio output (dis)connects, not
             // only on the slow status poll.
             externalAudioOutputMonitor.bluetoothConnected.collect { connected ->
+                // Keep the A2DP route awake whenever a Bluetooth output is present,
+                // so beeps / spoken channel names / PTT tones aren't clipped by the
+                // link waking from sleep.
+                bluetoothKeepAlive.setActive(connected)
                 if (connected && !_uiState.value.bluetoothOn) {
                     _uiState.update { it.copy(bluetoothOn = true) }
                 } else if (!connected) {
