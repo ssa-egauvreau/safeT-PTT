@@ -262,6 +262,8 @@ data class RadioUiState(
     val micAutoGainEnabled: Boolean = false,
     /** Mirror of [com.securityradio.ptt.device.RadioPreferences.getMicGainMultiplier]. */
     val micGainMultiplier: Float = RadioPreferences.MAX_MIC_GAIN,
+    /** Mirror of [com.securityradio.ptt.device.RadioPreferences.isStereoChannelSplitEnabled]. */
+    val stereoChannelSplitEnabled: Boolean = false,
 
     /** MP22 dual-display firmware detected (virtual Display 0 + physical Display 1). */
     val mp22DualDisplay: Boolean = false,

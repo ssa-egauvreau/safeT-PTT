@@ -143,6 +143,17 @@ class RadioPreferences(context: Context) {
         prefs.edit().putBoolean(KEY_MIC_NOISE_SUPPRESSION, enabled).apply()
     }
 
+    /**
+     * When on (and a stereo output is connected): play the home channel in the
+     * left ear and scan channels in the right ear instead of mono-mixing them.
+     */
+    fun isStereoChannelSplitEnabled(): Boolean =
+        prefs.getBoolean(KEY_STEREO_CHANNEL_SPLIT, DEFAULT_STEREO_CHANNEL_SPLIT)
+
+    fun setStereoChannelSplitEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_STEREO_CHANNEL_SPLIT, enabled).apply()
+    }
+
     /** When on: hand mic levelling to Android's AutomaticGainControl; manual gain ignored. */
     fun isMicAutoGainEnabled(): Boolean =
         prefs.getBoolean(KEY_MIC_AUTO_GAIN, DEFAULT_MIC_AUTO_GAIN)
@@ -266,6 +277,7 @@ class RadioPreferences(context: Context) {
         const val DEFAULT_RX_GAIN_MULTIPLIER: Float = 1.0f
         const val DEFAULT_MIC_NOISE_SUPPRESSION: Boolean = false
         const val DEFAULT_MIC_AUTO_GAIN: Boolean = false
+        const val DEFAULT_STEREO_CHANNEL_SPLIT: Boolean = false
 
         private const val PREFS_NAME = "security_radio_prefs"
         private const val KEY_THEME = "theme_mode"
@@ -284,6 +296,7 @@ class RadioPreferences(context: Context) {
         private const val KEY_DISPLAY_ROTATED_180 = "display_rotated_180"
         private const val KEY_MIC_NOISE_SUPPRESSION = "mic_noise_suppression"
         private const val KEY_MIC_AUTO_GAIN = "mic_auto_gain"
+        private const val KEY_STEREO_CHANNEL_SPLIT = "stereo_channel_split"
         private const val KEY_MIC_GAIN_MULTIPLIER = "mic_gain_multiplier"
         private const val KEY_RX_GAIN_MULTIPLIER = "rx_gain_multiplier"
         private const val KEY_PAGES_JSON = "page_messages_json"

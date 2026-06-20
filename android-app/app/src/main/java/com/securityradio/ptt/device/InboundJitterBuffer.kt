@@ -55,6 +55,22 @@ import kotlin.concurrent.withLock
  */
 class InboundJitterBuffer(
     private val trackFactory: () -> AudioTrack?,
+    /**
+     * Output pan. [StereoPan.NONE] writes the queued mono PCM straight to a mono
+     * AudioTrack (the default). [StereoPan.LEFT]/[StereoPan.RIGHT] expand each
+     * mono frame to interleaved stereo just before it is written, placing the
+     * audio in one ear and silence in the other — used by the optional
+     * main-left / scan-right channel split. All queue, PLC and pacing logic
+     * stays mono; only the final write is widened.
+     */
+    private val pan: StereoPan = StereoPan.NONE,
+    /**
+     * When this returns `true` the idle teardown is suppressed: the playout loop
+     * keeps feeding the AudioTrack silence instead of releasing it. Used to hold
+     * a Bluetooth audio link warm so the first frames of the next transmission
+     * are not swallowed by the link's cold-start latency.
+     */
+    private val keepWarmProvider: () -> Boolean = { false },
 ) {
 
     private val lock = ReentrantLock()
@@ -199,8 +215,12 @@ class InboundJitterBuffer(
                 // track in the finally below so the audio route powers down.
                 val frame = nextPlayoutFrame() ?: break
 
+                // Widen to interleaved stereo for a panned buffer right before the
+                // write; pacing below still uses the mono frame size so the
+                // wall-clock cadence is unchanged.
+                val outFrame = panToOutput(frame)
                 try {
-                    t.write(frame, 0, frame.size)
+                    t.write(outFrame, 0, outFrame.size)
                 } catch (_: IllegalStateException) {
                     break
                 }
@@ -274,7 +294,13 @@ class InboundJitterBuffer(
             // the audio route — and any amplified accessory's amp — powers down
             // instead of buzzing on an always-on output. The next enqueue()
             // lazily recreates the track, mirroring first-frame startup.
-            if (lastEnqueueMs != 0L && now - lastEnqueueMs >= IDLE_RELEASE_MS) {
+            // ...unless a Bluetooth link is connected: tearing the track down
+            // would let the link sleep, and waking it on the next transmission
+            // swallows the PTT tone and the first syllable. Keep feeding silence
+            // so the link stays warm and playback starts instantly.
+            if (!keepWarmProvider() &&
+                lastEnqueueMs != 0L && now - lastEnqueueMs >= IDLE_RELEASE_MS
+            ) {
                 running = false
                 return null
             }
@@ -348,6 +374,29 @@ class InboundJitterBuffer(
             out[i] = (scaled and 0xFF).toByte()
             out[i + 1] = ((scaled shr 8) and 0xFF).toByte()
             i += 2
+        }
+        return out
+    }
+
+    /**
+     * Expand a mono PCM16 frame to interleaved stereo for a panned buffer,
+     * placing the samples in one channel and silence in the other. Returns the
+     * frame untouched for [StereoPan.NONE] (the common mono path).
+     */
+    private fun panToOutput(monoFrame: ByteArray): ByteArray {
+        if (pan == StereoPan.NONE) return monoFrame
+        val out = ByteArray(monoFrame.size * 2)
+        val rightChannel = pan == StereoPan.RIGHT
+        var i = 0
+        var o = 0
+        while (i + 1 < monoFrame.size) {
+            // Left pair is [o, o+1]; right pair is [o+2, o+3]. The silent
+            // channel stays zero (out is zero-initialised).
+            val dst = if (rightChannel) o + 2 else o
+            out[dst] = monoFrame[i]
+            out[dst + 1] = monoFrame[i + 1]
+            i += 2
+            o += 4
         }
         return out
     }
