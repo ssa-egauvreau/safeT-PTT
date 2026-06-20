@@ -862,7 +862,11 @@ private fun UniversalCockpitMainPanel(
     val channelText = state.channelDisplayLabel.ifBlank { state.channelLabel }.uppercase(Locale.US)
     // Strip the "RX:" prefix so the centre status line reads naturally; the chrome and the talker
     // line share rxAttributedLine but the cockpit doesn't paint a wash, just text.
-    val talker = state.rxAttributedLine.trimStart().removePrefix("RX:").trim()
+    // While the AI overlay is presenting her reply, blank the talker so her
+    // "27 AI" loopback doesn't show behind the overlay.
+    val talker =
+        if (aiSpeakingOverlayActive(state)) ""
+        else state.rxAttributedLine.trimStart().removePrefix("RX:").trim()
     val statusLine = when {
         state.isEmergencyActive -> "EMERGENCY ACTIVE"
         state.isPttPressed && state.pttBusyTone -> "CHANNEL BUSY"
@@ -1730,6 +1734,19 @@ private fun LcdMainChannelBlock(
     }
 }
 
+/**
+ * True while the AI dispatcher's reply is playing and the rainbow overlay owns
+ * the screen. Her reply reaches the handset as a normal loopback transmission
+ * from the "27 AI" unit, so without this the normal RX talker chrome paints
+ * "27 AI" behind/around the overlay — which read as a glitchy double "27 AI".
+ * Suppress that chrome and let the overlay be the sole presentation. (PTT and
+ * emergency still win — both override the overlay.)
+ */
+private fun aiSpeakingOverlayActive(state: RadioUiState): Boolean =
+    state.aiActivity?.phase == AiActivityPhase.Speaking &&
+        !state.isPttPressed &&
+        !state.isEmergencyActive
+
 /** Unit id + display name for the large handset talker block (TX, RX, or emergency). */
 private fun handsetTalkAttribution(state: RadioUiState): Pair<String, String> {
     if (state.isEmergencyActive) {
@@ -1742,6 +1759,8 @@ private fun handsetTalkAttribution(state: RadioUiState): Pair<String, String> {
         val name = state.sessionDisplayName.trim().ifBlank { "YOU" }
         return unit to name
     }
+    // The AI overlay is presenting her reply — don't also paint "27 AI" chrome.
+    if (aiSpeakingOverlayActive(state)) return "" to ""
     if (state.activeTalkUnitId.isNotBlank()) {
         return state.activeTalkUnitId.trim().uppercase(Locale.US) to state.activeTalkDisplayName.trim()
     }
@@ -4773,6 +4792,37 @@ private fun AudioSettingsTab(
                         text = "On a stereo headset, play the main channel in the left ear and scan channels in the right. Mono speaker stays mixed.",
                         style = styles.status,
                         color = p.textMuted,
+                    )
+                }
+            }
+            if (state.stereoChannelSplitEnabled) {
+                val balanceColor = p.textPrimary
+                Column(modifier = Modifier.padding(top = 8.dp)) {
+                    Text(
+                        text = "LEFT (MAIN) VOLUME — ${"%.1f".format(state.stereoLeftVolume)}×",
+                        style = styles.body.copy(fontWeight = FontWeight.Bold),
+                        color = balanceColor,
+                    )
+                    Slider(
+                        value = state.stereoLeftVolume,
+                        onValueChange = { onEvent(RadioUiEvent.SetStereoLeftVolume(it)) },
+                        valueRange = RadioPreferences.MIN_STEREO_VOLUME..RadioPreferences.MAX_STEREO_VOLUME,
+                        steps = 19,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Column(modifier = Modifier.padding(top = 8.dp)) {
+                    Text(
+                        text = "RIGHT (SCAN) VOLUME — ${"%.1f".format(state.stereoRightVolume)}×",
+                        style = styles.body.copy(fontWeight = FontWeight.Bold),
+                        color = balanceColor,
+                    )
+                    Slider(
+                        value = state.stereoRightVolume,
+                        onValueChange = { onEvent(RadioUiEvent.SetStereoRightVolume(it)) },
+                        valueRange = RadioPreferences.MIN_STEREO_VOLUME..RadioPreferences.MAX_STEREO_VOLUME,
+                        steps = 19,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }

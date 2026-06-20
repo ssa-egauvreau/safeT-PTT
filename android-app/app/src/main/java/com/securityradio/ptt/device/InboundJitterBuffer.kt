@@ -342,7 +342,7 @@ class InboundJitterBuffer(
      *  queued (talker unkeyed — flush the final syllable instead of dropping
      *  it at idle teardown), or the safety cap on hold time expired. */
     private fun cushionReady(now: Long): Boolean {
-        if (queue.size >= targetFrames) return true
+        if (queue.size >= effectiveTargetFrames()) return true
         if (lastEnqueueMs != 0L && now - lastEnqueueMs >= TAIL_FLUSH_MS) return true
         if (bufferingStartMs != 0L && now - bufferingStartMs >= MAX_BUFFER_WAIT_MS) return true
         return false
@@ -350,6 +350,16 @@ class InboundJitterBuffer(
 
     private fun inActiveSpurt(now: Long): Boolean =
         lastEnqueueMs != 0L && now - lastEnqueueMs <= TALK_SPURT_GAP_MS
+
+    /**
+     * Cushion to build before a spurt starts playing. On a Bluetooth link
+     * ([keepWarmProvider]) the floor is raised so each spurt buffers extra
+     * lead-in: the A2DP pipeline has its inherent ramp-up latency, and pre-rolling
+     * more silence before the first voice frame keeps that ramp from eating the
+     * opening syllable. Wired/built-in routes keep the low-latency floor.
+     */
+    private fun effectiveTargetFrames(): Int =
+        if (keepWarmProvider()) maxOf(targetFrames, BT_MIN_TARGET_FRAMES) else targetFrames
 
     /**
      * Conceal an underrun by re-emitting the most recent frame with a linear
@@ -418,6 +428,12 @@ class InboundJitterBuffer(
         const val MIN_TARGET_FRAMES = 4
         const val MAX_TARGET_FRAMES = 12
         const val TARGET_STEP_FRAMES = 2
+
+        // Startup cushion floor on a Bluetooth link (8 × 20 ms ≈ 160 ms). The
+        // A2DP pipeline can't start instantly, so each spurt pre-rolls this much
+        // before the first voice frame to keep the link's ramp-up from clipping
+        // the opening syllable.
+        const val BT_MIN_TARGET_FRAMES = 8
 
         // Worst-case buffered audio: 50 × 20 ms ≈ 1 s. Sized so a TCP
         // retransmit burst after a long stall is absorbed (and played out,

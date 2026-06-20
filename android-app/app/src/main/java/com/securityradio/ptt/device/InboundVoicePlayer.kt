@@ -37,6 +37,9 @@ class InboundVoicePlayer(
     private val onScanRxActivity: ((channelName: String) -> Unit)? = null,
     private val stereoSplitProvider: () -> Boolean = { false },
     private val keepWarmProvider: () -> Boolean = { false },
+    /** Per-ear volume multipliers, applied only in stereo-split mode. 1.0 = unchanged. */
+    private val leftVolumeProvider: () -> Float = { 1f },
+    private val rightVolumeProvider: () -> Float = { 1f },
 ) {
 
     @Volatile
@@ -99,8 +102,8 @@ class InboundVoicePlayer(
             mainRxHoldUntilMs = SystemClock.elapsedRealtime() + MAIN_RX_HOLD_MS
         }
         lastRxRecorder?.onInboundPcm(chunk)
-        val out = applyGain(chunk) ?: return
         val stereo = stereoSplitProvider()
+        val out = applyGain(chunk, if (stereo) leftVolumeProvider() else 1f) ?: return
         ensureMode(stereo)
         if (stereo) mainLeftBuffer.enqueue(out) else monoBuffer.enqueue(out)
     }
@@ -123,17 +126,20 @@ class InboundVoicePlayer(
         activeScanChannel = ch
         scanRxHoldUntilMs = now + SCAN_RX_HOLD_MS
         onScanRxActivity?.invoke(ch)
-        val out = applyGain(chunk) ?: return
+        val out = applyGain(chunk, if (stereo) rightVolumeProvider() else 1f) ?: return
         ensureMode(stereo)
         if (stereo) scanRightBuffer.enqueue(out) else monoBuffer.enqueue(out)
     }
 
-    /** Apply the listen gain, returning null when muted (gain <= 0). */
-    private fun applyGain(chunk: ByteArray): ByteArray? {
+    /**
+     * Apply the listen gain (times an optional per-ear multiplier), returning
+     * null when fully muted. [extra] carries the stereo-split left/right volume.
+     */
+    private fun applyGain(chunk: ByteArray, extra: Float = 1f): ByteArray? {
         // Gain may attenuate (<1) or boost (>1) — a "far away" radio is leveled up
         // over the air. Samples are hard-clamped to int16 in scalePcm16 so a high
         // boost saturates rather than wraps.
-        val gain = listenGainProvider().coerceIn(0f, 4f)
+        val gain = (listenGainProvider() * extra).coerceIn(0f, 4f)
         if (gain <= 0f) return null
         return if (gain in 0.999f..1.001f) chunk else scalePcm16(chunk, gain)
     }
