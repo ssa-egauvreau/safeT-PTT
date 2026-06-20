@@ -720,7 +720,6 @@ private fun AiActivityOverlay(
                     AiActivityPhase.Thinking -> AiThinkingVisual(
                         sweep = sweep,
                         rainbowStops = rainbowStops,
-                        forYou = activity.forYou,
                         styles = styles,
                     )
                     AiActivityPhase.Speaking -> AiSpeakingVisual(
@@ -740,7 +739,6 @@ private fun AiActivityOverlay(
 private fun AiThinkingVisual(
     sweep: Float,
     rainbowStops: List<Color>,
-    forYou: Boolean,
     styles: LcdTextStyles,
 ) {
     val p = RadioLcdTheme.palette
@@ -771,7 +769,7 @@ private fun AiThinkingVisual(
         }
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = if (forYou) "LISTENING" else "WORKING",
+            text = "THINKING",
             style = styles.channel.copy(fontWeight = FontWeight.Bold, fontSize = 26.sp),
             color = p.textPrimary,
             maxLines = 1,
@@ -1909,7 +1907,10 @@ private fun LcdHandsetFillChannelBlock(
             val showHandsetTalker =
                 showTalkPanel &&
                     !remoteEmergencyLive &&
-                    (!scanRxLive || state.isPttPressed || state.isEmergencyActive)
+                    // Scan traffic belongs in the SCAN RX strip, not the big talker
+                    // block — don't let a scanned talker take over the main display
+                    // (the "chrome" screen). PTT / emergency still promote.
+                    ((!scanRxLive && !state.rxFromScan) || state.isPttPressed || state.isEmergencyActive)
             val homeChannelLarge = !showHandsetTalker
             val channelBlockWeight =
                 when {
@@ -2786,14 +2787,23 @@ private fun handsetScanRxLabel(
     val channel = channelName.trim().uppercase(Locale.US)
     val unit = unitId.trim().uppercase(Locale.US)
     val name = displayName.trim()
+    val nameUpper = name.uppercase(Locale.US)
+    // Bridges / SDR feeds often carry the same string for channel, unit id and
+    // display name — collapse the repeats so it doesn't read "CHP OC/LA · CHP
+    // OC/LA · CHP OC/LA". Only join unit and name when they actually differ.
     val who =
         when {
-            unit.isNotEmpty() && name.isNotEmpty() -> "$unit • $name"
+            unit.isNotEmpty() && nameUpper.isNotEmpty() && unit != nameUpper -> "$unit • $name"
             unit.isNotEmpty() -> unit
-            name.isNotEmpty() -> name.uppercase(Locale.US)
+            nameUpper.isNotEmpty() -> name
             else -> ""
         }
-    return if (who.isNotEmpty()) "SCAN RX · $channel — $who" else "SCAN RX · $channel"
+    // Drop the talker tail entirely when it's just the channel name again.
+    return if (who.isNotEmpty() && who.uppercase(Locale.US) != channel) {
+        "SCAN RX · $channel — $who"
+    } else {
+        "SCAN RX · $channel"
+    }
 }
 
 private fun handsetScaledLineSp(
@@ -2984,7 +2994,10 @@ private fun LcdHandsetTalkerBlock(
     ) {
         val density = LocalDensity.current
         val maxH = maxHeight
-        val hasName = displayName.isNotBlank()
+        // Don't print the name on its own line when it just repeats the unit id
+        // (e.g. "27 AI / 27 AI", or a bridge whose name == its radio id).
+        val hasName = displayName.isNotBlank() &&
+            !displayName.trim().equals(unitId.trim(), ignoreCase = true)
         val lineCount = if (hasName) 2 else 1
         val lineSp = with(density) {
             val cap = maxH.value / (lineCount * 1.15f)
@@ -3051,7 +3064,9 @@ private fun LcdTalkerAttribution(
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
-        if (displayName.isNotBlank()) {
+        if (displayName.isNotBlank() &&
+            !displayName.trim().equals(unitId.trim(), ignoreCase = true)
+        ) {
             Text(
                 text = displayName.uppercase(Locale.US),
                 style = styles.body.copy(fontWeight = FontWeight.Normal, fontSize = 26.sp, lineHeight = 28.sp),

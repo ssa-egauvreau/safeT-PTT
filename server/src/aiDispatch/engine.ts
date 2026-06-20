@@ -442,14 +442,6 @@ async function processTransmission(transmissionId: number): Promise<void> {
     }
     yieldsToUnits = channelRow.yields_to_units;
 
-    // Show "she heard you, thinking…" on the handset the instant we pick the
-    // transmission up — BEFORE transcription, which is the slow part (often
-    // 3–5 s on local Whisper). Putting the cue after the transcript await made
-    // the radio sit on the normal screen for those seconds, so it felt like she
-    // never noticed you. The finally clears this if it turns out there was no
-    // speech / nothing to say.
-    setAiThinking(tx.agency_id, tx.channel_name, unitId);
-
     const ageMs = Date.now() - new Date(tx.started_at).getTime();
     const allowOnAir = Number.isFinite(ageMs) ? ageMs <= MAX_ON_AIR_REPLY_AGE_MS : true;
 
@@ -495,6 +487,15 @@ async function processTransmission(transmissionId: number): Promise<void> {
       knowledgeContext,
       conversationContext,
     });
+
+    // Now that the LLM has parsed the transmission, show the "thinking…" cue ONLY
+    // when she actually recognised this as directed at her and is going to act
+    // (a reply, a plate/info lookup, or an emergency) — not on every bit of
+    // channel chatter. It then covers the lookup + TTS gap before she speaks.
+    // The finally clears it if she ends up saying nothing.
+    if (aiWillEngage(parsed, officerDistress)) {
+      setAiThinking(tx.agency_id, tx.channel_name, unitId);
+    }
 
     let activeIncidents: Ten8ActiveIncident[] = [];
     if (parsed && (await ten8Configured(tx.agency_id))) {
@@ -927,6 +928,21 @@ async function processTransmission(transmissionId: number): Promise<void> {
       });
     }
   }
+}
+
+/**
+ * True when the parsed transmission is something she'll actually respond to, so
+ * the handset "thinking…" cue only appears when she thinks you're talking to her
+ * — not on unrelated channel traffic. Best-effort/permissive: if she turns out
+ * to stay silent, the finally clears the cue anyway.
+ */
+function aiWillEngage(parsed: AiDispatchParseResult | null, officerDistress: boolean): boolean {
+  if (officerDistress) return true;
+  if (!parsed) return false;
+  if (parsed.dispatcher_response && parsed.dispatcher_response.trim()) return true;
+  if (parsed.plate_request) return true;
+  if (parsed.info_request) return true;
+  return parsed.intent === "request_info" || parsed.intent === "emergency";
 }
 
 /** A short tag describing what the dispatcher is doing, for the handset cue. */
