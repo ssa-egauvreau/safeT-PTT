@@ -9,19 +9,34 @@ import android.os.SystemClock
 /**
  * Plays PCM16 mono 16 kHz streamed from peers through the relay.
  *
- * Home-channel RX takes priority over scan listen sockets so two WebSockets
- * cannot interleave samples into one [AudioTrack] (which causes harsh clipping).
+ * Two playout modes:
  *
- * Inbound PCM is handed to an [InboundJitterBuffer] rather than written
- * directly to AudioTrack so that bursty arrival (the relay forwards frames
- * the instant they arrive over WebSocket, with no smoothing) is paced out at
- * a steady cadence and isolated network stalls produce a short fade-to-silence
- * via PLC instead of a hard cutout.
+ *  - **Mono (default):** home-channel RX takes priority over scan listen sockets
+ *    so two WebSockets cannot interleave samples into one [AudioTrack] (which
+ *    causes harsh clipping). One shared [InboundJitterBuffer] paces everything.
+ *
+ *  - **Stereo split (opt-in, [stereoSplitProvider]):** the home channel plays in
+ *    the LEFT ear and scan channels in the RIGHT ear, simultaneously, through
+ *    two independent stereo jitter buffers. There is no priority suppression in
+ *    this mode — the two streams never share a channel, so they cannot clip each
+ *    other. Only enabled when the user setting is on AND the provider says a
+ *    stereo-capable output is connected (a mono speaker has no right ear).
+ *
+ * Inbound PCM is handed to an [InboundJitterBuffer] rather than written directly
+ * to AudioTrack so bursty arrival is paced out at a steady cadence and isolated
+ * network stalls produce a short fade-to-silence via PLC instead of a hard
+ * cutout.
+ *
+ * [keepWarmProvider] is forwarded to the jitter buffers: when a Bluetooth output
+ * is connected it suppresses idle teardown so the link stays warm and the start
+ * of each transmission isn't clipped by the link's cold-start latency.
  */
 class InboundVoicePlayer(
     private val lastRxRecorder: LastRxAudioRecorder? = null,
     private val listenGainProvider: () -> Float = { 1f },
     private val onScanRxActivity: ((channelName: String) -> Unit)? = null,
+    private val stereoSplitProvider: () -> Boolean = { false },
+    private val keepWarmProvider: () -> Boolean = { false },
 ) {
 
     @Volatile
@@ -36,21 +51,69 @@ class InboundVoicePlayer(
     @Volatile
     private var scanRxHoldUntilMs: Long = 0L
 
-    private val jitterBuffer = InboundJitterBuffer(trackFactory = ::createTrack)
+    /** Mono, priority-mixed path (both channels share one track). */
+    private val monoBuffer = InboundJitterBuffer(
+        trackFactory = { createTrack(AudioFormat.CHANNEL_OUT_MONO) },
+        pan = StereoPan.NONE,
+        keepWarmProvider = keepWarmProvider,
+    )
+
+    /** Stereo-split path: home channel in the left ear. */
+    private val mainLeftBuffer = InboundJitterBuffer(
+        trackFactory = { createTrack(AudioFormat.CHANNEL_OUT_STEREO) },
+        pan = StereoPan.LEFT,
+        keepWarmProvider = keepWarmProvider,
+    )
+
+    /** Stereo-split path: scan channels in the right ear. */
+    private val scanRightBuffer = InboundJitterBuffer(
+        trackFactory = { createTrack(AudioFormat.CHANNEL_OUT_STEREO) },
+        pan = StereoPan.RIGHT,
+        keepWarmProvider = keepWarmProvider,
+    )
+
+    @Volatile
+    private var stereoActive = false
+
+    /**
+     * Switch playout modes, tearing down the tracks the other mode owns so we
+     * never run a mono track and the split tracks at the same time. Synchronized
+     * because main and scan PCM arrive on separate WebSocket threads.
+     */
+    @Synchronized
+    private fun ensureMode(stereo: Boolean) {
+        if (stereo == stereoActive) return
+        if (stereo) {
+            monoBuffer.stop()
+        } else {
+            mainLeftBuffer.stop()
+            scanRightBuffer.stop()
+        }
+        stereoActive = stereo
+    }
 
     /** PCM from the tuned (home) channel WebSocket. */
     fun writePcmFromMain(chunk: ByteArray) {
+        if (released || chunk.isEmpty()) return
         if (chunk.isNotEmpty()) {
             mainRxHoldUntilMs = SystemClock.elapsedRealtime() + MAIN_RX_HOLD_MS
         }
-        writePcm(chunk, recordForReplay = true)
+        lastRxRecorder?.onInboundPcm(chunk)
+        val out = applyGain(chunk) ?: return
+        val stereo = stereoSplitProvider()
+        ensureMode(stereo)
+        if (stereo) mainLeftBuffer.enqueue(out) else monoBuffer.enqueue(out)
     }
 
-    /** PCM from a scan listen socket — suppressed while home channel is active. */
+    /** PCM from a scan listen socket. */
     fun writePcmFromScan(channelName: String, chunk: ByteArray) {
         if (released || chunk.isEmpty()) return
+        val stereo = stereoSplitProvider()
         val now = SystemClock.elapsedRealtime()
-        if (now < mainRxHoldUntilMs) return
+        // In mono mode the home channel owns the single track, so scan is
+        // suppressed while it's active. In stereo split the scan stream has its
+        // own (right) ear and never collides with the home channel.
+        if (!stereo && now < mainRxHoldUntilMs) return
         val ch = channelName.trim()
         if (ch.isEmpty()) return
         val held = activeScanChannel
@@ -60,25 +123,19 @@ class InboundVoicePlayer(
         activeScanChannel = ch
         scanRxHoldUntilMs = now + SCAN_RX_HOLD_MS
         onScanRxActivity?.invoke(ch)
-        writePcm(chunk, recordForReplay = false)
+        val out = applyGain(chunk) ?: return
+        ensureMode(stereo)
+        if (stereo) scanRightBuffer.enqueue(out) else monoBuffer.enqueue(out)
     }
 
-    private fun writePcm(chunk: ByteArray, recordForReplay: Boolean) {
-        if (released || chunk.isEmpty()) return
-        if (recordForReplay) {
-            lastRxRecorder?.onInboundPcm(chunk)
-        }
+    /** Apply the listen gain, returning null when muted (gain <= 0). */
+    private fun applyGain(chunk: ByteArray): ByteArray? {
         // Gain may attenuate (<1) or boost (>1) — a "far away" radio is leveled up
         // over the air. Samples are hard-clamped to int16 in scalePcm16 so a high
         // boost saturates rather than wraps.
         val gain = listenGainProvider().coerceIn(0f, 4f)
-        if (gain <= 0f) return
-        val out = if (gain in 0.999f..1.001f) {
-            chunk
-        } else {
-            scalePcm16(chunk, gain)
-        }
-        jitterBuffer.enqueue(out)
+        if (gain <= 0f) return null
+        return if (gain in 0.999f..1.001f) chunk else scalePcm16(chunk, gain)
     }
 
     private fun scalePcm16(chunk: ByteArray, gain: Float): ByteArray {
@@ -94,10 +151,10 @@ class InboundVoicePlayer(
         return out
     }
 
-    private fun createTrack(): AudioTrack? {
+    private fun createTrack(channelMask: Int): AudioTrack? {
         val minBuf = AudioTrack.getMinBufferSize(
             VoiceAudioSpecs.SAMPLE_RATE_HZ,
-            AudioFormat.CHANNEL_OUT_MONO,
+            channelMask,
             VoiceAudioSpecs.PCM_ENCODING,
         )
         if (minBuf <= 0) return null
@@ -124,7 +181,7 @@ class InboundVoicePlayer(
                         AudioFormat.Builder()
                             .setSampleRate(VoiceAudioSpecs.SAMPLE_RATE_HZ)
                             .setEncoding(VoiceAudioSpecs.PCM_ENCODING)
-                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                            .setChannelMask(channelMask)
                             .build(),
                     )
                     .setBufferSizeInBytes(bufBytes)
@@ -135,7 +192,7 @@ class InboundVoicePlayer(
                 AudioTrack(
                     VoiceAudioSpecs.LEGACY_STREAM_MUSIC,
                     VoiceAudioSpecs.SAMPLE_RATE_HZ,
-                    AudioFormat.CHANNEL_OUT_MONO,
+                    channelMask,
                     VoiceAudioSpecs.PCM_ENCODING,
                     bufBytes,
                     AudioTrack.MODE_STREAM,
@@ -150,7 +207,9 @@ class InboundVoicePlayer(
     }
 
     fun stop() {
-        jitterBuffer.stop()
+        monoBuffer.stop()
+        mainLeftBuffer.stop()
+        scanRightBuffer.stop()
         mainRxHoldUntilMs = 0L
         activeScanChannel = null
         scanRxHoldUntilMs = 0L
@@ -159,7 +218,9 @@ class InboundVoicePlayer(
     /** Permanently stop playback; instance must not be used after release. */
     fun release() {
         released = true
-        jitterBuffer.release()
+        monoBuffer.release()
+        mainLeftBuffer.release()
+        scanRightBuffer.release()
     }
 
     private companion object {

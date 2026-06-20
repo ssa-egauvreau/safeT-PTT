@@ -4754,6 +4754,28 @@ private fun AudioSettingsTab(
                     )
                 }
             }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Checkbox(
+                    checked = state.stereoChannelSplitEnabled,
+                    onCheckedChange = { onEvent(RadioUiEvent.SetStereoChannelSplit(it)) },
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "STEREO CHANNEL SPLIT",
+                        style = styles.body.copy(fontWeight = FontWeight.Bold),
+                        color = p.textPrimary,
+                    )
+                    Text(
+                        text = "On a stereo headset, play the main channel in the left ear and scan channels in the right. Mono speaker stays mixed.",
+                        style = styles.status,
+                        color = p.textMuted,
+                    )
+                }
+            }
             Column(modifier = Modifier.padding(top = 12.dp)) {
                 val sliderEnabled = !state.micAutoGainEnabled
                 val sliderColor = if (sliderEnabled) p.textPrimary else p.textMuted

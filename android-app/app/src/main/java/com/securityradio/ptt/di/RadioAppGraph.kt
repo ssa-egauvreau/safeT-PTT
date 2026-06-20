@@ -83,6 +83,10 @@ class RadioAppGraph(val application: Application) {
 
     val externalMicMonitor: ExternalMicMonitor = ExternalMicMonitor(application).also { it.start() }
 
+    /** Watches the output route for Bluetooth (keep link warm) and stereo capability (channel split). */
+    val externalAudioOutputMonitor: ExternalAudioOutputMonitor =
+        ExternalAudioOutputMonitor(application).also { it.start() }
+
     val rxMessageHistory = RxMessageHistory()
 
     val lastRxAudioRecorder = LastRxAudioRecorder(messageHistory = rxMessageHistory)
@@ -98,6 +102,17 @@ class RadioAppGraph(val application: Application) {
         // local volume setting) takes effect live without rebuilding the player.
         listenGainProvider = { radioPreferences.getRxGainMultiplier() },
         onScanRxActivity = { channel -> _scanRxActivity.tryEmit(channel) },
+        // Split home-left / scan-right only when the user enabled it AND a
+        // stereo-capable output is actually connected (a mono speaker has no
+        // second ear). Read live so toggling the setting or plugging in a
+        // headset takes effect on the next inbound chunk without a rebuild.
+        stereoSplitProvider = {
+            radioPreferences.isStereoChannelSplitEnabled() &&
+                externalAudioOutputMonitor.stereoCapable.value
+        },
+        // Hold the AudioTrack warm while a Bluetooth output is connected so the
+        // link doesn't sleep and clip the start of the next transmission.
+        keepWarmProvider = { externalAudioOutputMonitor.bluetoothConnected.value },
     )
 
     private val authTokenProvider: () -> String = { radioPreferences.getAuthToken() }

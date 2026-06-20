@@ -44,6 +44,7 @@ sealed interface RadioUiEvent {
     data class SetMicNoiseSuppression(val enabled: Boolean) : RadioUiEvent
     data class SetMicAutoGain(val enabled: Boolean) : RadioUiEvent
     data class SetMicGainMultiplier(val multiplier: Float) : RadioUiEvent
+    data class SetStereoChannelSplit(val enabled: Boolean) : RadioUiEvent
 
     data class UpdatePermissionState(
         val needsAudio: Boolean,

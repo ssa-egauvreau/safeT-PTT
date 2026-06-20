@@ -254,6 +254,7 @@ class RadioViewModel(
                 micNoiseSuppressionEnabled = radioPreferences.isNoiseSuppressionEnabled(),
                 micAutoGainEnabled = radioPreferences.isMicAutoGainEnabled(),
                 micGainMultiplier = radioPreferences.getMicGainMultiplier(),
+                stereoChannelSplitEnabled = radioPreferences.isStereoChannelSplitEnabled(),
                 mp22DualDisplay = DisplayRouter.isMp22StyleDualDisplay(application),
                 mp22UsePhysicalDisplay = radioPreferences.isMp22UsePhysicalDisplay(),
             )
@@ -1059,6 +1060,10 @@ class RadioViewModel(
                     .coerceIn(RadioPreferences.MIN_MIC_GAIN, RadioPreferences.MAX_MIC_GAIN)
                 radioPreferences.setMicGainMultiplier(clamped)
                 _uiState.update { it.copy(micGainMultiplier = clamped) }
+            }
+            is RadioUiEvent.SetStereoChannelSplit -> {
+                radioPreferences.setStereoChannelSplitEnabled(event.enabled)
+                _uiState.update { it.copy(stereoChannelSplitEnabled = event.enabled) }
             }
             is RadioUiEvent.StartListeningForMapping -> {
                 soundPlayer.playChannelSwitch()
