@@ -1,5 +1,8 @@
 import AVFoundation
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Single AVAudioEngine that captures the mic into 320-byte PCM16 frames
 /// (20 ms at 16 kHz mono — the protocol the server's voice relay broadcasts)
@@ -74,11 +77,38 @@ final class VoiceAudio {
         engine.connect(player, to: engine.mainMixerNode, format: processingFormat)
         engine.attach(replayPlayer)
         engine.connect(replayPlayer, to: engine.mainMixerNode, format: processingFormat)
+        observeAppLifecycle()
     }
 
     deinit {
+        #if canImport(UIKit)
+        for token in lifecycleObservers { NotificationCenter.default.removeObserver(token) }
+        #endif
         jitterBuffer.release()
     }
+
+    /// Deepen the inbound jitter buffer while the app is backgrounded (screen
+    /// off): iOS throttles the main-actor decode path then, so frames arrive
+    /// late and bunched — a deeper cushion absorbs that instead of underrunning
+    /// into PLC (robotic) and silence (cutout).
+    #if canImport(UIKit)
+    private var lifecycleObservers: [NSObjectProtocol] = []
+    private func observeAppLifecycle() {
+        let center = NotificationCenter.default
+        lifecycleObservers.append(center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            self?.jitterBuffer.setBackgrounded(true)
+        })
+        lifecycleObservers.append(center.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            self?.jitterBuffer.setBackgrounded(false)
+        })
+    }
+    #else
+    private func observeAppLifecycle() {}
+    #endif
 
     /// Activates the audio session and starts the engine. Must be called after
     /// `AudioSessionManager.requestRecordPermission()` returns true.
