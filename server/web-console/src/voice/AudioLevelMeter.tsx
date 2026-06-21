@@ -14,6 +14,9 @@ export function meterScale(value: number, gain = 1): number {
 /** Pre-amp for the console mic/RX meters (raw RMS runs low). */
 const TX_RX_METER_GAIN = 3.2;
 
+/** Throttle for the bridge status TEXT only (the bar itself runs every frame). */
+const STATUS_UPDATE_MS = 150;
+
 export type AudioLevelMeterVariant = "tx" | "rx" | "bridge";
 
 interface AudioLevelMeterProps {
@@ -34,6 +37,13 @@ interface AudioLevelMeterProps {
 
 /**
  * Horizontal level meter: silent on the left, louder toward the right (same as Bridges tab).
+ *
+ * In live mode (`getLevel`) the bar fill is animated by writing `style.width`
+ * straight to the DOM inside the requestAnimationFrame loop — NOT via React
+ * state. Driving a 60 fps animation through `setState` re-renders the component
+ * every frame, and with many meters on one page (Mission Control's channel
+ * grid) that flood of re-renders is what made the bars stutter. The ref path
+ * keeps each meter free to animate smoothly regardless of how many are mounted.
  */
 export function AudioLevelMeter({
   level: levelProp,
@@ -45,33 +55,52 @@ export function AudioLevelMeter({
   className = "",
   showStatus = false,
 }: AudioLevelMeterProps) {
-  const [polled, setPolled] = useState(0);
   const getLevelRef = useRef(getLevel);
   getLevelRef.current = getLevel;
+  const fillRef = useRef<HTMLDivElement>(null);
+  const smoothedRef = useRef(0);
+  // Only used to drive the bridge STATUS text; updated at a low rate, not per frame.
+  const [statusLevel, setStatusLevel] = useState(0);
+
+  const gain = variant === "bridge" ? 1 : TX_RX_METER_GAIN;
+  const isLive = levelProp === undefined && !!getLevel;
 
   useEffect(() => {
-    if (levelProp !== undefined || !getLevelRef.current) {
-      return;
-    }
+    if (!isLive) return;
     if (!active) {
-      setPolled(0);
+      smoothedRef.current = 0;
+      if (fillRef.current) fillRef.current.style.width = "0%";
+      if (showStatus) setStatusLevel(0);
       return;
     }
     let raf = 0;
-    const tick = () => {
+    let lastStatusAt = 0;
+    const tick = (t: number) => {
       const next = getLevelRef.current?.() ?? 0;
+      const prev = smoothedRef.current;
       // Fast attack, slow release — catches transients yet reads smoothly
       // instead of flickering frame-to-frame off the raw instantaneous RMS.
-      setPolled((prev) => (next > prev ? next : prev * 0.8 + next * 0.2));
+      const smoothed = next > prev ? next : prev * 0.8 + next * 0.2;
+      smoothedRef.current = smoothed;
+      if (fillRef.current) {
+        fillRef.current.style.width = `${meterScale(smoothed, gain) * 100}%`;
+      }
+      // The status text doesn't need 60 fps; sample it slowly so it stays a
+      // cheap, occasional re-render instead of one per frame.
+      if (showStatus && t - lastStatusAt >= STATUS_UPDATE_MS) {
+        lastStatusAt = t;
+        setStatusLevel(smoothed);
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [active, levelProp]);
+  }, [active, isLive, gain, showStatus]);
 
-  const raw = levelProp !== undefined ? levelProp : polled;
-  const gain = variant === "bridge" ? 1 : TX_RX_METER_GAIN;
-  const fillPct = active ? meterScale(raw, gain) * 100 : 0;
+  // Controlled mode renders the width from the prop; live mode starts at the last
+  // known smoothed value and is then driven by the rAF loop above via the ref.
+  const renderLevel = levelProp !== undefined ? levelProp : smoothedRef.current;
+  const fillPct = active ? meterScale(renderLevel, gain) * 100 : 0;
   const markPct =
     threshold !== undefined && Number.isFinite(threshold) ? meterScale(threshold, gain) * 100 : null;
 
@@ -80,15 +109,18 @@ export function AudioLevelMeter({
       ? "audio-level-meter-fill keyed"
       : `audio-level-meter-fill ${variant}`;
 
+  // Status reads off the throttled level (live) or the controlled fill.
+  const statusPct =
+    levelProp !== undefined ? fillPct : active ? meterScale(statusLevel, gain) * 100 : 0;
   const status =
     variant === "bridge"
       ? !active
         ? "Not running"
         : keyed
           ? "Keying channel"
-          : markPct !== null && fillPct >= markPct && fillPct > 1
+          : markPct !== null && statusPct >= markPct && statusPct > 1
             ? "Audio above gate"
-            : fillPct > 4
+            : statusPct > 4
               ? "Audio detected"
               : "Silent"
       : null;
@@ -99,7 +131,7 @@ export function AudioLevelMeter({
       aria-hidden={!showStatus}
     >
       <div className="audio-level-meter-bar" title="Audio level — quiet left, loud right">
-        <div className={fillClass} style={{ width: `${fillPct}%` }} />
+        <div ref={fillRef} className={fillClass} style={{ width: `${fillPct}%` }} />
         {markPct !== null && (
           <div
             className="audio-level-meter-mark"
