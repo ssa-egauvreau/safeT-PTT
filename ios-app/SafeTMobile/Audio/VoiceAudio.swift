@@ -1,5 +1,8 @@
 import AVFoundation
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Single AVAudioEngine that captures the mic into 320-byte PCM16 frames
 /// (20 ms at 16 kHz mono — the protocol the server's voice relay broadcasts)
@@ -29,6 +32,24 @@ final class VoiceAudio {
 
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
+    /// Separate node for replay so a complete clip plays once, straight to the
+    /// speaker, WITHOUT going through the jitter buffer (whose PLC would re-emit
+    /// the whole clip faded a few times — heard as the replay "looping").
+    private let replayPlayer = AVAudioPlayerNode()
+
+    // MARK: - scan priority / hold (mirrors Android InboundVoicePlayer)
+
+    /// Guards the scan-arbitration state below. The enqueue path now runs off the
+    /// main actor on per-channel decode queues (see InboundVoiceDecoder), so the
+    /// home queue and each scan queue can call enqueue* concurrently.
+    private let holdLock = NSLock()
+    /// While the home channel is active, scan audio is suppressed until this time.
+    private var mainHoldUntil: TimeInterval = 0
+    /// The one scan channel currently allowed through, and until when.
+    private var activeScanChannel: String?
+    private var scanHoldUntil: TimeInterval = 0
+    private let mainHoldSeconds: TimeInterval = 0.4
+    private let scanHoldSeconds: TimeInterval = 0.4
 
     /// Format used everywhere downstream of the mic tap and upstream of the
     /// player: float32 mono 16 kHz, non-interleaved (the player's native shape).
@@ -58,11 +79,40 @@ final class VoiceAudio {
     init() {
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: processingFormat)
+        engine.attach(replayPlayer)
+        engine.connect(replayPlayer, to: engine.mainMixerNode, format: processingFormat)
+        observeAppLifecycle()
     }
 
     deinit {
+        #if canImport(UIKit)
+        for token in lifecycleObservers { NotificationCenter.default.removeObserver(token) }
+        #endif
         jitterBuffer.release()
     }
+
+    /// Deepen the inbound jitter buffer while the app is backgrounded (screen
+    /// off): iOS throttles the main-actor decode path then, so frames arrive
+    /// late and bunched — a deeper cushion absorbs that instead of underrunning
+    /// into PLC (robotic) and silence (cutout).
+    #if canImport(UIKit)
+    private var lifecycleObservers: [NSObjectProtocol] = []
+    private func observeAppLifecycle() {
+        let center = NotificationCenter.default
+        lifecycleObservers.append(center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            self?.jitterBuffer.setBackgrounded(true)
+        })
+        lifecycleObservers.append(center.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            self?.jitterBuffer.setBackgrounded(false)
+        })
+    }
+    #else
+    private func observeAppLifecycle() {}
+    #endif
 
     /// Activates the audio session and starts the engine. Must be called after
     /// `AudioSessionManager.requestRecordPermission()` returns true.
@@ -82,12 +132,16 @@ final class VoiceAudio {
         if !player.isPlaying {
             player.play()
         }
+        if !replayPlayer.isPlaying {
+            replayPlayer.play()
+        }
     }
 
     func stop() {
         stopCapture()
         jitterBuffer.stop()
         if player.isPlaying { player.stop() }
+        if replayPlayer.isPlaying { replayPlayer.stop() }
         if engine.isRunning { engine.stop() }
         AudioSessionManager.deactivate()
     }
@@ -186,14 +240,85 @@ final class VoiceAudio {
     /// stalls produce a short fade-to-silence via PLC instead of a hard cutout.
     func enqueueIncoming(_ pcm16: Data) {
         guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return }
-        onEnqueuedIncoming?(pcm16)
+        // The home channel takes priority: while it's actively receiving, hold
+        // off scan audio for a short window so scan traffic can't fight it.
+        holdLock.lock()
+        mainHoldUntil = ProcessInfo.processInfo.systemUptime + mainHoldSeconds
+        holdLock.unlock()
+        notifyEnqueued(pcm16)
         jitterBuffer.enqueue(pcm16)
     }
 
-    /// Plays back a PCM16 buffer without triggering `onEnqueuedIncoming`.
-    /// Use for replay so the replayed audio is not re-appended to the last-received buffer.
+    /// Marshal the replay-capture callback to the main actor — it mutates
+    /// view-model state and the enqueue path now runs off-main.
+    private func notifyEnqueued(_ pcm16: Data) {
+        guard let onEnqueuedIncoming else { return }
+        if Thread.isMainThread {
+            onEnqueuedIncoming(pcm16)
+        } else {
+            DispatchQueue.main.async { onEnqueuedIncoming(pcm16) }
+        }
+    }
+
+    /// Enqueues a scan-channel PCM16 frame, arbitrating so that only ONE scan
+    /// channel plays at a time (mirrors Android's InboundVoicePlayer). Returns
+    /// `false` when the frame was suppressed — the caller should then NOT update
+    /// the "currently scanning" banner, which is what stops the UI from flapping
+    /// between channels when several scan channels key up at once.
+    ///
+    /// Priority: the home channel wins (frames dropped while it holds); otherwise
+    /// the first scan channel to key up locks the slot until it goes quiet for
+    /// `scanHoldSeconds`, after which another scan channel may take over.
+    @discardableResult
+    func enqueueScan(channel: String, _ pcm16: Data) -> Bool {
+        guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return false }
+        let now = ProcessInfo.processInfo.systemUptime
+        holdLock.lock()
+        // Home channel has the floor.
+        if now < mainHoldUntil { holdLock.unlock(); return false }
+        // A different scan channel still holds the slot — suppress this one.
+        if let active = activeScanChannel,
+           active.caseInsensitiveCompare(channel) != .orderedSame,
+           now < scanHoldUntil {
+            holdLock.unlock()
+            return false
+        }
+        activeScanChannel = channel
+        scanHoldUntil = now + scanHoldSeconds
+        holdLock.unlock()
+        notifyEnqueued(pcm16)
+        jitterBuffer.enqueue(pcm16)
+        return true
+    }
+
+    /// Plays back a complete PCM16 clip exactly once, scheduled straight onto a
+    /// dedicated replay node — bypassing the jitter buffer + PLC entirely. The
+    /// jitter buffer is built for a steady stream of 20 ms frames; handing it one
+    /// giant clip made its PLC re-emit the tail repeatedly, which is what the user
+    /// heard as the replay "looping". A direct one-shot schedule plays it once.
     func replayAudio(_ pcm16: Data) {
         guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return }
-        jitterBuffer.enqueue(pcm16)
+        guard let buffer = makeBuffer(from: pcm16) else { return }
+        replayPlayer.scheduleBuffer(buffer, at: nil, options: [.interrupts], completionHandler: nil)
+        if !replayPlayer.isPlaying { replayPlayer.play() }
+    }
+
+    /// Converts a little-endian PCM16 mono/16 kHz blob into a float32
+    /// `AVAudioPCMBuffer` in the player's processing format.
+    private func makeBuffer(from pcm16: Data) -> AVAudioPCMBuffer? {
+        let sampleCount = pcm16.count / 2
+        guard sampleCount > 0,
+              let buffer = AVAudioPCMBuffer(pcmFormat: processingFormat,
+                                            frameCapacity: AVAudioFrameCount(sampleCount)),
+              let channel = buffer.floatChannelData else { return nil }
+        buffer.frameLength = AVAudioFrameCount(sampleCount)
+        pcm16.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            let samples = raw.bindMemory(to: Int16.self)
+            let out = channel[0]
+            for i in 0..<sampleCount {
+                out[i] = Float(Int16(littleEndian: samples[i])) / 32_768.0
+            }
+        }
+        return buffer
     }
 }

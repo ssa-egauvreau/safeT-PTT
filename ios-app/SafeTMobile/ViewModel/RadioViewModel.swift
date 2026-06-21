@@ -102,6 +102,7 @@ final class RadioViewModel: ObservableObject {
         uiState.localShortUnitId = unitId
         uiState.operatorDisplayName = user.displayName
         uiState.agencyName = user.agencyName ?? ""
+        uiState.pageMessages = loadPersistedPages()
 
         locationReporter.onAuthorizationChange = { [weak self] authorized in
             Task { @MainActor in self?.handleLocationAuth(authorized) }
@@ -190,6 +191,9 @@ final class RadioViewModel: ObservableObject {
         case .emergencyToggle: toggleEmergency()
         case .toggleScan: toggleScan()
         case .setScanChannels(let channels): setScanChannels(channels)
+        case .loadPageImage(let id): loadPageImage(id)
+        case .respondToPage(let id, let response): respondToPage(id: id, response: response)
+        case .markPagesRead: markPagesRead()
         }
     }
 
@@ -384,7 +388,23 @@ final class RadioViewModel: ObservableObject {
 
     private func bumpChannel(_ delta: Int) {
         guard !channelNames.isEmpty, !uiState.channelsLoading else { return }
-        let target = (channelIndex + delta + channelNames.count) % channelNames.count
+        // Cycle only within the zone the current channel belongs to — channel
+        // ▲/▼ should stay inside the active zone; crossing zones is the job of
+        // the zone ▲/▼ buttons. Fall back to the whole catalog when zone info
+        // isn't available (single-zone / ungrouped catalogs).
+        let chans = uiState.channels
+        let currentZone = chans.first(where: { $0.index == channelIndex })?.zoneNumber
+        let zoneIndices = chans
+            .filter { $0.zoneNumber == currentZone }
+            .map(\.index)
+            .sorted()
+        guard zoneIndices.count > 1, let pos = zoneIndices.firstIndex(of: channelIndex) else {
+            // No usable zone grouping — fall back to full-catalog wrap.
+            let target = (channelIndex + delta + channelNames.count) % channelNames.count
+            tuneTo(target, announce: delta > 0 ? "CHANNEL +" : "CHANNEL -")
+            return
+        }
+        let target = zoneIndices[(pos + delta + zoneIndices.count) % zoneIndices.count]
         tuneTo(target, announce: delta > 0 ? "CHANNEL +" : "CHANNEL -")
     }
 
@@ -1176,13 +1196,97 @@ final class RadioViewModel: ObservableObject {
     }
 
     private func handleInboundAlert(_ alert: InboxAlert) {
-        let from = alert.fromUnit ?? alert.fromName ?? "DISPATCH"
+        let from = (alert.fromUnit ?? alert.fromName ?? "DISPATCH")
         if alert.kind.lowercased() == "emergency" {
             uiState.statusMessage = "EMERGENCY • " + from.uppercased()
-        } else if let message = alert.message, !message.isEmpty {
-            uiState.statusMessage = "PAGE: " + message.prefix(40).uppercased()
-        } else {
-            uiState.statusMessage = "PAGE • " + from.uppercased()
+            return
         }
+        // Page: store it in the inbox (deduped by id) so the Pages tab can show
+        // it, and surface a status-line hint.
+        if uiState.pageMessages.contains(where: { $0.id == alert.id }) { return }
+        let page = PageMessage(
+            id: alert.id,
+            timeLabel: pageTimeLabel(alert.createdAt),
+            fromLabel: from.uppercased(),
+            message: alert.message ?? "",
+            targetedToMe: alert.targetUnit?.uppercased() == unitId.uppercased(),
+            hasImage: alert.hasImage ?? false,
+            read: false,
+            responded: nil
+        )
+        uiState.pageMessages.insert(page, at: 0)
+        if uiState.pageMessages.count > 100 {
+            uiState.pageMessages = Array(uiState.pageMessages.prefix(100))
+        }
+        persistPages()
+        sounds.play(.channelSwitch)
+        let preview = page.message.isEmpty ? page.fromLabel : page.message
+        uiState.statusMessage = "PAGE: " + preview.prefix(40).uppercased()
+    }
+
+    // MARK: - pages inbox
+
+    private var pagesDefaultsKey: String { "safet.pages.\(unitId.uppercased())" }
+
+    private func pageTimeLabel(_ iso: String?) -> String {
+        if let iso, let date = Self.isoFormatter.date(from: iso) {
+            return clockFormatter.string(from: date)
+        }
+        return clockFormatter.string(from: Date())
+    }
+
+    private func loadPersistedPages() -> [PageMessage] {
+        guard let data = UserDefaults.standard.data(forKey: pagesDefaultsKey),
+              let pages = try? JSONDecoder().decode([PageMessage].self, from: data) else {
+            return []
+        }
+        return pages
+    }
+
+    private func persistPages() {
+        if let data = try? JSONEncoder().encode(uiState.pageMessages) {
+            UserDefaults.standard.set(data, forKey: pagesDefaultsKey)
+        }
+    }
+
+    /// Lazily fetch a page's picture attachment (only pages with `hasImage`).
+    private func loadPageImage(_ id: Int) {
+        guard uiState.pageImages[id] == nil else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            if let data = try? await self.api.alertImage(id: id), !data.isEmpty {
+                self.uiState.pageImages[id] = data
+            }
+        }
+    }
+
+    /// Send an ACK / reply to a page; optimistically marks it answered locally.
+    private func respondToPage(id: Int, response: String) {
+        let reply = String(response.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60))
+        guard !reply.isEmpty else { return }
+        if let idx = uiState.pageMessages.firstIndex(where: { $0.id == id }) {
+            uiState.pageMessages[idx].responded = reply
+            uiState.pageMessages[idx].read = true
+            persistPages()
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.api.respondToAlert(id: id, unit: self.unitId, response: reply)
+                self.uiState.statusMessage = "REPLY SENT: " + reply.uppercased()
+            } catch {
+                self.uiState.statusMessage = "REPLY FAILED — RETRY"
+            }
+        }
+    }
+
+    private func markPagesRead() {
+        guard uiState.pageMessages.contains(where: { !$0.read }) else { return }
+        uiState.pageMessages = uiState.pageMessages.map { page in
+            var page = page
+            page.read = true
+            return page
+        }
+        persistPages()
     }
 }

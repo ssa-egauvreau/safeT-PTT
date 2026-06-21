@@ -15,6 +15,10 @@ enum AudioSessionManager {
         try session.setCategory(
             .playAndRecord,
             mode: .voiceChat,
+            // `.allowBluetooth` is technically deprecated in favour of
+            // `.allowBluetoothHFP`, but that symbol isn't in the iOS 16 SDK this
+            // project builds against, so keep the working spelling. The
+            // deprecation warning is cosmetic.
             options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
         )
         try session.setActive(true, options: [])

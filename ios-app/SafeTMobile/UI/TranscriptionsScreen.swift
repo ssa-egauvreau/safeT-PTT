@@ -72,6 +72,10 @@ struct TranscriptionsScreen: View {
         .navigationTitle("TRANSCRIPTS")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Search transcripts")
+        // Give the nav bar (which hosts the search field) a solid backdrop so the
+        // transmissions list doesn't show through the search bar.
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(Color.safetSurface, for: .navigationBar)
         .onChange(of: search) { _ in scheduleSearch() }
         .task {
             await refreshAvailableChannels()

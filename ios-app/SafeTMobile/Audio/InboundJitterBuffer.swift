@@ -37,6 +37,11 @@ final class InboundJitterBuffer {
     private var running = false
     private var released = false
     private var thread: Thread?
+    /// True while the playout loop is rebuilding a cushion at the start of a
+    /// talk-spurt — it emits silence (not the queued frames yet) until the queue
+    /// reaches `initialTargetFrames` or `cushionDeadline` passes. Guarded by `lock`.
+    private var cushioning = false
+    private var cushionDeadline: TimeInterval = 0
 
     /// Wall-clock pacing keeps playout cadence independent of how the audio
     /// engine's render loop happens to be aligned; the engine still absorbs
@@ -47,13 +52,29 @@ final class InboundJitterBuffer {
     /// A small step up from the 60 ms minimum to absorb brief cellular
     /// retransmit stalls before the playout underruns into PLC, at ~+20 ms
     /// latency (still far below the ~400 ms a PTT operator perceives as lag).
-    private let initialTargetFrames: Int = 4
+    private let foregroundInitialTargetFrames: Int = 4
     private let initialTimeoutMs: Double = 250.0
 
     /// Worst-case buffered audio. 16 × 20 ms ≈ 320 ms — if the producer
     /// outpaces the player (sustained burst), drop the oldest frame rather
     /// than letting the buffer grow without bound.
-    private let maxBufferFrames: Int = 16
+    private let foregroundMaxBufferFrames: Int = 16
+
+    /// Background cushion. When the app is backgrounded (screen off) iOS
+    /// throttles the main thread and coalesces timers, so decoded frames — which
+    /// are produced on the main actor — arrive late and bunched. A deeper cushion
+    /// (~200 ms target, ~600 ms cap) buffers that burst instead of underrunning
+    /// into PLC (the "robotic" re-emit) and then silence (the "cutout"). Latency
+    /// doesn't matter with the screen off, so this is a pure resilience win.
+    private let backgroundInitialTargetFrames: Int = 10
+    private let backgroundMaxBufferFrames: Int = 30
+
+    /// Toggled by `setBackgrounded` on app foreground/background transitions.
+    /// Guarded by `lock`.
+    private var backgrounded = false
+
+    private var initialTargetFrames: Int { backgrounded ? backgroundInitialTargetFrames : foregroundInitialTargetFrames }
+    private var maxBufferFrames: Int { backgrounded ? backgroundMaxBufferFrames : foregroundMaxBufferFrames }
 
     /// Talk-spurt boundary; matches the relay air-claim window so an operator
     /// gap between transmissions clears stale state cleanly.
@@ -87,12 +108,17 @@ final class InboundJitterBuffer {
             startThread = true
         }
         let now = ProcessInfo.processInfo.systemUptime
-        if lastEnqueueAt != 0, now - lastEnqueueAt > talkSpurtGapSeconds {
+        if lastEnqueueAt == 0 || now - lastEnqueueAt > talkSpurtGapSeconds {
             // Fresh talk-spurt — drop any stale tail so the new talker is not
-            // preceded by a faded-out copy of the last one.
+            // preceded by a faded-out copy of the last one, and re-arm the
+            // cushion so the playout loop rebuilds a buffer before resuming
+            // (the deep background cushion only helps if it refills per spurt,
+            // not just once when the pacer thread first spins up).
             queue.removeAll(keepingCapacity: true)
             lastGoodFrame = nil
             plcCount = 0
+            cushioning = true
+            cushionDeadline = now + initialTimeoutMs / 1000.0
         }
         lastEnqueueAt = now
         queue.append(pcm16)
@@ -136,6 +162,8 @@ final class InboundJitterBuffer {
         lastGoodFrame = nil
         plcCount = 0
         lastEnqueueAt = 0
+        cushioning = false
+        cushionDeadline = 0
         lock.unlock()
         captured?.cancel()
     }
@@ -146,6 +174,16 @@ final class InboundJitterBuffer {
         released = true
         lock.unlock()
         stop()
+    }
+
+    /// Switch between the shallow foreground cushion and the deep background
+    /// cushion. Called on app foreground/background transitions. The deeper
+    /// background buffer absorbs the late, bunched frame delivery caused by iOS
+    /// throttling the (main-actor) decode path when the screen is off.
+    func setBackgrounded(_ value: Bool) {
+        lock.lock()
+        backgrounded = value
+        lock.unlock()
     }
 
     // MARK: - private
@@ -181,6 +219,21 @@ final class InboundJitterBuffer {
             // counter bumps reflect the exact playout decision below.
             let wasPlc: Bool
             let wasUnderrun: Bool
+            // While re-cushioning at the start of a spurt, hold the queued frames
+            // back and emit silence until the cushion fills (or its deadline
+            // passes). This is silence, not PLC — there's no prior talker to
+            // conceal — so it neither sounds robotic nor counts as packet loss.
+            if cushioning {
+                let now = ProcessInfo.processInfo.systemUptime
+                if queue.count >= initialTargetFrames || now >= cushionDeadline {
+                    cushioning = false
+                } else {
+                    lock.unlock()
+                    scheduleFrame(silenceFrame)
+                    nextDeadline += frameMs / 1000.0
+                    continue
+                }
+            }
             if !queue.isEmpty {
                 frame = queue.removeFirst()
                 lastGoodFrame = frame

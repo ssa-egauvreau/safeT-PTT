@@ -95,28 +95,20 @@ final class VoiceTransport {
     /// duplicate 8 → 16 kHz upsample with no biquads. Rebuilt by
     /// `refreshAudioConfig()` on every connect / reconnect so admin
     /// changes pick up without restarting the app.
-    private var postDecodeProcessor: PostDecodeChain.Processor?
-    /// Raw post-decode config cached alongside the processor. Drives the
-    /// wideband (Opus) routing decision and the end-of-TX cue synthesis on
-    /// `air_released` — the cue path needs it even when there is no DSP
-    /// processor to build (e.g. a roger-beep-only config). `nil` when no
-    /// shaping/cue is configured.
+    /// Raw post-decode config kept on the main actor for the end-of-TX cue
+    /// synthesis on `air_released` — the cue path needs it even when there is no
+    /// DSP processor to build (e.g. a roger-beep-only config). RX shaping itself
+    /// is owned by `inboundDecoder`. `nil` when no shaping/cue is configured.
     private var postDecodeConfig: PostDecodeChain.Config?
-    /// Fixed Opus-only voicing (see `PostDecodeChain.Config.opusVoiceShaping`).
-    /// Built on the first Opus frame so IMBE/Codec2-only channels never pay for
-    /// it; reset at talk-spurt boundaries so a prior talker's biquad ring can't
-    /// bleed into the next talker's first frame. Independent of the agency
-    /// `postDecodeProcessor`, so the 8 kHz vocoders keep playing raw.
-    private var opusVoiceProcessor: PostDecodeChain.Processor?
-    /// Last inbound voice frame timestamp (seconds, monotonic clock). Used
-    /// only to detect a talk-spurt boundary on RX so the post-decode chain
-    /// can reset its biquad state before the next talker's first frame.
-    private var lastInboundVoiceAt: TimeInterval = 0
-    /// Treat > 300 ms gap between inbound voice frames as a new talk-spurt.
-    /// Matches the Android `scanTalkSpurtGapNs` for the same reason.
-    private let talkSpurtGapSeconds: TimeInterval = VoiceTiming.talkSpurtGapSeconds
     /// Agency flag: minimal TX chain (HPF/LPF only), matching bridge / web bypass.
     private var bypassMicProcessing = false
+
+    /// Off-main decode pipeline for the home channel. Voice frames are decoded
+    /// and played out on its private serial queue so background main-thread
+    /// throttling can't starve playout (the screen-off "robotic"/cutout bug).
+    /// `nonisolated` so the background URLSession completion can hand it frames
+    /// without hopping to the main actor first.
+    private nonisolated let inboundDecoder: InboundVoiceDecoder
 
     init(baseURL: URL, token: String, unitId: String, audio: VoiceAudio, session: URLSession = .shared) {
         self.baseURL = baseURL
@@ -124,8 +116,25 @@ final class VoiceTransport {
         self.unitId = unitId
         self.audio = audio
         self.session = session
+        let logger = self.logger
+        self.inboundDecoder = InboundVoiceDecoder(
+            channelLabel: nil,
+            audio: audio,
+            listenPcmMagic: listenPcmMagic,
+            logger: logger
+        )
         _ = P25ImbeNative.initialize()
         _ = P25AmbeNative.initialize()
+        inboundDecoderSetReceivingCallback()
+    }
+
+    /// Wire the decoder's play-out callback to the receiving indicator. Done
+    /// after `init` stores `self` so the closure can capture it.
+    private func inboundDecoderSetReceivingCallback() {
+        inboundDecoder.setOnPlayed { [weak self] in
+            self?.lastReceivedAt = Date()
+            self?.onReceivingChange?(true)
+        }
     }
 
     func join(channel: String) {
@@ -354,26 +363,16 @@ final class VoiceTransport {
                 next = nil
             }
             await MainActor.run {
-                self.postDecodeProcessor = next
+                // Keep the config on the main actor for the end-of-TX cue
+                // synthesis (playEndOfTxCue); hand the built processor to the
+                // off-main decoder, which owns all RX shaping now.
                 self.postDecodeConfig = nextConfig
                 self.bypassMicProcessing = response.config?.bypassMicProcessing ?? false
-                self.lastInboundVoiceAt = 0
+                self.inboundDecoder.updateConfig(processor: next, wideband: nextConfig?.wideband ?? false)
             }
         } catch {
             logger.warning("audio config refresh failed: \(error.localizedDescription, privacy: .public)")
         }
-    }
-
-    /// Run an IMBE-decoded 8 kHz frame through the agency post-decode chain
-    /// when configured; otherwise fall back to the legacy duplicate-upsample
-    /// path. Resets the processor's biquad state at every talk-spurt boundary
-    /// so a previous talker's filter ring can't bleed into the next talker's
-    /// first frame.
-    private func applyPostDecodeOrDup(_ pcm8k: [Int16]) -> Data {
-        guard let processor = postDecodeProcessor else {
-            return P25ImbeNative.Frames.upsampleDup8kToLe16Mono(pcm8k160: pcm8k)
-        }
-        return processor.process(pcm8k160: pcm8k)
     }
 
     private func sendJoinFrame() {
@@ -409,8 +408,19 @@ final class VoiceTransport {
                     self.scheduleReconnect()
                 }
             case .success(let message):
-                Task { @MainActor in self.handle(message) }
-                self.listen()
+                // Voice (binary) frames decode + play OFF the main actor via the
+                // serial InboundVoiceDecoder, so a throttled main run loop (app
+                // backgrounded / screen off) can't starve playout. Signalling
+                // (text) frames and the receive re-arm still hop to the main
+                // actor — `listen()` touches `task` and re-arming there was a
+                // data race against main-thread PTT teardown (a crash-on-release
+                // cause).
+                if case .data(let payload) = message {
+                    self.inboundDecoder.submit(payload)
+                } else if case .string(let text) = message {
+                    Task { @MainActor in self.handleTextFrame(text) }
+                }
+                Task { @MainActor in self.listen() }
             }
         }
     }
@@ -435,134 +445,6 @@ final class VoiceTransport {
             self.openSocket()
             self.sendJoinFrame()
         }
-    }
-
-    @MainActor
-    private func handle(_ message: URLSessionWebSocketTask.Message) {
-        switch message {
-        case .string(let text):
-            handleTextFrame(text)
-        case .data(let data):
-            dispatchInboundVoice(data)
-        @unknown default:
-            break
-        }
-    }
-
-    private func dispatchInboundVoice(_ payload: Data) {
-        // Clear-PCM sideband — not for playback (server-only recording path).
-        if payload.count >= 2,
-           payload[payload.startIndex] == listenPcmMagic[0],
-           payload[payload.startIndex + 1] == listenPcmMagic[1] {
-            return
-        }
-        if payload.count >= 2,
-           let decoder = codecRegistry.decoder(forMagic: payload[payload.startIndex], payload[payload.startIndex + 1]) {
-            let now = ProcessInfo.processInfo.systemUptime
-            let newSpurt = lastInboundVoiceAt == 0 || (now - lastInboundVoiceAt) > talkSpurtGapSeconds
-            lastInboundVoiceAt = now
-            // Voice-link telemetry: count every inbound voice frame + its
-            // decoded outcome below. Decoder codec wire id ("imbe" / "opus"
-            // / "codec2_3200") feeds the per-codec breakdown the admin
-            // dashboard renders.
-            let telemetryCodec = decoder.codec.wireId
-            VoiceLinkTelemetryReporter.shared.recordFrameReceived(codec: telemetryCodec, bytes: payload.count)
-            if newSpurt {
-                decoder.resetForTalkSpurt()
-                // Reset the post-decode chain on every talk-spurt boundary,
-                // regardless of codec: the 8 kHz path and the Opus wideband
-                // path share the same biquad / compressor state, so a previous
-                // talker's filter ring must not bleed into the next talker's
-                // first frame on either path.
-                postDecodeProcessor?.reset()
-                opusVoiceProcessor?.reset()
-                VoiceLinkTelemetryReporter.shared.recordTalkSpurtStart()
-            }
-            // Lazy-load IMBE on first frame so peers stay audible even before
-            // this radio opens the PTT screen. Other codecs load (or fail to
-            // load) eagerly with their own native libs.
-            if decoder.codec == .imbe, !P25ImbeNative.isAvailable, !P25ImbeNative.initialize() {
-                VoiceLinkTelemetryReporter.shared.recordDecodeFailure()
-                logger.warning("IMBE frame discarded — vocoder not loaded")
-                return
-            }
-            if decoder.codec == .ambe_2450, !P25AmbeNative.isAvailable, !P25AmbeNative.initialize() {
-                VoiceLinkTelemetryReporter.shared.recordDecodeFailure()
-                logger.warning("AMBE frame discarded — vocoder not loaded")
-                return
-            }
-            guard decoder.isReady else {
-                VoiceLinkTelemetryReporter.shared.recordDecodeFailure()
-                logger.warning("Inbound \(decoder.codec.wireId, privacy: .public) frame dropped — decoder native lib not loaded")
-                return
-            }
-            guard let samples = decoder.decodeFrame(payload) else {
-                VoiceLinkTelemetryReporter.shared.recordDecodeFailure()
-                return
-            }
-            VoiceLinkTelemetryReporter.shared.recordFrameDecoded(codec: telemetryCodec)
-            let pcm16 = renderDecoded(samples, nativeRate: decoder.nativeSampleRate)
-            lastReceivedAt = Date()
-            onReceivingChange?(true)
-            audio.enqueueIncoming(pcm16)
-            return
-        }
-        // Unknown magic — legacy clear PCM path (soundboard tone-out, etc.).
-        // Telemetry counts these as `raw_pcm` so an operator can spot a peer
-        // whose vocoder failed to engage.
-        VoiceLinkTelemetryReporter.shared.recordFrameReceived(codec: "raw_pcm", bytes: payload.count)
-        lastReceivedAt = Date()
-        onReceivingChange?(true)
-        audio.enqueueIncoming(payload)
-    }
-
-    /// Brings a decoder's native-rate output to the playback rate (16 kHz mono
-    /// PCM-16 LE). 8 kHz output (IMBE, Codec2) runs through the existing
-    /// post-decode chain or duplicate-upsample fast path; 16 kHz output (Opus)
-    /// runs through the same chain's wideband entry point (no upsample) when the
-    /// agency enabled `wideband`, otherwise plays unshaped.
-    private func renderDecoded(_ samples: [Int16], nativeRate: Int) -> Data {
-        if nativeRate == 8000 {
-            return applyPostDecodeOrDup(samples)
-        }
-        return applyWidebandOrPassthrough(samples)
-    }
-
-    /// Opus (16 kHz) RX shaping: when the agency enabled `wideband` AND a
-    /// processor exists, run the decoded frame through the same
-    /// biquad → compressor → saturation tail as the 8 kHz path but skipping the
-    /// upsample (the input is already 16 kHz). Otherwise play unshaped — today's
-    /// behaviour. Opus frames are not 160 samples; the wideband path is
-    /// length-agnostic.
-    private func applyWidebandOrPassthrough(_ samples: [Int16]) -> Data {
-        if let processor = postDecodeProcessor, postDecodeConfig?.wideband == true {
-            return processor.processWideband(pcm16k: samples)
-        }
-        // No agency wideband chain: apply the fixed "warm radio voice" Opus
-        // shaping so Opus sounds full and clear rather than thin. Opus path
-        // only — the 8 kHz vocoders (IMBE/Codec2) play raw via applyPostDecodeOrDup.
-        let proc: PostDecodeChain.Processor
-        if let existing = opusVoiceProcessor {
-            proc = existing
-        } else {
-            proc = PostDecodeChain.Processor(config: .opusVoiceShaping)
-            opusVoiceProcessor = proc
-        }
-        return proc.processWideband(pcm16k: samples)
-    }
-
-    private func shortLeMonoBytes(_ samples: [Int16]) -> Data {
-        var out = Data(count: samples.count * 2)
-        out.withUnsafeMutableBytes { raw in
-            guard let base = raw.baseAddress else { return }
-            let bytes = base.assumingMemoryBound(to: UInt8.self)
-            for (i, s) in samples.enumerated() {
-                let le = UInt16(bitPattern: s)
-                bytes[i * 2] = UInt8(le & 0xff)
-                bytes[i * 2 + 1] = UInt8((le >> 8) & 0xff)
-            }
-        }
-        return out
     }
 
     private func handleTextFrame(_ text: String) {
