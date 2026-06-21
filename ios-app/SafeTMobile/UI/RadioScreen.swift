@@ -156,7 +156,6 @@ struct RadioScreen: View {
                 tabStrip(state)
                 displayPanel(state)
                 channelRow(state)
-                Spacer(minLength: 12)
                 emergencyButton(state)
                 pttBar(state)
             }
@@ -513,48 +512,15 @@ struct RadioScreen: View {
                         .background(Color.safetTextDim.opacity(0.12))
                         .cornerRadius(4)
                 }
-
-                if !state.unitsOnChannel.isEmpty {
-                    let maxVisible = 4
-                    let displayed = Array(state.unitsOnChannel.prefix(maxVisible))
-                    let overflow = state.unitsOnChannel.count - maxVisible
-                    VStack(alignment: .leading, spacing: 3) {
-                        ForEach(displayed, id: \.self) { unit in
-                            Text("• \(unit)")
-                                .font(.safet(size: 11, weight: .medium))
-                                .foregroundColor(.safetTextDim)
-                                .lineLimit(1)
-                        }
-                        if overflow > 0 {
-                            Text("+ \(overflow) more")
-                                .font(.safet(size: 10, weight: .semibold))
-                                .foregroundColor(.safetTextDim.opacity(0.6))
-                        }
-                    }
-                }
-            }
-
-            HStack {
-                Text(state.channelPosition)
-                    .font(.safet(size: 13, weight: .semibold))
-                    .foregroundColor(.safetTextDim)
-                Spacer()
-                if state.isReceivingAudio {
-                    Text("RX")
-                        .font(.safet(size: 11, weight: .heavy))
-                        .foregroundColor(.safetSignal)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .overlay(Capsule().stroke(Color.safetSignal.opacity(0.7), lineWidth: 1))
-                }
             }
 
             if !state.rxAttributedLine.isEmpty, !state.channelTen33 {
                 Text(state.rxAttributedLine)
-                    .font(.safet(size: 12, weight: .bold))
+                    .font(.safet(size: 13, weight: .bold))
                     .foregroundColor(state.rxFromScan ? .safetGreen : .safetSignal)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             // Live Whisper transcript of the most recent received transmission.
@@ -582,17 +548,33 @@ struct RadioScreen: View {
                 .cornerRadius(6)
             }
 
-            if state.scanActive {
-                scanBanner(state)
+            // Fill the panel with the "who's here" detail: everyone on the
+            // channel, plus the scan box (which channels are scanning / talking).
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    unitsCard(state)
+                    if state.scanActive {
+                        scanCard(state)
+                    }
+                }
+                .padding(.bottom, 2)
             }
+            .frame(maxWidth: .infinity)
 
             Divider().overlay(Color.safetBorder)
 
-            Text(state.channelsLoading ? "SYNCING…" : state.statusMessage)
-                .font(.safet(size: 13, weight: .bold))
-                .foregroundColor(statusColor(state))
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+            HStack(spacing: 8) {
+                Text(state.channelsLoading ? "SYNCING…" : state.statusMessage)
+                    .font(.safet(size: 13, weight: .bold))
+                    .foregroundColor(statusColor(state))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Spacer()
+                Text(state.channelPosition)
+                    .font(.safet(size: 11, weight: .semibold))
+                    .foregroundColor(.safetTextDim)
+            }
+            .frame(maxWidth: .infinity)
 
             if let error = state.channelSyncError {
                 Button("RETRY SYNC") { viewModel.handle(.retryChannelSync) }
@@ -601,33 +583,120 @@ struct RadioScreen: View {
                     .accessibilityLabel(Text(error))
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(14)
         .background(Color.safetSurface)
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.safetBorder, lineWidth: 1))
         .cornerRadius(10)
     }
 
-    private func scanBanner(_ state: RadioUiState) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "dot.radiowaves.left.and.right")
-                .font(.safet(size: 10, weight: .bold))
-            if let rx = state.scanRxChannel {
-                Text("SCAN: \(rx.uppercased())")
-                    .font(.safet(size: 11, weight: .heavy))
-            } else {
-                let home = state.channelLabel.lowercased()
-                let count = state.scanIncludedChannels.filter { $0 != home }.count
-                Text(count > 0 ? "SCAN ON · \(count) CH" : "SCAN ON · PICK CHANNELS")
-                    .font(.safet(size: 11, weight: .heavy))
+    /// Everyone currently on the tuned channel, with the active talker highlighted.
+    private func unitsCard(_ state: RadioUiState) -> some View {
+        let count = state.radiosOnlineOnChannel ?? state.unitsOnChannel.count
+        let talker = state.activeTalkDisplayName.trimmingCharacters(in: .whitespaces)
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: "person.2.fill")
+                    .font(.safet(size: 12, weight: .bold))
+                    .foregroundColor(.safetSignal)
+                Text("ON CHANNEL")
+                    .font(.safet(size: 12, weight: .heavy))
+                    .foregroundColor(.safetText)
+                Spacer()
+                Text("\(count)")
+                    .font(.safet(size: 12, weight: .heavy))
+                    .foregroundColor(.safetSignal)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 1)
+                    .background(Color.safetSignal.opacity(0.15))
+                    .clipShape(Capsule())
             }
-            Spacer()
+            if state.unitsOnChannel.isEmpty {
+                Text("No other units online")
+                    .font(.safet(size: 11, weight: .medium))
+                    .foregroundColor(.safetTextDim)
+            } else {
+                ForEach(Array(state.unitsOnChannel.enumerated()), id: \.offset) { _, unit in
+                    let talking = !talker.isEmpty
+                        && unit.caseInsensitiveCompare(talker) == .orderedSame
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(talking ? Color.safetGreen : Color.safetSignal.opacity(0.7))
+                            .frame(width: 7, height: 7)
+                        Text(unit)
+                            .font(.safet(size: 13, weight: talking ? .heavy : .medium))
+                            .foregroundColor(talking ? .safetGreen : .safetText)
+                            .lineLimit(1)
+                        Spacer()
+                        if talking {
+                            Image(systemName: "waveform")
+                                .font(.safet(size: 11, weight: .bold))
+                                .foregroundColor(.safetGreen)
+                        }
+                    }
+                }
+            }
         }
-        .foregroundColor(state.scanRxChannel != nil ? .safetGreen : .safetSignal)
-        .padding(.vertical, 4)
-        .padding(.horizontal, 8)
-        .background((state.scanRxChannel != nil ? Color.safetGreen : Color.safetSignal).opacity(0.12))
-        .cornerRadius(6)
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.safetBackground.opacity(0.4))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.safetBorder, lineWidth: 1))
+        .cornerRadius(9)
+    }
+
+    /// Scan box: every scanned channel, with the one currently talking highlighted.
+    private func scanCard(_ state: RadioUiState) -> some View {
+        let home = state.channelLabel.lowercased()
+        let chans = state.scanIncludedChannels.filter { $0 != home }.sorted()
+        let active = state.scanRxChannel?.lowercased()
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: "dot.radiowaves.left.and.right")
+                    .font(.safet(size: 12, weight: .bold))
+                    .foregroundColor(.safetGreen)
+                Text("SCANNING")
+                    .font(.safet(size: 12, weight: .heavy))
+                    .foregroundColor(.safetText)
+                Spacer()
+                Text("\(chans.count)")
+                    .font(.safet(size: 12, weight: .heavy))
+                    .foregroundColor(.safetGreen)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 1)
+                    .background(Color.safetGreen.opacity(0.15))
+                    .clipShape(Capsule())
+            }
+            if chans.isEmpty {
+                Text("Tap SCAN to pick channels")
+                    .font(.safet(size: 11, weight: .medium))
+                    .foregroundColor(.safetTextDim)
+            } else {
+                ForEach(chans, id: \.self) { ch in
+                    let talking = active == ch
+                    HStack(spacing: 8) {
+                        Image(systemName: talking ? "waveform" : "circle.fill")
+                            .font(.safet(size: talking ? 11 : 6, weight: .bold))
+                            .foregroundColor(talking ? .safetGreen : .safetTextDim.opacity(0.7))
+                            .frame(width: 14)
+                        Text(ch.uppercased())
+                            .font(.safet(size: 13, weight: talking ? .heavy : .medium))
+                            .foregroundColor(talking ? .safetGreen : .safetText)
+                            .lineLimit(1)
+                        Spacer()
+                        if talking {
+                            Text("TALKING")
+                                .font(.safet(size: 9, weight: .heavy))
+                                .foregroundColor(.safetGreen)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.safetGreen.opacity(0.06))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.safetGreen.opacity(0.35), lineWidth: 1))
+        .cornerRadius(9)
     }
 
     private func statusColor(_ state: RadioUiState) -> Color {
