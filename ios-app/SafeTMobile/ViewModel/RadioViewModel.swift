@@ -388,7 +388,23 @@ final class RadioViewModel: ObservableObject {
 
     private func bumpChannel(_ delta: Int) {
         guard !channelNames.isEmpty, !uiState.channelsLoading else { return }
-        let target = (channelIndex + delta + channelNames.count) % channelNames.count
+        // Cycle only within the zone the current channel belongs to — channel
+        // ▲/▼ should stay inside the active zone; crossing zones is the job of
+        // the zone ▲/▼ buttons. Fall back to the whole catalog when zone info
+        // isn't available (single-zone / ungrouped catalogs).
+        let chans = uiState.channels
+        let currentZone = chans.first(where: { $0.index == channelIndex })?.zoneNumber
+        let zoneIndices = chans
+            .filter { $0.zoneNumber == currentZone }
+            .map(\.index)
+            .sorted()
+        guard zoneIndices.count > 1, let pos = zoneIndices.firstIndex(of: channelIndex) else {
+            // No usable zone grouping — fall back to full-catalog wrap.
+            let target = (channelIndex + delta + channelNames.count) % channelNames.count
+            tuneTo(target, announce: delta > 0 ? "CHANNEL +" : "CHANNEL -")
+            return
+        }
+        let target = zoneIndices[(pos + delta + zoneIndices.count) % zoneIndices.count]
         tuneTo(target, announce: delta > 0 ? "CHANNEL +" : "CHANNEL -")
     }
 

@@ -276,13 +276,18 @@ final class ScanVoiceListenTransport {
                 } else {
                     pcm16 = Self.shortLeMonoBytes(samples)
                 }
-                audio.enqueueIncoming(pcm16)
-                onRx(channelLabel)
+                // Route through scan arbitration: only fire onRx (which updates
+                // the "scanning" banner) when this channel actually won the slot,
+                // so the banner stops flapping when several scan channels key up.
+                if audio.enqueueScan(channel: channelLabel, pcm16) {
+                    onRx(channelLabel)
+                }
                 return
             }
             // Clear-PCM payload from a peer that lacks any vocoder.
-            audio.enqueueIncoming(payload)
-            onRx(channelLabel)
+            if audio.enqueueScan(channel: channelLabel, payload) {
+                onRx(channelLabel)
+            }
         }
 
         private static func shortLeMonoBytes(_ samples: [Int16]) -> Data {
