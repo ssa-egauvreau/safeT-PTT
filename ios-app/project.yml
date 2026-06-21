@@ -11,11 +11,12 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    # Bumped for the first TestFlight build carrying the AI-dispatcher overlay +
-    # parity work. CI (ios-testflight.yml) overrides CURRENT_PROJECT_VERSION with
-    # a unique, monotonic build number per upload; this is the local-build default.
-    MARKETING_VERSION: "0.2.0"
-    CURRENT_PROJECT_VERSION: "2"
+    # Bump this on every iOS change so the version on the Settings screen
+    # confirms the phone actually picked up a fresh build. CI
+    # (ios-testflight.yml) overrides CURRENT_PROJECT_VERSION with a unique,
+    # monotonic build number per TestFlight upload; this is the local default.
+    MARKETING_VERSION: "0.2.1"
+    CURRENT_PROJECT_VERSION: "3"
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ""
 
