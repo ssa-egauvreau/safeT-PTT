@@ -104,6 +104,7 @@ struct RadioScreen: View {
     @State private var showingTranscripts = false
     @State private var showingSettings = false
     @State private var showingMultiChannel = false
+    @State private var showingPages = false
     @State private var micStatus: AVAudioSession.RecordPermission = Self.initialMicStatus()
     /// SF Symbol name reflecting whichever AVAudioSession output the OS has
     /// actually picked right now (not just the saved preference). Updated on
@@ -221,6 +222,9 @@ struct RadioScreen: View {
             .environmentObject(settings)
             .environmentObject(session)
         }
+        .sheet(isPresented: $showingPages) { sheetWrap("PAGES", isPresented: $showingPages) {
+            PagesScreen(state: viewModel.uiState, onEvent: { viewModel.handle($0) })
+        } }
         .sheet(isPresented: $showingMultiChannel) { sheetWrap("SCAN CHANNELS", isPresented: $showingMultiChannel) {
             if let token = session.token {
                 MultiChannelScreen(
@@ -378,6 +382,14 @@ struct RadioScreen: View {
             }
             tabButton(icon: "map", label: "MAP") { showingMap = true }
             tabButton(icon: "person.2.fill", label: "UNITS") { showingUnits = true }
+            tabButton(
+                icon: "envelope.fill",
+                label: "PAGES",
+                tint: state.unreadPageCount > 0 ? .safetBlue : .safetTextDim,
+                badge: state.unreadPageCount
+            ) {
+                showingPages = true
+            }
             tabButton(icon: "text.bubble", label: "TX LOG") { showingTranscripts = true }
             tabButton(
                 icon: "dot.radiowaves.left.and.right",
@@ -396,6 +408,7 @@ struct RadioScreen: View {
         label: String,
         tint: Color = .safetTextDim,
         highlighted: Bool = false,
+        badge: Int = 0,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -416,6 +429,18 @@ struct RadioScreen: View {
                     .stroke(highlighted ? tint : Color.safetBorder, lineWidth: 1)
             )
             .cornerRadius(8)
+            .overlay(alignment: .topTrailing) {
+                if badge > 0 {
+                    Text(badge > 9 ? "9+" : "\(badge)")
+                        .font(.safet(size: 8, weight: .heavy))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.safetRed)
+                        .clipShape(Capsule())
+                        .offset(x: 4, y: -4)
+                }
+            }
         }
         .accessibilityLabel(label)
     }

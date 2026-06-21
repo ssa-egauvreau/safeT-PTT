@@ -219,8 +219,13 @@ final class ScanVoiceListenTransport {
                         self.scheduleReconnect()
                     }
                 case .success(let message):
-                    Task { @MainActor in self.handle(message) }
-                    self.listen()
+                    // Handle + re-arm on the main actor — `listen()` is
+                    // @MainActor and touches `task`, so calling it from this
+                    // background completion handler was a data race.
+                    Task { @MainActor in
+                        self.handle(message)
+                        self.listen()
+                    }
                 }
             }
         }

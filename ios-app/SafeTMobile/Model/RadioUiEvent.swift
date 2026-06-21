@@ -15,4 +15,8 @@ enum RadioUiEvent {
     case emergencyToggle
     case toggleScan
     case setScanChannels(Set<String>)
+    /// Pages inbox.
+    case loadPageImage(Int)
+    case respondToPage(id: Int, response: String)
+    case markPagesRead
 }

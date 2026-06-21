@@ -409,8 +409,14 @@ final class VoiceTransport {
                     self.scheduleReconnect()
                 }
             case .success(let message):
-                Task { @MainActor in self.handle(message) }
-                self.listen()
+                // Handle the frame AND re-arm the receive loop on the main actor.
+                // `listen()` is @MainActor-isolated and touches `task`; calling it
+                // straight from this background completion handler was a data race
+                // against the main-thread PTT teardown (a crash-on-release cause).
+                Task { @MainActor in
+                    self.handle(message)
+                    self.listen()
+                }
             }
         }
     }

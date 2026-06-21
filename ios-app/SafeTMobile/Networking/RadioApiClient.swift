@@ -44,26 +44,38 @@ struct InboxAlert: Decodable {
     let id: Int
     let kind: String
     let channelName: String?
+    /// Set when the page is directed at one unit; nil for a channel/all broadcast.
+    let targetUnit: String?
     let fromUnit: String?
     let fromName: String?
     let message: String?
     let active: Bool
+    let createdAt: String?
+    /// True when the page carries a picture attachment (fetched lazily).
+    let hasImage: Bool?
+    // NOTE: all field names are camelCase to match the client's
+    // `.convertFromSnakeCase` decoder (channel_name → channelName, etc.).
+}
+
+/// Request body for POST /v1/radio/alerts/{id}/ack-response.
+struct AlertResponseDto: Encodable {
+    let unit: String
+    let response: String
 }
 
 /// The `ai_activity` block from `/radio/inbox` — what the AI dispatcher is doing
 /// right now on the tuned channel. `for_you` is true when this radio is the unit
 /// she's responding to (drives the full thinking cue vs. a quiet net-wide one).
+///
+/// No explicit CodingKeys: the client decoder uses `.convertFromSnakeCase`, which
+/// rewrites `for_you` → `forYou` BEFORE matching, so a `case forYou = "for_you"`
+/// would never match (that's why the AI overlay never appeared).
 struct InboxAiActivity: Decodable {
     let phase: String
     let unit: String
     let forYou: Bool
     let text: String?
     let tag: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case phase, unit, text, tag
-        case forYou = "for_you"
-    }
 }
 
 struct InboxResponse: Decodable {
@@ -83,9 +95,10 @@ struct InboxResponse: Decodable {
         aiActivity = try c.decodeIfPresent(InboxAiActivity.self, forKey: .aiActivity)
     }
 
+    // Keys are matched against the `.convertFromSnakeCase`-converted JSON, so
+    // `ai_activity` arrives as `aiActivity` — the case must be camelCase.
     private enum CodingKeys: String, CodingKey {
-        case alerts, lastId, ten33
-        case aiActivity = "ai_activity"
+        case alerts, lastId, ten33, aiActivity
     }
 }
 
@@ -448,6 +461,22 @@ final class RadioApiClient {
         var request = URLRequest(url: baseURL.appendingPathComponent("v1/transmissions/\(id)/audio"))
         applyAuth(&request)
         return try await sendDiscardingBody(request)
+    }
+
+    /// `GET /v1/radio/alerts/{id}/image` — the picture attached to a page, fetched
+    /// lazily (only when `hasImage` is true). Returns the raw image bytes.
+    func alertImage(id: Int) async throws -> Data {
+        var request = URLRequest(url: baseURL.appendingPathComponent("v1/radio/alerts/\(id)/image"))
+        applyAuth(&request)
+        return try await sendDiscardingBody(request)
+    }
+
+    /// `POST /v1/radio/alerts/{id}/ack-response` — radio's ACK / reply to a page.
+    func respondToAlert(id: Int, unit: String, response: String) async throws {
+        try await post(
+            "v1/radio/alerts/\(id)/ack-response",
+            body: AlertResponseDto(unit: unit, response: String(response.prefix(60)))
+        )
     }
 
     /// Agency-wide audio config a logged-in member fetches on connect /

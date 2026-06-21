@@ -51,6 +51,23 @@ struct AiActivityUi: Equatable {
     var tag: String = ""
 }
 
+/// One page/message in the radio's inbox (dispatch → radio), persisted across
+/// launches. Mirrors the Android `PageMessage`.
+struct PageMessage: Identifiable, Equatable, Codable {
+    let id: Int
+    /// Time the page was received/created, formatted "HH:mm".
+    let timeLabel: String
+    /// Sender label — a unit id or "DISPATCH".
+    let fromLabel: String
+    let message: String
+    /// True when this page was directed at this radio specifically (vs broadcast).
+    let targetedToMe: Bool
+    let hasImage: Bool
+    var read: Bool
+    /// The reply text this radio sent back, or nil if not yet answered.
+    var responded: String?
+}
+
 /// Immutable-ish snapshot of the radio shell. `RadioViewModel` is the source of truth.
 struct RadioUiState {
     var systemTime = "--:--"
@@ -134,6 +151,15 @@ struct RadioUiState {
     /// Live AI-dispatcher activity (thinking / speaking) on the tuned channel,
     /// or nil when idle. Drives the Siri-style AI overlay.
     var aiActivity: AiActivityUi?
+
+    // MARK: - pages / messages inbox
+
+    /// Pages received from dispatch, newest first. Persisted across launches.
+    var pageMessages: [PageMessage] = []
+    /// Decoded picture bytes per page id (lazily fetched when a page has an image).
+    var pageImages: [Int: Data] = [:]
+    /// Count of unread pages — drives the PAGES tab badge.
+    var unreadPageCount: Int { pageMessages.lazy.filter { !$0.read }.count }
 
     /// Whisper transcript of the most recent received transmission on the tuned
     /// channel, shown as a transient banner on the display. Empty when none /
