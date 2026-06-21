@@ -1,5 +1,6 @@
 // Exposes the bundled vocoders to Swift.
-#pragma once
+// (No include guard: a bridging header is compiled once as a prefix, so a
+// `#pragma once` here just triggers the "#pragma once in main file" warning.)
 
 #include <stdbool.h>
 #include <stdint.h>

@@ -15,7 +15,7 @@ enum AudioSessionManager {
         try session.setCategory(
             .playAndRecord,
             mode: .voiceChat,
-            options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
+            options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP]
         )
         try session.setActive(true, options: [])
         applyRoute(SettingsStore.shared.audioRoute)
