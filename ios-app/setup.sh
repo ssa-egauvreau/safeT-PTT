@@ -25,7 +25,7 @@ require_file() {
 if [ ! -f Local.xcconfig ]; then
   cp Local.example.xcconfig Local.xcconfig
   echo "Created ios-app/Local.xcconfig from the template."
-  echo "Edit SAFET_API_BASE_URL (see Local.example.xcconfig), then run ./setup.sh again."
+  echo "No edit needed — the app already defaults to the production server (https://safet-ptt.com)."
 fi
 
 if ! command -v xcodegen >/dev/null 2>&1; then

@@ -5,6 +5,9 @@ enum RadioUiEvent {
     case retryChannelSync
     case channelUp
     case channelDown
+    /// Step to the first channel of the next / previous zone bank.
+    case zoneUp
+    case zoneDown
     /// Jump directly to a channel by its tuning-order index (zone/channel dropdown).
     case selectChannel(Int)
     case pttPressed

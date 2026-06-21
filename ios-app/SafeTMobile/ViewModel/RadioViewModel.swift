@@ -174,6 +174,8 @@ final class RadioViewModel: ObservableObject {
         case .retryChannelSync: Task { await loadCatalog() }
         case .channelUp: bumpChannel(1)
         case .channelDown: bumpChannel(-1)
+        case .zoneUp: bumpZone(1)
+        case .zoneDown: bumpZone(-1)
         case .selectChannel(let index): selectChannel(index)
         case .pttPressed: Task { await onPttPressed() }
         case .pttReleased: onPttReleased()
@@ -376,6 +378,25 @@ final class RadioViewModel: ObservableObject {
         guard !channelNames.isEmpty, !uiState.channelsLoading else { return }
         let target = (channelIndex + delta + channelNames.count) % channelNames.count
         tuneTo(target, announce: delta > 0 ? "CHANNEL +" : "CHANNEL -")
+    }
+
+    /// Step to the first channel of the next / previous zone bank. No-op when the
+    /// catalog has only one zone (or none). Mirrors the Android zone stepping.
+    private func bumpZone(_ delta: Int) {
+        guard !uiState.channelsLoading, !uiState.channels.isEmpty else { return }
+        let chans = uiState.channels
+        // Ordered distinct zones as they appear in the catalog (nil = ungrouped).
+        var zoneOrder: [Int?] = []
+        for c in chans where !zoneOrder.contains(where: { $0 == c.zoneNumber }) {
+            zoneOrder.append(c.zoneNumber)
+        }
+        guard zoneOrder.count > 1 else { return }
+        let currentZone = chans.first(where: { $0.index == channelIndex })?.zoneNumber
+        guard let pos = zoneOrder.firstIndex(where: { $0 == currentZone }) else { return }
+        let targetZone = zoneOrder[(pos + delta + zoneOrder.count) % zoneOrder.count]
+        if let target = chans.first(where: { $0.zoneNumber == targetZone }) {
+            tuneTo(target.index, announce: delta > 0 ? "ZONE +" : "ZONE -")
+        }
     }
 
     /// Absolute tune from the zone/channel dropdown picker.
