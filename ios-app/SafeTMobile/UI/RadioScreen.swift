@@ -562,6 +562,31 @@ struct RadioScreen: View {
                     .minimumScaleFactor(0.7)
             }
 
+            // Live Whisper transcript of the most recent received transmission.
+            if !state.liveTranscript.isEmpty {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "text.quote")
+                        .font(.safet(size: 10, weight: .bold))
+                        .foregroundColor(.safetSignal)
+                    VStack(alignment: .leading, spacing: 1) {
+                        if !state.liveTranscriptWho.isEmpty {
+                            Text(state.liveTranscriptWho)
+                                .font(.safet(size: 10, weight: .heavy))
+                                .foregroundColor(.safetSignal)
+                        }
+                        Text(state.liveTranscript)
+                            .font(.safet(size: 12, weight: .semibold))
+                            .foregroundColor(.safetText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.vertical, 5)
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.safetSignal.opacity(0.10))
+                .cornerRadius(6)
+            }
+
             if state.scanActive {
                 scanBanner(state)
             }

@@ -41,6 +41,13 @@ final class RadioViewModel: ObservableObject {
     private var voiceStarted = false
     private var pttAirPollTask: Task<Void, Never>?
 
+    /// Live-transcript poll state. `transcriptPrimed` suppresses surfacing a
+    /// pre-existing transcript on (re)start / channel switch; `lastShownTranscriptId`
+    /// dedupes; `liveTranscriptClearTask` fades the banner after a while.
+    private var transcriptPrimed = false
+    private var lastShownTranscriptId = 0
+    private var liveTranscriptClearTask: Task<Void, Never>?
+
     /// Post-release capture drain (see `onPttReleased`); cancelled by a re-key.
     private var pttReleaseDrainTask: Task<Void, Never>?
 
@@ -141,6 +148,7 @@ final class RadioViewModel: ObservableObject {
         startInboxPolling()
         startTalkHintsPolling()
         startCatalogRefreshPolling()
+        startTranscriptPolling()
         Task { await loadCatalog() }
     }
 
@@ -415,6 +423,12 @@ final class RadioViewModel: ObservableObject {
         sounds.play(.channelSwitch)
         uiState.statusMessage = announce
         uiState.radiosOnlineOnChannel = nil
+        // Drop the previous channel's transcript banner and re-prime so the new
+        // channel doesn't immediately flash an old transcript.
+        liveTranscriptClearTask?.cancel()
+        uiState.liveTranscript = ""
+        uiState.liveTranscriptWho = ""
+        transcriptPrimed = false
         locationReporter.setChannel(currentChannel)
         if let channel = currentChannel {
             voiceTransport.join(channel: channel)
@@ -855,6 +869,55 @@ final class RadioViewModel: ObservableObject {
                     await self.loadCatalog()
                 }
             }
+        }
+    }
+
+    /// Polls for the latest received transmission's Whisper transcript and shows
+    /// it as a transient banner on the radio display — the live-transcript feature.
+    private func startTranscriptPolling() {
+        Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                guard let self else { return }
+                await self.pollLiveTranscript()
+            }
+        }
+    }
+
+    private func pollLiveTranscript() async {
+        guard uiState.networkLabel == "ONLINE",
+              let ch = currentChannel,
+              !ch.isEmpty, ch != "----" else { return }
+        guard let rows = try? await api.transmissions(limit: 8, channel: ch) else { return }
+        // Newest first; the most recent COMPLETED transcript from someone else.
+        let me = unitId.uppercased()
+        guard let latest = rows.sorted(by: { $0.id > $1.id }).first(where: { tx in
+            tx.transcriptStatus.lowercased() == "done"
+                && !(tx.transcript ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && (tx.unitId?.uppercased() ?? "") != me
+        }) else { return }
+
+        if !transcriptPrimed {
+            // First poll after a (re)start or channel switch: record the
+            // high-water mark so we don't surface an old, pre-existing transcript.
+            transcriptPrimed = true
+            lastShownTranscriptId = max(lastShownTranscriptId, latest.id)
+            return
+        }
+        guard latest.id > lastShownTranscriptId else { return }
+        lastShownTranscriptId = latest.id
+
+        let who = (latest.unitId ?? latest.displayName ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        uiState.liveTranscriptWho = who
+        uiState.liveTranscript = (latest.transcript ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        liveTranscriptClearTask?.cancel()
+        liveTranscriptClearTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(20))
+            guard !Task.isCancelled, let self else { return }
+            self.uiState.liveTranscript = ""
+            self.uiState.liveTranscriptWho = ""
         }
     }
 
