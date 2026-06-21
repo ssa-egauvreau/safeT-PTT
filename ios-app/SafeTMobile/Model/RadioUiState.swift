@@ -135,6 +135,13 @@ struct RadioUiState {
     /// or nil when idle. Drives the Siri-style AI overlay.
     var aiActivity: AiActivityUi?
 
+    /// Whisper transcript of the most recent received transmission on the tuned
+    /// channel, shown as a transient banner on the display. Empty when none /
+    /// after it clears.
+    var liveTranscript = ""
+    /// Unit/name the live transcript is attributed to.
+    var liveTranscriptWho = ""
+
     /// Timestamp the current voice link came up; used to render "Connected · Ns"
     /// in the network pill. Nil when not connected.
     var connectionStartedAt: Date?

@@ -405,17 +405,23 @@ struct RadioScreen: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.safet(size: 16, weight: .bold))
-                .foregroundColor(tint)
-                .frame(maxWidth: .infinity)
-                .frame(height: 36)
-                .background(highlighted ? tint.opacity(0.15) : Color.safetSurface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(highlighted ? tint : Color.safetBorder, lineWidth: 1)
-                )
-                .cornerRadius(8)
+            VStack(spacing: 2) {
+                Image(systemName: icon)
+                    .font(.safet(size: 15, weight: .bold))
+                Text(label)
+                    .font(.safet(size: 8, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+            .foregroundColor(tint)
+            .frame(maxWidth: .infinity)
+            .frame(height: 42)
+            .background(highlighted ? tint.opacity(0.15) : Color.safetSurface)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(highlighted ? tint : Color.safetBorder, lineWidth: 1)
+            )
+            .cornerRadius(8)
         }
         .accessibilityLabel(label)
     }
@@ -556,6 +562,31 @@ struct RadioScreen: View {
                     .minimumScaleFactor(0.7)
             }
 
+            // Live Whisper transcript of the most recent received transmission.
+            if !state.liveTranscript.isEmpty {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "text.quote")
+                        .font(.safet(size: 10, weight: .bold))
+                        .foregroundColor(.safetSignal)
+                    VStack(alignment: .leading, spacing: 1) {
+                        if !state.liveTranscriptWho.isEmpty {
+                            Text(state.liveTranscriptWho)
+                                .font(.safet(size: 10, weight: .heavy))
+                                .foregroundColor(.safetSignal)
+                        }
+                        Text(state.liveTranscript)
+                            .font(.safet(size: 12, weight: .semibold))
+                            .foregroundColor(.safetText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.vertical, 5)
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.safetSignal.opacity(0.10))
+                .cornerRadius(6)
+            }
+
             if state.scanActive {
                 scanBanner(state)
             }
@@ -615,7 +646,9 @@ struct RadioScreen: View {
     // MARK: - channel controls
 
     private func channelRow(_ state: RadioUiState) -> some View {
-        VStack(spacing: 10) {
+        // Only offer zone stepping when the catalog actually has more than one zone.
+        let zoneCount = Set(state.channels.map { $0.zoneNumber }).count
+        return VStack(spacing: 10) {
             // Equatable so the once-per-second clock tick (which re-renders this
             // whole screen) doesn't rebuild the open dropdown and bounce its
             // scroll back to the top.
@@ -627,6 +660,18 @@ struct RadioScreen: View {
                 onSelect: { viewModel.handle(.selectChannel($0)) }
             )
             .equatable()
+            if zoneCount > 1 {
+                HStack(spacing: 10) {
+                    controlButton(title: "ZONE \u{25BC}", enabled: !state.channelsLoading) {
+                        viewModel.handle(.zoneDown)
+                    }
+                    .accessibilityLabel("Zone down")
+                    controlButton(title: "ZONE \u{25B2}", enabled: !state.channelsLoading) {
+                        viewModel.handle(.zoneUp)
+                    }
+                    .accessibilityLabel("Zone up")
+                }
+            }
             HStack(spacing: 10) {
                 controlButton(title: "CH \u{25BC}", enabled: !state.channelsLoading) {
                     viewModel.handle(.channelDown)
@@ -638,7 +683,7 @@ struct RadioScreen: View {
                 }
                 .accessibilityLabel("Channel up")
                 .accessibilityValue("Currently \(state.channelLabel)")
-                controlButton(title: "REPLAY", enabled: !state.channelsLoading) {
+                controlIconButton(systemImage: "gobackward", enabled: !state.channelsLoading) {
                     viewModel.replay()
                 }
                 .accessibilityLabel("Replay last message")
@@ -655,6 +700,26 @@ struct RadioScreen: View {
         Button(action: action) {
             Text(title)
                 .font(.safet(size: 13, weight: .bold))
+                .foregroundColor(enabled ? tint : .safetTextDim.opacity(0.5))
+                .frame(maxWidth: .infinity)
+                .frame(height: 46)
+                .background(Color.safetSurface)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.safetBorder, lineWidth: 1))
+                .cornerRadius(8)
+        }
+        .disabled(!enabled)
+    }
+
+    /// Icon variant of `controlButton` — used for the replay control.
+    private func controlIconButton(
+        systemImage: String,
+        tint: Color = .safetText,
+        enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.safet(size: 18, weight: .bold))
                 .foregroundColor(enabled ? tint : .safetTextDim.opacity(0.5))
                 .frame(maxWidth: .infinity)
                 .frame(height: 46)
