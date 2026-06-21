@@ -3147,6 +3147,24 @@ button.ch-kbd-chip:hover {
 .channel-card.workspace .ch-card-toolbar .state-chip {
   margin-right: auto;
 }
+/* Keep the workspace toolbar on a single row so the live RX / BUSY / ON AIR
+   status chips can't wrap the transport onto a second line. Previously, when a
+   unit keyed up the extra chips made the row overflow and `flex-wrap: wrap`
+   dropped the PTT / ON controls below the volume slider — which shoved the XMIT
+   pad and everything beneath it downward every time someone talked. With nowrap
+   the flexible volume slider absorbs the chips' width instead, and the
+   content-sized transport stays anchored on the right, so the controls and the
+   whole card body below stay put. */
+.channel-workspace-tile .channel-card.workspace .ch-card-toolbar {
+  flex-wrap: nowrap;
+}
+.channel-workspace-tile .channel-card.workspace .ch-card-toolbar .ch-toolbar-volume.volume-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.channel-workspace-tile .channel-card.workspace .ch-card-toolbar .ch-toolbar-transport {
+  flex: 0 0 auto;
+}
 /* Workspace grid: more panels per row on wider monitors */
 @media (min-width: 1180px) {
   .channel-dock {
