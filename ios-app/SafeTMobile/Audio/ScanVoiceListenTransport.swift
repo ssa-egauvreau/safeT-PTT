@@ -26,18 +26,6 @@ final class ScanVoiceListenTransport {
 
     private let listenPcmMagic: [UInt8] = [0xF6, 0xAC]
 
-    /// RX-only codec dispatch. Scan listeners pick the right decoder per
-    /// inbound frame's magic bytes so a channel on Codec2 or Opus stays
-    /// audible while scanning, not just the IMBE channels.
-    private let codecRegistry: VoiceCodecRegistry = {
-        let registry = VoiceCodecRegistry()
-        registry.registerDecoder(ImbeDecoder())
-        registry.registerDecoder(Codec2Decoder())
-        registry.registerDecoder(OpusDecoder())
-        registry.registerDecoder(AmbeDecoder())
-        return registry
-    }()
-
     init(baseURL: URL, token: String, unitId: String, audio: VoiceAudio, session: URLSession = .shared) {
         self.baseURL = baseURL
         self.token = token
@@ -80,8 +68,7 @@ final class ScanVoiceListenTransport {
                 audio: audio,
                 session: session,
                 logger: logger,
-                listenPcmMagic: listenPcmMagic,
-                codecRegistry: codecRegistry
+                listenPcmMagic: listenPcmMagic
             ) { [weak self] ch in
                 self?.onScanRx?(ch)
             } isAliveCheck: { [weak self] key in
@@ -121,9 +108,15 @@ final class ScanVoiceListenTransport {
         private let session: URLSession
         private let logger: Logger
         private let listenPcmMagic: [UInt8]
-        private let codecRegistry: VoiceCodecRegistry
         private let onRx: (String) -> Void
         private let isAlive: (String) -> Bool
+
+        /// Per-connection off-main decode pipeline. Each scan channel gets its
+        /// own decoder (and thus its own serial queue + isolated vocoder state),
+        /// so concurrent scan traffic neither corrupts a shared decoder nor
+        /// runs on the (background-throttled) main actor. `nonisolated` so the
+        /// background URLSession completion can hand it frames directly.
+        private nonisolated let inboundDecoder: InboundVoiceDecoder
 
         private var task: URLSessionWebSocketTask?
         private var closed = false
@@ -139,7 +132,6 @@ final class ScanVoiceListenTransport {
             session: URLSession,
             logger: Logger,
             listenPcmMagic: [UInt8],
-            codecRegistry: VoiceCodecRegistry,
             onRx: @escaping (String) -> Void,
             isAliveCheck: @escaping (String) -> Bool
         ) {
@@ -152,9 +144,17 @@ final class ScanVoiceListenTransport {
             self.session = session
             self.logger = logger
             self.listenPcmMagic = listenPcmMagic
-            self.codecRegistry = codecRegistry
             self.onRx = onRx
             self.isAlive = isAliveCheck
+            self.inboundDecoder = InboundVoiceDecoder(
+                channelLabel: channelLabel,
+                audio: audio,
+                listenPcmMagic: listenPcmMagic,
+                logger: logger
+            )
+            // Fires only when a decoded frame actually won the scan arbitration
+            // slot, so the "scanning" banner stops flapping between channels.
+            inboundDecoder.setOnPlayed { [onRx, channelLabel] in onRx(channelLabel) }
         }
 
         func open() {
@@ -195,7 +195,7 @@ final class ScanVoiceListenTransport {
             // Scan sockets are listen-only — advertise decode caps so the
             // server's join logging accurately reflects what this client can
             // hear. The relay never asks a scan socket to TX.
-            let caps = codecRegistry.decodableCodecs().map { $0.wireId }
+            let caps = inboundDecoder.decodableCaps()
             let join: [String: Any] = [
                 "type": "join",
                 "channel": channelLabel,
@@ -219,89 +219,24 @@ final class ScanVoiceListenTransport {
                         self.scheduleReconnect()
                     }
                 case .success(let message):
-                    // Handle + re-arm on the main actor — `listen()` is
-                    // @MainActor and touches `task`, so calling it from this
-                    // background completion handler was a data race.
-                    Task { @MainActor in
-                        self.handle(message)
-                        self.listen()
+                    // Voice (binary) frames decode + play OFF the main actor via
+                    // the per-connection InboundVoiceDecoder, so a throttled main
+                    // run loop (app backgrounded) can't starve scan playout. The
+                    // decoder skips the `0xF6 0xAC` clear-PCM echo itself and
+                    // routes playout through `VoiceAudio.enqueueScan` arbitration.
+                    // Signalling (text) frames and the receive re-arm stay on the
+                    // main actor — `listen()` touches `task`, and re-arming there
+                    // was a data race against main-thread teardown.
+                    if case .data(let payload) = message {
+                        self.inboundDecoder.submit(payload)
+                    } else if case .string(let text) = message {
+                        Task { @MainActor in
+                            if self.isJoinedFrame(text) { self.reconnectAttempts = 0 }
+                        }
                     }
+                    Task { @MainActor in self.listen() }
                 }
             }
-        }
-
-        @MainActor
-        private func handle(_ message: URLSessionWebSocketTask.Message) {
-            switch message {
-            case .data(let payload):
-                dispatchInboundVoice(payload)
-            case .string(let text):
-                // `busy`/`error` aren't actionable for a listen-only scan socket —
-                // primary RX/TX signalling comes from the home channel's transport.
-                // `joined` still matters: it confirms a reconnect succeeded, so
-                // reset the backoff counter to avoid stale 30 s delays on the next
-                // isolated drop.
-                if isJoinedFrame(text) { reconnectAttempts = 0 }
-            @unknown default:
-                break
-            }
-        }
-
-        private func dispatchInboundVoice(_ payload: Data) {
-            // The server echoes the talker's own clear-PCM listen frames back
-            // through this same socket as a `0xF6 0xAC` envelope — skip them.
-            if payload.count >= 2,
-               payload[payload.startIndex] == listenPcmMagic[0],
-               payload[payload.startIndex + 1] == listenPcmMagic[1] {
-                return
-            }
-            if payload.count >= 2,
-               let decoder = codecRegistry.decoder(
-                   forMagic: payload[payload.startIndex],
-                   payload[payload.startIndex + 1]
-               ) {
-                if decoder.codec == .imbe, !P25ImbeNative.isAvailable, !P25ImbeNative.initialize() {
-                    logger.warning("scan IMBE frame discarded — vocoder not loaded")
-                    return
-                }
-                if decoder.codec == .ambe_2450, !P25AmbeNative.isAvailable, !P25AmbeNative.initialize() {
-                    logger.warning("scan AMBE frame discarded — vocoder not loaded")
-                    return
-                }
-                guard decoder.isReady else { return }
-                guard let samples = decoder.decodeFrame(payload) else { return }
-                let pcm16: Data
-                if decoder.nativeSampleRate == 8000 {
-                    pcm16 = P25ImbeNative.Frames.upsampleDup8kToLe16Mono(pcm8k160: samples)
-                } else {
-                    pcm16 = Self.shortLeMonoBytes(samples)
-                }
-                // Route through scan arbitration: only fire onRx (which updates
-                // the "scanning" banner) when this channel actually won the slot,
-                // so the banner stops flapping when several scan channels key up.
-                if audio.enqueueScan(channel: channelLabel, pcm16) {
-                    onRx(channelLabel)
-                }
-                return
-            }
-            // Clear-PCM payload from a peer that lacks any vocoder.
-            if audio.enqueueScan(channel: channelLabel, payload) {
-                onRx(channelLabel)
-            }
-        }
-
-        private static func shortLeMonoBytes(_ samples: [Int16]) -> Data {
-            var out = Data(count: samples.count * 2)
-            out.withUnsafeMutableBytes { raw in
-                guard let base = raw.baseAddress else { return }
-                let bytes = base.assumingMemoryBound(to: UInt8.self)
-                for (i, s) in samples.enumerated() {
-                    let le = UInt16(bitPattern: s)
-                    bytes[i * 2] = UInt8(le & 0xff)
-                    bytes[i * 2 + 1] = UInt8((le >> 8) & 0xff)
-                }
-            }
-            return out
         }
 
         private func isJoinedFrame(_ text: String) -> Bool {

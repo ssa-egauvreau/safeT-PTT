@@ -24,8 +24,8 @@ import os
 ///   - Idle windows (zero counters) are sent too so the dashboard can tell
 ///     "this unit is alive but quiet" apart from "this unit fell off the air".
 ///
-/// Thread safety: counters are mutated from `VoiceTransport.dispatchInboundVoice`
-/// (the main actor) and `InboundJitterBuffer.playoutLoop` (a dedicated thread).
+/// Thread safety: counters are mutated from each `InboundVoiceDecoder`'s serial
+/// decode queue and from `InboundJitterBuffer.playoutLoop` (a dedicated thread).
 /// All accesses go through `lock`; the snapshot path closes the in-flight
 /// window under the same lock.
 final class VoiceLinkTelemetryReporter {

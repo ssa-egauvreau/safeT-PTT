@@ -39,6 +39,10 @@ final class VoiceAudio {
 
     // MARK: - scan priority / hold (mirrors Android InboundVoicePlayer)
 
+    /// Guards the scan-arbitration state below. The enqueue path now runs off the
+    /// main actor on per-channel decode queues (see InboundVoiceDecoder), so the
+    /// home queue and each scan queue can call enqueue* concurrently.
+    private let holdLock = NSLock()
     /// While the home channel is active, scan audio is suppressed until this time.
     private var mainHoldUntil: TimeInterval = 0
     /// The one scan channel currently allowed through, and until when.
@@ -238,9 +242,22 @@ final class VoiceAudio {
         guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return }
         // The home channel takes priority: while it's actively receiving, hold
         // off scan audio for a short window so scan traffic can't fight it.
+        holdLock.lock()
         mainHoldUntil = ProcessInfo.processInfo.systemUptime + mainHoldSeconds
-        onEnqueuedIncoming?(pcm16)
+        holdLock.unlock()
+        notifyEnqueued(pcm16)
         jitterBuffer.enqueue(pcm16)
+    }
+
+    /// Marshal the replay-capture callback to the main actor — it mutates
+    /// view-model state and the enqueue path now runs off-main.
+    private func notifyEnqueued(_ pcm16: Data) {
+        guard let onEnqueuedIncoming else { return }
+        if Thread.isMainThread {
+            onEnqueuedIncoming(pcm16)
+        } else {
+            DispatchQueue.main.async { onEnqueuedIncoming(pcm16) }
+        }
     }
 
     /// Enqueues a scan-channel PCM16 frame, arbitrating so that only ONE scan
@@ -256,17 +273,20 @@ final class VoiceAudio {
     func enqueueScan(channel: String, _ pcm16: Data) -> Bool {
         guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return false }
         let now = ProcessInfo.processInfo.systemUptime
+        holdLock.lock()
         // Home channel has the floor.
-        if now < mainHoldUntil { return false }
+        if now < mainHoldUntil { holdLock.unlock(); return false }
         // A different scan channel still holds the slot — suppress this one.
         if let active = activeScanChannel,
            active.caseInsensitiveCompare(channel) != .orderedSame,
            now < scanHoldUntil {
+            holdLock.unlock()
             return false
         }
         activeScanChannel = channel
         scanHoldUntil = now + scanHoldSeconds
-        onEnqueuedIncoming?(pcm16)
+        holdLock.unlock()
+        notifyEnqueued(pcm16)
         jitterBuffer.enqueue(pcm16)
         return true
     }
