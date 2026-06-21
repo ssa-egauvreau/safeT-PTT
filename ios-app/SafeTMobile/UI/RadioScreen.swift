@@ -295,10 +295,6 @@ struct RadioScreen: View {
                 .font(.safet(size: 12, weight: .semibold))
                 .foregroundColor(.safetTextDim)
             Spacer()
-            Text(state.systemTime)
-                .font(.safet(size: 13, weight: .semibold))
-                .foregroundColor(.safetText)
-            Spacer()
             audioRouteMenu
             networkPill(state)
         }
@@ -384,7 +380,6 @@ struct RadioScreen: View {
             tabButton(icon: "map", label: "MAP") { showingMap = true }
             tabButton(icon: "person.2.fill", label: "UNITS") { showingUnits = true }
             tabButton(icon: "text.bubble", label: "TX LOG") { showingTranscripts = true }
-            tabButton(icon: "waveform.circle", label: "CHANNELS") { showingMultiChannel = true }
             tabButton(
                 icon: "dot.radiowaves.left.and.right",
                 label: "SCAN",
@@ -750,11 +745,16 @@ struct RadioScreen: View {
     // MARK: - PTT
 
     private func pttBar(_ state: RadioUiState) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 6) {
             pttTitleView(state)
-            Text(pttSubtitle(state))
-                .font(.safet(size: 10, weight: .semibold))
-                .opacity(0.85)
+            if state.isTransmitting {
+                // Visual "on air" cue — animated bars while transmitting.
+                TransmitWaveform()
+            } else {
+                Text(pttSubtitle(state))
+                    .font(.safet(size: 10, weight: .semibold))
+                    .opacity(0.85)
+            }
         }
         .foregroundColor(state.isListenOnly ? .safetTextDim : .white)
         .frame(maxWidth: .infinity)
@@ -762,7 +762,7 @@ struct RadioScreen: View {
         .background(pttColor(state))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(state.isListenOnly ? Color.safetBorder : Color.clear, lineWidth: 1)
+                .stroke(pttOutlineColor(state), lineWidth: 2)
         )
         .cornerRadius(12)
         // Listen-only channels can't key — grey the bar out and swallow taps so
@@ -829,7 +829,40 @@ struct RadioScreen: View {
         if state.pttBusyTone { return .safetRed }
         if state.isTransmitting { return .safetGreen }
         if state.isPttPressed { return .safetGreen.opacity(0.5) }
-        return .safetBlue
+        // Deep, saturated blue for the idle "HOLD TO TALK" state (the old
+        // .safetBlue read too light/washed out).
+        return Color(red: 0.10, green: 0.27, blue: 0.74)
+    }
+
+    /// Crisp outline around the PTT bar so it reads as a distinct button.
+    private func pttOutlineColor(_ state: RadioUiState) -> Color {
+        if state.isListenOnly { return .safetBorder }
+        return Color.white.opacity(0.85)
+    }
+}
+
+/// Animated "on air" bars shown on the PTT bar while transmitting. Staggered
+/// so it reads like a live level meter. (Not yet wired to real mic level.)
+private struct TransmitWaveform: View {
+    @State private var animating = false
+    private let bars = 7
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<bars, id: \.self) { i in
+                Capsule()
+                    .fill(Color.white)
+                    .frame(width: 3, height: animating ? 22 : 6)
+                    .animation(
+                        .easeInOut(duration: 0.3 + Double(i % 4) * 0.07)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(i) * 0.06),
+                        value: animating
+                    )
+            }
+        }
+        .frame(height: 24)
+        .onAppear { animating = true }
     }
 }
 
