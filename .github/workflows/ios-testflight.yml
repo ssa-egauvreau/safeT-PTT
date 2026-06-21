@@ -1,0 +1,143 @@
+name: iOS TestFlight
+
+# Builds a signed Release archive of the iOS handset and uploads it to
+# TestFlight. Manual trigger only (workflow_dispatch) so an iOS push doesn't
+# spam TestFlight — run it from the Actions tab when you want a new build.
+#
+# REQUIRED REPO SECRETS (Settings → Secrets and variables → Actions):
+#   APPLE_TEAM_ID                  Your 10-char Apple Developer Team ID.
+#   APP_STORE_CONNECT_API_KEY_ID   App Store Connect API key ID (e.g. ABC123DE45).
+#   APP_STORE_CONNECT_API_ISSUER_ID  The issuer ID (a UUID) for that key.
+#   APP_STORE_CONNECT_API_KEY_P8   The .p8 key file contents, base64-encoded
+#                                  (`base64 -i AuthKey_XXXX.p8 | pbcopy`).
+#
+# PREREQUISITES (one-time, in the Apple Developer portal / App Store Connect):
+#   - An App Store Connect API key with "App Manager" (or higher) access.
+#   - App records for the bundle ids com.safetptt.mobile and
+#     com.safetptt.mobile.liveactivity, plus the app group
+#     group.com.safetptt.mobile. Automatic signing (-allowProvisioningUpdates)
+#     registers identifiers/profiles, but the App Store Connect *app record*
+#     for com.safetptt.mobile must exist before TestFlight will accept a build.
+#
+# This workflow is unverified end-to-end from CI authoring — the first run may
+# need a tweak (signing/capabilities are account-specific). The reliable manual
+# path (Xcode → Archive → Distribute → TestFlight) is documented in
+# ios-app/README.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      whats_new:
+        description: "Optional TestFlight 'What to Test' notes"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  testflight:
+    name: Build & upload to TestFlight
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios-app
+    env:
+      ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # libcodec2 submodule is needed for the codec2 JNI/C sources.
+          submodules: recursive
+
+      - name: Verify required secrets are set
+        run: |
+          : "${ASC_KEY_ID:?Set the APP_STORE_CONNECT_API_KEY_ID secret}"
+          : "${ASC_ISSUER_ID:?Set the APP_STORE_CONNECT_API_ISSUER_ID secret}"
+          : "${APPLE_TEAM_ID:?Set the APPLE_TEAM_ID secret}"
+          if [ -z "${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}" ]; then
+            echo "::error::APP_STORE_CONNECT_API_KEY_P8 secret is empty"; exit 1
+          fi
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Install the App Store Connect API key
+        run: |
+          KEY_DIR="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$KEY_DIR"
+          echo "${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}" | base64 --decode \
+            > "$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
+          chmod 600 "$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: Generate Xcode project
+        run: ./setup.sh
+
+      - name: Compute build number
+        id: build
+        # 1000 + run_number keeps the TestFlight build number unique + monotonic.
+        run: echo "number=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
+
+      - name: Archive (Release, automatic signing)
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project SafeTMobile.xcodeproj \
+            -scheme SafeTMobile \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/SafeTMobile.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            CURRENT_PROJECT_VERSION="${{ steps.build.outputs.number }}" \
+            2>&1 | tee xcodebuild-archive.log
+
+      - name: Export signed IPA
+        run: |
+          set -o pipefail
+          cat > build/ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>destination</key><string>export</string>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath build/SafeTMobile.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist build/ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8" \
+            2>&1 | tee xcodebuild-export.log
+
+      - name: Upload to TestFlight
+        run: |
+          IPA=$(ls build/export/*.ipa | head -1)
+          echo "Uploading $IPA (build ${{ steps.build.outputs.number }})"
+          xcrun altool --upload-app -f "$IPA" -t ios \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-testflight-logs
+          path: |
+            ios-app/xcodebuild-archive.log
+            ios-app/xcodebuild-export.log
+          if-no-files-found: warn
+          retention-days: 7

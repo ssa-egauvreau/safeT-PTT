@@ -76,11 +76,32 @@ final class SettingsStore: ObservableObject {
         playbackVolume = defaults.object(forKey: Keys.playbackVolume) as? Float ?? 1.0
     }
 
+    // MARK: - Scan selection persistence
+
+    /// Persist the operator's scan picks (lowercased channel names) and whether
+    /// scan was armed, so the selection survives relaunch — mirrors the Android
+    /// scan persistence. Plain UserDefaults (not @Published): the ViewModel owns
+    /// scan state, this is just durable storage.
+    func saveScanSelection(channels: Set<String>, active: Bool) {
+        defaults.set(Array(channels), forKey: Keys.scanChannels)
+        defaults.set(active, forKey: Keys.scanActive)
+    }
+
+    var savedScanChannels: Set<String> {
+        Set((defaults.array(forKey: Keys.scanChannels) as? [String]) ?? [])
+    }
+
+    var savedScanActive: Bool {
+        defaults.bool(forKey: Keys.scanActive)
+    }
+
     private enum Keys {
         static let appColorScheme = "safet.appColorScheme"
         static let hardwarePtt = "safet.hardwarePttEnabled"
         static let audioRoute = "safet.audioRoute"
         static let notificationSounds = "safet.notificationSoundsEnabled"
         static let playbackVolume = "safet.playbackVolume"
+        static let scanChannels = "safet.scanIncludedChannels"
+        static let scanActive = "safet.scanActive"
     }
 }

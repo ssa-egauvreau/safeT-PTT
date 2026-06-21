@@ -35,6 +35,9 @@ final class RadioViewModel: ObservableObject {
     private var channelIndex = 0
     private var inboxSince = 0
     private var inboxPrimed = false
+    /// True once the persisted scan picks have been restored into the catalog
+    /// (only on the first catalog load, so later refreshes don't clobber edits).
+    private var scanRestored = false
     private var voiceStarted = false
     private var pttAirPollTask: Task<Void, Never>?
 
@@ -274,7 +277,16 @@ final class RadioViewModel: ObservableObject {
             // Drop any scan entries that no longer exist in the catalog so the
             // picker / transport never tries to listen to a removed channel.
             let validKeys = Set(channelNames.map { $0.lowercased() })
-            uiState.scanIncludedChannels = uiState.scanIncludedChannels.intersection(validKeys)
+            if !scanRestored {
+                // First catalog load: restore the operator's persisted scan picks
+                // (and armed state) so they survive a relaunch — mirrors Android.
+                scanRestored = true
+                let saved = SettingsStore.shared.savedScanChannels.intersection(validKeys)
+                uiState.scanIncludedChannels = saved
+                uiState.scanActive = SettingsStore.shared.savedScanActive && !saved.isEmpty
+            } else {
+                uiState.scanIncludedChannels = uiState.scanIncludedChannels.intersection(validKeys)
+            }
             applyTuning()
             uiState.statusMessage = "READY"
             locationReporter.setChannel(currentChannel)
@@ -746,6 +758,7 @@ final class RadioViewModel: ObservableObject {
             scanBannerClearTask = nil
         }
         uiState.statusMessage = uiState.scanActive ? scanStatusMessage() : "SCAN OFF"
+        persistScan()
         refreshScanTransport()
     }
 
@@ -755,7 +768,16 @@ final class RadioViewModel: ObservableObject {
         if uiState.scanActive {
             uiState.statusMessage = scanStatusMessage()
         }
+        persistScan()
         refreshScanTransport()
+    }
+
+    /// Persist the current scan picks + armed state so they survive relaunch.
+    private func persistScan() {
+        SettingsStore.shared.saveScanSelection(
+            channels: uiState.scanIncludedChannels,
+            active: uiState.scanActive
+        )
     }
 
     private func refreshScanTransport() {
@@ -929,6 +951,9 @@ final class RadioViewModel: ObservableObject {
         if uiState.channelTen33 { return "" }
         let name = air?.transmittingDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let name, !name.isEmpty {
+            // Drop the name when it just repeats the unit id (bridges/SDR feeds
+            // often carry the same string, which read as "27 AI • 27 AI").
+            if name.caseInsensitiveCompare(tx) == .orderedSame { return "RX: \(tx)" }
             return "RX: \(tx) • \(name)"
         }
         return "RX: \(tx) • VOICE"
@@ -952,7 +977,8 @@ final class RadioViewModel: ObservableObject {
     private func formatTalker(snapshot: TalkerSnapshot, prefix: String) -> String {
         let uid = snapshot.unitId?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? "---"
         let un = snapshot.username?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let un, !un.isEmpty {
+        // Drop the name when it just repeats the unit id (deduped like Android).
+        if let un, !un.isEmpty, un.caseInsensitiveCompare(uid) != .orderedSame {
             return "\(prefix): \(uid) • \(un)"
         }
         return "\(prefix): \(uid)"
@@ -1045,6 +1071,20 @@ final class RadioViewModel: ObservableObject {
                     uiState.activeTalkDisplayName = ""
                     uiState.rxFromScan = false
                 }
+            }
+            // Mirror the live AI-dispatcher cue. The server clears (returns nil)
+            // a few seconds after she's done talking, so the overlay auto-dismisses
+            // simply by following the inbox.
+            let nextAi: AiActivityUi? = response.aiActivity.map { ai in
+                AiActivityUi(
+                    phase: ai.phase.lowercased() == "speaking" ? .speaking : .thinking,
+                    forYou: ai.forYou,
+                    text: ai.text ?? "",
+                    tag: ai.tag ?? ""
+                )
+            }
+            if nextAi != uiState.aiActivity {
+                uiState.aiActivity = nextAi
             }
         } catch {
             // Keep the last cursor; try again on the next tick.

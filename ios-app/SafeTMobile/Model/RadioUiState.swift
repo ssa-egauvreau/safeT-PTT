@@ -34,6 +34,23 @@ struct ChannelOption: Identifiable, Equatable {
     }
 }
 
+/// What the AI dispatcher is doing right now, for the Siri-style on-radio cue.
+enum AiActivityPhase: Equatable {
+    case thinking
+    case speaking
+}
+
+/// Live AI-dispatcher activity mirrored from `/radio/inbox`. Nil when idle.
+struct AiActivityUi: Equatable {
+    var phase: AiActivityPhase
+    /// True when she's responding to THIS radio (full cue vs. a dimmer net-wide one).
+    var forYou: Bool
+    /// Her reply text, shown while speaking.
+    var text: String = ""
+    /// Short action tag, e.g. "LOOKUP: PLATE".
+    var tag: String = ""
+}
+
 /// Immutable-ish snapshot of the radio shell. `RadioViewModel` is the source of truth.
 struct RadioUiState {
     var systemTime = "--:--"
@@ -113,6 +130,10 @@ struct RadioUiState {
     var channelCodecLabel = ""
     /// Dispatcher 10-33 emergency-traffic marker on the tuned channel.
     var channelTen33 = false
+
+    /// Live AI-dispatcher activity (thinking / speaking) on the tuned channel,
+    /// or nil when idle. Drives the Siri-style AI overlay.
+    var aiActivity: AiActivityUi?
 
     /// Timestamp the current voice link came up; used to render "Connected · Ns"
     /// in the network pill. Nil when not connected.

@@ -50,21 +50,42 @@ struct InboxAlert: Decodable {
     let active: Bool
 }
 
+/// The `ai_activity` block from `/radio/inbox` — what the AI dispatcher is doing
+/// right now on the tuned channel. `for_you` is true when this radio is the unit
+/// she's responding to (drives the full thinking cue vs. a quiet net-wide one).
+struct InboxAiActivity: Decodable {
+    let phase: String
+    let unit: String
+    let forYou: Bool
+    let text: String?
+    let tag: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case phase, unit, text, tag
+        case forYou = "for_you"
+    }
+}
+
 struct InboxResponse: Decodable {
     let alerts: [InboxAlert]
     let lastId: Int
     /// Channel names with 10-33 (emergency traffic) active — from inbox poll.
     let ten33: [String]
+    /// Live AI-dispatcher activity on the tuned channel (thinking / speaking),
+    /// or nil when she's idle. Drives the Siri-style on-radio overlay.
+    let aiActivity: InboxAiActivity?
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         alerts = try c.decode([InboxAlert].self, forKey: .alerts)
         lastId = try c.decode(Int.self, forKey: .lastId)
         ten33 = try c.decodeIfPresent([String].self, forKey: .ten33) ?? []
+        aiActivity = try c.decodeIfPresent(InboxAiActivity.self, forKey: .aiActivity)
     }
 
     private enum CodingKeys: String, CodingKey {
         case alerts, lastId, ten33
+        case aiActivity = "ai_activity"
     }
 }
 

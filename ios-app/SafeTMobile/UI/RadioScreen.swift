@@ -161,6 +161,11 @@ struct RadioScreen: View {
                 pttBar(state)
             }
             .padding(16)
+            // Siri-style AI-dispatcher overlay, centered over the radio UI so the
+            // channel name / buttons around it stay visible. Keying PTT drops it.
+            AiActivityOverlayView(activity: state.aiActivity, pttPressed: state.isPttPressed)
+                .allowsHitTesting(false)
+                .animation(.easeInOut(duration: 0.25), value: state.aiActivity)
         }
         .onChange(of: scenePhase) { phase in
             // Clear the Dynamic Island when the app is closed/backgrounded and
@@ -760,5 +765,121 @@ struct RadioScreen: View {
         if state.isTransmitting { return .safetGreen }
         if state.isPttPressed { return .safetGreen.opacity(0.5) }
         return .safetBlue
+    }
+}
+
+// MARK: - AI dispatcher activity overlay
+
+/// Rainbow used by the AI overlay (orb sweep, chip, response rule). File-scoped
+/// so the three overlay views share one definition.
+private let aiRainbow: [Color] = [
+    Color(red: 1.00, green: 0.37, blue: 0.43),
+    Color(red: 1.00, green: 0.76, blue: 0.44),
+    Color(red: 0.22, green: 0.98, blue: 0.84),
+    Color(red: 0.50, green: 0.50, blue: 0.84),
+    Color(red: 1.00, green: 0.37, blue: 0.43),
+]
+
+/// Siri/Gemini-style overlay shown while the AI dispatcher is thinking or
+/// speaking. Centered over the radio UI (the channel name and the buttons around
+/// it stay visible). Mirrors the Android `AiActivityOverlay`: keying PTT drops
+/// it, and a "thinking" cue only shows on the radio she's actually answering.
+private struct AiActivityOverlayView: View {
+    let activity: AiActivityUi?
+    let pttPressed: Bool
+
+    var body: some View {
+        if let activity, !pttPressed, shouldShow(activity) {
+            VStack(spacing: 18) {
+                chip
+                switch activity.phase {
+                case .thinking: AiThinkingVisual()
+                case .speaking: AiSpeakingVisual(activity: activity)
+                }
+            }
+            .padding(22)
+            .frame(maxWidth: 360)
+            .background(Color.safetSurface.opacity(0.96))
+            .clipShape(RoundedRectangle(cornerRadius: 22))
+            .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.safetBorder, lineWidth: 1))
+            .padding(.horizontal, 16)
+            .transition(.opacity)
+        }
+    }
+
+    private func shouldShow(_ a: AiActivityUi) -> Bool {
+        // While she's only *thinking*, show the cue just for the radio she's
+        // answering. Once she *speaks* it's on-air for everyone on the channel.
+        if a.phase == .thinking && !a.forYou { return false }
+        return true
+    }
+
+    private var chip: some View {
+        Text("\u{2726} AI DISPATCH")
+            .font(.safet(size: 13, weight: .bold))
+            .foregroundColor(Color(red: 0.04, green: 0.04, blue: 0.07))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 4)
+            .background(
+                LinearGradient(colors: aiRainbow, startPoint: .leading, endPoint: .trailing)
+            )
+            .clipShape(Capsule())
+    }
+}
+
+/// Breathing rainbow orb + "THINKING" + rippling dots.
+private struct AiThinkingVisual: View {
+    @State private var spin = false
+    @State private var pulse = false
+
+    var body: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(AngularGradient(gradient: Gradient(colors: aiRainbow), center: .center))
+                    .frame(width: 96, height: 96)
+                    .rotationEffect(.degrees(spin ? 360 : 0))
+                    .scaleEffect(pulse ? 1.0 : 0.9)
+                Circle()
+                    .fill(Color.safetSurface.opacity(0.88))
+                    .frame(width: 52, height: 52)
+            }
+            Text("THINKING")
+                .font(.safet(size: 26, weight: .heavy))
+                .foregroundColor(.safetText)
+            Text("\u{2022}  \u{2022}  \u{2022}")
+                .font(.safet(size: 26, weight: .bold))
+                .foregroundColor(.safetText)
+                .opacity(pulse ? 1.0 : 0.35)
+        }
+        .onAppear {
+            withAnimation(.linear(duration: 2.6).repeatForever(autoreverses: false)) { spin = true }
+            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { pulse = true }
+        }
+    }
+}
+
+/// Rainbow-themed response: a short action tag, a rainbow rule, then what she said.
+private struct AiSpeakingVisual: View {
+    let activity: AiActivityUi
+
+    var body: some View {
+        VStack(spacing: 12) {
+            if !activity.tag.isEmpty {
+                Text(activity.tag)
+                    .font(.safet(size: 14, weight: .bold))
+                    .foregroundColor(.safetBlue)
+                    .multilineTextAlignment(.center)
+            }
+            Capsule()
+                .fill(LinearGradient(colors: aiRainbow, startPoint: .leading, endPoint: .trailing))
+                .frame(width: 120, height: 3)
+            Text(activity.text.isEmpty ? "\u{2026}" : activity.text)
+                .font(.safet(size: 22, weight: .semibold))
+                .foregroundColor(.safetText)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
