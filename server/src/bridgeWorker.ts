@@ -300,6 +300,15 @@ function runBridge(bridge: AgencyBridgeRow): RunningBridge {
           "-loglevel",
           "error",
           "-nostdin",
+          // Cap each ingest to a single decode/filter thread. A bridge only
+          // produces a low-bitrate mono PCM trickle, so it doesn't need more —
+          // and the EAGAIN that stops new bridges starting is the container
+          // running out of process/thread slots. One thread per ffmpeg keeps the
+          // total footprint small enough that many SDR bridges can run at once.
+          "-threads",
+          "1",
+          "-filter_threads",
+          "1",
           // Pace ingestion to real time. A no-op for genuine live streams (they
           // already arrive at 1x); for a file-like URL it stops ffmpeg dumping
           // the whole source at once and flooding the channel.
