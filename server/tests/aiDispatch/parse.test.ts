@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { normalizeAiDispatchParse } from "../../src/aiDispatch/parse.js";
+import { canonicalizeCallsign, normalizeAiDispatchParse } from "../../src/aiDispatch/parse.js";
 
 function base(): Record<string, unknown> {
   return {
@@ -125,6 +125,29 @@ test("normalizeAiDispatchParse: trims string fields and drops blanks", () => {
   assert.equal(out!.code, "415");
   assert.equal(out!.location_name, "Honda Center");
   assert.equal(out!.comment_text, "STARTED FOOT PURSUIT");
+});
+
+test("canonicalizeCallsign: command-staff 27-0XX is normalized from spoken forms", () => {
+  // The exact bug: LLM emits "27 000" (space) → must become "27-000" so the
+  // downstream ^27- matchers (10-8 status, readback) recognize the callsign.
+  assert.equal(canonicalizeCallsign("27 000"), "27-000");
+  assert.equal(canonicalizeCallsign("27000"), "27-000");
+  assert.equal(canonicalizeCallsign("27-000"), "27-000");
+  assert.equal(canonicalizeCallsign("27 - 000"), "27-000");
+  assert.equal(canonicalizeCallsign("  27 010  "), "27-010");
+  assert.equal(canonicalizeCallsign("27-030"), "27-030");
+});
+
+test("canonicalizeCallsign: patrol callsigns and radio IDs pass through untouched", () => {
+  assert.equal(canonicalizeCallsign("352"), "352");
+  assert.equal(canonicalizeCallsign("1704"), "1704");
+  assert.equal(canonicalizeCallsign("david-12"), "DAVID-12");
+});
+
+test("normalizeAiDispatchParse: canonicalizes a spoken command-staff callsign", () => {
+  const out = normalizeAiDispatchParse({ ...base(), unit: "27 000" });
+  assert.ok(out);
+  assert.equal(out!.unit, "27-000");
 });
 
 test("normalizeAiDispatchParse: comment_text is truncated to 240 chars (10-8 comment guard)", () => {

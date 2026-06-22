@@ -31,6 +31,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildLookupDisplay,
   buildPlateReadback,
   buildVinReadback,
   consumePendingPlateRequest,
@@ -46,6 +47,53 @@ let UNIQ = 0;
 function uniqAgency(): number {
   return 800_000 + Math.floor(Date.now() % 100_000) + UNIQ++;
 }
+
+// ---------- buildLookupDisplay (clean screen text, NOT phonetic) ---------
+
+test("buildLookupDisplay: plate return shows literal plate + vehicle, no phonetics", () => {
+  const out = buildLookupDisplay({
+    ok: true,
+    plate: "8ABC123",
+    state: "CA",
+    year: "2019",
+    make: "Toyota",
+    model: "Camry",
+    color: "Blue",
+    vin: "4T1BF1FK5CU123456",
+  });
+  assert.ok(out);
+  assert.equal(out!.text, "8ABC123 (CA) — 2019 Toyota Camry Blue");
+  assert.equal(out!.plate, "8ABC123");
+  // Full VIN surfaced so the client can bold the last six.
+  assert.equal(out!.vin, "4T1BF1FK5CU123456");
+  // Never spelled out phonetically.
+  assert.ok(!/Alpha|Bravo|Charlie/.test(out!.text));
+});
+
+test("buildLookupDisplay: VIN-only return heads with the VIN", () => {
+  const out = buildLookupDisplay({
+    ok: true,
+    plate: null,
+    vin: "1HGCM82633A123456",
+    year: "2003",
+    make: "Honda",
+    model: "Accord",
+  });
+  assert.ok(out);
+  assert.equal(out!.text, "VIN 1HGCM82633A123456 — 2003 Honda Accord");
+  assert.equal(out!.vin, "1HGCM82633A123456");
+});
+
+test("buildLookupDisplay: no-record return is a clean reason, not failure speech", () => {
+  const out = buildLookupDisplay({ ok: false, plate: "8ABC123", state: "CA", reason: "no_record" });
+  assert.ok(out);
+  assert.equal(out!.text, "8ABC123 (CA) — no record on file");
+});
+
+test("buildLookupDisplay: null lookup yields null", () => {
+  assert.equal(buildLookupDisplay(null), null);
+  assert.equal(buildLookupDisplay(undefined), null);
+});
 
 // ---------- buildPlateReadback ------------------------------------------
 

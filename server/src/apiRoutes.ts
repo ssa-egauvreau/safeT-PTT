@@ -3061,6 +3061,13 @@ export function createApiRouter(): Router {
             // True when this poll's radio is the unit she's responding to.
             for_you: activity.unitId === unit,
             text: activity.text ?? null,
+            // Clean, screen-friendly form (no phonetics); clients prefer this
+            // over `text` for display. Plate/VIN returns also carry the literal
+            // plate + full VIN so the handset can render "8ABC123" and bold the
+            // last six of the VIN instead of the spelled-out TTS.
+            display_text: activity.displayText ?? null,
+            plate: activity.plate ?? null,
+            vin: activity.vin ?? null,
             tag: activity.tag ?? null,
           }
         : null;

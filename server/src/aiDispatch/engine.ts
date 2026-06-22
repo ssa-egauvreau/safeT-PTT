@@ -71,7 +71,7 @@ import {
   buildTen8AddVehicleBodyCombined,
   formatTen8VehicleLookupComment,
 } from "../ten8/vehicles.js";
-import type { PlateLookupResult } from "./plateLookup.js";
+import { buildLookupDisplay, type PlateLookupResult } from "./plateLookup.js";
 import type { AiDispatchParseResult } from "./parse.js";
 
 const queue: number[] = [];
@@ -544,6 +544,10 @@ async function processTransmission(transmissionId: number): Promise<void> {
         parsed,
       });
       plateLookup = plate.lookup;
+      // Clean, screen-friendly form of a plate/VIN return ("8ABC123 — 2019
+      // Toyota Camry" + the full VIN) so handsets/console show the literal data
+      // instead of the phonetic TTS ("eight Alpha Bravo Charlie…").
+      const lookupDisplay = buildLookupDisplay(plate.lookup);
 
       ten8Actions = {};
       if (parsed.recommended_action) {
@@ -787,7 +791,14 @@ async function processTransmission(transmissionId: number): Promise<void> {
       if (allowOnAir && speakText && parsed.intent !== "request_info") {
         const reply = adaptDispatcherResponseForChannel(speakText, tx.channel_name);
         parsed = { ...parsed, dispatcher_response: reply };
-        setAiSpeaking(tx.agency_id, tx.channel_name, unitId, reply, aiActionTag(parsed));
+        setAiSpeaking(
+          tx.agency_id,
+          tx.channel_name,
+          unitId,
+          reply,
+          aiActionTag(parsed),
+          ttsKind === "plate_readback" ? lookupDisplay ?? undefined : undefined,
+        );
         spokeOnAir = await speakDispatcherReply(
           tx,
           transmissionId,
@@ -917,7 +928,11 @@ async function processTransmission(transmissionId: number): Promise<void> {
         agencyId: tx.agency_id,
         transmissionId,
         channelName: tx.channel_name,
-        unitId,
+        // Attribute the log to the SPOKEN callsign when the officer stated one
+        // (e.g. "352") rather than the radio's hardware unit_id (e.g. "1704") —
+        // an officer in a pool car keeps their own callsign. This matches the
+        // on-air reply, which already addresses `parsed.unit ?? unitId`.
+        unitId: parsed?.unit ?? unitId,
         transcript,
         parsed,
         plateLookup,

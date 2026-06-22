@@ -10,12 +10,29 @@ export interface AiActivity {
   phase: AiActivityPhase;
   /** The unit she's responding to (the radio that transmitted). */
   unitId: string;
-  /** Her reply text (only while speaking). */
+  /** Her reply text (only while speaking). This is the SPOKEN form (phonetic
+   * for plate/VIN readbacks) — clients should prefer `displayText` for screens. */
   text?: string;
+  /** Clean, screen-friendly form of the reply with NO phonetics. For a plate/VIN
+   * return this is "8ABC123 — 2019 Toyota Camry" instead of the spelled-out TTS.
+   * Falls back to `text` on the client when absent. */
+  displayText?: string;
+  /** Raw queried plate, when this reply was a plate return (for clean display). */
+  plate?: string;
+  /** Full VIN, when this reply was a plate/VIN return — clients render the whole
+   * VIN with the last six bold/highlighted. */
+  vin?: string;
   /** Short action tag, e.g. "RADIO CHECK", "LOOKUP: PLATE", "415 @ 32-08". */
   tag?: string;
   /** epoch ms after which this entry is stale and should not be shown. */
   expiresAt: number;
+}
+
+/** Optional clean-display extras for {@link setAiSpeaking}. */
+export interface AiSpeakingDisplay {
+  displayText?: string | null;
+  plate?: string | null;
+  vin?: string | null;
 }
 
 /** Thinking cue lingers this long if nothing replaces it (transcribe -> LLM -> TTS). */
@@ -46,12 +63,16 @@ export function setAiSpeaking(
   unitId: string,
   text: string,
   tag?: string,
+  display?: AiSpeakingDisplay,
 ): void {
   if (!channel.trim()) return;
   byChannel.set(keyOf(agencyId, channel), {
     phase: "speaking",
     unitId: unitId.trim().toUpperCase(),
     text: text.trim().slice(0, 240),
+    displayText: display?.displayText?.trim().slice(0, 240) || undefined,
+    plate: display?.plate?.trim().slice(0, 16) || undefined,
+    vin: display?.vin?.trim().slice(0, 24) || undefined,
     tag: tag?.trim().slice(0, 24) || undefined,
     // Generous cap covering the whole spoken reply; trimmed when playback ends.
     expiresAt: Date.now() + SPEAKING_TTL_MS,
