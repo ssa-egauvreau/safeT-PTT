@@ -2404,7 +2404,15 @@ class RadioViewModel(
         var since = 0L
         var primed = false
         while (currentCoroutineContext().isActive) {
-            delay(if (mainRadioUiVisible) INBOX_POLL_MS else INBOX_BG_POLL_MS)
+            // Poll fast while the AI cue is live so it animates fluidly; idle back
+            // to the slow cadence to keep the radio's poll load low.
+            delay(
+                when {
+                    !mainRadioUiVisible -> INBOX_BG_POLL_MS
+                    _uiState.value.aiActivity != null -> INBOX_FAST_POLL_MS
+                    else -> INBOX_POLL_MS
+                },
+            )
             if (_uiState.value.networkLabel != "ONLINE") continue
             val channel = _uiState.value.channelLabel.trim().takeUnless { it.isEmpty() || it == "----" }
             val response = try {
@@ -3190,6 +3198,10 @@ class RadioViewModel(
         const val WAKE_DEBOUNCE_MS = 700L
         const val PRESENCE_POLL_MS = 12_000L
         const val INBOX_POLL_MS = 2_000L
+        /** Faster inbox cadence while the AI-dispatcher cue is live, so the
+         *  thinking → speaking transition and her reply animate fluidly instead
+         *  of stepping on the 2 s idle poll. Drops back to [INBOX_POLL_MS] idle. */
+        const val INBOX_FAST_POLL_MS = 600L
         /** Backgrounded inbox cadence. Kept short enough that emergency pages /
          *  10-33 markers still surface within a few seconds while off-screen. */
         const val INBOX_BG_POLL_MS = 5_000L
