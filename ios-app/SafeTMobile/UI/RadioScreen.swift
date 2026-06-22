@@ -655,7 +655,7 @@ struct RadioScreen: View {
                     .font(.safet(size: 11, weight: .medium))
                     .foregroundColor(.safetTextDim)
             } else {
-                ForEach(Array(state.unitsOnChannel.enumerated()), id: \.offset) { _, unit in
+                ForEach(state.unitsOnChannel, id: \.self) { unit in
                     let talking = !talker.isEmpty
                         && unit.caseInsensitiveCompare(talker) == .orderedSame
                     HStack(spacing: 8) {

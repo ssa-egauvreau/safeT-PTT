@@ -111,6 +111,11 @@ class RadioViewModel(
     @Volatile
     private var mainRadioUiVisible: Boolean = false
 
+    /** Set when the agency radio key changes so the inbox poll re-baselines its
+     *  high-water cursor for the new agency's alert id space. Read/written on the
+     *  main dispatcher (event handler + poll loop). */
+    private var inboxResetRequested: Boolean = false
+
     private var appUpdatePollJob: Job? = null
 
     private var lastWakeEmittedAtMs: Long = 0L
@@ -1171,6 +1176,8 @@ class RadioViewModel(
                 // The new agency has its own tone set — pull it now, and forget
                 // the previous agency's version so the next poll re-baselines.
                 lastSoundsVersion = null
+                // Re-baseline the inbox cursor for the new agency's alert id space.
+                inboxResetRequested = true
                 customSoundDownloader.refreshAsync()
                 _uiState.update {
                     it.copy(
@@ -2403,6 +2410,7 @@ class RadioViewModel(
     private suspend fun pollInbox() {
         var since = 0L
         var primed = false
+        var lastChannel: String? = null
         while (currentCoroutineContext().isActive) {
             // Poll fast while the AI cue is live so it animates fluidly; idle back
             // to the slow cadence to keep the radio's poll load low.
@@ -2415,6 +2423,16 @@ class RadioViewModel(
             )
             if (_uiState.value.networkLabel != "ONLINE") continue
             val channel = _uiState.value.channelLabel.trim().takeUnless { it.isEmpty() || it == "----" }
+            // The inbox is channel- and agency-scoped; reset the high-water cursor
+            // when the tuned channel changes or an agency-key change requested it,
+            // so the new id space isn't skipped by a cursor left high from the
+            // previous context.
+            if (channel != lastChannel || inboxResetRequested) {
+                inboxResetRequested = false
+                lastChannel = channel
+                since = 0L
+                primed = false
+            }
             val response = try {
                 radioApi.inbox(unit = unitIdUpper, channel = channel, since = since)
             } catch (_: Exception) {

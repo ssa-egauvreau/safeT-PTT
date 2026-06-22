@@ -35,6 +35,9 @@ final class RadioViewModel: ObservableObject {
     private var channelIndex = 0
     private var inboxSince = 0
     private var inboxPrimed = false
+    /// Bumped on every emergency toggle so an out-of-order request completion
+    /// (rapid double-tap) can't apply a stale result to this safety-critical state.
+    private var emergencyGeneration = 0
     /// True once the persisted scan picks have been restored into the catalog
     /// (only on the first catalog load, so later refreshes don't clobber edits).
     private var scanRestored = false
@@ -461,6 +464,11 @@ final class RadioViewModel: ObservableObject {
         uiState.liveTranscript = ""
         uiState.liveTranscriptWho = ""
         transcriptPrimed = false
+        // The inbox is channel-scoped; reset its high-water cursor so pages for
+        // the newly tuned channel aren't skipped by a cursor left high from the
+        // previous channel.
+        inboxSince = 0
+        inboxPrimed = false
         locationReporter.setChannel(currentChannel)
         if let channel = currentChannel {
             voiceTransport.join(channel: channel)
@@ -753,6 +761,8 @@ final class RadioViewModel: ObservableObject {
             sounds.play(.emergency)
         }
         let channel = currentChannel
+        emergencyGeneration &+= 1
+        let gen = emergencyGeneration
         // Log the outbound call up front so we can correlate the request with
         // any failure that follows. Operator reports of "I pressed emergency
         // and nothing happened" are otherwise un-debuggable — the failure path
@@ -772,12 +782,15 @@ final class RadioViewModel: ObservableObject {
                 logger.notice(
                     "emergency OK unit=\(self.unitId, privacy: .public) active=\(activating)"
                 )
+                // A newer toggle superseded this request — don't clobber its state.
+                guard gen == emergencyGeneration else { return }
                 uiState.statusMessage = activating ? "EMERGENCY ACTIVE" : "EMERGENCY OFF"
             } catch {
                 let detail = String(describing: error)
                 logger.error(
                     "emergency FAILED unit=\(self.unitId, privacy: .public) active=\(activating) error=\(detail, privacy: .public)"
                 )
+                guard gen == emergencyGeneration else { return }
                 uiState.isEmergencyActive = !activating
                 let prefix = activating ? "EMERGENCY SEND FAILED" : "EMERGENCY CLEAR FAILED"
                 // Surface a short error hint in the status strip so an operator

@@ -53,6 +53,10 @@ export function useChannelLiveRx({
   const [liveTalker, setLiveTalker] = useState<LiveTalker | null>(null);
   const [latestTx, setLatestTx] = useState<Transmission | null>(null);
   const prevHomeReceiving = useRef(false);
+  // Monotonic id for in-flight air polls. At the fast (400ms) cadence a slow
+  // response can resolve after a newer one and flip attribution to a stale
+  // talker; only the latest request is allowed to apply its result.
+  const airSeq = useRef(0);
 
   const localUnit = localUnitId?.trim().toUpperCase() || "";
 
@@ -92,10 +96,12 @@ export function useChannelLiveRx({
     let cancelled = false;
 
     async function pollAir() {
+      const seq = ++airSeq.current;
+      const superseded = () => cancelled || seq !== airSeq.current;
       try {
         if (scanWatchList) {
           const ta = await api.talkActivity({ home: channelName!, scan: scanWatchList });
-          if (cancelled) return;
+          if (superseded()) return;
           const preferScan =
             scanRxChannel &&
             ta.scan.active &&
@@ -118,12 +124,12 @@ export function useChannelLiveRx({
         }
 
         const air = await api.air(channelName!);
-        if (cancelled) return;
+        if (superseded()) return;
         if (homeReceiving && air.occupied && air.transmitting_unit_id) {
           applyTalker(air.transmitting_unit_id, air.transmitting_display_name);
         } else if (scanRxChannel) {
           const scanAir = await api.air(scanRxChannel);
-          if (cancelled) return;
+          if (superseded()) return;
           if (scanAir.occupied && scanAir.transmitting_unit_id) {
             applyTalker(scanAir.transmitting_unit_id, scanAir.transmitting_display_name, scanRxChannel);
           } else {
