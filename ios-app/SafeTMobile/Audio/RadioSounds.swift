@@ -19,6 +19,13 @@ final class RadioSounds {
         case pttPermit = "ptt_permit"
         case busy = "busy"
         case emergency = "emergency"
+        /// Distinct two-tone chirp for an incoming page/message (so it isn't
+        /// confused with the channel-switch blip it used to share).
+        case page = "page"
+        /// Rising chime confirming an action succeeded (page sent, key saved).
+        case success = "success"
+        /// Low descending blip signalling a failed action (send failed, etc.).
+        case error = "error"
     }
 
     /// One pre-loaded AVAudioPlayer per cue so playback starts with zero

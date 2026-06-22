@@ -253,6 +253,7 @@ class RadioViewModel(
                     radioPreferences.getSessionAgencySlug()
                 },
                 externalMicConnected = externalMicAtStart,
+                speakerMuted = mediaOutputMuted(),
                 batteryPercent = BatteryStatusProbe.percent(application),
                 bluetoothOn = BluetoothStatusProbe.isBluetoothOn(application) ||
                     externalAudioOutputMonitor.bluetoothConnected.value,
@@ -433,9 +434,14 @@ class RadioViewModel(
                 val bt = BluetoothStatusProbe.isBluetoothOn(application) ||
                     externalAudioOutputMonitor.bluetoothConnected.value
                 val battery = BatteryStatusProbe.percent(application)
+                val speakerMuted = mediaOutputMuted()
                 val snap = _uiState.value
-                if (bt != snap.bluetoothOn || battery != snap.batteryPercent) {
-                    _uiState.update { it.copy(bluetoothOn = bt, batteryPercent = battery) }
+                if (bt != snap.bluetoothOn || battery != snap.batteryPercent ||
+                    speakerMuted != snap.speakerMuted
+                ) {
+                    _uiState.update {
+                        it.copy(bluetoothOn = bt, batteryPercent = battery, speakerMuted = speakerMuted)
+                    }
                 }
                 refreshLocationSetupState()
             }
@@ -1185,7 +1191,7 @@ class RadioViewModel(
                         statusMessage = if (key.isBlank()) "AGENCY KEY CLEARED" else "AGENCY KEY SAVED",
                     )
                 }
-                soundPlayer.playChannelSwitch()
+                soundPlayer.playSuccess()
             }
             is RadioUiEvent.SetDeviceProfilePreference -> {
                 soundPlayer.playChannelSwitch()
@@ -1591,6 +1597,9 @@ class RadioViewModel(
     }
 
     private fun onPttPressed() {
+        // Wake the Bluetooth route the instant the user keys up so the talk-permit
+        // tone and the start of transmit audio aren't clipped by a sleeping A2DP amp.
+        bluetoothKeepAlive.wakeBurst()
         // Refuse PTT locally on listen-only channels: no relay attempt, no
         // talk-permit tone, just the busy alert and a clear status line. The
         // server would reject anyway, but doing it here keeps the UX honest.
@@ -1879,6 +1888,14 @@ class RadioViewModel(
         }
     }
 
+    /** True when the media (STREAM_MUSIC) volume — the stream received voice plays
+     *  on — is at zero, so the speaker status icon can show muted. */
+    private fun mediaOutputMuted(): Boolean {
+        val am = application.getSystemService(android.content.Context.AUDIO_SERVICE)
+            as? android.media.AudioManager ?: return false
+        return am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) <= 0
+    }
+
     private fun toggleEmergency() {
         val activating = !_uiState.value.isEmergencyActive
         if (activating) {
@@ -1908,6 +1925,10 @@ class RadioViewModel(
                         message = if (activating) "Emergency activated" else null,
                     ),
                 )
+            }.onFailure {
+                // The activation tone already fired; signal that the server send
+                // failed so the operator knows it may not have reached dispatch.
+                soundPlayer.playError()
             }
         }
     }
@@ -2520,8 +2541,8 @@ class RadioViewModel(
             val alreadySeen = alert.id <= radioPreferences.getLastPageId() ||
                 _uiState.value.pageMessages.any { it.id == alert.id }
             if (alreadySeen) return
-            // Subtle tone + badge only — never interrupts audio or covers the radio screen.
-            soundPlayer.playChannelSwitch()
+            // Distinct page chirp + badge only — never interrupts audio or covers the radio screen.
+            soundPlayer.playPage()
             val message = alert.message?.trim()?.takeIf { it.isNotEmpty() } ?: ""
             val targetedToMe = alert.targetUnit?.trim()?.uppercase(Locale.US) == unitIdUpper &&
                 !alert.targetUnit.isNullOrBlank()
@@ -2605,8 +2626,10 @@ class RadioViewModel(
                         ),
                     )
                 }
+                soundPlayer.playSuccess()
                 _uiState.update { it.copy(statusMessage = "REPLY SENT: ${reply.uppercase(Locale.US)}") }
             } catch (_: Exception) {
+                soundPlayer.playError()
                 _uiState.update { it.copy(statusMessage = "REPLY FAILED — RETRY") }
             }
         }

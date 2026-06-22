@@ -197,6 +197,9 @@ data class RadioUiState(
 
     /** Wired / USB / Bluetooth headset mic present (status-bar speaker icon). */
     val externalMicConnected: Boolean,
+    /** True when media output volume is at 0 — the speaker status icon shows the
+     *  muted (no sound-waves) glyph instead of green. */
+    val speakerMuted: Boolean = false,
     /** Bluetooth radio enabled (status icon). */
     val bluetoothOn: Boolean,
     /**

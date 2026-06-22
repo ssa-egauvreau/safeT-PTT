@@ -429,11 +429,14 @@ class InboundJitterBuffer(
         const val MAX_TARGET_FRAMES = 12
         const val TARGET_STEP_FRAMES = 2
 
-        // Startup cushion floor on a Bluetooth link (8 × 20 ms ≈ 160 ms). The
+        // Startup cushion floor on a Bluetooth link (16 × 20 ms ≈ 320 ms). The
         // A2DP pipeline can't start instantly, so each spurt pre-rolls this much
         // before the first voice frame to keep the link's ramp-up from clipping
-        // the opening syllable.
-        const val BT_MIN_TARGET_FRAMES = 8
+        // the opening syllable. Raised from 160 ms — on rugged BT head units the
+        // link still woke slowly enough to swallow the first word (e.g. the "27"
+        // of "27-000"); the extra cushion trades ~160 ms of latency for the
+        // opening syllable surviving. Only applies while a BT output is connected.
+        const val BT_MIN_TARGET_FRAMES = 16
 
         // Worst-case buffered audio: 50 × 20 ms ≈ 1 s. Sized so a TCP
         // retransmit burst after a long stall is absorbed (and played out,
