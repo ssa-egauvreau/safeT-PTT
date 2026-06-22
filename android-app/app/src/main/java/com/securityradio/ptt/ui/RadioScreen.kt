@@ -71,12 +71,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
@@ -99,6 +103,7 @@ import com.securityradio.ptt.presentation.MessageHistoryTab
 import com.securityradio.ptt.presentation.PageMessage
 import com.securityradio.ptt.presentation.AiActivityUi
 import com.securityradio.ptt.presentation.AiActivityPhase
+import com.securityradio.ptt.domain.AiDispatchMode
 import com.securityradio.ptt.domain.ChannelPermission
 import com.securityradio.ptt.presentation.RadioUiEvent
 import com.securityradio.ptt.presentation.RadioUiState
@@ -607,27 +612,35 @@ private fun UniversalCockpitScanBanner(state: RadioUiState, styles: LcdTextStyle
     }
 }
 
-/** Rainbow "AI DISPATCH" pill shown under the channel name when the tuned channel runs the AI dispatcher. */
+/**
+ * Always-on AI mode pill under the channel name showing which engagement mode the
+ * tuned channel runs — "AI · SUPERVISED" (wake-word "AI" required) gets a steady
+ * amber treatment; "AI · AUTO" keeps the rainbow. Hidden when off.
+ */
 @Composable
-private fun AiDispatchBadge(visible: Boolean, styles: LcdTextStyles, modifier: Modifier = Modifier) {
-    if (!visible) return
-    val rainbow = Brush.horizontalGradient(
-        listOf(
-            Color(0xFFFF5F6D),
-            Color(0xFFFFC371),
-            Color(0xFF38F9D7),
-            Color(0xFF7F7FD5),
-            Color(0xFFFF5F6D),
-        ),
-    )
+private fun AiDispatchBadge(mode: AiDispatchMode, styles: LcdTextStyles, modifier: Modifier = Modifier) {
+    val label = mode.badge ?: return
+    val background = if (mode == AiDispatchMode.SUPERVISED) {
+        SolidColor(Color(0xFFFFC371))
+    } else {
+        Brush.horizontalGradient(
+            listOf(
+                Color(0xFFFF5F6D),
+                Color(0xFFFFC371),
+                Color(0xFF38F9D7),
+                Color(0xFF7F7FD5),
+                Color(0xFFFF5F6D),
+            ),
+        )
+    }
     Box(
         modifier = modifier
-            .background(rainbow, RoundedCornerShape(50))
+            .background(background, RoundedCornerShape(50))
             .padding(horizontal = 12.dp, vertical = 3.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "✦ AI DISPATCH",
+            text = "✦ $label",
             style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 12.sp),
             color = Color(0xFF0B0B12),
             maxLines = 1,
@@ -835,7 +848,9 @@ private fun AiSpeakingVisual(
         )
         Spacer(modifier = Modifier.height(14.dp))
         Text(
-            text = activity.text.ifBlank { "…" },
+            // Prefer the clean display text ("8ABC123 — 2019 Toyota Camry"),
+            // never the spelled-out phonetic TTS.
+            text = activity.shownText.ifBlank { "…" },
             style = styles.channel.copy(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 26.sp,
@@ -845,7 +860,31 @@ private fun AiSpeakingVisual(
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
+        if (activity.vin.isNotBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            VinLine(activity.vin, styles = styles, color = p.textPrimary, muted = p.statusBlue)
+        }
     }
+}
+
+/** Full VIN with the last six characters bold (operators scan the last six). */
+@Composable
+private fun VinLine(vin: String, styles: LcdTextStyles, color: Color, muted: Color) {
+    val v = vin.uppercase(Locale.US)
+    val head = if (v.length > 6) v.dropLast(6) else ""
+    val tail = if (v.length > 6) v.takeLast(6) else v
+    val text = buildAnnotatedString {
+        withStyle(SpanStyle(color = muted)) { append("VIN ") }
+        append(head)
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(tail) }
+    }
+    Text(
+        text = text,
+        style = styles.status.copy(fontSize = 16.sp),
+        color = color,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable
@@ -926,7 +965,7 @@ private fun UniversalCockpitMainPanel(
                 textAlign = TextAlign.Center,
             )
         }
-        AiDispatchBadge(visible = state.aiDispatchEnabled, styles = styles)
+        AiDispatchBadge(mode = state.aiDispatchMode, styles = styles)
         if (state.channelCodecLabel.isNotBlank()) {
             Text(
                 text = state.channelCodecLabel.uppercase(Locale.US),
@@ -1640,7 +1679,7 @@ private fun LcdMainChannelBlock(
                 textAlign = TextAlign.Center,
             )
             AiDispatchBadge(
-                visible = state.aiDispatchEnabled,
+                mode = state.aiDispatchMode,
                 styles = styles,
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
@@ -2052,7 +2091,7 @@ private fun LcdHandsetFillChannelBlock(
                             )
                         }
                         AiDispatchBadge(
-                            visible = state.aiDispatchEnabled,
+                            mode = state.aiDispatchMode,
                             styles = styles,
                             modifier = Modifier.padding(top = 4.dp),
                         )

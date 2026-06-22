@@ -75,6 +75,9 @@ data class ChannelDto(
     @SerializedName("zone_number") val zoneNumber: Int? = null,
     /** True when the AI dispatcher is enabled on this channel — radios show an AI badge. */
     @SerializedName("ai_dispatch_enabled") val aiDispatchEnabled: Boolean = false,
+    /** Three-way engagement mode: "off" | "supervised" | "full_auto". Drives the
+     * always-on mode badge (supervised = wake-word "AI" required). */
+    @SerializedName("ai_dispatch_mode") val aiDispatchMode: String? = null,
 )
 
 data class AirStateDto(

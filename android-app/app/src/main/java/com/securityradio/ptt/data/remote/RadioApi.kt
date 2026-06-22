@@ -158,8 +158,15 @@ data class AiActivityDto(
     @SerializedName("unit") val unit: String? = null,
     /** True when this radio is the unit she's responding to. */
     @SerializedName("for_you") val forYou: Boolean = false,
-    /** Her reply text (only while speaking). */
+    /** Her reply text (only while speaking) — the SPOKEN (phonetic) form. */
     @SerializedName("text") val text: String? = null,
+    /** Clean, screen-friendly reply with no phonetics ("8ABC123 — 2019 Toyota
+     * Camry"). Prefer this over [text] for display; falls back to [text]. */
+    @SerializedName("display_text") val displayText: String? = null,
+    /** Literal queried plate for a plate return (e.g. "8ABC123"). */
+    @SerializedName("plate") val plate: String? = null,
+    /** Full VIN for a plate/VIN return — render whole with the last 6 bold. */
+    @SerializedName("vin") val vin: String? = null,
     /** Short action tag, e.g. "LOOKUP: PLATE", "ACK". */
     @SerializedName("tag") val tag: String? = null,
 )

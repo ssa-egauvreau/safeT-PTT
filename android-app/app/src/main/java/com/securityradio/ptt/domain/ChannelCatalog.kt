@@ -31,6 +31,30 @@ enum class ChannelPermission {
 /** A numbered channel bank from the portal; [number] prefixes the channel name on the display. */
 data class ChannelZone(val name: String, val number: Int? = null)
 
+/** Three-way AI dispatch engagement mode, mirrored from the server. The handset
+ * shows an always-on badge for non-off modes. */
+enum class AiDispatchMode {
+    OFF,
+    SUPERVISED,
+    FULL_AUTO;
+
+    /** Compact badge text for the radio screen, or null when off (no badge). */
+    val badge: String?
+        get() = when (this) {
+            OFF -> null
+            SUPERVISED -> "AI · SUPERVISED"
+            FULL_AUTO -> "AI · AUTO"
+        }
+
+    companion object {
+        fun fromServer(value: String?): AiDispatchMode = when (value?.lowercase()) {
+            "supervised" -> SUPERVISED
+            "full_auto", "auto", "on", "true" -> FULL_AUTO
+            else -> OFF
+        }
+    }
+}
+
 data class RadioChannelCatalog(
     val channels: List<String>,
     /** Lookup by lowercased channel name; missing entries default to [ChannelPermission.TALK]. */
@@ -39,6 +63,8 @@ data class RadioChannelCatalog(
     val zones: Map<String, ChannelZone> = emptyMap(),
     /** Lowercased names of channels with the AI dispatcher enabled (radios show an AI badge). */
     val aiDispatch: Set<String> = emptySet(),
+    /** AI dispatch mode by lowercased channel name (non-off channels only). */
+    val aiDispatchModes: Map<String, AiDispatchMode> = emptyMap(),
     val origin: ChannelCatalogOrigin,
     val errorMessage: String?,
 )

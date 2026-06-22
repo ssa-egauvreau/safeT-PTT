@@ -47,6 +47,7 @@ import com.securityradio.ptt.device.VoiceControlEvent
 import com.securityradio.ptt.device.ScanVoiceListenTransport
 import com.securityradio.ptt.device.VoiceRelayTransport
 import com.securityradio.ptt.domain.ChannelCatalogOrigin
+import com.securityradio.ptt.domain.AiDispatchMode
 import com.securityradio.ptt.domain.ChannelPermission
 import com.securityradio.ptt.domain.ChannelRepository
 import com.securityradio.ptt.domain.ChannelZone
@@ -177,6 +178,7 @@ class RadioViewModel(
 
     /** Lowercased names of channels with the AI dispatcher enabled (shown as an AI badge). */
     private var channelAiByName: Set<String> = emptySet()
+    private var channelAiModesByName: Map<String, AiDispatchMode> = emptyMap()
 
     /** Cursor into [zoneNames] while zone-select mode previews a zone. */
     private var zoneSelectCursor: Int = 0
@@ -2122,6 +2124,7 @@ class RadioViewModel(
         channelPermissions = catalog.permissions
         channelZonesByName = catalog.zones
         channelAiByName = catalog.aiDispatch
+        channelAiModesByName = catalog.aiDispatchModes
         if (channelNames.isNotEmpty()) {
             channelIndex = channelIndex.coerceIn(0, channelNames.lastIndex)
         } else {
@@ -2447,6 +2450,9 @@ class RadioViewModel(
                 phase = AiActivityPhase.Speaking,
                 forYou = dto.forYou,
                 text = dto.text?.trim().orEmpty(),
+                displayText = dto.displayText?.trim().orEmpty(),
+                plate = dto.plate?.trim().orEmpty(),
+                vin = dto.vin?.trim().orEmpty(),
                 tag = dto.tag?.trim().orEmpty(),
             )
             else -> null
@@ -2726,6 +2732,7 @@ class RadioViewModel(
             channelLabel = label,
             channelDisplayLabel = display,
             aiDispatchEnabled = channelAiByName.contains(label.lowercase()),
+            aiDispatchMode = channelAiModesByName[label.lowercase()] ?: AiDispatchMode.OFF,
             channelPosition = "%02d / %02d".format(
                 (zoneIndices.indexOf(safeIndex) + 1).coerceAtLeast(1),
                 zoneIndices.size,
