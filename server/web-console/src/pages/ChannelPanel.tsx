@@ -1049,6 +1049,8 @@ export function ChannelPanel({
           </button>
           <button
             type="button"
+            aria-pressed={marker}
+            aria-label={`10-33 emergency marker ${marker ? "on" : "off"}`}
             className={`marker-button ch-action-cell${marker ? " active" : ""}`}
             disabled={!connected || !canTransmit}
             onClick={toggleMarker}
@@ -1079,6 +1081,8 @@ export function ChannelPanel({
       <div className="ch-actions-stack">
         <button
           type="button"
+          aria-pressed={marker}
+          aria-label={`10-33 emergency marker ${marker ? "on" : "off"}`}
           className={marker ? "marker-button active ch-action-cell" : "marker-button ch-action-cell"}
           disabled={!connected || !canTransmit}
           onClick={toggleMarker}

@@ -262,6 +262,8 @@ export function ChannelsPanel({ variant = "embedded", onPopOut }: SectionProps) 
               </div>
               <div className="kbd-hint">
                 <button
+                  type="button"
+                  aria-pressed={keyboardOn}
                   className={keyboardOn ? "kbd-toggle on" : "kbd-toggle"}
                   onClick={toggleKeyboard}
                   title="Enable or disable all keyboard shortcuts"

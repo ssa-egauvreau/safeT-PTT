@@ -78,6 +78,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
@@ -1018,6 +1023,11 @@ private fun UniversalCockpitPttCircle(
     Box(
         modifier = Modifier
             .size(200.dp)
+            .semantics {
+                role = Role.Button
+                contentDescription = "Push to talk"
+                stateDescription = if (state.isPttPressed) "Transmitting" else "Idle"
+            }
             .clip(CircleShape)
             .background(fill)
             .border(3.dp, p.divider, CircleShape)
@@ -3459,6 +3469,11 @@ private fun LcdPttBar(
         modifier = Modifier
             .fillMaxWidth()
             .height(height)
+            .semantics {
+                role = Role.Button
+                contentDescription = "Push to talk"
+                stateDescription = if (state.isPttPressed) "Transmitting" else "Idle"
+            }
             .clip(RoundedCornerShape(2.dp))
             .border(1.dp, border, RoundedCornerShape(2.dp))
             .background(
@@ -3530,7 +3545,10 @@ private fun LcdEmergencyRow(
         onClick = { onEvent(RadioUiEvent.EmergencyToggle) },
         modifier = Modifier
             .fillMaxWidth()
-            .height(height),
+            .height(height)
+            // Surface(onClick) already exposes Role.Button + the "EMERGENCY" text
+            // label; add the on/off state so a screen reader announces it.
+            .semantics { stateDescription = if (state.isEmergencyActive) "Active" else "Off" },
         shape = RoundedCornerShape(2.dp),
         color = if (state.isEmergencyActive) {
             p.statusEmergency.copy(alpha = 0.95f)
