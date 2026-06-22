@@ -1928,13 +1928,9 @@ private fun LcdHandsetFillChannelBlock(
                 )
             }
             val isIrc590Handset = state.resolvedDeviceProfile == ResolvedDeviceProfile.IRC590
-            if (!showEmergencyBanner && !isIrc590Handset) {
-                LcdPermissionBadge(
-                    permission = state.currentChannelPermission,
-                    deviceProfile = state.resolvedDeviceProfile,
-                    styles = styles,
-                )
-            }
+            // The PRIORITY / LISTEN-ONLY tag for non-IRC590 handsets now lives pinned
+            // top-right in LcdHandsetToolbarTm7TopRow, freeing this central column for
+            // the zone / channel / SCAN RX area. (IRC590 keeps its own layout.)
             if (!showEmergencyBanner && !isIrc590Handset) {
                 LcdHandsetZonePositionLine(
                     zoneValue = zoneValue,
@@ -2268,6 +2264,7 @@ private fun LcdPermissionBadge(
     styles: LcdTextStyles,
     deviceProfile: ResolvedDeviceProfile = ResolvedDeviceProfile.TM7_PLUS,
     compactVertical: Boolean = false,
+    fillWidth: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     if (permission == ChannelPermission.TALK) return
@@ -2298,7 +2295,7 @@ private fun LcdPermissionBadge(
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
-            .fillMaxWidth()
+            .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
             .padding(vertical = if (compactVertical) 0.dp else 2.dp),
     )
 }
@@ -2471,23 +2468,12 @@ private fun LcdHandsetToolbarStatusIcons(
                 },
         )
     }
-    LcdReplayIcon(
-        ready = p.statusAmber,
-        muted = p.textMuted,
-        playing = state.replayBanner.isNotEmpty(),
-        modifier = Modifier
-            .size(iconSize)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { onEvent(RadioUiEvent.PlayLastTransmission) },
-                    onLongPress = { onEvent(RadioUiEvent.ToggleMessageHistory) },
-                )
-            },
-    )
     LcdVolumeIcon(
         muted = p.textMuted,
         active = p.statusGreen,
-        isMuted = !state.externalMicConnected,
+        // Show the muted (no sound-waves) glyph when media output is turned all
+        // the way down, instead of always-green.
+        isMuted = state.speakerMuted,
         modifier = Modifier.size(iconSize),
     )
     }
@@ -2715,6 +2701,18 @@ private fun LcdHandsetToolbarTm7TopRow(
                 .align(Alignment.Center)
                 .fillMaxWidth(),
         )
+        // PRIORITY / LISTEN-ONLY tag pinned top-right so it doesn't crowd the
+        // zone/channel/SCAN RX area below. Only renders for non-TALK channels.
+        if (!state.isEmergencyActive) {
+            LcdPermissionBadge(
+                permission = state.currentChannelPermission,
+                styles = styles,
+                deviceProfile = state.resolvedDeviceProfile,
+                compactVertical = true,
+                fillWidth = false,
+                modifier = Modifier.align(Alignment.CenterEnd),
+            )
+        }
     }
 }
 
@@ -2775,15 +2773,16 @@ private fun LcdHandsetToolbarScanBanner(
                 on = true,
                 active = bannerScanColor,
                 muted = p.textMuted,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(26.dp),
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = "SCAN RX · ${state.scanBackgroundChannel}",
                 // Handset-only strip: match the handsets' display scale, not the 10.5 sp chrome.
-                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = 24.sp),
+                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 27.sp, lineHeight = 31.sp),
                 color = p.statusAmber,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }

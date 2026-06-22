@@ -253,6 +253,7 @@ class RadioViewModel(
                     radioPreferences.getSessionAgencySlug()
                 },
                 externalMicConnected = externalMicAtStart,
+                speakerMuted = mediaOutputMuted(),
                 batteryPercent = BatteryStatusProbe.percent(application),
                 bluetoothOn = BluetoothStatusProbe.isBluetoothOn(application) ||
                     externalAudioOutputMonitor.bluetoothConnected.value,
@@ -433,9 +434,14 @@ class RadioViewModel(
                 val bt = BluetoothStatusProbe.isBluetoothOn(application) ||
                     externalAudioOutputMonitor.bluetoothConnected.value
                 val battery = BatteryStatusProbe.percent(application)
+                val speakerMuted = mediaOutputMuted()
                 val snap = _uiState.value
-                if (bt != snap.bluetoothOn || battery != snap.batteryPercent) {
-                    _uiState.update { it.copy(bluetoothOn = bt, batteryPercent = battery) }
+                if (bt != snap.bluetoothOn || battery != snap.batteryPercent ||
+                    speakerMuted != snap.speakerMuted
+                ) {
+                    _uiState.update {
+                        it.copy(bluetoothOn = bt, batteryPercent = battery, speakerMuted = speakerMuted)
+                    }
                 }
                 refreshLocationSetupState()
             }
@@ -1877,6 +1883,14 @@ class RadioViewModel(
             pttMicCapture.stopCapture()
             voiceRelay.finishTransmitHold()
         }
+    }
+
+    /** True when the media (STREAM_MUSIC) volume — the stream received voice plays
+     *  on — is at zero, so the speaker status icon can show muted. */
+    private fun mediaOutputMuted(): Boolean {
+        val am = application.getSystemService(android.content.Context.AUDIO_SERVICE)
+            as? android.media.AudioManager ?: return false
+        return am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) <= 0
     }
 
     private fun toggleEmergency() {

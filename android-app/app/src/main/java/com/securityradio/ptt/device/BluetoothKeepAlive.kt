@@ -130,17 +130,17 @@ class BluetoothKeepAlive {
         // 8 kHz mono is plenty to hold the link open and keeps the stream light.
         const val SAMPLE_RATE_HZ = 8_000
 
-        // 20 ms of inaudible low-level dither (±12 LSB ≈ -68 dBFS). Non-zero so the
-        // A2DP stack never sees digital silence and suspends; still well below the
-        // audible floor. Pitched a bit hotter than a token ±4 LSB because some
-        // head-unit power management still suspends on near-silence, which is what
-        // leaves the first syllable of the next sound clipped on key-up.
+        // 20 ms of inaudible low-level dither (±48 LSB ≈ -56 dBFS). Non-zero so the
+        // A2DP stack never sees digital silence and suspends; still below the audible
+        // floor on a car head unit. Pitched hotter than the original ±12 LSB because
+        // some head-unit power management still suspended on the quieter dither, which
+        // is what left the first syllable of the next sound clipped on key-up / RX.
         val FILL = ByteArray(320).also { buf ->
             var seed = 0x9E3779B9.toInt()
             var i = 0
             while (i + 1 < buf.size) {
                 seed = seed * 1103515245 + 12345
-                val v = ((seed ushr 16) % 25) - 12 // [-12, 12]
+                val v = ((seed ushr 16) % 97) - 48 // [-48, 48]
                 buf[i] = (v and 0xFF).toByte()
                 buf[i + 1] = ((v shr 8) and 0xFF).toByte()
                 i += 2
