@@ -7,6 +7,7 @@ export type AiDispatchOutcome =
   | "no_on_air_reply"
   | "tts_failed"
   | "skipped_channel_off"
+  | "skipped_supervised_no_keyword"
   | "skipped_no_speech"
   | "skipped_duplicate"
   | "skipped_dispatch_unit"

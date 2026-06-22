@@ -90,6 +90,7 @@ import {
   getChannelTen33Active,
   setChannelAiDispatch,
   listChannelAiDispatchEnabled,
+  listChannelAiDispatchModes,
   getChannelAiDispatchRow,
   listMemberships,
   listPositions,
@@ -193,6 +194,7 @@ import { applyChannelTen33Marker } from "./aiDispatch/ten33Marker.js";
 import { resolveElevenLabsApiKey, resolveElevenLabsVoiceId } from "./aiDispatch/elevenLabsCreds.js";
 import { listAiDispatchLog } from "./aiDispatch/activityLog.js";
 import { getAiActivity } from "./aiDispatch/aiActivity.js";
+import { aiDispatchModeEnabled, normalizeAiDispatchMode } from "./aiDispatch/supervisedMode.js";
 import { enqueueKbIngest } from "./aiDispatch/knowledgeBase/ingest.js";
 import { getEmbeddingModelName } from "./aiDispatch/knowledgeBase/embeddings.js";
 import { handleTen8Webhook, handleTen8WebhookGet } from "./ten8/webhook.js";
@@ -835,7 +837,8 @@ export function createApiRouter(): Router {
         const agencyId = me.agencyId!;
         const all = await listChannels(agencyId);
         const sims = await listSimulcasts(agencyId);
-        const aiEnabled = new Set(await listChannelAiDispatchEnabled(agencyId));
+        const aiModes = await listChannelAiDispatchModes(agencyId);
+        const aiEnabled = new Set(aiModes.keys());
         const agency = await getAgencyById(agencyId);
         const simulcastCodec = coerceVoiceCodec(agency?.default_codec);
         res.json({
@@ -850,6 +853,7 @@ export function createApiRouter(): Router {
               permission: "talk_priority",
               simulcast: false,
               ai_dispatch_enabled: aiEnabled.has(c.name),
+              ai_dispatch_mode: aiModes.get(c.name) ?? "off",
             })),
             // Simulcast channels carry a negative id so they never collide with
             // a real channel id in the console's open-channel set.
@@ -868,9 +872,13 @@ export function createApiRouter(): Router {
         return;
       }
       const userChannels = await listChannelsForUser(me.id);
-      const aiOn = new Set(await listChannelAiDispatchEnabled(me.agencyId!));
+      const aiModes = await listChannelAiDispatchModes(me.agencyId!);
       res.json({
-        channels: userChannels.map((c) => ({ ...c, ai_dispatch_enabled: aiOn.has(c.name) })),
+        channels: userChannels.map((c) => ({
+          ...c,
+          ai_dispatch_enabled: aiModes.has(c.name),
+          ai_dispatch_mode: aiModes.get(c.name) ?? "off",
+        })),
       });
     } catch (error) {
       fail(res, error);
@@ -3182,13 +3190,18 @@ export function createApiRouter(): Router {
         res.status(400).json({ error: "missing_channel" });
         return;
       }
-      const enabled = body.enabled === true;
+      // Accept the new three-way `mode` ("off"|"supervised"|"full_auto");
+      // fall back to the legacy `enabled` boolean for older clients.
+      const mode = normalizeAiDispatchMode(
+        body.mode !== undefined ? body.mode : body.enabled,
+      );
+      const enabled = aiDispatchModeEnabled(mode);
       const agencyId = req.authUser!.agencyId!;
       if (enabled && !(await agencyAllowsAiDispatch(agencyId))) {
         res.status(403).json({ error: "ai_dispatch_requires_pro" });
         return;
       }
-      await setChannelAiDispatch(agencyId, channel, enabled);
+      await setChannelAiDispatch(agencyId, channel, mode);
       const { notifyChannelAiDispatchListenPcm } = await import("./voiceRelay.js");
       notifyChannelAiDispatchListenPcm(agencyId, channel, enabled);
       await writeAudit({
@@ -3196,10 +3209,10 @@ export function createApiRouter(): Router {
         actorUserId: req.authUser!.id,
         actorName: req.authUser!.username,
         action: enabled ? "ai_dispatch_on" : "ai_dispatch_off",
-        target: channel,
+        target: `${channel} (${mode})`,
         ip: clientIp(req),
       });
-      res.json({ ok: true, enabled });
+      res.json({ ok: true, enabled, mode });
     } catch (error) {
       fail(res, error);
     }
@@ -3231,7 +3244,7 @@ export function createApiRouter(): Router {
         return;
       }
       const row = await getChannelAiDispatchRow(req.authUser!.agencyId!, channel);
-      res.json({ enabled: row?.enabled === true });
+      res.json({ enabled: row?.enabled === true, mode: row?.mode ?? "off" });
     } catch (error) {
       fail(res, error);
     }

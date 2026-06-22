@@ -529,11 +529,17 @@ export async function ensureSchema(): Promise<void> {
       agency_id INT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
       channel_name TEXT NOT NULL,
       enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      mode TEXT NOT NULL DEFAULT 'off',
       yields_to_units BOOLEAN NOT NULL DEFAULT TRUE,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       PRIMARY KEY (agency_id, channel_name)
     );
   `);
+  // Three-way engagement mode (off / supervised / full_auto). Existing rows
+  // predate the column: add it, then backfill from the legacy `enabled` boolean
+  // (enabled → full_auto) so nothing silently turns off on deploy.
+  await p.query(`ALTER TABLE channel_ai_dispatch ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'off';`);
+  await p.query(`UPDATE channel_ai_dispatch SET mode = 'full_auto' WHERE enabled = TRUE AND mode = 'off';`);
 
   await p.query(`
     CREATE TABLE IF NOT EXISTS ai_dispatch_log (
