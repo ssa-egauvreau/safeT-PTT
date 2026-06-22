@@ -62,7 +62,7 @@ final class RadioApiClientTests: XCTestCase {
         do {
             _ = try await makeClient().channels()
             XCTFail("expected RadioApiError.badStatus")
-        } catch let RadioApiError.badStatus(code) {
+        } catch let RadioApiError.badStatus(code, _) {
             XCTAssertEqual(code, 503)
         } catch {
             XCTFail("unexpected error: \(error)")

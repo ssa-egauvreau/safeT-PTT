@@ -293,9 +293,35 @@ struct PostDecodeSummary: Decodable {
     }
 }
 
+/// Minimal shape of the server's JSON error body (`{ "error": "code" }`).
+private struct ServerError: Decodable {
+    let error: String?
+}
+
 enum RadioApiError: Error {
     case invalidURL
-    case badStatus(Int)
+    /// Non-2xx response. `code` is the server's `{ "error": "..." }` string when
+    /// present (e.g. "session_superseded"), used to distinguish a terminal,
+    /// must-re-auth failure from a transient/generic 401.
+    case badStatus(Int, code: String? = nil)
+
+    var status: Int? {
+        if case let .badStatus(status, _) = self { return status }
+        return nil
+    }
+
+    /// True only for definitive session-invalid signals, where dropping to the
+    /// login screen is correct. A generic/transient 401 must NOT force a logout.
+    var isTerminalSession: Bool {
+        guard case let .badStatus(status, code) = self else { return false }
+        switch (status, code) {
+        case (401, "session_superseded"), (401, "account_disabled"),
+             (403, "agency_disabled"), (403, "agency_suspended_billing"):
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 // MARK: - Client
@@ -542,7 +568,10 @@ final class RadioApiClient {
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? -1
         guard (200..<300).contains(status) else {
-            throw RadioApiError.badStatus(status)
+            // Pull the server's `{ "error": "..." }` code out so callers can tell
+            // a terminal session error from a transient one.
+            let code = (try? JSONDecoder().decode(ServerError.self, from: data))?.error
+            throw RadioApiError.badStatus(status, code: code)
         }
         return data
     }

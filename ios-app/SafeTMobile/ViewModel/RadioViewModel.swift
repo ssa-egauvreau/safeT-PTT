@@ -313,12 +313,12 @@ final class RadioViewModel: ObservableObject {
         } catch {
             uiState.channelsLoading = false
             uiState.networkLabel = "OFFLINE"
-            // A 401 means the saved login was rejected (e.g. account disabled, or
-            // a superseded console session). Rather than sit on "SYNC FAILED"
-            // forever, flag the session invalid so the shell drops to the login
-            // screen automatically (radio tokens are now exempt from supersession
-            // server-side, so this should be rare).
-            if case RadioApiError.badStatus(401) = error {
+            // Only a DEFINITIVE session-invalid error (account disabled, a
+            // superseded console session, agency disabled) drops to the login
+            // screen — a generic/transient 401 just shows "SYNC FAILED" and keeps
+            // retrying, so a blip can't kick the operator out. (Radio tokens are
+            // now exempt from supersession server-side, so this should be rare.)
+            if let apiError = error as? RadioApiError, apiError.isTerminalSession {
                 uiState.sessionInvalid = true
                 uiState.statusMessage = "SIGN IN REQUIRED"
                 uiState.channelSyncError = "Session expired — sign in again"
@@ -794,7 +794,7 @@ final class RadioViewModel: ObservableObject {
         if let radio = error as? RadioApiError {
             switch radio {
             case .invalidURL: return "BAD URL"
-            case .badStatus(let code): return "HTTP \(code)"
+            case .badStatus(let status, _): return "HTTP \(status)"
             }
         }
         if let urlError = error as? URLError {
