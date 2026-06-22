@@ -5,6 +5,7 @@ import {
   useState,
   type PointerEvent,
 } from "react";
+import { isPageHidden, onPageVisible } from "../lib/pageVisibility";
 import type { AiDispatchMode, Permission, ToneOut, UserChannel } from "../api";
 import { api, voiceCodecBadge, voiceCodecLabel } from "../api";
 import { VoiceChannelClient, type VoiceState, type ToneOutKind } from "../voice/voiceClient";
@@ -404,6 +405,7 @@ export function ChannelPanel({
     }
     let cancelled = false;
     const syncTen33 = () => {
+      if (isPageHidden()) return; // skip while the operator can't see the marker
       void api.getChannelTen33(channel.name).then((r) => {
         if (cancelled) {
           return;
@@ -413,9 +415,11 @@ export function ChannelPanel({
     };
     syncTen33();
     const timer = window.setInterval(syncTen33, 4000);
+    const offVisible = onPageVisible(syncTen33);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      offVisible();
     };
   }, [channel.name, monitoring, expanded]);
 

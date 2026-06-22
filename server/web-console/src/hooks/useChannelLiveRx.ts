@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type Transmission } from "../api";
+import { isPageHidden, onPageVisible } from "../lib/pageVisibility";
 
 const AIR_POLL_MS = 1200;
 const AIR_POLL_FAST_MS = 400;
@@ -96,6 +97,7 @@ export function useChannelLiveRx({
     let cancelled = false;
 
     async function pollAir() {
+      if (isPageHidden()) return; // not visible — skip the air round-trip(s)
       const seq = ++airSeq.current;
       const superseded = () => cancelled || seq !== airSeq.current;
       try {
@@ -147,14 +149,16 @@ export function useChannelLiveRx({
     const pollMs =
       homeReceiving || scanRxChannel ? AIR_POLL_FAST_MS : AIR_POLL_MS;
     const id = window.setInterval(() => void pollAir(), pollMs);
+    const offVisible = onPageVisible(() => void pollAir());
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      offVisible();
     };
   }, [active, channelName, homeReceiving, scanRxChannel, scanWatchList, localUnit]);
 
   async function fetchLatestTx() {
-    if (!channelName) return;
+    if (!channelName || isPageHidden()) return;
     try {
       const res = await api.transmissions({ channel: channelName, limit: 1, sort: "newest" });
       setLatestTx(res.transmissions[0] ?? null);
@@ -179,9 +183,11 @@ export function useChannelLiveRx({
 
     void load();
     const id = window.setInterval(() => void load(), TX_POLL_MS);
+    const offVisible = onPageVisible(() => void load());
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      offVisible();
     };
   }, [active, channelName]);
 
