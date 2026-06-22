@@ -224,8 +224,14 @@ export function TransmissionLog() {
   // Latest filters reachable from the polling timer without re-arming it.
   const filtersRef = useRef({ search, channelFilter, user, fromDate, toDate, sort, cap });
   filtersRef.current = { search, channelFilter, user, fromDate, toDate, sort, cap };
+  // Monotonic id so only the latest in-flight refresh applies its result.
+  const refreshSeq = useRef(0);
 
   const refresh = useCallback(async () => {
+    // The 5s poll and the 250ms filter-debounce both call refresh(); without
+    // sequencing a slow poll under old filters can land after a fast filtered
+    // query and overwrite the list with stale/unfiltered rows.
+    const seq = ++refreshSeq.current;
     try {
       const f = filtersRef.current;
       const res = await api.transmissions({
@@ -237,12 +243,14 @@ export function TransmissionLog() {
         sort: f.sort,
         limit: f.cap,
       });
+      if (seq !== refreshSeq.current) return;
       setItems(res.transmissions);
       setError(null);
     } catch (err) {
+      if (seq !== refreshSeq.current) return;
       setError(describeError(err));
     } finally {
-      setLoading(false);
+      if (seq === refreshSeq.current) setLoading(false);
     }
   }, []);
 

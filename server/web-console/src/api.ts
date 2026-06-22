@@ -165,6 +165,14 @@ export interface UserPermissionTemplate {
   updated_at: string;
 }
 
+/**
+ * Per-channel AI dispatch engagement mode.
+ *  - off        — dispatcher never listens.
+ *  - supervised — only engages when the transmission opens with the wake word "AI".
+ *  - full_auto  — listens to every qualifying transmission (legacy ON).
+ */
+export type AiDispatchMode = "off" | "supervised" | "full_auto";
+
 export interface UserChannel {
   id: number;
   name: string;
@@ -177,6 +185,8 @@ export interface UserChannel {
   simulcast?: boolean;
   /** Per-channel AI dispatcher (dispatch console only). */
   ai_dispatch_enabled?: boolean;
+  /** Three-way AI dispatch engagement mode (dispatch console only). */
+  ai_dispatch_mode?: AiDispatchMode;
 }
 
 export interface Simulcast {
@@ -209,9 +219,12 @@ export interface AiDispatchActivityEntry {
   plate_lookup: {
     ok: boolean;
     plate?: string | null;
+    state?: string | null;
     year?: string | null;
     make?: string | null;
     model?: string | null;
+    color?: string | null;
+    vin?: string | null;
     reason?: string;
   } | null;
   error: string | null;
@@ -1134,14 +1147,15 @@ export const api = {
       dispatch_unit_id: string;
     }>("GET", "/v1/ai-dispatch/status"),
 
-  setChannelAiDispatch: (channelName: string, enabled: boolean) =>
-    request<{ ok: boolean; enabled: boolean }>("POST", "/v1/channels/ai-dispatch", {
-      channel: channelName,
-      enabled,
-    }),
+  setChannelAiDispatch: (channelName: string, mode: AiDispatchMode) =>
+    request<{ ok: boolean; enabled: boolean; mode: AiDispatchMode }>(
+      "POST",
+      "/v1/channels/ai-dispatch",
+      { channel: channelName, mode },
+    ),
 
   getChannelAiDispatch: (channelName: string) =>
-    request<{ enabled: boolean }>(
+    request<{ enabled: boolean; mode: AiDispatchMode }>(
       "GET",
       `/v1/channels/ai-dispatch?channel=${encodeURIComponent(channelName)}`,
     ),

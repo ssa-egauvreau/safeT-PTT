@@ -3,6 +3,31 @@ import Foundation
 /// One selectable channel in the tuning order, carrying its zone grouping for
 /// the zone/channel dropdown and the Motorola-style "zone number in front of
 /// channel" display. Mirrors the Android `ChannelZone` / channel display logic.
+/// Three-way AI dispatch engagement mode for a channel, mirrored from the server
+/// (`ai_dispatch_mode`). The handset shows an always-on badge for non-off modes.
+enum AiDispatchMode: String, Equatable {
+    case off
+    case supervised
+    case fullAuto = "full_auto"
+
+    init(serverValue: String?) {
+        switch serverValue?.lowercased() {
+        case "supervised": self = .supervised
+        case "full_auto", "auto", "on", "true": self = .fullAuto
+        default: self = .off
+        }
+    }
+
+    /// Compact badge text for the radio screen, or nil when off (no badge).
+    var badge: String? {
+        switch self {
+        case .off: return nil
+        case .supervised: return "AI · SUPERVISED"
+        case .fullAuto: return "AI · AUTO"
+        }
+    }
+}
+
 struct ChannelOption: Identifiable, Equatable {
     /// Position in the tuning order (the index `RadioViewModel.channelIndex` uses).
     let index: Int
@@ -11,6 +36,8 @@ struct ChannelOption: Identifiable, Equatable {
     let zoneName: String?
     /// True when the AI dispatcher is enabled on this channel (radios show an AI badge).
     var aiDispatchEnabled: Bool = false
+    /// Three-way engagement mode (off / supervised / full-auto) for the badge.
+    var aiDispatchMode: AiDispatchMode = .off
 
     var id: Int { index }
 
@@ -47,8 +74,19 @@ struct AiActivityUi: Equatable {
     var forYou: Bool
     /// Her reply text, shown while speaking.
     var text: String = ""
+    /// Clean, screen-friendly reply with no phonetics ("8ABC123 — 2019 Toyota
+    /// Camry"). Preferred over `text` for display; empty falls back to `text`.
+    var displayText: String = ""
+    /// Literal queried plate for a plate return (e.g. "8ABC123").
+    var plate: String = ""
+    /// Full VIN for a plate/VIN return — rendered whole with the last 6 bold.
+    var vin: String = ""
     /// Short action tag, e.g. "LOOKUP: PLATE".
     var tag: String = ""
+
+    /// What the screen should show: the clean display text when present, else
+    /// the spoken text.
+    var shownText: String { displayText.isEmpty ? text : displayText }
 }
 
 /// One page/message in the radio's inbox (dispatch → radio), persisted across
@@ -92,6 +130,10 @@ struct RadioUiState {
     var aiDispatchEnabled: Bool {
         channels.indices.contains(channelIndex) ? channels[channelIndex].aiDispatchEnabled : false
     }
+    /// Engagement mode of the tuned channel — drives the always-on AI mode badge.
+    var aiDispatchMode: AiDispatchMode {
+        channels.indices.contains(channelIndex) ? channels[channelIndex].aiDispatchMode : .off
+    }
     var channelPosition = "-- / --"
     var statusMessage = "STARTING"
     var isPttPressed = false
@@ -99,6 +141,9 @@ struct RadioUiState {
     var isEmergencyActive = false
     var channelsLoading = true
     var channelSyncError: String?
+    /// Set when the server rejected the saved login (401). The shell drops to
+    /// the login screen so the operator isn't stuck on a broken radio.
+    var sessionInvalid = false
     var localShortUnitId = ""
     var operatorDisplayName = ""
     var agencyName = ""

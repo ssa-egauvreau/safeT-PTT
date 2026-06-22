@@ -35,6 +35,9 @@ final class RadioViewModel: ObservableObject {
     private var channelIndex = 0
     private var inboxSince = 0
     private var inboxPrimed = false
+    /// Bumped on every emergency toggle so an out-of-order request completion
+    /// (rapid double-tap) can't apply a stale result to this safety-critical state.
+    private var emergencyGeneration = 0
     /// True once the persisted scan picks have been restored into the catalog
     /// (only on the first catalog load, so later refreshes don't clobber edits).
     private var scanRestored = false
@@ -313,8 +316,19 @@ final class RadioViewModel: ObservableObject {
         } catch {
             uiState.channelsLoading = false
             uiState.networkLabel = "OFFLINE"
-            uiState.channelSyncError = "Channel sync failed"
-            uiState.statusMessage = "SYNC FAILED"
+            // Only a DEFINITIVE session-invalid error (account disabled, a
+            // superseded console session, agency disabled) drops to the login
+            // screen — a generic/transient 401 just shows "SYNC FAILED" and keeps
+            // retrying, so a blip can't kick the operator out. (Radio tokens are
+            // now exempt from supersession server-side, so this should be rare.)
+            if let apiError = error as? RadioApiError, apiError.isTerminalSession {
+                uiState.sessionInvalid = true
+                uiState.statusMessage = "SIGN IN REQUIRED"
+                uiState.channelSyncError = "Session expired — sign in again"
+            } else {
+                uiState.channelSyncError = "Channel sync failed"
+                uiState.statusMessage = "SYNC FAILED"
+            }
             uiState.connectionStartedAt = nil
             refreshScanTransport()
         }
@@ -360,7 +374,8 @@ final class RadioViewModel: ObservableObject {
                 name: dto.name,
                 zoneNumber: dto.zoneNumber,
                 zoneName: dto.zone,
-                aiDispatchEnabled: dto.aiDispatchEnabled ?? false
+                aiDispatchEnabled: dto.aiDispatchEnabled ?? false,
+                aiDispatchMode: AiDispatchMode(serverValue: dto.aiDispatchMode)
             )
         }
     }
@@ -449,6 +464,11 @@ final class RadioViewModel: ObservableObject {
         uiState.liveTranscript = ""
         uiState.liveTranscriptWho = ""
         transcriptPrimed = false
+        // The inbox is channel-scoped; reset its high-water cursor so pages for
+        // the newly tuned channel aren't skipped by a cursor left high from the
+        // previous channel.
+        inboxSince = 0
+        inboxPrimed = false
         locationReporter.setChannel(currentChannel)
         if let channel = currentChannel {
             voiceTransport.join(channel: channel)
@@ -741,6 +761,8 @@ final class RadioViewModel: ObservableObject {
             sounds.play(.emergency)
         }
         let channel = currentChannel
+        emergencyGeneration &+= 1
+        let gen = emergencyGeneration
         // Log the outbound call up front so we can correlate the request with
         // any failure that follows. Operator reports of "I pressed emergency
         // and nothing happened" are otherwise un-debuggable — the failure path
@@ -760,12 +782,15 @@ final class RadioViewModel: ObservableObject {
                 logger.notice(
                     "emergency OK unit=\(self.unitId, privacy: .public) active=\(activating)"
                 )
+                // A newer toggle superseded this request — don't clobber its state.
+                guard gen == emergencyGeneration else { return }
                 uiState.statusMessage = activating ? "EMERGENCY ACTIVE" : "EMERGENCY OFF"
             } catch {
                 let detail = String(describing: error)
                 logger.error(
                     "emergency FAILED unit=\(self.unitId, privacy: .public) active=\(activating) error=\(detail, privacy: .public)"
                 )
+                guard gen == emergencyGeneration else { return }
                 uiState.isEmergencyActive = !activating
                 let prefix = activating ? "EMERGENCY SEND FAILED" : "EMERGENCY CLEAR FAILED"
                 // Surface a short error hint in the status strip so an operator
@@ -782,7 +807,7 @@ final class RadioViewModel: ObservableObject {
         if let radio = error as? RadioApiError {
             switch radio {
             case .invalidURL: return "BAD URL"
-            case .badStatus(let code): return "HTTP \(code)"
+            case .badStatus(let status, _): return "HTTP \(status)"
             }
         }
         if let urlError = error as? URLError {
@@ -1121,8 +1146,9 @@ final class RadioViewModel: ObservableObject {
 
             let allUnits = try await api.positions()
             let cutoff = Date().addingTimeInterval(-600) // 10-minute activity window
-            let channelUnits = allUnits
-                .filter { $0.channelName?.lowercased() == channel.lowercased() }
+            let channelKey = channel.lowercased()
+            let names = allUnits
+                .filter { $0.channelName?.lowercased() == channelKey }
                 .filter { pos in
                     // Parse updatedAt; fall back to including the entry if unparseable
                     let date = Self.isoFormatter.date(from: pos.updatedAt)
@@ -1130,11 +1156,9 @@ final class RadioViewModel: ObservableObject {
                     return date.map { $0 > cutoff } ?? true
                 }
                 .compactMap(\.displayName)
-                .reduce(into: [String]()) { result, name in
-                    if !result.contains(name) { result.append(name) }
-                }
-                .sorted()
-            uiState.unitsOnChannel = channelUnits
+            // Dedupe via Set (O(1)/name) rather than the previous O(n²)
+            // `result.contains` scan, then sort for stable display order.
+            uiState.unitsOnChannel = Array(Set(names)).sorted()
             updateWidgetData()
         } catch {
             uiState.radiosOnlineOnChannel = nil
@@ -1145,7 +1169,12 @@ final class RadioViewModel: ObservableObject {
     private func startInboxPolling() {
         Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(VoiceTiming.inboxPollSeconds))
+                // Poll fast while the AI cue is live so it animates fluidly; idle
+                // back to the slow cadence to keep the radio's poll load low.
+                let interval = self?.uiState.aiActivity != nil
+                    ? VoiceTiming.inboxFastPollSeconds
+                    : VoiceTiming.inboxPollSeconds
+                try? await Task.sleep(for: .seconds(interval))
                 guard let self else { return }
                 await self.pollInbox()
             }
@@ -1184,6 +1213,9 @@ final class RadioViewModel: ObservableObject {
                     phase: ai.phase.lowercased() == "speaking" ? .speaking : .thinking,
                     forYou: ai.forYou,
                     text: ai.text ?? "",
+                    displayText: ai.displayText ?? "",
+                    plate: ai.plate ?? "",
+                    vin: ai.vin ?? "",
                     tag: ai.tag ?? ""
                 )
             }

@@ -15,8 +15,8 @@ settings:
     # confirms the phone actually picked up a fresh build. CI
     # (ios-testflight.yml) overrides CURRENT_PROJECT_VERSION with a unique,
     # monotonic build number per TestFlight upload; this is the local default.
-    MARKETING_VERSION: "0.2.9"
-    CURRENT_PROJECT_VERSION: "11"
+    MARKETING_VERSION: "0.3.6"
+    CURRENT_PROJECT_VERSION: "18"
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ""
 

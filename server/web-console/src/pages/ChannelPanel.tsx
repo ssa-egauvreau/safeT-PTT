@@ -5,7 +5,8 @@ import {
   useState,
   type PointerEvent,
 } from "react";
-import type { Permission, ToneOut, UserChannel } from "../api";
+import { isPageHidden, onPageVisible } from "../lib/pageVisibility";
+import type { AiDispatchMode, Permission, ToneOut, UserChannel } from "../api";
 import { api, voiceCodecBadge, voiceCodecLabel } from "../api";
 import { VoiceChannelClient, type VoiceState, type ToneOutKind } from "../voice/voiceClient";
 import { scheduleConnect } from "../voice/connectScheduler";
@@ -87,6 +88,25 @@ interface ChannelPanelProps {
 const AI_DISPATCH_ON_NOTE =
   "AI dispatch uses clear audio for transcripts; Fast (vocoder) still keys the channel for other units.";
 
+// Three-way AI dispatch control: tap cycles Off → Supervised → Auto.
+const AI_DISPATCH_CYCLE: AiDispatchMode[] = ["off", "supervised", "full_auto"];
+const AI_DISPATCH_LABEL: Record<AiDispatchMode, string> = {
+  off: "OFF",
+  supervised: "SUPERV",
+  full_auto: "AUTO",
+};
+const AI_DISPATCH_MODE_NOTE: Record<AiDispatchMode, string> = {
+  off: "AI dispatcher is off on this channel. Tap to require the wake word “AI”.",
+  supervised:
+    "Supervised: the dispatcher only replies when a unit opens with the wake word “AI” (e.g. “AI, 27-000 show me on a patrol check”). Tap for full auto.",
+  full_auto:
+    "Full auto: the dispatcher acts on every qualifying transmission. Tap to turn off.",
+};
+function nextAiDispatchMode(mode: AiDispatchMode): AiDispatchMode {
+  const i = AI_DISPATCH_CYCLE.indexOf(mode);
+  return AI_DISPATCH_CYCLE[(i + 1) % AI_DISPATCH_CYCLE.length]!;
+}
+
 /**
  * One channel as a collapsible accordion row. Collapsed it shows the name, an
  * on/off (monitor) toggle, and a quick PTT button; expanded it reveals the full
@@ -112,7 +132,10 @@ export function ChannelPanel({
   const [voiceDetail, setVoiceDetail] = useState<string | null>(null);
   const [permission, setPermission] = useState<Permission>(channel.permission);
   const [marker, setMarker] = useState(false);
-  const [aiDispatch, setAiDispatch] = useState(channel.ai_dispatch_enabled === true);
+  const [aiDispatchMode, setAiDispatchMode] = useState<AiDispatchMode>(
+    channel.ai_dispatch_mode ?? (channel.ai_dispatch_enabled === true ? "full_auto" : "off"),
+  );
+  const aiDispatchOn = aiDispatchMode !== "off";
   const [aiDispatchReady, setAiDispatchReady] = useState(false);
   const [aiDispatchHint, setAiDispatchHint] = useState<string | null>(null);
   const [volume, setVolume] = useState(() => loadVolume(channel.id));
@@ -328,7 +351,7 @@ export function ChannelPanel({
         if (cancelled) {
           return;
         }
-        setAiDispatch(row.enabled);
+        setAiDispatchMode(row.mode ?? (row.enabled ? "full_auto" : "off"));
         setAiDispatchReady(true);
         const hints: string[] = [];
         if (!status.platform_enabled) {
@@ -356,20 +379,21 @@ export function ChannelPanel({
     if (!client || !monitoring) {
       return;
     }
-    client.setAiDispatchListenPcm(aiDispatch);
+    client.setAiDispatchListenPcm(aiDispatchOn);
     client.setDigitalTx(loadTxDigital(channel.id));
-  }, [aiDispatch, monitoring, channel.id]);
+  }, [aiDispatchOn, monitoring, channel.id]);
 
-  function toggleAiDispatch() {
+  function cycleAiDispatch() {
     if (!aiDispatchReady) {
       return;
     }
-    const next = !aiDispatch;
-    setAiDispatch(next);
+    const prev = aiDispatchMode;
+    const next = nextAiDispatchMode(prev);
+    setAiDispatchMode(next);
     void api.setChannelAiDispatch(channel.name, next).catch(() => {
-      setAiDispatch(!next);
+      setAiDispatchMode(prev);
     });
-    clientRef.current?.setAiDispatchListenPcm(next);
+    clientRef.current?.setAiDispatchListenPcm(next !== "off");
     // Don't push the clear-audio explainer into the on-card note — it's hover-only
     // now. `aiDispatchHint` is left to the config-warning effect (missing key, etc.).
   }
@@ -381,6 +405,7 @@ export function ChannelPanel({
     }
     let cancelled = false;
     const syncTen33 = () => {
+      if (isPageHidden()) return; // skip while the operator can't see the marker
       void api.getChannelTen33(channel.name).then((r) => {
         if (cancelled) {
           return;
@@ -390,9 +415,11 @@ export function ChannelPanel({
     };
     syncTen33();
     const timer = window.setInterval(syncTen33, 4000);
+    const offVisible = onPageVisible(syncTen33);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      offVisible();
     };
   }, [channel.name, monitoring, expanded]);
 
@@ -566,7 +593,7 @@ export function ChannelPanel({
     : "Receiving";
   const showActionNotes =
     !workspace
-      ? marker || aiDispatchHint || (aiDispatch && !aiDispatchHint)
+      ? marker || aiDispatchHint || (aiDispatchOn && !aiDispatchHint)
       : wsSize === "large" && (marker || aiDispatchHint);
 
   const volumeControls = (
@@ -1006,26 +1033,24 @@ export function ChannelPanel({
         <div className="ch-quick-controls" role="group" aria-label="Channel controls">
           <button
             type="button"
-            role="switch"
-            aria-checked={aiDispatch}
-            className={`ch-action-cell ch-qc-ai${aiDispatch ? " active" : ""}`}
+            aria-label={`AI dispatch mode: ${AI_DISPATCH_LABEL[aiDispatchMode]} (tap to change)`}
+            className={`ch-action-cell ch-qc-ai${aiDispatchOn ? " active" : ""}${
+              aiDispatchMode === "supervised" ? " supervised" : ""
+            }`}
             disabled={!aiDispatchReady}
-            onClick={toggleAiDispatch}
-            title={
-              aiDispatchHint ??
-              (aiDispatch
-                ? AI_DISPATCH_ON_NOTE
-                : "When on, unit transmissions on this channel can trigger an AI dispatcher reply on the air.")
-            }
+            onClick={cycleAiDispatch}
+            title={aiDispatchHint ?? AI_DISPATCH_MODE_NOTE[aiDispatchMode]}
           >
             <span className="ch-action-kicker">AI dispatch</span>
             <strong className="ch-qc-value">
-              {aiDispatch && <IconAi size={wsIcon?.action ?? 11} className="ch-ai-spark" />}
-              {aiDispatch ? "ON" : "OFF"}
+              {aiDispatchOn && <IconAi size={wsIcon?.action ?? 11} className="ch-ai-spark" />}
+              {AI_DISPATCH_LABEL[aiDispatchMode]}
             </strong>
           </button>
           <button
             type="button"
+            aria-pressed={marker}
+            aria-label={`10-33 emergency marker ${marker ? "on" : "off"}`}
             className={`marker-button ch-action-cell${marker ? " active" : ""}`}
             disabled={!connected || !canTransmit}
             onClick={toggleMarker}
@@ -1056,6 +1081,8 @@ export function ChannelPanel({
       <div className="ch-actions-stack">
         <button
           type="button"
+          aria-pressed={marker}
+          aria-label={`10-33 emergency marker ${marker ? "on" : "off"}`}
           className={marker ? "marker-button active ch-action-cell" : "marker-button ch-action-cell"}
           disabled={!connected || !canTransmit}
           onClick={toggleMarker}
@@ -1070,7 +1097,16 @@ export function ChannelPanel({
       {showActionNotes && (
         <div className="ch-action-notes">
           {marker && <span className="marker-note">10-33 marker tone every 12s</span>}
-          {aiDispatchHint && <span className="marker-note muted">{aiDispatchHint}</span>}
+          {aiDispatchHint ? (
+            <span className="marker-note muted">{aiDispatchHint}</span>
+          ) : (
+            aiDispatchOn && (
+              <span className="marker-note muted">
+                {AI_DISPATCH_MODE_NOTE[aiDispatchMode]}
+                {aiDispatchMode === "full_auto" ? ` ${AI_DISPATCH_ON_NOTE}` : ""}
+              </span>
+            )
+          )}
         </div>
       )}
 

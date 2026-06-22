@@ -176,6 +176,12 @@ struct RadioScreen: View {
             default: break
             }
         }
+        .onChange(of: viewModel.uiState.sessionInvalid) { invalid in
+            // The saved login was rejected (401). Drop to the login screen
+            // automatically instead of sitting on a broken radio — clearing the
+            // session flips RootView to LoginScreen.
+            if invalid { session.logout() }
+        }
         .sheet(isPresented: $showingDispatch) { sheetWrap("DISPATCH", isPresented: $showingDispatch) {
             if let token = session.token {
                 DispatchScreen(api: RadioApiClient(token: token))
@@ -506,24 +512,32 @@ struct RadioScreen: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
 
-                if state.aiDispatchEnabled {
-                    // Rainbow "AI DISPATCH" capsule — this channel runs the AI dispatcher.
-                    Text("✦ AI DISPATCH")
+                if let badge = state.aiDispatchMode.badge {
+                    // Always-on rainbow capsule showing which AI mode this channel
+                    // runs — "AI · SUPERVISED" (wake-word) or "AI · AUTO". Supervised
+                    // gets a steadier (non-gradient) treatment so it reads distinctly.
+                    Text("✦ \(badge)")
                         .font(.safet(size: 11, weight: .bold, design: .rounded))
                         .foregroundColor(.black)
                         .padding(.vertical, 2)
                         .padding(.horizontal, 8)
                         .background(
-                            LinearGradient(
-                                colors: [
-                                    Color(red: 1.0, green: 0.37, blue: 0.43),
-                                    Color(red: 1.0, green: 0.77, blue: 0.44),
-                                    Color(red: 0.22, green: 0.98, blue: 0.84),
-                                    Color(red: 0.50, green: 0.50, blue: 0.84),
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
+                            Group {
+                                if state.aiDispatchMode == .supervised {
+                                    Color(red: 1.0, green: 0.77, blue: 0.44)
+                                } else {
+                                    LinearGradient(
+                                        colors: [
+                                            Color(red: 1.0, green: 0.37, blue: 0.43),
+                                            Color(red: 1.0, green: 0.77, blue: 0.44),
+                                            Color(red: 0.22, green: 0.98, blue: 0.84),
+                                            Color(red: 0.50, green: 0.50, blue: 0.84),
+                                        ],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                }
+                            }
                         )
                         .clipShape(Capsule())
                 }
@@ -641,7 +655,7 @@ struct RadioScreen: View {
                     .font(.safet(size: 11, weight: .medium))
                     .foregroundColor(.safetTextDim)
             } else {
-                ForEach(Array(state.unitsOnChannel.enumerated()), id: \.offset) { _, unit in
+                ForEach(state.unitsOnChannel, id: \.self) { unit in
                     let talking = !talker.isEmpty
                         && unit.caseInsensitiveCompare(talker) == .orderedSame
                     HStack(spacing: 8) {
@@ -1066,12 +1080,30 @@ private struct AiSpeakingVisual: View {
             Capsule()
                 .fill(LinearGradient(colors: aiRainbow, startPoint: .leading, endPoint: .trailing))
                 .frame(width: 120, height: 3)
-            Text(activity.text.isEmpty ? "\u{2026}" : activity.text)
+            // Prefer the clean display text (literal "8ABC123 — 2019 Toyota
+            // Camry"), never the spelled-out phonetic TTS.
+            Text(activity.shownText.isEmpty ? "\u{2026}" : activity.shownText)
                 .font(.safet(size: 22, weight: .semibold))
                 .foregroundColor(.safetText)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+            if !activity.vin.isEmpty {
+                vinLine(activity.vin)
+                    .font(.safet(size: 16, weight: .regular))
+                    .foregroundColor(.safetText)
+                    .multilineTextAlignment(.center)
+            }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// Full VIN with the last six characters bold (operators scan the last six).
+    private func vinLine(_ vin: String) -> Text {
+        let v = vin.uppercased()
+        let head = v.count > 6 ? String(v.dropLast(6)) : ""
+        let tail = v.count > 6 ? String(v.suffix(6)) : v
+        return Text("VIN ").foregroundColor(.safetTextDim)
+            + Text(head)
+            + Text(tail).fontWeight(.bold)
     }
 }

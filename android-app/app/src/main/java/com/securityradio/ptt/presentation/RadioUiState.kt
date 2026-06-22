@@ -3,6 +3,7 @@ package com.securityradio.ptt.presentation
 import com.securityradio.ptt.device.DeviceProfilePreference
 import com.securityradio.ptt.device.RadioPreferences
 import com.securityradio.ptt.device.ResolvedDeviceProfile
+import com.securityradio.ptt.domain.AiDispatchMode
 import com.securityradio.ptt.domain.ChannelPermission
 
 /** One row in the RX message-history screen. */
@@ -25,11 +26,21 @@ data class AiActivityUi(
     val phase: AiActivityPhase,
     /** True when she's responding to THIS radio (full cue vs. a dimmer net-wide cue). */
     val forYou: Boolean,
-    /** Her reply text, shown on the RX screen while Speaking. */
+    /** Her reply text, shown on the RX screen while Speaking — the SPOKEN form. */
     val text: String = "",
+    /** Clean, screen-friendly reply with no phonetics ("8ABC123 — 2019 Toyota
+     * Camry"). Preferred over [text] for display; empty falls back to [text]. */
+    val displayText: String = "",
+    /** Literal queried plate for a plate return (e.g. "8ABC123"). */
+    val plate: String = "",
+    /** Full VIN for a plate/VIN return — rendered whole with the last 6 bold. */
+    val vin: String = "",
     /** Short action tag, e.g. "LOOKUP: PLATE". */
     val tag: String = "",
-)
+) {
+    /** What the screen should show: clean display text when present, else spoken. */
+    val shownText: String get() = displayText.ifEmpty { text }
+}
 
 /** A dispatcher page/message delivered to this radio (text + optional picture). */
 data class PageMessage(
@@ -69,6 +80,8 @@ data class RadioUiState(
     val channelDisplayLabel: String = "",
     /** True when the AI dispatcher is enabled on the tuned channel — the shell shows an AI badge. */
     val aiDispatchEnabled: Boolean = false,
+    /** Engagement mode of the tuned channel — drives the always-on AI mode badge. */
+    val aiDispatchMode: AiDispatchMode = AiDispatchMode.OFF,
     /** Live AI-dispatcher activity on the tuned channel (Siri-style cue), or null. */
     val aiActivity: AiActivityUi? = null,
     val channelPosition: String,

@@ -13,6 +13,10 @@ enum VoiceTiming {
     /// Faster talk-activity poll while someone appears on air or PTT held.
     static let talkActivityFastPollSeconds: TimeInterval = 0.4
     static let inboxPollSeconds: TimeInterval = 2.0
+    /// Faster inbox cadence while the AI-dispatcher cue is live, so the
+    /// thinking → speaking transition and her reply text update fluidly instead
+    /// of stepping on the 2 s idle poll. Drops back to `inboxPollSeconds` when idle.
+    static let inboxFastPollSeconds: TimeInterval = 0.6
     static let catalogPollSeconds: TimeInterval = 15.0
     static let presencePollSeconds: TimeInterval = 12.0
 

@@ -14,6 +14,8 @@ function outcomeLabel(outcome: string | null | undefined): { text: string; class
       return { text: "Follow-up answer", className: "ai-outcome-followup" };
     case "skipped_channel_off":
       return { text: "Skipped — AI OFF on channel", className: "ai-outcome-skip" };
+    case "skipped_supervised_no_keyword":
+      return { text: "Skipped — supervised, no “AI” wake word", className: "ai-outcome-skip" };
     case "skipped_no_speech":
       return { text: "Skipped — no speech", className: "ai-outcome-skip" };
     case "skipped_duplicate":
@@ -25,6 +27,21 @@ function outcomeLabel(outcome: string | null | undefined): { text: string; class
     default:
       return { text: outcome ?? "Unknown", className: "ai-outcome-skip" };
   }
+}
+
+/** Full VIN with the last six characters bold, monospaced (operators scan the
+ * last six). */
+function VinDisplay({ vin }: { vin: string }) {
+  const v = vin.toUpperCase();
+  const head = v.length > 6 ? v.slice(0, -6) : "";
+  const tail = v.length > 6 ? v.slice(-6) : v;
+  return (
+    <span style={{ fontFamily: "monospace", marginLeft: "0.4rem" }}>
+      <span className="muted">VIN </span>
+      {head}
+      <strong>{tail}</strong>
+    </span>
+  );
 }
 
 function EntryCard({ entry }: { entry: AiDispatchActivityEntry }) {
@@ -92,9 +109,25 @@ function EntryCard({ entry }: { entry: AiDispatchActivityEntry }) {
       {entry.plate_lookup && (
         <p style={{ margin: "0.25rem 0", fontSize: "0.9rem" }}>
           <span className="muted">Plate lookup:</span>{" "}
+          {entry.plate_lookup.plate && (
+            <strong style={{ fontFamily: "monospace" }}>
+              {entry.plate_lookup.plate}
+              {entry.plate_lookup.state ? ` (${entry.plate_lookup.state})` : ""}{" "}
+            </strong>
+          )}
           {entry.plate_lookup.ok
-            ? `${entry.plate_lookup.year ?? ""} ${entry.plate_lookup.make ?? ""} ${entry.plate_lookup.model ?? ""}`.trim()
-            : entry.plate_lookup.reason ?? "failed"}
+            ? [
+                entry.plate_lookup.year,
+                entry.plate_lookup.make,
+                entry.plate_lookup.model,
+                entry.plate_lookup.color,
+              ]
+                .filter(Boolean)
+                .join(" ") || "valid, no details on file"
+            : entry.plate_lookup.reason === "no_record"
+              ? "no record on file"
+              : entry.plate_lookup.reason ?? "failed"}
+          {entry.plate_lookup.vin && <VinDisplay vin={entry.plate_lookup.vin} />}
         </p>
       )}
       {entry.error && (

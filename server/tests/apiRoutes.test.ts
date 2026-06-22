@@ -716,6 +716,43 @@ test("POST /v1/channels/ai-dispatch: refuses non-operator (radio) accounts with 
   }
 });
 
+test("radio handset token is exempt from session supersession", async () => {
+  // Radio handsets are persistent shared devices ("stay signed in until manual
+  // sign-out", no token expiry) and must NOT be kicked by "newest sign-in
+  // wins" — otherwise the radio silently 401s on "SYNC FAILED" until a manual
+  // re-login. The cache says the current generation is 1 while the radio token
+  // carries gen=0; a non-radio token would 401 session_superseded here, but the
+  // radio must pass auth and reach the route's role gate (403 forbidden).
+  const prevDbUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  clearAuthCache();
+  const radioUserId = 9_999_024;
+  setCachedAuth(radioUserId, {
+    tokenGeneration: 1,
+    userDisabled: false,
+    agencyDisabled: false,
+  });
+  const { baseUrl, close } = await bootRouter();
+  try {
+    const token = tokenFor({ id: radioUserId, agencyId: 42, role: "radio", gen: 0 });
+    const res = await fetch(`${baseUrl}/v1/channels/ai-dispatch`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ channel: "Patrol", mode: "off" }),
+    });
+    // Not superseded: auth passed and we hit the role gate instead.
+    assert.equal(res.status, 403);
+    const body = (await res.json()) as { error?: string };
+    assert.equal(body.error, "forbidden");
+  } finally {
+    await close();
+    clearAuthCache();
+    if (prevDbUrl !== undefined) {
+      process.env.DATABASE_URL = prevDbUrl;
+    }
+  }
+});
+
 test("GET /v1/transmissions: tolerates an oversized search query without crashing", async () => {
   // The route slices the `search` param at 200 chars BEFORE handing it to
   // the store layer (which already escapes %, _, \ and parameterises the

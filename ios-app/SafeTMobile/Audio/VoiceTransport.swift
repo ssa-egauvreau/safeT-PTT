@@ -45,6 +45,9 @@ final class VoiceTransport {
     private var task: URLSessionWebSocketTask?
     private var currentChannel: String?
     private var lastReceivedAt: Date = .distantPast
+    /// Monotonic time of the last end-of-TX cue, to dedupe duplicate air_released.
+    private var lastCueAt: TimeInterval = 0
+    private let cueDedupeSeconds: TimeInterval = 0.5
     private var receivingTimer: Timer?
     private var reconnectAttempts: Int = 0
     private var reconnectTask: Task<Void, Never>?
@@ -518,21 +521,19 @@ final class VoiceTransport {
            mc.caseInsensitiveCompare(cur) != .orderedSame {
             return
         }
+        // Dedupe rapid duplicate air_released frames (relay retransmit / simulcast
+        // / channel retune races) so the cue can't fire twice back-to-back and
+        // double up.
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastCueAt < cueDedupeSeconds { return }
+        lastCueAt = now
+
         let cue = PostDecodeChain.endOfTxCue(cfg)
         if cue.isEmpty { return }
-        // Inject in <=20 ms (640-byte) frames, not as one ~210 ms entry: a single
-        // large entry becomes the jitter buffer's lastGoodFrame and, since it's
-        // the tail of the queue, the next playout tick underruns and PLC re-emits
-        // a faded copy of the WHOLE cue — a stuttering echo that also stalls the
-        // 20 ms cadence. Frame-sized chunks keep PLC + pacing normal (mirrors the
-        // web track:true path bypassing PLC).
-        let cueFrameBytes = 640  // 20 ms of 16 kHz mono PCM16
-        var off = 0
-        while off < cue.count {
-            let end = min(off + cueFrameBytes, cue.count)
-            audio.enqueueIncoming(cue.subdata(in: off..<end))
-            off = end
-        }
+        // Play the whole cue ONCE on the dedicated one-shot node — bypassing the
+        // jitter buffer + PLC, whose packet-loss concealment re-emitted the cue's
+        // tail as a faded copy (the "echo" heard after a tone-out / transmission).
+        audio.playCue(cue)
     }
 
     private func startReceivingHeartbeat() {

@@ -131,11 +131,19 @@ class VoiceRelayTransport(
     private val reconnectAttempt = AtomicInteger(0)
     private val reconnectPending = AtomicBoolean(false)
 
+    /** Guards the uplink TX accumulator below. [consumePcm] mutates it on the
+     *  AudioRecord capture thread while finishTransmitHold/flushUplinkTail and
+     *  discardPendingUplinkTail touch it from the main thread on PTT release —
+     *  without this lock the key-up flush can read a torn accumulator and drop or
+     *  corrupt the operator's final frame. Also covers pcmFrameScratch, which the
+     *  capture loop and the tail flush both stage frames through. */
+    private val pcmAccLock = Any()
     private var pcmAcc = ByteArray(2048)
     private var pcmAccLen = 0
     /** Tracks the codec the last frame was encoded with so a mid-stream codec
      *  change can drop any fractional PCM in the accumulator (the next encoder
-     *  expects a fresh frame boundary, possibly at a different frame size). */
+     *  expects a fresh frame boundary, possibly at a different frame size).
+     *  Guarded by [pcmAccLock]. */
     private var lastTxCodec: VoiceCodec? = null
     /** One-shot Logcat warning when no encoder is available and uplink falls back to clear PCM. */
     private var warnedClearTx = false
@@ -325,6 +333,13 @@ class VoiceRelayTransport(
         ) {
             return
         }
+        // Dedupe rapid duplicate air_released frames (relay retransmit / simulcast
+        // / channel-retune races) so the cue can't fire twice back-to-back and the
+        // operator hears the tone-out / squelch tail echo.
+        val now = System.nanoTime()
+        if (now - lastCueNs < CUE_DEDUPE_NS) return
+        lastCueNs = now
+
         val cue = PostDecodeChain.endOfTxCue(cfg)
         if (cue.isEmpty()) return
         // Inject in <=20 ms (640-byte) frames, not as one ~210 ms entry:
@@ -477,6 +492,8 @@ class VoiceRelayTransport(
      *  talk-spurt boundary on the RX side so the post-decode chain can
      *  reset its biquad state before the next talker's first frame. */
     private var lastInboundVoiceNs = 0L
+    /** Monotonic time of the last end-of-TX cue, to dedupe duplicate air_released. */
+    private var lastCueNs = 0L
 
     /** Treat a > 300 ms gap between inbound voice frames as a new talk-spurt.
      *  Matches the relay's claim-air TTL window for the same reason: longer
@@ -514,20 +531,24 @@ class VoiceRelayTransport(
      *  [cur] is null when the registry has no encoder ready and uplink is
      *  falling back to clear PCM. */
     private fun reconcileAccumulatorForCodecToggle(cur: VoiceCodec?) {
-        val prev = lastTxCodec
-        if (prev != null && prev != cur) {
-            pcmAccLen = 0
+        synchronized(pcmAccLock) {
+            val prev = lastTxCodec
+            if (prev != null && prev != cur) {
+                pcmAccLen = 0
+            }
+            lastTxCodec = cur
         }
-        lastTxCodec = cur
     }
 
     private fun appendAccumulator(fragment: ByteArray, len: Int) {
-        val need = pcmAccLen + len
-        if (need > pcmAcc.size) {
-            pcmAcc = pcmAcc.copyOf(maxOf(pcmAcc.size * 2, need))
+        synchronized(pcmAccLock) {
+            val need = pcmAccLen + len
+            if (need > pcmAcc.size) {
+                pcmAcc = pcmAcc.copyOf(maxOf(pcmAcc.size * 2, need))
+            }
+            System.arraycopy(fragment, 0, pcmAcc, pcmAccLen, len)
+            pcmAccLen = need
         }
-        System.arraycopy(fragment, 0, pcmAcc, pcmAccLen, len)
-        pcmAccLen = need
     }
 
     private fun sendBinaryWs(ws: WebSocket, payload: ByteArray) {
@@ -545,7 +566,7 @@ class VoiceRelayTransport(
      * toggles / disconnect / mid-stream codec change cleanup).
      */
     fun discardPendingUplinkTail() {
-        pcmAccLen = 0
+        synchronized(pcmAccLock) { pcmAccLen = 0 }
     }
 
     /**
@@ -614,21 +635,26 @@ class VoiceRelayTransport(
     /** Encode whatever PCM is staged short of a frame boundary, padded with
      *  silence, so the operator's final syllable makes the air. */
     private fun flushUplinkTail() {
-        val len = pcmAccLen
-        pcmAccLen = 0
-        if (len <= 0) return
-        val encoder = codecRegistry.txEncoderFor(currentTxCodec) ?: return
+        val encoder = codecRegistry.txEncoderFor(currentTxCodec) ?: run {
+            synchronized(pcmAccLock) { pcmAccLen = 0 }
+            return
+        }
         val ws = webSocketRef.get() ?: return
         if (!socketReady.get() || !wantOnline.get()) return
-        val copied = minOf(len, pcmFrameScratch.size)
-        System.arraycopy(pcmAcc, 0, pcmFrameScratch, 0, copied)
-        pcmFrameScratch.fill(0, copied, pcmFrameScratch.size)
-        txConditioner.conditionLe16(
-            pcmFrameScratch,
-            pcmFrameScratch.size,
-            bypassExpanderAgc = bypassMicProcessingProvider(),
-        )
-        val packet = encoder.encodeFrame(pcmFrameScratch) ?: return
+        val packet = synchronized(pcmAccLock) {
+            val len = pcmAccLen
+            pcmAccLen = 0
+            if (len <= 0) return
+            val copied = minOf(len, pcmFrameScratch.size)
+            System.arraycopy(pcmAcc, 0, pcmFrameScratch, 0, copied)
+            pcmFrameScratch.fill(0, copied, pcmFrameScratch.size)
+            txConditioner.conditionLe16(
+                pcmFrameScratch,
+                pcmFrameScratch.size,
+                bypassExpanderAgc = bypassMicProcessingProvider(),
+            )
+            encoder.encodeFrame(pcmFrameScratch)
+        } ?: return
         sendBinaryWs(ws, packet)
     }
 
@@ -706,7 +732,7 @@ class VoiceRelayTransport(
                         "Check libsecurityradiovocoder.so was packaged for this ABI.",
                 )
             }
-            pcmAccLen = 0
+            synchronized(pcmAccLock) { pcmAccLen = 0 }
             sendBinaryWs(active, buffer.copyOfRange(0, length))
             return
         }
@@ -733,19 +759,24 @@ class VoiceRelayTransport(
         }
         lastConsumeNs = now
 
-        appendAccumulator(buffer, length)
-        while (pcmAccLen >= pcmFrameScratch.size) {
-            System.arraycopy(pcmAcc, 0, pcmFrameScratch, 0, pcmFrameScratch.size)
-            System.arraycopy(pcmAcc, pcmFrameScratch.size, pcmAcc, 0, pcmAccLen - pcmFrameScratch.size)
-            pcmAccLen -= pcmFrameScratch.size
+        // Stage + frame under the lock so a concurrent key-up flush
+        // (flushUplinkTail / discardPendingUplinkTail on the main thread) can't
+        // read a torn accumulator or race on pcmFrameScratch.
+        synchronized(pcmAccLock) {
+            appendAccumulator(buffer, length)
+            while (pcmAccLen >= pcmFrameScratch.size) {
+                System.arraycopy(pcmAcc, 0, pcmFrameScratch, 0, pcmFrameScratch.size)
+                System.arraycopy(pcmAcc, pcmFrameScratch.size, pcmAcc, 0, pcmAccLen - pcmFrameScratch.size)
+                pcmAccLen -= pcmFrameScratch.size
 
-            txConditioner.conditionLe16(
-                pcmFrameScratch,
-                pcmFrameScratch.size,
-                bypassExpanderAgc = bypassMicProcessingProvider(),
-            )
-            val packet = encoder.encodeFrame(pcmFrameScratch) ?: continue
-            sendBinaryWs(active, packet)
+                txConditioner.conditionLe16(
+                    pcmFrameScratch,
+                    pcmFrameScratch.size,
+                    bypassExpanderAgc = bypassMicProcessingProvider(),
+                )
+                val packet = encoder.encodeFrame(pcmFrameScratch) ?: continue
+                sendBinaryWs(active, packet)
+            }
         }
     }
 
@@ -769,7 +800,7 @@ class VoiceRelayTransport(
     fun disconnect() {
         wantOnline.set(false)
         socketReady.set(false)
-        pcmAccLen = 0
+        synchronized(pcmAccLock) { pcmAccLen = 0 }
         webSocketRef.getAndSet(null)?.close(1001, "bye")
         inbound.stop()
     }
@@ -782,7 +813,7 @@ class VoiceRelayTransport(
     fun reconnect() {
         synchronized(connectionLock) {
             socketReady.set(false)
-            pcmAccLen = 0
+            synchronized(pcmAccLock) { pcmAccLen = 0 }
             webSocketRef.getAndSet(null)?.close(1001, "reconnect")
             if (wantOnline.get()) {
                 openSocketLocked()
@@ -879,5 +910,8 @@ class VoiceRelayTransport(
         /** End-of-TX cue injection chunk: 20 ms of 16 kHz mono PCM16 = 640 bytes.
          *  Keeps the cue flowing through the jitter buffer as normal-sized frames. */
         private const val CUE_FRAME_BYTES = 640
+
+        /** Suppress a second end-of-TX cue within this window (duplicate air_released). */
+        private const val CUE_DEDUPE_NS = 500_000_000L
     }
 }

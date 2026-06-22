@@ -2,6 +2,7 @@ package com.securityradio.ptt.data
 
 import com.securityradio.ptt.data.remote.ChannelsApi
 import com.securityradio.ptt.device.ServerReachabilityMonitor
+import com.securityradio.ptt.domain.AiDispatchMode
 import com.securityradio.ptt.domain.ChannelCatalogOrigin
 import com.securityradio.ptt.domain.ChannelPermission
 import com.securityradio.ptt.domain.ChannelRepository
@@ -40,12 +41,25 @@ class RadioChannelGateway(
                 }
             }
             val aiDispatch = rows.filter { it.aiDispatchEnabled }.map { it.name.lowercase() }.toSet()
+            val aiDispatchModes = buildMap {
+                for (row in rows) {
+                    val mode = AiDispatchMode.fromServer(row.aiDispatchMode)
+                    // Fall back to the legacy boolean when the server omits the mode.
+                    val resolved = if (mode == AiDispatchMode.OFF && row.aiDispatchEnabled) {
+                        AiDispatchMode.FULL_AUTO
+                    } else {
+                        mode
+                    }
+                    if (resolved != AiDispatchMode.OFF) put(row.name.lowercase(), resolved)
+                }
+            }
             serverReachabilityMonitor.reportSuccess()
             RadioChannelCatalog(
                 channels = names,
                 permissions = permissions,
                 zones = zones,
                 aiDispatch = aiDispatch,
+                aiDispatchModes = aiDispatchModes,
                 origin = ChannelCatalogOrigin.NETWORK,
                 errorMessage = null,
             )
@@ -57,6 +71,7 @@ class RadioChannelGateway(
                 permissions = local.permissions,
                 zones = local.zones,
                 aiDispatch = local.aiDispatch,
+                aiDispatchModes = local.aiDispatchModes,
                 origin = ChannelCatalogOrigin.LOCAL_FALLBACK,
                 errorMessage = e.message ?: e::class.java.simpleName,
             )

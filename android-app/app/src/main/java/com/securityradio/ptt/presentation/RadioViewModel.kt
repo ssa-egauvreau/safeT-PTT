@@ -47,6 +47,7 @@ import com.securityradio.ptt.device.VoiceControlEvent
 import com.securityradio.ptt.device.ScanVoiceListenTransport
 import com.securityradio.ptt.device.VoiceRelayTransport
 import com.securityradio.ptt.domain.ChannelCatalogOrigin
+import com.securityradio.ptt.domain.AiDispatchMode
 import com.securityradio.ptt.domain.ChannelPermission
 import com.securityradio.ptt.domain.ChannelRepository
 import com.securityradio.ptt.domain.ChannelZone
@@ -109,6 +110,11 @@ class RadioViewModel(
 
     @Volatile
     private var mainRadioUiVisible: Boolean = false
+
+    /** Set when the agency radio key changes so the inbox poll re-baselines its
+     *  high-water cursor for the new agency's alert id space. Read/written on the
+     *  main dispatcher (event handler + poll loop). */
+    private var inboxResetRequested: Boolean = false
 
     private var appUpdatePollJob: Job? = null
 
@@ -177,6 +183,7 @@ class RadioViewModel(
 
     /** Lowercased names of channels with the AI dispatcher enabled (shown as an AI badge). */
     private var channelAiByName: Set<String> = emptySet()
+    private var channelAiModesByName: Map<String, AiDispatchMode> = emptyMap()
 
     /** Cursor into [zoneNames] while zone-select mode previews a zone. */
     private var zoneSelectCursor: Int = 0
@@ -1169,6 +1176,8 @@ class RadioViewModel(
                 // The new agency has its own tone set — pull it now, and forget
                 // the previous agency's version so the next poll re-baselines.
                 lastSoundsVersion = null
+                // Re-baseline the inbox cursor for the new agency's alert id space.
+                inboxResetRequested = true
                 customSoundDownloader.refreshAsync()
                 _uiState.update {
                     it.copy(
@@ -2122,6 +2131,7 @@ class RadioViewModel(
         channelPermissions = catalog.permissions
         channelZonesByName = catalog.zones
         channelAiByName = catalog.aiDispatch
+        channelAiModesByName = catalog.aiDispatchModes
         if (channelNames.isNotEmpty()) {
             channelIndex = channelIndex.coerceIn(0, channelNames.lastIndex)
         } else {
@@ -2400,10 +2410,29 @@ class RadioViewModel(
     private suspend fun pollInbox() {
         var since = 0L
         var primed = false
+        var lastChannel: String? = null
         while (currentCoroutineContext().isActive) {
-            delay(if (mainRadioUiVisible) INBOX_POLL_MS else INBOX_BG_POLL_MS)
+            // Poll fast while the AI cue is live so it animates fluidly; idle back
+            // to the slow cadence to keep the radio's poll load low.
+            delay(
+                when {
+                    !mainRadioUiVisible -> INBOX_BG_POLL_MS
+                    _uiState.value.aiActivity != null -> INBOX_FAST_POLL_MS
+                    else -> INBOX_POLL_MS
+                },
+            )
             if (_uiState.value.networkLabel != "ONLINE") continue
             val channel = _uiState.value.channelLabel.trim().takeUnless { it.isEmpty() || it == "----" }
+            // The inbox is channel- and agency-scoped; reset the high-water cursor
+            // when the tuned channel changes or an agency-key change requested it,
+            // so the new id space isn't skipped by a cursor left high from the
+            // previous context.
+            if (channel != lastChannel || inboxResetRequested) {
+                inboxResetRequested = false
+                lastChannel = channel
+                since = 0L
+                primed = false
+            }
             val response = try {
                 radioApi.inbox(unit = unitIdUpper, channel = channel, since = since)
             } catch (_: Exception) {
@@ -2447,6 +2476,9 @@ class RadioViewModel(
                 phase = AiActivityPhase.Speaking,
                 forYou = dto.forYou,
                 text = dto.text?.trim().orEmpty(),
+                displayText = dto.displayText?.trim().orEmpty(),
+                plate = dto.plate?.trim().orEmpty(),
+                vin = dto.vin?.trim().orEmpty(),
                 tag = dto.tag?.trim().orEmpty(),
             )
             else -> null
@@ -2726,6 +2758,7 @@ class RadioViewModel(
             channelLabel = label,
             channelDisplayLabel = display,
             aiDispatchEnabled = channelAiByName.contains(label.lowercase()),
+            aiDispatchMode = channelAiModesByName[label.lowercase()] ?: AiDispatchMode.OFF,
             channelPosition = "%02d / %02d".format(
                 (zoneIndices.indexOf(safeIndex) + 1).coerceAtLeast(1),
                 zoneIndices.size,
@@ -3183,6 +3216,10 @@ class RadioViewModel(
         const val WAKE_DEBOUNCE_MS = 700L
         const val PRESENCE_POLL_MS = 12_000L
         const val INBOX_POLL_MS = 2_000L
+        /** Faster inbox cadence while the AI-dispatcher cue is live, so the
+         *  thinking → speaking transition and her reply animate fluidly instead
+         *  of stepping on the 2 s idle poll. Drops back to [INBOX_POLL_MS] idle. */
+        const val INBOX_FAST_POLL_MS = 600L
         /** Backgrounded inbox cadence. Kept short enough that emergency pages /
          *  10-33 markers still surface within a few seconds while off-screen. */
         const val INBOX_BG_POLL_MS = 5_000L

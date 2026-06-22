@@ -71,7 +71,8 @@ import {
   buildTen8AddVehicleBodyCombined,
   formatTen8VehicleLookupComment,
 } from "../ten8/vehicles.js";
-import type { PlateLookupResult } from "./plateLookup.js";
+import { buildLookupDisplay, type PlateLookupResult } from "./plateLookup.js";
+import { stripSupervisedWakeWord } from "./supervisedMode.js";
 import type { AiDispatchParseResult } from "./parse.js";
 
 const queue: number[] = [];
@@ -433,14 +434,15 @@ async function processTransmission(transmissionId: number): Promise<void> {
     }
 
     const channelRow = await getChannelAiDispatchRow(tx.agency_id, tx.channel_name);
-    if (!channelRow?.enabled) {
+    const dispatchMode = channelRow?.mode ?? "off";
+    if (dispatchMode === "off") {
       outcome = "skipped_channel_off";
       error = "AI dispatch is OFF for this channel.";
       transcript =
         (await loadTranscriptText(transmissionId)) ?? (await loadTranscriptRaw(transmissionId));
       return;
     }
-    yieldsToUnits = channelRow.yields_to_units;
+    yieldsToUnits = channelRow!.yields_to_units;
 
     const ageMs = Date.now() - new Date(tx.started_at).getTime();
     const allowOnAir = Number.isFinite(ageMs) ? ageMs <= MAX_ON_AIR_REPLY_AGE_MS : true;
@@ -460,6 +462,23 @@ async function processTransmission(transmissionId: number): Promise<void> {
       return;
     }
     transcript = text;
+    // Transcript fed to the LLM. Same as `transcript` except in supervised mode,
+    // where the leading wake word is stripped first.
+    let parseTranscript = transcript;
+
+    // Supervised mode: the dispatcher only engages when the transmission opens
+    // with the wake word "AI" ("AI, 27-000 show me on a patrol check"). Strip
+    // the wake word before parsing so the LLM never mistakes it for a callsign;
+    // keep the original transcript for the log.
+    if (dispatchMode === "supervised") {
+      const woken = stripSupervisedWakeWord(transcript);
+      if (woken === null) {
+        outcome = "skipped_supervised_no_keyword";
+        error = 'Supervised mode: transmission did not open with the wake word "AI".';
+        return;
+      }
+      parseTranscript = woken || transcript;
+    }
 
     if (shouldSkipDuplicateAiDispatch(tx.agency_id, transcript)) {
       outcome = "skipped_duplicate";
@@ -483,7 +502,7 @@ async function processTransmission(transmissionId: number): Promise<void> {
       systemPrompt,
       unitId,
       channelName: tx.channel_name,
-      transcript,
+      transcript: parseTranscript,
       knowledgeContext,
       conversationContext,
     });
@@ -544,6 +563,10 @@ async function processTransmission(transmissionId: number): Promise<void> {
         parsed,
       });
       plateLookup = plate.lookup;
+      // Clean, screen-friendly form of a plate/VIN return ("8ABC123 — 2019
+      // Toyota Camry" + the full VIN) so handsets/console show the literal data
+      // instead of the phonetic TTS ("eight Alpha Bravo Charlie…").
+      const lookupDisplay = buildLookupDisplay(plate.lookup);
 
       ten8Actions = {};
       if (parsed.recommended_action) {
@@ -787,7 +810,14 @@ async function processTransmission(transmissionId: number): Promise<void> {
       if (allowOnAir && speakText && parsed.intent !== "request_info") {
         const reply = adaptDispatcherResponseForChannel(speakText, tx.channel_name);
         parsed = { ...parsed, dispatcher_response: reply };
-        setAiSpeaking(tx.agency_id, tx.channel_name, unitId, reply, aiActionTag(parsed));
+        setAiSpeaking(
+          tx.agency_id,
+          tx.channel_name,
+          unitId,
+          reply,
+          aiActionTag(parsed),
+          ttsKind === "plate_readback" ? lookupDisplay ?? undefined : undefined,
+        );
         spokeOnAir = await speakDispatcherReply(
           tx,
           transmissionId,
@@ -917,7 +947,11 @@ async function processTransmission(transmissionId: number): Promise<void> {
         agencyId: tx.agency_id,
         transmissionId,
         channelName: tx.channel_name,
-        unitId,
+        // Attribute the log to the SPOKEN callsign when the officer stated one
+        // (e.g. "352") rather than the radio's hardware unit_id (e.g. "1704") —
+        // an officer in a pool car keeps their own callsign. This matches the
+        // on-air reply, which already addresses `parsed.unit ?? unitId`.
+        unitId: parsed?.unit ?? unitId,
         transcript,
         parsed,
         plateLookup,

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type Transmission } from "../api";
+import { isPageHidden, onPageVisible } from "../lib/pageVisibility";
 
 const AIR_POLL_MS = 1200;
 const AIR_POLL_FAST_MS = 400;
@@ -53,6 +54,10 @@ export function useChannelLiveRx({
   const [liveTalker, setLiveTalker] = useState<LiveTalker | null>(null);
   const [latestTx, setLatestTx] = useState<Transmission | null>(null);
   const prevHomeReceiving = useRef(false);
+  // Monotonic id for in-flight air polls. At the fast (400ms) cadence a slow
+  // response can resolve after a newer one and flip attribution to a stale
+  // talker; only the latest request is allowed to apply its result.
+  const airSeq = useRef(0);
 
   const localUnit = localUnitId?.trim().toUpperCase() || "";
 
@@ -92,10 +97,13 @@ export function useChannelLiveRx({
     let cancelled = false;
 
     async function pollAir() {
+      if (isPageHidden()) return; // not visible — skip the air round-trip(s)
+      const seq = ++airSeq.current;
+      const superseded = () => cancelled || seq !== airSeq.current;
       try {
         if (scanWatchList) {
           const ta = await api.talkActivity({ home: channelName!, scan: scanWatchList });
-          if (cancelled) return;
+          if (superseded()) return;
           const preferScan =
             scanRxChannel &&
             ta.scan.active &&
@@ -118,12 +126,12 @@ export function useChannelLiveRx({
         }
 
         const air = await api.air(channelName!);
-        if (cancelled) return;
+        if (superseded()) return;
         if (homeReceiving && air.occupied && air.transmitting_unit_id) {
           applyTalker(air.transmitting_unit_id, air.transmitting_display_name);
         } else if (scanRxChannel) {
           const scanAir = await api.air(scanRxChannel);
-          if (cancelled) return;
+          if (superseded()) return;
           if (scanAir.occupied && scanAir.transmitting_unit_id) {
             applyTalker(scanAir.transmitting_unit_id, scanAir.transmitting_display_name, scanRxChannel);
           } else {
@@ -141,14 +149,16 @@ export function useChannelLiveRx({
     const pollMs =
       homeReceiving || scanRxChannel ? AIR_POLL_FAST_MS : AIR_POLL_MS;
     const id = window.setInterval(() => void pollAir(), pollMs);
+    const offVisible = onPageVisible(() => void pollAir());
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      offVisible();
     };
   }, [active, channelName, homeReceiving, scanRxChannel, scanWatchList, localUnit]);
 
   async function fetchLatestTx() {
-    if (!channelName) return;
+    if (!channelName || isPageHidden()) return;
     try {
       const res = await api.transmissions({ channel: channelName, limit: 1, sort: "newest" });
       setLatestTx(res.transmissions[0] ?? null);
@@ -173,9 +183,11 @@ export function useChannelLiveRx({
 
     void load();
     const id = window.setInterval(() => void load(), TX_POLL_MS);
+    const offVisible = onPageVisible(() => void load());
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      offVisible();
     };
   }, [active, channelName]);
 

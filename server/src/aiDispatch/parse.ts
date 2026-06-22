@@ -96,6 +96,28 @@ function tryParseJson(s: string): unknown {
   }
 }
 
+/**
+ * Canonicalize a spoken callsign so command-staff units always carry the
+ * hyphenated `27-0XX` form the rest of the pipeline matches on (the readback
+ * regexes in lookupSpeech/platePhonetics, the 10-8 unit matchers in
+ * infoRequest/unitLocation). The LLM frequently emits the spoken form
+ * "27 000" (a space, or no separator) which silently breaks every `^27-`
+ * matcher downstream — so a unit that says "27-000 show me on a patrol check"
+ * gets logged as "27 000" and 10-8 never recognizes the callsign.
+ *
+ * Only the `27-0XX` command prefix is rewritten; patrol callsigns like "352"
+ * or radio IDs like "1704" are returned untouched.
+ */
+export function canonicalizeCallsign(raw: string): string {
+  const u = raw.trim().toUpperCase().replace(/\s+/g, " ");
+  // "27 000" / "27000" / "27-000" / "27 - 000" → "27-000"
+  const m = u.match(/^27\s*-?\s*(\d{3})$/);
+  if (m) {
+    return `27-${m[1]}`;
+  }
+  return u;
+}
+
 export function normalizeAiDispatchParse(raw: unknown): AiDispatchParseResult | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return null;
@@ -123,7 +145,7 @@ export function normalizeAiDispatchParse(raw: unknown): AiDispatchParseResult | 
       ? ai.recommended_action.trim()
       : null;
   const unit =
-    typeof ai.unit === "string" && ai.unit.trim() ? ai.unit.trim() : null;
+    typeof ai.unit === "string" && ai.unit.trim() ? canonicalizeCallsign(ai.unit) : null;
   const code = typeof ai.code === "string" && ai.code.trim() ? ai.code.trim() : null;
   const location_code =
     typeof ai.location_code === "string" && /^\d{3,5}$/.test(ai.location_code.trim())
@@ -289,7 +311,11 @@ export async function parseDispatcherTransmission(opts: {
   const userContent =
     `Current Pacific time: ${pacific}\n` +
     `Radio channel (use this name on the air instead of "green-1"): ${opts.channelName}\n` +
-    `Transmitting unit: ${opts.unitId}\n` +
+    `Transmitting radio hardware ID: ${opts.unitId}\n` +
+    `IMPORTANT: that hardware ID is the physical radio, which may NOT be the ` +
+    `officer's callsign (e.g. an officer in a pool car). If the officer states a ` +
+    `callsign in the transcript, the "unit" field MUST be that spoken callsign, ` +
+    `not the hardware ID. Only fall back to the hardware ID when no callsign is spoken.\n` +
     `STT confidence: 0.85\n` +
     conversation +
     `Transcript: ${opts.transcript}\n` +

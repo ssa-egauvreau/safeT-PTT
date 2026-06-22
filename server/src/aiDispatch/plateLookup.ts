@@ -316,6 +316,45 @@ export function buildVinReadback(unitId: string, lookup: PlateLookupResult): str
   return `${csPart}vin comes back to a ${core}.`;
 }
 
+/**
+ * Clean, screen-friendly one-liner for a plate/VIN return. The spoken readback
+ * (buildPlateReadback / buildVinReadback) spells everything out phonetically for
+ * TTS — "eight Alpha Bravo Charlie one two three" — which is correct on the air
+ * but wrong on a screen, where the operator wants the literal "8ABC123". This
+ * builds the display form with NO phonetics and surfaces the raw plate + full
+ * VIN so a client can render the plate plainly and bold the last six of the VIN.
+ */
+export function buildLookupDisplay(lookup: PlateLookupResult | null | undefined): {
+  text: string;
+  plate: string | null;
+  vin: string | null;
+} | null {
+  if (!lookup) {
+    return null;
+  }
+  const plate = lookup.plate ?? null;
+  const vin = lookup.vin ?? null;
+  const head = plate
+    ? `${plate}${lookup.state ? ` (${lookup.state})` : ""}`
+    : vin
+      ? `VIN ${vin}`
+      : "";
+  if (!lookup.ok) {
+    const reason =
+      lookup.reason === "no_record"
+        ? "no record on file"
+        : lookup.message || lookup.reason || "no return";
+    return { text: head ? `${head} — ${reason}` : reason, plate, vin };
+  }
+  const vehicle = [lookup.year, lookup.make, lookup.model, lookup.color]
+    .filter(Boolean)
+    .join(" ");
+  const text = head
+    ? `${head} — ${vehicle || "valid, no details on file"}`
+    : vehicle || "valid, no details on file";
+  return { text, plate, vin };
+}
+
 /** Pending 912 — unit asked for plate without giving plate yet. */
 const pendingPlate = new Map<string, number>();
 const PLATE_TTL_MS = 30_000;

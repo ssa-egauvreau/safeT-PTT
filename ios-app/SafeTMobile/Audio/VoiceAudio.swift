@@ -67,6 +67,12 @@ final class VoiceAudio {
     private var captureBuffer = Data()
     private var capturing = false
     private var captureSessionId: UInt64 = 0
+    /// Guards the capture state (`captureBuffer`, `captureConverter`, `capturing`)
+    /// shared between the real-time mic-tap callback thread and the main thread
+    /// that tears capture down on PTT release. Without it, `stopCapture()`
+    /// clearing the buffer/converter while a tap callback is mid-append is a data
+    /// race on the `Data` heap buffer — the PTT-release crash.
+    private let captureLock = NSLock()
 
     /// Software jitter buffer + PLC between decoded PCM and the player. The
     /// relay forwards frames the instant they arrive over WebSocket (no
@@ -168,10 +174,12 @@ final class VoiceAudio {
             interleaved: true
         )!
         guard let converter = AVAudioConverter(from: nativeFormat, to: pcm16Mono16k) else { return nil }
-        captureConverter = converter
-        captureBuffer.removeAll(keepingCapacity: true)
         captureSessionId &+= 1
         let sessionId = captureSessionId
+        captureLock.lock()
+        captureConverter = converter
+        captureBuffer.removeAll(keepingCapacity: true)
+        captureLock.unlock()
 
         // Install the tap inside a do/catch via @objc exception bridging would be
         // nicer, but Swift can't catch ObjC exceptions. The format guards above
@@ -181,25 +189,51 @@ final class VoiceAudio {
             self?.handle(captureBuffer: buffer, target: pcm16Mono16k, sessionId: sessionId)
         }
         // Mark capturing AFTER a successful tap install so a failure path doesn't
-        // leave stopCapture() trying to remove a tap that was never added.
+        // leave stopCapture() trying to remove a tap that was never added. Under
+        // the lock so the tap-callback thread sees it via the same lock in handle().
+        captureLock.lock()
         capturing = true
+        captureLock.unlock()
         return sessionId
     }
 
     func stopCapture() {
-        guard capturing else { return }
+        // Flip `capturing` off under the lock so any in-flight tap callback sees
+        // it and bails before we tear the state down.
+        captureLock.lock()
+        let wasCapturing = capturing
         capturing = false
+        captureLock.unlock()
+        guard wasCapturing else { return }
+        // removeTap must run OUTSIDE the lock: it synchronizes with the audio
+        // thread, which may be blocked on `captureLock` inside a tap callback —
+        // holding the lock here would deadlock. After it returns, no new callback
+        // begins; the lock below waits out any callback still in its critical
+        // section before we free the buffer/converter.
         engine.inputNode.removeTap(onBus: 0)
+        captureLock.lock()
         captureBuffer.removeAll(keepingCapacity: false)
         captureConverter = nil
+        captureLock.unlock()
     }
 
     private func handle(captureBuffer source: AVAudioPCMBuffer, target: AVAudioFormat, sessionId: UInt64) {
-        guard let converter = captureConverter else { return }
+        // The conversion and capture-buffer mutation happen under the lock so a
+        // concurrent stopCapture() (main thread) can't free the buffer/converter
+        // mid-flight. Complete frames are collected locally and emitted AFTER the
+        // lock is released, so the encode/send callback never runs under the lock.
+        captureLock.lock()
+        guard capturing, let converter = captureConverter else {
+            captureLock.unlock()
+            return
+        }
         // Convert at the input/output sample-rate ratio plus a small headroom.
         let ratio = target.sampleRate / source.format.sampleRate
         let frameCapacity = AVAudioFrameCount(Double(source.frameLength) * ratio) + 1024
-        guard let converted = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: frameCapacity) else { return }
+        guard let converted = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: frameCapacity) else {
+            captureLock.unlock()
+            return
+        }
 
         var supplied = false
         var error: NSError?
@@ -212,21 +246,25 @@ final class VoiceAudio {
             inputStatus.pointee = .haveData
             return source
         }
-        guard status != .error, let int16 = converted.int16ChannelData, converted.frameLength > 0 else { return }
+        guard status != .error, let int16 = converted.int16ChannelData, converted.frameLength > 0 else {
+            captureLock.unlock()
+            return
+        }
 
         let frameCount = Int(converted.frameLength)
         let byteCount = frameCount * MemoryLayout<Int16>.size
         int16[0].withMemoryRebound(to: UInt8.self, capacity: byteCount) { bytes in
             captureBuffer.append(bytes, count: byteCount)
         }
-        flushFramesIfReady(sessionId: sessionId)
-    }
-
-    private func flushFramesIfReady(sessionId: UInt64) {
+        var readyFrames: [Data] = []
         while captureBuffer.count >= Self.frameBytes {
-            let frame = captureBuffer.prefix(Self.frameBytes)
+            readyFrames.append(Data(captureBuffer.prefix(Self.frameBytes)))
             captureBuffer.removeFirst(Self.frameBytes)
-            onCapturedFrame?(Data(frame), sessionId)
+        }
+        captureLock.unlock()
+
+        for frame in readyFrames {
+            onCapturedFrame?(frame, sessionId)
         }
     }
 
@@ -300,6 +338,20 @@ final class VoiceAudio {
         guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return }
         guard let buffer = makeBuffer(from: pcm16) else { return }
         replayPlayer.scheduleBuffer(buffer, at: nil, options: [.interrupts], completionHandler: nil)
+        if !replayPlayer.isPlaying { replayPlayer.play() }
+    }
+
+    /// Plays a complete end-of-TX cue (roger beep / squelch tail) exactly once on
+    /// the dedicated replay node, bypassing the jitter buffer + PLC entirely.
+    /// Routed here rather than through `enqueueIncoming` because the cue is a
+    /// short fixed clip whose tail, fed into the PLC jitter buffer, gets re-emitted
+    /// a few times as a faded copy — the "echo" the operator hears after a tone-out
+    /// or transmission. Unlike `replayAudio` this does NOT interrupt, so it layers
+    /// onto the very tail of the transmission instead of cutting it off.
+    func playCue(_ pcm16: Data) {
+        guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return }
+        guard let buffer = makeBuffer(from: pcm16) else { return }
+        replayPlayer.scheduleBuffer(buffer, at: nil, options: [], completionHandler: nil)
         if !replayPlayer.isPlaying { replayPlayer.play() }
     }
 

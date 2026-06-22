@@ -89,7 +89,7 @@ import {
   listTen33Channels,
   getChannelTen33Active,
   setChannelAiDispatch,
-  listChannelAiDispatchEnabled,
+  listChannelAiDispatchModes,
   getChannelAiDispatchRow,
   listMemberships,
   listPositions,
@@ -193,6 +193,7 @@ import { applyChannelTen33Marker } from "./aiDispatch/ten33Marker.js";
 import { resolveElevenLabsApiKey, resolveElevenLabsVoiceId } from "./aiDispatch/elevenLabsCreds.js";
 import { listAiDispatchLog } from "./aiDispatch/activityLog.js";
 import { getAiActivity } from "./aiDispatch/aiActivity.js";
+import { aiDispatchModeEnabled, normalizeAiDispatchMode } from "./aiDispatch/supervisedMode.js";
 import { enqueueKbIngest } from "./aiDispatch/knowledgeBase/ingest.js";
 import { getEmbeddingModelName } from "./aiDispatch/knowledgeBase/embeddings.js";
 import { handleTen8Webhook, handleTen8WebhookGet } from "./ten8/webhook.js";
@@ -585,7 +586,13 @@ export function createApiRouter(): Router {
           res.status(401).json({ error: "account_disabled" });
           return;
         }
-        if (auth.gen !== cached.tokenGeneration) {
+        // Radio handsets are persistent, shared devices and "stay signed in
+        // until manual sign-out" (their tokens carry no expiry) — so they are
+        // exempt from "newest sign-in wins" supersession, which otherwise
+        // silently 401s a handset whenever the token generation bumps and leaves
+        // the radio stuck on "SYNC FAILED" until a manual re-login. Console /
+        // admin / owner sessions still supersede normally.
+        if (auth.role !== "radio" && auth.gen !== cached.tokenGeneration) {
           res.status(401).json({ error: "session_superseded" });
           return;
         }
@@ -601,9 +608,9 @@ export function createApiRouter(): Router {
         res.status(401).json({ error: "account_disabled" });
         return;
       }
-      // Newest sign-in wins. A token whose `gen` lags the user row was issued
-      // for an earlier session that a later login has since superseded.
-      if (auth.gen !== user.token_generation) {
+      // Newest sign-in wins — except for radio handsets, which are persistent
+      // shared devices exempt from supersession (see the cached path above).
+      if (auth.role !== "radio" && auth.gen !== user.token_generation) {
         res.status(401).json({ error: "session_superseded" });
         return;
       }
@@ -835,7 +842,8 @@ export function createApiRouter(): Router {
         const agencyId = me.agencyId!;
         const all = await listChannels(agencyId);
         const sims = await listSimulcasts(agencyId);
-        const aiEnabled = new Set(await listChannelAiDispatchEnabled(agencyId));
+        const aiModes = await listChannelAiDispatchModes(agencyId);
+        const aiEnabled = new Set(aiModes.keys());
         const agency = await getAgencyById(agencyId);
         const simulcastCodec = coerceVoiceCodec(agency?.default_codec);
         res.json({
@@ -850,6 +858,7 @@ export function createApiRouter(): Router {
               permission: "talk_priority",
               simulcast: false,
               ai_dispatch_enabled: aiEnabled.has(c.name),
+              ai_dispatch_mode: aiModes.get(c.name) ?? "off",
             })),
             // Simulcast channels carry a negative id so they never collide with
             // a real channel id in the console's open-channel set.
@@ -868,9 +877,13 @@ export function createApiRouter(): Router {
         return;
       }
       const userChannels = await listChannelsForUser(me.id);
-      const aiOn = new Set(await listChannelAiDispatchEnabled(me.agencyId!));
+      const aiModes = await listChannelAiDispatchModes(me.agencyId!);
       res.json({
-        channels: userChannels.map((c) => ({ ...c, ai_dispatch_enabled: aiOn.has(c.name) })),
+        channels: userChannels.map((c) => ({
+          ...c,
+          ai_dispatch_enabled: aiModes.has(c.name),
+          ai_dispatch_mode: aiModes.get(c.name) ?? "off",
+        })),
       });
     } catch (error) {
       fail(res, error);
@@ -3061,6 +3074,13 @@ export function createApiRouter(): Router {
             // True when this poll's radio is the unit she's responding to.
             for_you: activity.unitId === unit,
             text: activity.text ?? null,
+            // Clean, screen-friendly form (no phonetics); clients prefer this
+            // over `text` for display. Plate/VIN returns also carry the literal
+            // plate + full VIN so the handset can render "8ABC123" and bold the
+            // last six of the VIN instead of the spelled-out TTS.
+            display_text: activity.displayText ?? null,
+            plate: activity.plate ?? null,
+            vin: activity.vin ?? null,
             tag: activity.tag ?? null,
           }
         : null;
@@ -3175,13 +3195,18 @@ export function createApiRouter(): Router {
         res.status(400).json({ error: "missing_channel" });
         return;
       }
-      const enabled = body.enabled === true;
+      // Accept the new three-way `mode` ("off"|"supervised"|"full_auto");
+      // fall back to the legacy `enabled` boolean for older clients.
+      const mode = normalizeAiDispatchMode(
+        body.mode !== undefined ? body.mode : body.enabled,
+      );
+      const enabled = aiDispatchModeEnabled(mode);
       const agencyId = req.authUser!.agencyId!;
       if (enabled && !(await agencyAllowsAiDispatch(agencyId))) {
         res.status(403).json({ error: "ai_dispatch_requires_pro" });
         return;
       }
-      await setChannelAiDispatch(agencyId, channel, enabled);
+      await setChannelAiDispatch(agencyId, channel, mode);
       const { notifyChannelAiDispatchListenPcm } = await import("./voiceRelay.js");
       notifyChannelAiDispatchListenPcm(agencyId, channel, enabled);
       await writeAudit({
@@ -3189,10 +3214,10 @@ export function createApiRouter(): Router {
         actorUserId: req.authUser!.id,
         actorName: req.authUser!.username,
         action: enabled ? "ai_dispatch_on" : "ai_dispatch_off",
-        target: channel,
+        target: `${channel} (${mode})`,
         ip: clientIp(req),
       });
-      res.json({ ok: true, enabled });
+      res.json({ ok: true, enabled, mode });
     } catch (error) {
       fail(res, error);
     }
@@ -3224,7 +3249,7 @@ export function createApiRouter(): Router {
         return;
       }
       const row = await getChannelAiDispatchRow(req.authUser!.agencyId!, channel);
-      res.json({ enabled: row?.enabled === true });
+      res.json({ enabled: row?.enabled === true, mode: row?.mode ?? "off" });
     } catch (error) {
       fail(res, error);
     }

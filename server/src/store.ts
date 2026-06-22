@@ -10,6 +10,11 @@ import {
   type EmergencyTransitionError,
 } from "./emergencyLifecycle.js";
 import { coerceVoiceCodec, type VoiceCodec } from "./voiceCodecs.js";
+import {
+  aiDispatchModeEnabled,
+  normalizeAiDispatchMode,
+  type AiDispatchMode,
+} from "./aiDispatch/supervisedMode.js";
 import type { PlanTier, SubscriptionStatus } from "./billing/types.js";
 
 export type Permission = "talk_priority" | "talk" | "listen_only";
@@ -1725,12 +1730,22 @@ export async function getTransmissionDispatchContext(id: number): Promise<Transm
 export async function getChannelAiDispatchRow(
   agencyId: number,
   channelName: string,
-): Promise<{ enabled: boolean; yields_to_units: boolean } | null> {
-  const res = await requirePool().query<{ enabled: boolean; yields_to_units: boolean }>(
-    `SELECT enabled, yields_to_units FROM channel_ai_dispatch WHERE agency_id = $1 AND channel_name = $2;`,
+): Promise<{ enabled: boolean; yields_to_units: boolean; mode: AiDispatchMode } | null> {
+  const res = await requirePool().query<{
+    enabled: boolean;
+    yields_to_units: boolean;
+    mode: string;
+  }>(
+    `SELECT enabled, yields_to_units, mode FROM channel_ai_dispatch WHERE agency_id = $1 AND channel_name = $2;`,
     [agencyId, channelName],
   );
-  return res.rows[0] ?? null;
+  const row = res.rows[0];
+  if (!row) return null;
+  return {
+    enabled: row.enabled,
+    yields_to_units: row.yields_to_units,
+    mode: normalizeAiDispatchMode(row.mode),
+  };
 }
 
 export async function getTransmissionAudio(
@@ -2720,18 +2735,22 @@ export async function isChannelAiDispatchEnabled(agencyId: number, channelName: 
 export async function setChannelAiDispatch(
   agencyId: number,
   channelName: string,
-  enabled: boolean,
+  mode: AiDispatchMode,
   yieldsToUnits?: boolean,
 ): Promise<void> {
   const yields = yieldsToUnits ?? true;
+  // Keep the legacy `enabled` boolean in sync (enabled = mode !== "off") so
+  // older clients that still read `ai_dispatch_enabled` keep working.
+  const enabled = aiDispatchModeEnabled(mode);
   await requirePool().query(
-    `INSERT INTO channel_ai_dispatch (agency_id, channel_name, enabled, yields_to_units)
-       VALUES ($1, $2, $3, $4)
+    `INSERT INTO channel_ai_dispatch (agency_id, channel_name, enabled, mode, yields_to_units)
+       VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (agency_id, channel_name)
        DO UPDATE SET enabled = EXCLUDED.enabled,
+                     mode = EXCLUDED.mode,
                      yields_to_units = EXCLUDED.yields_to_units,
                      updated_at = now();`,
-    [agencyId, channelName, enabled, yields],
+    [agencyId, channelName, enabled, mode, yields],
   );
 }
 
@@ -2750,6 +2769,21 @@ export async function listChannelAiDispatchEnabled(agencyId: number): Promise<st
     [agencyId],
   );
   return res.rows.map((r) => r.channel_name);
+}
+
+/** Per-channel AI dispatch mode for an agency (only non-off channels are stored). */
+export async function listChannelAiDispatchModes(
+  agencyId: number,
+): Promise<Map<string, AiDispatchMode>> {
+  const res = await requirePool().query<{ channel_name: string; mode: string }>(
+    `SELECT channel_name, mode FROM channel_ai_dispatch WHERE agency_id = $1 AND mode <> 'off';`,
+    [agencyId],
+  );
+  const out = new Map<string, AiDispatchMode>();
+  for (const r of res.rows) {
+    out.set(r.channel_name, normalizeAiDispatchMode(r.mode));
+  }
+  return out;
 }
 
 // --- AI dispatcher knowledge base (RAG) ----------------------------------
