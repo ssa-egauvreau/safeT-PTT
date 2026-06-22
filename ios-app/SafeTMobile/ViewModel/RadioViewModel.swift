@@ -360,7 +360,8 @@ final class RadioViewModel: ObservableObject {
                 name: dto.name,
                 zoneNumber: dto.zoneNumber,
                 zoneName: dto.zone,
-                aiDispatchEnabled: dto.aiDispatchEnabled ?? false
+                aiDispatchEnabled: dto.aiDispatchEnabled ?? false,
+                aiDispatchMode: AiDispatchMode(serverValue: dto.aiDispatchMode)
             )
         }
     }
@@ -1184,6 +1185,9 @@ final class RadioViewModel: ObservableObject {
                     phase: ai.phase.lowercased() == "speaking" ? .speaking : .thinking,
                     forYou: ai.forYou,
                     text: ai.text ?? "",
+                    displayText: ai.displayText ?? "",
+                    plate: ai.plate ?? "",
+                    vin: ai.vin ?? "",
                     tag: ai.tag ?? ""
                 )
             }

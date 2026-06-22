@@ -18,6 +18,9 @@ struct ChannelDTO: Decodable, Identifiable {
     /// True when the AI dispatcher is enabled on this channel (radios show an AI badge).
     /// Decoded from JSON `ai_dispatch_enabled` via `convertFromSnakeCase`.
     let aiDispatchEnabled: Bool?
+    /// Three-way AI dispatch engagement mode: "off" | "supervised" | "full_auto".
+    /// Decoded from JSON `ai_dispatch_mode` via `convertFromSnakeCase`.
+    let aiDispatchMode: String?
 }
 
 struct AirState: Decodable {
@@ -75,6 +78,15 @@ struct InboxAiActivity: Decodable {
     let unit: String
     let forYou: Bool
     let text: String?
+    /// Clean, screen-friendly reply (no phonetics). For a plate/VIN return this
+    /// is "8ABC123 — 2019 Toyota Camry" instead of the spelled-out TTS. Prefer
+    /// this over `text` for display; falls back to `text` when absent.
+    /// (`.convertFromSnakeCase` rewrites `display_text` → `displayText`.)
+    let displayText: String?
+    /// Literal queried plate for a plate return (e.g. "8ABC123").
+    let plate: String?
+    /// Full VIN for a plate/VIN return — render whole with the last 6 bold.
+    let vin: String?
     let tag: String?
 }
 
