@@ -313,8 +313,19 @@ final class RadioViewModel: ObservableObject {
         } catch {
             uiState.channelsLoading = false
             uiState.networkLabel = "OFFLINE"
-            uiState.channelSyncError = "Channel sync failed"
-            uiState.statusMessage = "SYNC FAILED"
+            // A 401 means the saved login was rejected (e.g. account disabled, or
+            // a superseded console session). Rather than sit on "SYNC FAILED"
+            // forever, flag the session invalid so the shell drops to the login
+            // screen automatically (radio tokens are now exempt from supersession
+            // server-side, so this should be rare).
+            if case RadioApiError.badStatus(401) = error {
+                uiState.sessionInvalid = true
+                uiState.statusMessage = "SIGN IN REQUIRED"
+                uiState.channelSyncError = "Session expired — sign in again"
+            } else {
+                uiState.channelSyncError = "Channel sync failed"
+                uiState.statusMessage = "SYNC FAILED"
+            }
             uiState.connectionStartedAt = nil
             refreshScanTransport()
         }

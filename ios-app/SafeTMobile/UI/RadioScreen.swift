@@ -176,6 +176,12 @@ struct RadioScreen: View {
             default: break
             }
         }
+        .onChange(of: viewModel.uiState.sessionInvalid) { invalid in
+            // The saved login was rejected (401). Drop to the login screen
+            // automatically instead of sitting on a broken radio — clearing the
+            // session flips RootView to LoginScreen.
+            if invalid { session.logout() }
+        }
         .sheet(isPresented: $showingDispatch) { sheetWrap("DISPATCH", isPresented: $showingDispatch) {
             if let token = session.token {
                 DispatchScreen(api: RadioApiClient(token: token))

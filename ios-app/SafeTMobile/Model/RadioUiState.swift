@@ -141,6 +141,9 @@ struct RadioUiState {
     var isEmergencyActive = false
     var channelsLoading = true
     var channelSyncError: String?
+    /// Set when the server rejected the saved login (401). The shell drops to
+    /// the login screen so the operator isn't stuck on a broken radio.
+    var sessionInvalid = false
     var localShortUnitId = ""
     var operatorDisplayName = ""
     var agencyName = ""

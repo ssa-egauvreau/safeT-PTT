@@ -586,7 +586,13 @@ export function createApiRouter(): Router {
           res.status(401).json({ error: "account_disabled" });
           return;
         }
-        if (auth.gen !== cached.tokenGeneration) {
+        // Radio handsets are persistent, shared devices and "stay signed in
+        // until manual sign-out" (their tokens carry no expiry) — so they are
+        // exempt from "newest sign-in wins" supersession, which otherwise
+        // silently 401s a handset whenever the token generation bumps and leaves
+        // the radio stuck on "SYNC FAILED" until a manual re-login. Console /
+        // admin / owner sessions still supersede normally.
+        if (auth.role !== "radio" && auth.gen !== cached.tokenGeneration) {
           res.status(401).json({ error: "session_superseded" });
           return;
         }
@@ -602,9 +608,9 @@ export function createApiRouter(): Router {
         res.status(401).json({ error: "account_disabled" });
         return;
       }
-      // Newest sign-in wins. A token whose `gen` lags the user row was issued
-      // for an earlier session that a later login has since superseded.
-      if (auth.gen !== user.token_generation) {
+      // Newest sign-in wins — except for radio handsets, which are persistent
+      // shared devices exempt from supersession (see the cached path above).
+      if (auth.role !== "radio" && auth.gen !== user.token_generation) {
         res.status(401).json({ error: "session_superseded" });
         return;
       }
