@@ -48,11 +48,17 @@ class InboundVoicePlayer(
     @Volatile
     private var mainRxHoldUntilMs: Long = 0L
 
-    @Volatile
-    private var activeScanChannel: String? = null
-
-    @Volatile
-    private var scanRxHoldUntilMs: Long = 0L
+    /**
+     * Store-and-forward queue for scan audio: one scan transmission plays at a
+     * time and overlapping ones are buffered and played in arrival order, instead
+     * of being dropped. Home channel still preempts in mono mode (it shares the
+     * single track); in stereo split, scan has its own ear so home never holds it.
+     */
+    private val scanQueue = ScanForwardQueue(
+        homeHoldUntilProvider = { if (stereoSplitProvider()) 0L else mainRxHoldUntilMs },
+        playChunk = { channel, chunk -> playScanChunkNow(channel, chunk) },
+        onForwarding = { ch -> onScanRxActivity?.invoke(ch) },
+    )
 
     /** Mono, priority-mixed path (both channels share one track). */
     private val monoBuffer = InboundJitterBuffer(
@@ -108,24 +114,21 @@ class InboundVoicePlayer(
         if (stereo) mainLeftBuffer.enqueue(out) else monoBuffer.enqueue(out)
     }
 
-    /** PCM from a scan listen socket. */
+    /**
+     * PCM from a scan listen socket. Buffered by [scanQueue] (store-and-forward)
+     * rather than played immediately, so overlapping scan channels are queued and
+     * played one at a time in arrival order instead of fighting / being dropped.
+     */
     fun writePcmFromScan(channelName: String, chunk: ByteArray) {
         if (released || chunk.isEmpty()) return
+        scanQueue.submit(channelName, chunk)
+    }
+
+    /** Play a single scan frame now — invoked by [scanQueue]'s pacer thread once it
+     *  reaches this frame's turn. Home-channel priority is enforced by the queue. */
+    private fun playScanChunkNow(channelName: String, chunk: ByteArray) {
+        if (released || chunk.isEmpty()) return
         val stereo = stereoSplitProvider()
-        val now = SystemClock.elapsedRealtime()
-        // In mono mode the home channel owns the single track, so scan is
-        // suppressed while it's active. In stereo split the scan stream has its
-        // own (right) ear and never collides with the home channel.
-        if (!stereo && now < mainRxHoldUntilMs) return
-        val ch = channelName.trim()
-        if (ch.isEmpty()) return
-        val held = activeScanChannel
-        if (held != null && !held.equals(ch, ignoreCase = true) && now < scanRxHoldUntilMs) {
-            return
-        }
-        activeScanChannel = ch
-        scanRxHoldUntilMs = now + SCAN_RX_HOLD_MS
-        onScanRxActivity?.invoke(ch)
         val out = applyGain(chunk, if (stereo) rightVolumeProvider() else 1f) ?: return
         ensureMode(stereo)
         if (stereo) scanRightBuffer.enqueue(out) else monoBuffer.enqueue(out)
@@ -213,17 +216,17 @@ class InboundVoicePlayer(
     }
 
     fun stop() {
+        scanQueue.stop()
         monoBuffer.stop()
         mainLeftBuffer.stop()
         scanRightBuffer.stop()
         mainRxHoldUntilMs = 0L
-        activeScanChannel = null
-        scanRxHoldUntilMs = 0L
     }
 
     /** Permanently stop playback; instance must not be used after release. */
     fun release() {
         released = true
+        scanQueue.release()
         monoBuffer.release()
         mainLeftBuffer.release()
         scanRightBuffer.release()
@@ -231,6 +234,5 @@ class InboundVoicePlayer(
 
     private companion object {
         const val MAIN_RX_HOLD_MS = 400L
-        const val SCAN_RX_HOLD_MS = 400L
     }
 }
