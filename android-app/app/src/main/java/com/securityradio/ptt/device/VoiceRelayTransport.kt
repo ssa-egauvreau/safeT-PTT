@@ -325,6 +325,13 @@ class VoiceRelayTransport(
         ) {
             return
         }
+        // Dedupe rapid duplicate air_released frames (relay retransmit / simulcast
+        // / channel-retune races) so the cue can't fire twice back-to-back and the
+        // operator hears the tone-out / squelch tail echo.
+        val now = System.nanoTime()
+        if (now - lastCueNs < CUE_DEDUPE_NS) return
+        lastCueNs = now
+
         val cue = PostDecodeChain.endOfTxCue(cfg)
         if (cue.isEmpty()) return
         // Inject in <=20 ms (640-byte) frames, not as one ~210 ms entry:
@@ -477,6 +484,8 @@ class VoiceRelayTransport(
      *  talk-spurt boundary on the RX side so the post-decode chain can
      *  reset its biquad state before the next talker's first frame. */
     private var lastInboundVoiceNs = 0L
+    /** Monotonic time of the last end-of-TX cue, to dedupe duplicate air_released. */
+    private var lastCueNs = 0L
 
     /** Treat a > 300 ms gap between inbound voice frames as a new talk-spurt.
      *  Matches the relay's claim-air TTL window for the same reason: longer
@@ -879,5 +888,8 @@ class VoiceRelayTransport(
         /** End-of-TX cue injection chunk: 20 ms of 16 kHz mono PCM16 = 640 bytes.
          *  Keeps the cue flowing through the jitter buffer as normal-sized frames. */
         private const val CUE_FRAME_BYTES = 640
+
+        /** Suppress a second end-of-TX cue within this window (duplicate air_released). */
+        private const val CUE_DEDUPE_NS = 500_000_000L
     }
 }
