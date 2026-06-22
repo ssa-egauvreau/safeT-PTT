@@ -89,7 +89,6 @@ import {
   listTen33Channels,
   getChannelTen33Active,
   setChannelAiDispatch,
-  listChannelAiDispatchEnabled,
   listChannelAiDispatchModes,
   getChannelAiDispatchRow,
   listMemberships,
