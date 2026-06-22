@@ -73,7 +73,11 @@ class RadioAppGraph(val application: Application) {
 
     val customSoundStore = CustomSoundStore(application)
 
-    val soundPlayer: RadioUiSoundPlayer = AssetRadioUiSoundPlayer(application, customSoundStore)
+    /** Holds the Bluetooth A2DP route awake so beeps/TTS/PTT tones don't get clipped. */
+    val bluetoothKeepAlive: BluetoothKeepAlive = BluetoothKeepAlive()
+
+    val soundPlayer: RadioUiSoundPlayer =
+        AssetRadioUiSoundPlayer(application, customSoundStore, bluetoothKeepAlive)
 
     val localUnitIdentifier: LocalUnitIdentifier = LocalUnitIdentifier(application)
 
@@ -88,9 +92,6 @@ class RadioAppGraph(val application: Application) {
     /** Watches the output route for Bluetooth (keep link warm) and stereo capability (channel split). */
     val externalAudioOutputMonitor: ExternalAudioOutputMonitor =
         ExternalAudioOutputMonitor(application).also { it.start() }
-
-    /** Holds the Bluetooth A2DP route awake so beeps/TTS/PTT tones don't get clipped. */
-    val bluetoothKeepAlive: BluetoothKeepAlive = BluetoothKeepAlive()
 
     val rxMessageHistory = RxMessageHistory()
 

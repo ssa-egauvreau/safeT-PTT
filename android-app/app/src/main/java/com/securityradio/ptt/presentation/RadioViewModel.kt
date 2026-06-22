@@ -1597,6 +1597,9 @@ class RadioViewModel(
     }
 
     private fun onPttPressed() {
+        // Wake the Bluetooth route the instant the user keys up so the talk-permit
+        // tone and the start of transmit audio aren't clipped by a sleeping A2DP amp.
+        bluetoothKeepAlive.wakeBurst()
         // Refuse PTT locally on listen-only channels: no relay attempt, no
         // talk-permit tone, just the busy alert and a clear status line. The
         // server would reject anyway, but doing it here keeps the UX honest.

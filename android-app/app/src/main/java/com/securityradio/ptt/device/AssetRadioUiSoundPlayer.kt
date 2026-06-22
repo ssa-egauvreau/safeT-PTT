@@ -27,6 +27,7 @@ import java.nio.ByteOrder
 class AssetRadioUiSoundPlayer(
     private val app: Application,
     private val customSounds: CustomSoundStore,
+    private val bluetoothKeepAlive: BluetoothKeepAlive? = null,
 ) : RadioUiSoundPlayer {
 
     private val main = Handler(Looper.getMainLooper())
@@ -87,6 +88,15 @@ class AssetRadioUiSoundPlayer(
         return b.build()
     }
 
+    /**
+     * Fire a short inaudible wake burst on the Bluetooth route just before a tone so a
+     * head unit whose amp powers down on silence is awake by the time the sound starts,
+     * instead of swallowing its first syllable. No-op when no BT output is connected.
+     */
+    private fun nudgeRoute() {
+        bluetoothKeepAlive?.wakeBurst()
+    }
+
     private fun MediaPlayer.applyUiAudio(): MediaPlayer {
         setAudioAttributes(uiAudioAttrs)
         setVolume(1f, 1f)
@@ -135,6 +145,7 @@ class AssetRadioUiSoundPlayer(
     }
 
     override fun playTalkPermitThen(onFinished: () -> Unit, onStarted: (() -> Unit)?) {
+        nudgeRoute()
         main.post {
             stopBusyLoopInternal()
             stopTalkPermitLoopInternal()
@@ -151,6 +162,7 @@ class AssetRadioUiSoundPlayer(
     }
 
     override fun startBusyLoop() {
+        nudgeRoute()
         main.post {
             stopTalkPermitLoopInternal()
             stopBusyLoopInternal()
@@ -176,6 +188,7 @@ class AssetRadioUiSoundPlayer(
     }
 
     override fun playBusyAlert() {
+        nudgeRoute()
         main.post { playBusyAlertCapped(BUSY_ALERT_MAX_MS) }
     }
 
@@ -184,6 +197,7 @@ class AssetRadioUiSoundPlayer(
     }
 
     override fun playEmergencyAlert() {
+        nudgeRoute()
         main.post {
             // Drop any prior emergency one-shot still in flight so a fast re-press restarts cleanly.
             stopEmergencyAlertInternal()
@@ -264,10 +278,12 @@ class AssetRadioUiSoundPlayer(
     }
 
     override fun playVolumeCheck() {
+        nudgeRoute()
         playVolumeCheckCapped(VOLUME_CHECK_MAX_MS)
     }
 
     override fun startVolumeCheckLoop() {
+        nudgeRoute()
         main.post {
             stopVolumeCheckLoopInternal()
             stopTalkPermitLoopInternal()
@@ -695,6 +711,7 @@ class AssetRadioUiSoundPlayer(
         attrs: AudioAttributes = uiAudioAttrs,
         onFinished: (() -> Unit)? = null,
     ) {
+        nudgeRoute()
         main.post {
             val player = MediaPlayer()
             player.setAudioAttributes(attrs)

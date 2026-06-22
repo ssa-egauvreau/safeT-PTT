@@ -34,11 +34,29 @@ class BluetoothKeepAlive {
     @Volatile
     private var running = false
 
+    /**
+     * Wall-clock deadline (ms) up to which the loop streams the hotter wake burst
+     * instead of the quiet idle dither. Set by [wakeBurst].
+     */
+    @Volatile
+    private var burstUntilMs = 0L
+
     /** Turn the keep-alive on (Bluetooth connected) or off (disconnected). */
     fun setActive(active: Boolean) {
         synchronized(lock) {
             if (active) start() else stop()
         }
+    }
+
+    /**
+     * Fire a short (~[BURST_MS] ms) louder-but-still-inaudible burst right before a
+     * beep / PTT tone / spoken channel / transmit, to wake a head unit whose amp
+     * fully powers down on silence (which the quiet idle dither alone may not do in
+     * time, clipping the first syllable). No-op when Bluetooth isn't connected.
+     */
+    fun wakeBurst() {
+        if (!running) return
+        burstUntilMs = System.currentTimeMillis() + BURST_MS
     }
 
     private fun start() {
@@ -68,7 +86,8 @@ class BluetoothKeepAlive {
             // MODE_STREAM write blocks until the track buffer has room, which paces
             // the loop at real time — no manual sleep needed.
             while (running) {
-                val n = t.write(FILL, 0, FILL.size)
+                val buf = if (System.currentTimeMillis() < burstUntilMs) BURST else FILL
+                val n = t.write(buf, 0, buf.size)
                 if (n < 0) break
             }
         } catch (_: Exception) {
@@ -141,6 +160,25 @@ class BluetoothKeepAlive {
             while (i + 1 < buf.size) {
                 seed = seed * 1103515245 + 12345
                 val v = ((seed ushr 16) % 97) - 48 // [-48, 48]
+                buf[i] = (v and 0xFF).toByte()
+                buf[i + 1] = ((v shr 8) and 0xFF).toByte()
+                i += 2
+            }
+        }
+
+        /** How long a [wakeBurst] streams the hotter burst before falling back to idle dither. */
+        const val BURST_MS = 160L
+
+        // Hotter dither (±512 LSB ≈ -36 dBFS) fired briefly by wakeBurst() to force a
+        // head-unit amp out of full power-down before the real sound. Still pink-ish
+        // noise (no tone), brief, and ~36 dB below full scale, so it reads as a faint
+        // tick at most on a car system rather than an audible chirp.
+        val BURST = ByteArray(320).also { buf ->
+            var seed = 0x27D4EB2F.toInt()
+            var i = 0
+            while (i + 1 < buf.size) {
+                seed = seed * 1103515245 + 12345
+                val v = ((seed ushr 16) % 1025) - 512 // [-512, 512]
                 buf[i] = (v and 0xFF).toByte()
                 buf[i + 1] = ((v shr 8) and 0xFF).toByte()
                 i += 2
