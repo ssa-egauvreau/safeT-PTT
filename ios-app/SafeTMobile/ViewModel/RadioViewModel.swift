@@ -1146,8 +1146,9 @@ final class RadioViewModel: ObservableObject {
 
             let allUnits = try await api.positions()
             let cutoff = Date().addingTimeInterval(-600) // 10-minute activity window
-            let channelUnits = allUnits
-                .filter { $0.channelName?.lowercased() == channel.lowercased() }
+            let channelKey = channel.lowercased()
+            let names = allUnits
+                .filter { $0.channelName?.lowercased() == channelKey }
                 .filter { pos in
                     // Parse updatedAt; fall back to including the entry if unparseable
                     let date = Self.isoFormatter.date(from: pos.updatedAt)
@@ -1155,11 +1156,9 @@ final class RadioViewModel: ObservableObject {
                     return date.map { $0 > cutoff } ?? true
                 }
                 .compactMap(\.displayName)
-                .reduce(into: [String]()) { result, name in
-                    if !result.contains(name) { result.append(name) }
-                }
-                .sorted()
-            uiState.unitsOnChannel = channelUnits
+            // Dedupe via Set (O(1)/name) rather than the previous O(n²)
+            // `result.contains` scan, then sort for stable display order.
+            uiState.unitsOnChannel = Array(Set(names)).sorted()
             updateWidgetData()
         } catch {
             uiState.radiosOnlineOnChannel = nil
