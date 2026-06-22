@@ -1157,7 +1157,12 @@ final class RadioViewModel: ObservableObject {
     private func startInboxPolling() {
         Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(VoiceTiming.inboxPollSeconds))
+                // Poll fast while the AI cue is live so it animates fluidly; idle
+                // back to the slow cadence to keep the radio's poll load low.
+                let interval = self?.uiState.aiActivity != nil
+                    ? VoiceTiming.inboxFastPollSeconds
+                    : VoiceTiming.inboxPollSeconds
+                try? await Task.sleep(for: .seconds(interval))
                 guard let self else { return }
                 await self.pollInbox()
             }

@@ -303,6 +303,20 @@ final class VoiceAudio {
         if !replayPlayer.isPlaying { replayPlayer.play() }
     }
 
+    /// Plays a complete end-of-TX cue (roger beep / squelch tail) exactly once on
+    /// the dedicated replay node, bypassing the jitter buffer + PLC entirely.
+    /// Routed here rather than through `enqueueIncoming` because the cue is a
+    /// short fixed clip whose tail, fed into the PLC jitter buffer, gets re-emitted
+    /// a few times as a faded copy — the "echo" the operator hears after a tone-out
+    /// or transmission. Unlike `replayAudio` this does NOT interrupt, so it layers
+    /// onto the very tail of the transmission instead of cutting it off.
+    func playCue(_ pcm16: Data) {
+        guard !pcm16.isEmpty, pcm16.count % 2 == 0 else { return }
+        guard let buffer = makeBuffer(from: pcm16) else { return }
+        replayPlayer.scheduleBuffer(buffer, at: nil, options: [], completionHandler: nil)
+        if !replayPlayer.isPlaying { replayPlayer.play() }
+    }
+
     /// Converts a little-endian PCM16 mono/16 kHz blob into a float32
     /// `AVAudioPCMBuffer` in the player's processing format.
     private func makeBuffer(from pcm16: Data) -> AVAudioPCMBuffer? {
