@@ -251,6 +251,18 @@ class AssetRadioUiSoundPlayer(
         }
     }
 
+    override fun playPage() {
+        playOneShot(FILE_PAGE)
+    }
+
+    override fun playSuccess() {
+        playOneShot(FILE_SUCCESS)
+    }
+
+    override fun playError() {
+        playOneShot(FILE_ERROR)
+    }
+
     override fun playVolumeCheck() {
         playVolumeCheckCapped(VOLUME_CHECK_MAX_MS)
     }
@@ -758,6 +770,9 @@ class AssetRadioUiSoundPlayer(
         /** No-connection / lost-link: play this much of busy.wav, then silence until the next alert. */
         const val BUSY_ALERT_MAX_MS = 2_000L
         const val FILE_VOLUME_CHECK = "volume.wav"
+        const val FILE_PAGE = "page.wav"
+        const val FILE_SUCCESS = "success.wav"
+        const val FILE_ERROR = "error.wav"
         /** TM7 volume knob: one short beep, not the entire WAV. */
         const val VOLUME_CHECK_MAX_MS = 1_000L
         /** Skip the first few ms on each loop leg (reduces boundary click on some handsets). */

@@ -1185,7 +1185,7 @@ class RadioViewModel(
                         statusMessage = if (key.isBlank()) "AGENCY KEY CLEARED" else "AGENCY KEY SAVED",
                     )
                 }
-                soundPlayer.playChannelSwitch()
+                soundPlayer.playSuccess()
             }
             is RadioUiEvent.SetDeviceProfilePreference -> {
                 soundPlayer.playChannelSwitch()
@@ -1908,6 +1908,10 @@ class RadioViewModel(
                         message = if (activating) "Emergency activated" else null,
                     ),
                 )
+            }.onFailure {
+                // The activation tone already fired; signal that the server send
+                // failed so the operator knows it may not have reached dispatch.
+                soundPlayer.playError()
             }
         }
     }
@@ -2520,8 +2524,8 @@ class RadioViewModel(
             val alreadySeen = alert.id <= radioPreferences.getLastPageId() ||
                 _uiState.value.pageMessages.any { it.id == alert.id }
             if (alreadySeen) return
-            // Subtle tone + badge only — never interrupts audio or covers the radio screen.
-            soundPlayer.playChannelSwitch()
+            // Distinct page chirp + badge only — never interrupts audio or covers the radio screen.
+            soundPlayer.playPage()
             val message = alert.message?.trim()?.takeIf { it.isNotEmpty() } ?: ""
             val targetedToMe = alert.targetUnit?.trim()?.uppercase(Locale.US) == unitIdUpper &&
                 !alert.targetUnit.isNullOrBlank()
@@ -2605,8 +2609,10 @@ class RadioViewModel(
                         ),
                     )
                 }
+                soundPlayer.playSuccess()
                 _uiState.update { it.copy(statusMessage = "REPLY SENT: ${reply.uppercase(Locale.US)}") }
             } catch (_: Exception) {
+                soundPlayer.playError()
                 _uiState.update { it.copy(statusMessage = "REPLY FAILED — RETRY") }
             }
         }

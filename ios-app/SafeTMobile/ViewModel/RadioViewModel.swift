@@ -791,6 +791,7 @@ final class RadioViewModel: ObservableObject {
                     "emergency FAILED unit=\(self.unitId, privacy: .public) active=\(activating) error=\(detail, privacy: .public)"
                 )
                 guard gen == emergencyGeneration else { return }
+                sounds.play(.error)
                 uiState.isEmergencyActive = !activating
                 let prefix = activating ? "EMERGENCY SEND FAILED" : "EMERGENCY CLEAR FAILED"
                 // Surface a short error hint in the status strip so an operator
@@ -1251,7 +1252,7 @@ final class RadioViewModel: ObservableObject {
             uiState.pageMessages = Array(uiState.pageMessages.prefix(100))
         }
         persistPages()
-        sounds.play(.channelSwitch)
+        sounds.play(.page)
         let preview = page.message.isEmpty ? page.fromLabel : page.message
         uiState.statusMessage = "PAGE: " + preview.prefix(40).uppercased()
     }
@@ -1305,8 +1306,10 @@ final class RadioViewModel: ObservableObject {
             guard let self else { return }
             do {
                 try await self.api.respondToAlert(id: id, unit: self.unitId, response: reply)
+                self.sounds.play(.success)
                 self.uiState.statusMessage = "REPLY SENT: " + reply.uppercased()
             } catch {
+                self.sounds.play(.error)
                 self.uiState.statusMessage = "REPLY FAILED — RETRY"
             }
         }

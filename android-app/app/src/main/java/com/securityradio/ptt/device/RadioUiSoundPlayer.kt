@@ -28,6 +28,13 @@ interface RadioUiSoundPlayer {
     /** Stops a lost-link alert mid-play; also called when connectivity returns. */
     fun stopBusyAlert()
     fun playEmergencyAlert()
+    /** Distinct two-tone chirp for an incoming page/message — deliberately unlike
+     *  [playChannelSwitch] so a page isn't mistaken for a channel change. */
+    fun playPage()
+    /** Rising chime confirming an action succeeded (reply sent, key saved). */
+    fun playSuccess()
+    /** Low descending blip signalling a failed action (send failed, etc.). */
+    fun playError()
     /** Positive 2-tone "success" chirp for the post-OTA-install confirmation banner. Deliberately
      *  unlike [playChannelSwitch] / [playTalkPermitThen] so the operator can tell that the sound
      *  means "update finished", not "you're keyed up". */
