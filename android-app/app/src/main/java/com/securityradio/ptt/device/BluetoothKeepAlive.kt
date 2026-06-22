@@ -149,39 +149,23 @@ class BluetoothKeepAlive {
         // 8 kHz mono is plenty to hold the link open and keeps the stream light.
         const val SAMPLE_RATE_HZ = 8_000
 
-        // 20 ms of inaudible low-level dither (±12 LSB ≈ -68 dBFS). Its only job is to
-        // keep the A2DP *link* from going idle (a low bar) so there's no reconnect
-        // latency — it is NOT trying to hold the amp out of standby (that's wakeBurst's
-        // job). ±12 is below the audible floor; hotter values were audible as static.
-        val FILL = ByteArray(320).also { buf ->
-            var seed = 0x9E3779B9.toInt()
-            var i = 0
-            while (i + 1 < buf.size) {
-                seed = seed * 1103515245 + 12345
-                val v = ((seed ushr 16) % 25) - 12 // [-12, 12]
-                buf[i] = (v and 0xFF).toByte()
-                buf[i + 1] = ((v shr 8) and 0xFF).toByte()
-                i += 2
-            }
-        }
+        // Digital SILENCE (all zeros). Field testing on a sensitive head unit showed it
+        // reproduced even -68 dBFS dither as audible static — meaning its amp never
+        // actually sleeps, so the keep-alive doesn't need to emit any *signal*. Keeping
+        // the AudioTrack in the PLAYING state (continuously streaming zeros) is what holds
+        // the A2DP link warm on the common stacks; the link needs an active stream, not
+        // noise. The anti-clipping work is carried by the inbound jitter cushion. Streaming
+        // zeros stays inaudible while still keeping the track — and therefore the link —
+        // active.
+        val FILL = ByteArray(320) // zeros — silent keep-alive
 
         /** How long a [wakeBurst] streams the wake signal before falling back to idle dither. */
         const val BURST_MS = 120L
 
-        // Brief wake signal fired by wakeBurst() to clear a head-unit amp's wake-from-
-        // standby detector (~-50 dBFS) just before a beep / PTT tone / transmit. Only
-        // needs to be *above that threshold*, not loud: ±96 LSB ≈ -50 dBFS keeps it at
-        // the edge of audibility so the first syllable survives without an audible buzz.
-        val BURST = ByteArray(320).also { buf ->
-            var seed = 0x27D4EB2F.toInt()
-            var i = 0
-            while (i + 1 < buf.size) {
-                seed = seed * 1103515245 + 12345
-                val v = ((seed ushr 16) % 193) - 96 // [-96, 96]
-                buf[i] = (v and 0xFF).toByte()
-                buf[i + 1] = ((v shr 8) and 0xFF).toByte()
-                i += 2
-            }
-        }
+        // Also silent: on this hardware the amp is always on, so a sacrificial wake burst
+        // is unnecessary and was itself audible as a short "buzz" before each tone. Kept as
+        // zeros (and wakeBurst() left wired) so the burst can be re-enabled with a non-zero
+        // buffer if a head unit that truly deep-sleeps its amp turns up later.
+        val BURST = ByteArray(320) // zeros — no audible wake burst
     }
 }
