@@ -56,13 +56,16 @@
                 android:value="background_ptt_hardware_routing_coordination" />
         </service>
 
+        <!-- Not directBootAware on purpose: this app keeps its state in credential-encrypted
+             storage, so it must not be launched before the user unlocks after a reboot. Listening
+             for LOCKED_BOOT_COMPLETED (direct boot) here crashed the process on first boot
+             (TM7 / Android 11 "safeT stopped working"). BOOT_COMPLETED + USER_PRESENT fire after
+             unlock, which is the earliest point the radio can safely start. -->
         <receiver
             android:name=".device.RadioBootReceiver"
-            android:directBootAware="true"
             android:exported="true">
             <intent-filter android:priority="998">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.USER_PRESENT" />

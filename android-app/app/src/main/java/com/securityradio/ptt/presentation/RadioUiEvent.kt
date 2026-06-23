@@ -57,6 +57,8 @@ sealed interface RadioUiEvent {
     data object RequestAudioPermission : RadioUiEvent
     data object RequestLocationPermission : RadioUiEvent
     data object OpenAccessibilitySettings : RadioUiEvent
+    /** Operator chose "don't show again" on the accessibility-service setup prompt (persisted). */
+    data object SuppressAccessibilityPrompt : RadioUiEvent
     data object OpenLocationSettings : RadioUiEvent
     data object OpenGpsSettings : RadioUiEvent
     data object RequestIgnoreBatteryOptimizations : RadioUiEvent

@@ -373,6 +373,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun isAccessibilityServiceEnabled(context: Context, service: Class<*>): Boolean {
+        // Most reliable signal first: if the OS has actually bound our service this process, it is
+        // enabled — no matter how it was turned on. This is what fixes the "enabled via ADB but the
+        // pop-up still shows" case, where the Settings.Secure string match below can miss a
+        // non-canonical (short `pkg/.Class`) component the adb command wrote.
+        if (InricoHardwareService.isRunning) return true
+
         val accessibilityOn = Settings.Secure.getInt(
             context.contentResolver,
             Settings.Secure.ACCESSIBILITY_ENABLED,
@@ -381,6 +387,9 @@ class MainActivity : ComponentActivity() {
         if (!accessibilityOn) return false
 
         val expectedComponentName = android.content.ComponentName(context, service)
+        // Canonical short form, e.g. "com.securityradio.ptt/.device.InricoHardwareService" — what an
+        // `adb settings put secure enabled_accessibility_services …` command commonly writes.
+        val expectedShort = expectedComponentName.flattenToShortString()
         val enabledServices = Settings.Secure.getString(
             context.contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
@@ -390,7 +399,13 @@ class MainActivity : ComponentActivity() {
         while (colonSplitter.hasNext()) {
             val componentNameString = colonSplitter.next()
             val enabledService = android.content.ComponentName.unflattenFromString(componentNameString)
-            if (enabledService != null && enabledService == expectedComponentName) {
+            // Match on the canonical ComponentName OR the short `pkg/.Class` form that an
+            // `adb settings put secure enabled_accessibility_services …` command often writes —
+            // ComponentName equality treats ".Class" and the fully-qualified class as different.
+            if (enabledService != null &&
+                (enabledService == expectedComponentName ||
+                    componentNameString.trim() == expectedShort)
+            ) {
                 return true
             }
         }

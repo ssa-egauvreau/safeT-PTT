@@ -60,6 +60,16 @@ class InricoHardwareService : AccessibilityService() {
         return false
     }
 
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        isRunning = true
+    }
+
+    override fun onDestroy() {
+        isRunning = false
+        super.onDestroy()
+    }
+
     override fun onInterrupt() {}
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
@@ -124,8 +134,18 @@ class InricoHardwareService : AccessibilityService() {
         return super.onKeyEvent(event)
     }
 
-    private companion object {
+    companion object {
+        /**
+         * True whenever the OS has this accessibility service bound and running. This is the most
+         * reliable "is it enabled?" signal: it is set the moment the system connects the service,
+         * regardless of how it was enabled (Settings toggle or an `adb settings put` that may have
+         * written the component in short `pkg/.Class` form the Settings.Secure string match misses).
+         */
+        @Volatile
+        var isRunning: Boolean = false
+            private set
+
         /** Positive confirm-button labels on the system installer (never "Cancel"/"Settings"). */
-        val CONFIRM_LABELS = listOf("Install", "Update", "Continue", "OK")
+        private val CONFIRM_LABELS = listOf("Install", "Update", "Continue", "OK")
     }
 }

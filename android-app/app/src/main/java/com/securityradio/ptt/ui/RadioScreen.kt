@@ -3665,6 +3665,10 @@ private fun LcdSoftKeyRow(
  * Bottom legend for the TM-7 Plus's four physical hardware keys (left to right:
  * channel down, channel up, replay, day/night). The boxes sit above the keys
  * and double as touch targets for the same actions.
+ *
+ * Each cell is split into two stacked zones so the operator can see, at a glance,
+ * what a *single press* does (top, with the icon/label) versus what a *press-and-hold*
+ * does (bottom "HOLD · …" caption). E.g. the day/night key: tap = day/night, hold = scan.
  */
 @Composable
 private fun LcdHardwareKeyLegend(
@@ -3682,7 +3686,10 @@ private fun LcdHardwareKeyLegend(
             .border(1.dp, p.divider, RoundedCornerShape(2.dp))
             .background(p.lcdSection),
     ) {
-        LcdLegendKey(onClick = { onEvent(RadioUiEvent.ChannelDown) }) {
+        LcdLegendKey(
+            onClick = { onEvent(RadioUiEvent.ChannelDown) },
+            styles = styles,
+        ) {
             LcdLegendLabel(text = "CH-", styles = styles, color = p.textOnButton)
         }
         LcdLegendSeparator(p.divider)
@@ -3690,6 +3697,8 @@ private fun LcdHardwareKeyLegend(
             onClick = { onEvent(RadioUiEvent.ChannelUp) },
             // Mirrors the physical channel-up key: hold toggles zone-select mode.
             onLongClick = { onEvent(RadioUiEvent.ToggleZoneSelect) },
+            holdLabel = "ZONE",
+            styles = styles,
         ) {
             LcdLegendLabel(text = "CH+", styles = styles, color = p.textOnButton)
         }
@@ -3697,33 +3706,45 @@ private fun LcdHardwareKeyLegend(
         LcdLegendKey(
             onClick = { onEvent(RadioUiEvent.PlayLastTransmission) },
             onLongClick = { onEvent(RadioUiEvent.ToggleMessageHistory) },
+            holdLabel = "HISTORY",
+            styles = styles,
         ) {
             LcdReplayIcon(
                 ready = p.textOnButton,
                 muted = p.textOnButton,
                 playing = true,
-                modifier = Modifier.size(34.dp),
+                modifier = Modifier.size(30.dp),
             )
         }
         LcdLegendSeparator(p.divider)
         LcdLegendKey(
             onClick = { onEvent(RadioUiEvent.ToggleDayNight) },
             onLongClick = { onEvent(RadioUiEvent.ToggleScanLongPress) },
+            holdLabel = "SCAN",
+            styles = styles,
         ) {
             LcdDayNightIcon(
                 night = night,
                 color = p.textOnButton,
-                modifier = Modifier.size(34.dp),
+                modifier = Modifier.size(30.dp),
             )
         }
     }
 }
 
-/** One equal-width cell of [LcdHardwareKeyLegend]; also a touch target. */
+/**
+ * One equal-width cell of [LcdHardwareKeyLegend]; also a touch target.
+ *
+ * When [holdLabel] is set the cell is divided: the [content] (tap action) sits in the upper zone and
+ * a muted "HOLD · <label>" caption fills a shaded lower zone, so the press-and-hold action is
+ * advertised right on the key.
+ */
 @Composable
 private fun RowScope.LcdLegendKey(
     onClick: () -> Unit,
+    styles: LcdTextStyles,
     onLongClick: (() -> Unit)? = null,
+    holdLabel: String? = null,
     content: @Composable () -> Unit,
 ) {
     val p = RadioLcdTheme.palette
@@ -3732,6 +3753,49 @@ private fun RowScope.LcdLegendKey(
         .weight(1f)
         .fillMaxHeight()
     val cellShape = RoundedCornerShape(0.dp)
+
+    val cellBody: @Composable () -> Unit = {
+        if (holdLabel != null) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Tap zone — the icon/label for a single press.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    content()
+                }
+                // Divider + shaded hold zone advertise the press-and-hold action.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(p.divider),
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(p.lcdSection)
+                        .padding(horizontal = 2.dp, vertical = 2.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "HOLD · $holdLabel",
+                        style = styles.status.copy(fontSize = 9.sp, lineHeight = 10.sp),
+                        color = p.textMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        } else {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                content()
+            }
+        }
+    }
+
     // The clickable Surface(onClick = ...) and a manual detectTapGestures cannot share the same
     // node: Surface's internal pointerInput consumes the tap before the manual one sees it. That
     // is why TM7+'s on-screen REPLAY and DAY/NIGHT keys were inert — they had an onLongClick set,
@@ -3748,9 +3812,7 @@ private fun RowScope.LcdLegendKey(
             shape = cellShape,
             color = p.softKeyInactiveFill,
         ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                content()
-            }
+            cellBody()
         }
     } else {
         Surface(
@@ -3760,9 +3822,7 @@ private fun RowScope.LcdLegendKey(
             color = p.softKeyInactiveFill,
             interactionSource = interaction,
         ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                content()
-            }
+            cellBody()
         }
     }
 }
@@ -5175,6 +5235,18 @@ fun SetupRequiredDialog(
                             colors = androidx.compose.material3.ButtonDefaults.textButtonColors(containerColor = p.softKeyInactiveFill)
                         ) {
                             Text("OPEN ACCESSIBILITY SETTINGS", color = p.textOnButton)
+                        }
+                        // For radios provisioned via ADB where the service is already on but the OS
+                        // keeps reporting it off — let the operator silence this permanently.
+                        Text(
+                            text = "Already enabled it through ADB? Hide this prompt for good:",
+                            fontSize = 12.sp,
+                            color = p.textMuted,
+                        )
+                        TextButton(
+                            onClick = { onEvent(RadioUiEvent.SuppressAccessibilityPrompt) },
+                        ) {
+                            Text("DON'T SHOW THIS AGAIN", color = p.statusBlue)
                         }
                     }
                 }

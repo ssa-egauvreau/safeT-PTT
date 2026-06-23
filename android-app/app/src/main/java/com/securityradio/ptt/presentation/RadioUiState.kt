@@ -243,6 +243,13 @@ data class RadioUiState(
     /** True once the operator dismisses the full-screen "setup required" prompt this session. */
     val setupDialogDismissed: Boolean = false,
 
+    /**
+     * Operator chose "don't show again" on the accessibility-service prompt (persisted). When set,
+     * the accessibility section is suppressed even if the platform still reports the service as off —
+     * for radios provisioned via ADB where detection is unreliable.
+     */
+    val accessibilityPromptSuppressed: Boolean = false,
+
     /** Full-screen scrollable list of recent RX messages (long-press replay on TM7). */
     val messageHistoryVisible: Boolean = false,
     val rxMessageHistory: List<RxMessageHistoryItem> = emptyList(),
