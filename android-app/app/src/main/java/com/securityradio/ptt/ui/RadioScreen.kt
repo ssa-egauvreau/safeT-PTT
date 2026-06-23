@@ -3706,7 +3706,7 @@ private fun LcdHardwareKeyLegend(
         LcdLegendKey(
             onClick = { onEvent(RadioUiEvent.PlayLastTransmission) },
             onLongClick = { onEvent(RadioUiEvent.ToggleMessageHistory) },
-            holdLabel = "HISTORY",
+            holdLabel = "MESSAGES",
             styles = styles,
         ) {
             LcdReplayIcon(
