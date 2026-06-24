@@ -261,6 +261,7 @@ class RadioViewModel(
                 themeMode = radioPreferences.getThemeMode(),
                 announceChannelNameOnTune = radioPreferences.isAnnounceChannelOnTuneEnabled(),
                 displayRotated180 = radioPreferences.isDisplayRotated180(),
+                accessibilityPromptSuppressed = radioPreferences.isAccessibilityPromptSuppressed(),
                 agencyRadioKey = radioPreferences.getAgencyRadioKey(),
                 deviceProfilePreference = radioPreferences.getDeviceProfilePreference(),
                 resolvedDeviceProfile = DeviceProfileResolver.resolve(radioPreferences.getDeviceProfilePreference()),
@@ -1140,12 +1141,24 @@ class RadioViewModel(
                 _uiState.update { it.copy(hardwareMappings = hardwareMappingRepository.getAllMappings()) }
             }
             is RadioUiEvent.UpdatePermissionState -> {
-                _uiState.update { 
+                _uiState.update {
                     it.copy(
                         needsAudioPermission = event.needsAudio,
-                        needsAccessibilityService = event.needsAccessibility,
+                        // Honor the operator's "don't show again": once suppressed, never resurface
+                        // the accessibility prompt even if the platform keeps reporting it as off.
+                        needsAccessibilityService =
+                            event.needsAccessibility && !it.accessibilityPromptSuppressed,
                         needsLocationPermission = event.needsLocation,
                         needsGpsEnabled = event.needsGpsEnabled,
+                    )
+                }
+            }
+            RadioUiEvent.SuppressAccessibilityPrompt -> {
+                radioPreferences.setAccessibilityPromptSuppressed(true)
+                _uiState.update {
+                    it.copy(
+                        accessibilityPromptSuppressed = true,
+                        needsAccessibilityService = false,
                     )
                 }
             }

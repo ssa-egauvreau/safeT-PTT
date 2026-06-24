@@ -109,6 +109,18 @@ class RadioPreferences(context: Context) {
     }
 
     /** Screen flipped 180° (IRC590 day/night key long-press). */
+    /**
+     * Operator chose "don't show again" on the accessibility-service setup prompt. Used on radios
+     * where the service is enabled out-of-band (e.g. via ADB during provisioning) but the platform
+     * still reports it as off, so the prompt would otherwise reappear on every resume.
+     */
+    fun isAccessibilityPromptSuppressed(): Boolean =
+        prefs.getBoolean(KEY_ACCESSIBILITY_PROMPT_SUPPRESSED, false)
+
+    fun setAccessibilityPromptSuppressed(suppressed: Boolean) {
+        prefs.edit().putBoolean(KEY_ACCESSIBILITY_PROMPT_SUPPRESSED, suppressed).apply()
+    }
+
     fun isDisplayRotated180(): Boolean = prefs.getBoolean(KEY_DISPLAY_ROTATED_180, false)
 
     fun setDisplayRotated180(rotated: Boolean) {
@@ -315,6 +327,7 @@ class RadioPreferences(context: Context) {
         private const val KEY_SESSION_DISPLAY_NAME = "session_display_name"
         private const val KEY_SESSION_INSTALL_TOKEN = "session_install_token"
         private const val KEY_DISPLAY_ROTATED_180 = "display_rotated_180"
+        private const val KEY_ACCESSIBILITY_PROMPT_SUPPRESSED = "accessibility_prompt_suppressed"
         private const val KEY_MIC_NOISE_SUPPRESSION = "mic_noise_suppression"
         private const val KEY_MIC_AUTO_GAIN = "mic_auto_gain"
         private const val KEY_STEREO_CHANNEL_SPLIT = "stereo_channel_split"
