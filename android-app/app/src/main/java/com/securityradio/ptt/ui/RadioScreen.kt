@@ -623,8 +623,24 @@ private fun UniversalCockpitScanBanner(state: RadioUiState, styles: LcdTextStyle
  * amber treatment; "AI · AUTO" keeps the rainbow. Hidden when off.
  */
 @Composable
-private fun AiDispatchBadge(mode: AiDispatchMode, styles: LcdTextStyles, modifier: Modifier = Modifier) {
-    val label = mode.badge ?: return
+private fun AiDispatchBadge(
+    mode: AiDispatchMode,
+    styles: LcdTextStyles,
+    modifier: Modifier = Modifier,
+    // Compact form for the pinned top-right corner: shorter label + tighter chrome so it can
+    // stack under the PRIORITY tag without crowding the clock.
+    compact: Boolean = false,
+) {
+    val full = mode.badge ?: return
+    val label = if (compact) {
+        when (mode) {
+            AiDispatchMode.SUPERVISED -> "AI SUP"
+            AiDispatchMode.FULL_AUTO -> "AI AUTO"
+            AiDispatchMode.OFF -> return
+        }
+    } else {
+        full
+    }
     val background = if (mode == AiDispatchMode.SUPERVISED) {
         SolidColor(Color(0xFFFFC371))
     } else {
@@ -641,12 +657,15 @@ private fun AiDispatchBadge(mode: AiDispatchMode, styles: LcdTextStyles, modifie
     Box(
         modifier = modifier
             .background(background, RoundedCornerShape(50))
-            .padding(horizontal = 12.dp, vertical = 3.dp),
+            .padding(horizontal = if (compact) 7.dp else 12.dp, vertical = if (compact) 1.dp else 3.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = "✦ $label",
-            style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 12.sp),
+            style = styles.status.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = if (compact) 11.sp else 12.sp,
+            ),
             color = Color(0xFF0B0B12),
             maxLines = 1,
         )
@@ -2097,20 +2116,18 @@ private fun LcdHandsetFillChannelBlock(
                                     .padding(horizontal = 4.dp),
                             )
                         }
-                        AiDispatchBadge(
-                            mode = state.aiDispatchMode,
-                            styles = styles,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                        if (scanRxLive) {
-                            LcdHandsetScanRxStrip(
-                                channelName = state.scanBackgroundChannel,
-                                unitId = talkUnit,
-                                displayName = talkName,
+                        // TM7 shows AI status pinned in the top-right corner (under PRIORITY); other
+                        // handsets (IRC590) keep it centered here under the channel name.
+                        if (state.resolvedDeviceProfile != ResolvedDeviceProfile.TM7_PLUS) {
+                            AiDispatchBadge(
+                                mode = state.aiDispatchMode,
                                 styles = styles,
-                                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
+                                modifier = Modifier.padding(top = 4.dp),
                             )
                         }
+                        // Scan-receive now renders as the persistent inverted cyan box up in the
+                        // toolbar (LcdHandsetToolbarScanBanner) — not duplicated here — so the big
+                        // home channel name stays put while a scanned channel is talking.
                     }
                 }
                 if (!remoteEmergencyLive) {
@@ -2704,17 +2721,29 @@ private fun LcdHandsetToolbarTm7TopRow(
                 .align(Alignment.Center)
                 .fillMaxWidth(),
         )
-        // PRIORITY / LISTEN-ONLY tag pinned top-right so it doesn't crowd the
-        // zone/channel/SCAN RX area below. Only renders for non-TALK channels.
+        // PRIORITY / LISTEN-ONLY tag and the AI-dispatch status both pinned to the very top-right
+        // corner (no gap above), stacked: priority first, AI status below it. Keeps them out of the
+        // zone/channel/SCAN RX area below. Permission tag only renders for non-TALK channels; the
+        // AI badge only for non-off AI modes.
         if (!state.isEmergencyActive) {
-            LcdPermissionBadge(
-                permission = state.currentChannelPermission,
-                styles = styles,
-                deviceProfile = state.resolvedDeviceProfile,
-                compactVertical = true,
-                fillWidth = false,
-                modifier = Modifier.align(Alignment.CenterEnd),
-            )
+            Column(
+                modifier = Modifier.align(Alignment.TopEnd),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                LcdPermissionBadge(
+                    permission = state.currentChannelPermission,
+                    styles = styles,
+                    deviceProfile = state.resolvedDeviceProfile,
+                    compactVertical = true,
+                    fillWidth = false,
+                )
+                AiDispatchBadge(
+                    mode = state.aiDispatchMode,
+                    styles = styles,
+                    compact = true,
+                )
+            }
         }
     }
 }
@@ -2756,37 +2785,57 @@ private fun LcdHandsetToolbarScanBanner(
     state: RadioUiState,
     styles: LcdTextStyles,
 ) {
+    // Persistent scan-receive box while scan is on: an inverted cyan panel (distinct from the
+    // amber 10-33 wash so it can't be confused with emergency traffic). Idle → an empty outlined
+    // box; receiving → the box fills cyan and shows the scanned channel that's currently talking,
+    // big and steady (no tiny one-line flashing text). Hidden entirely when scan is off.
+    if (!state.scanActive) return
     val p = RadioLcdTheme.palette
-    if (state.scanBackgroundActive && state.scanBackgroundChannel.isNotBlank()) {
-        return
-    }
-    if (state.scanActive && state.scanBackgroundChannel.isNotBlank()) {
-        val bannerScanColor = rememberScanIconActiveColor(
-            scanActive = true,
-            scanReceiving = true,
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 2.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+    val receiving = state.scanBackgroundActive && state.scanBackgroundChannel.isNotBlank()
+    val onCyan = Color(0xFF06222A)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 3.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(if (receiving) p.scanRx else p.scanRx.copy(alpha = 0.10f))
+            .border(2.dp, p.scanRx, RoundedCornerShape(3.dp))
+            .padding(horizontal = 8.dp, vertical = if (receiving) 4.dp else 3.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             LcdScanIcon(
                 on = true,
-                active = bannerScanColor,
+                active = if (receiving) onCyan else p.scanRx,
                 muted = p.textMuted,
-                modifier = Modifier.size(26.dp),
+                modifier = Modifier.size(if (receiving) 24.dp else 18.dp),
             )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "SCAN RX · ${state.scanBackgroundChannel}",
-                // Handset-only strip: match the handsets' display scale, not the 10.5 sp chrome.
-                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 27.sp, lineHeight = 31.sp),
-                color = p.statusAmber,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Spacer(modifier = Modifier.width(8.dp))
+            if (receiving) {
+                Text(
+                    text = state.scanBackgroundChannel,
+                    style = styles.status.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 28.sp,
+                        lineHeight = 30.sp,
+                    ),
+                    color = onCyan,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                Text(
+                    text = "SCAN",
+                    style = styles.status.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        lineHeight = 16.sp,
+                    ),
+                    color = p.scanRx,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
