@@ -196,6 +196,16 @@ class RadioViewModel(
     /** Clears the scan-RX banner after voice activity stops. */
     private var scanRxBannerClearJob: Job? = null
 
+    /**
+     * Wall-clock of the last scan voice chunk attributed by the real-time audio path
+     * ([onScanVoiceHeard]). The audio stream knows exactly which scanned channel we're hearing;
+     * the slow talk-activity poll only carries the server's single "scan" segment, which lags and
+     * can name a different channel — that mismatch is what made the SCAN RX banner show the wrong /
+     * combined channel (CHP talking → "CHP" + "Metronet"). While audio is fresh, it wins.
+     */
+    @Volatile
+    private var lastScanAudioMs = 0L
+
     @Volatile
     private var pttMicLiveThisHold: Boolean = false
 
@@ -940,6 +950,7 @@ class RadioViewModel(
             .any { channelNamesMatch(it, channelName) }
         if (!included) return
         if (channelNamesMatch(channelName, snap.channelLabel)) return
+        lastScanAudioMs = System.currentTimeMillis()
         scanRxBannerClearJob?.cancel()
         _uiState.update {
             it.copy(
@@ -2898,6 +2909,11 @@ class RadioViewModel(
                     displayName = talkName,
                 )
                 val scanBg = scanBackgroundFromActivity(dto, snap)
+                // The real-time scan audio path is authoritative for the SCAN RX banner: if it
+                // attributed a chunk within the banner-hold window, don't let the slower server
+                // poll overwrite it with its (single, lagging) scan segment.
+                val scanAudioFresh =
+                    System.currentTimeMillis() - lastScanAudioMs < SCAN_RX_BANNER_HOLD_MS
                 _uiState.update {
                     it.copy(
                         rxAttributedLine = merged,
@@ -2905,8 +2921,8 @@ class RadioViewModel(
                         lastRxReplayCaption = replayCaption,
                         activeTalkUnitId = talkUnit,
                         activeTalkDisplayName = talkName,
-                        scanBackgroundActive = scanBg.first,
-                        scanBackgroundChannel = scanBg.second,
+                        scanBackgroundActive = if (scanAudioFresh) it.scanBackgroundActive else scanBg.first,
+                        scanBackgroundChannel = if (scanAudioFresh) it.scanBackgroundChannel else scanBg.second,
                     )
                 }
             }

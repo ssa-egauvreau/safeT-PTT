@@ -1848,8 +1848,9 @@ private fun LcdHandsetFillChannelBlock(
         } else {
             p.lcdAlt
         }
-    val zoneValue = state.zoneLabel.filter { it.isDigit() }
-        .ifEmpty { state.zoneLabel.trim().uppercase(Locale.US) }
+    // Full zone label ("1 PATROL"), not just the digits — operators want the zone NAME, not only
+    // its number. handsetZonePositionLabel() prepends "ZONE " (and avoids doubling it).
+    val zoneValue = state.zoneLabel.trim().uppercase(Locale.US)
     val channelValue = state.channelPosition.replace(" ", "")
     val radiosValue = state.radiosOnlineOnChannel?.toString() ?: "—"
     val (talkUnit, talkName) = handsetTalkAttribution(state)
@@ -2150,7 +2151,9 @@ private fun handsetZonePositionLabel(
     channelValue: String,
     codecLabel: String = "",
 ): String {
-    val zone = zoneValue.trim()
+    // Strip a leading "ZONE" the operator may already have baked into the portal zone name so we
+    // never render "ZONE ZONE 1 PATROL".
+    val zone = zoneValue.trim().removePrefix("ZONE").removePrefix("zone").trim()
     val channel = channelValue.trim()
     val base = when {
         zone.isNotEmpty() && channel.isNotEmpty() -> "ZONE $zone · $channel"
