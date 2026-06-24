@@ -43,6 +43,10 @@ sealed interface HardwareButtonEvent {
      *  the Inrico intent broadcasts are discrete presses with no release. */
     data object ChannelUpReleased : HardwareButtonEvent
     data object ChannelDownPressed : HardwareButtonEvent
+    /** Key-up counterpart so TM-7 Plus can distinguish quick-press (channel step) from a
+     *  ≥1 s hold (zone step). Only the KeyEvent paths emit this; the Inrico intent broadcasts
+     *  are discrete presses with no release. */
+    data object ChannelDownReleased : HardwareButtonEvent
     data object ScanTogglePressed : HardwareButtonEvent
     data object PlayLastTransmissionPressed : HardwareButtonEvent
     data object PlayLastTransmissionReleased : HardwareButtonEvent

@@ -11,6 +11,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -116,6 +117,7 @@ import com.securityradio.ptt.presentation.ThemeMode
 import com.securityradio.ptt.presentation.isLcdNight
 import com.securityradio.ptt.ui.lcd.LcdBatteryIcon
 import com.securityradio.ptt.ui.lcd.LcdBluetoothIcon
+import com.securityradio.ptt.ui.lcd.LcdChevronIcon
 import com.securityradio.ptt.ui.lcd.LcdDayNightIcon
 import com.securityradio.ptt.ui.lcd.LcdEmergencyGlyphIcon
 import com.securityradio.ptt.ui.lcd.LcdGlobeIcon
@@ -3715,12 +3717,14 @@ private fun LcdSoftKeyRow(
 
 /**
  * Bottom legend for the TM-7 Plus's four physical hardware keys (left to right:
- * channel down, channel up, replay, day/night). The boxes sit above the keys
- * and double as touch targets for the same actions.
+ * channel down, channel up, replay, day/night). The boxes sit above the keys and double as touch
+ * targets for the same actions.
  *
- * Each cell is split into two stacked zones so the operator can see, at a glance,
- * what a *single press* does (top, with the icon/label) versus what a *press-and-hold*
- * does (bottom "HOLD · …" caption). E.g. the day/night key: tap = day/night, hold = scan.
+ * Each cell is split by a 45° diagonal so a single key advertises BOTH of its functions with icons
+ * (text was unreadable at this size): the TAP action sits in the top-left half, the HOLD action in
+ * the dimmer bottom-right half. Channel keys — tap = channel step (single chevron), hold = zone
+ * step (double chevron). Replay — tap = play last, hold = messages. Day/night — tap = day/night,
+ * hold = scan configuration.
  */
 @Composable
 private fun LcdHardwareKeyLegend(
@@ -3738,143 +3742,88 @@ private fun LcdHardwareKeyLegend(
             .border(1.dp, p.divider, RoundedCornerShape(2.dp))
             .background(p.lcdSection),
     ) {
-        LcdLegendKey(
-            onClick = { onEvent(RadioUiEvent.ChannelDown) },
-            styles = styles,
-        ) {
-            LcdLegendLabel(text = "CH-", styles = styles, color = p.textOnButton)
-        }
+        LcdSplitLegendKey(
+            onTap = { onEvent(RadioUiEvent.ChannelDown) },
+            onHold = { onEvent(RadioUiEvent.ZoneStepDown) },
+            tap = { c, m -> LcdChevronIcon(up = false, color = c, modifier = m) },
+            hold = { c, m -> LcdChevronIcon(up = false, doubled = true, color = c, modifier = m) },
+        )
         LcdLegendSeparator(p.divider)
-        LcdLegendKey(
-            onClick = { onEvent(RadioUiEvent.ChannelUp) },
-            // Mirrors the physical channel-up key: hold toggles zone-select mode.
-            onLongClick = { onEvent(RadioUiEvent.ToggleZoneSelect) },
-            holdLabel = "ZONE",
-            styles = styles,
-        ) {
-            LcdLegendLabel(text = "CH+", styles = styles, color = p.textOnButton)
-        }
+        LcdSplitLegendKey(
+            onTap = { onEvent(RadioUiEvent.ChannelUp) },
+            onHold = { onEvent(RadioUiEvent.ZoneStepUp) },
+            tap = { c, m -> LcdChevronIcon(up = true, color = c, modifier = m) },
+            hold = { c, m -> LcdChevronIcon(up = true, doubled = true, color = c, modifier = m) },
+        )
         LcdLegendSeparator(p.divider)
-        LcdLegendKey(
-            onClick = { onEvent(RadioUiEvent.PlayLastTransmission) },
-            onLongClick = { onEvent(RadioUiEvent.ToggleMessageHistory) },
-            holdLabel = "MESSAGES",
-            styles = styles,
-        ) {
-            LcdReplayIcon(
-                ready = p.textOnButton,
-                muted = p.textOnButton,
-                playing = true,
-                modifier = Modifier.size(30.dp),
-            )
-        }
+        LcdSplitLegendKey(
+            onTap = { onEvent(RadioUiEvent.PlayLastTransmission) },
+            onHold = { onEvent(RadioUiEvent.ToggleMessageHistory) },
+            tap = { c, m -> LcdReplayIcon(ready = c, muted = c, playing = true, modifier = m) },
+            hold = { c, m -> LcdListChannelIcon(color = c, modifier = m) },
+        )
         LcdLegendSeparator(p.divider)
-        LcdLegendKey(
-            onClick = { onEvent(RadioUiEvent.ToggleDayNight) },
-            onLongClick = { onEvent(RadioUiEvent.ToggleScanLongPress) },
-            holdLabel = "SCAN",
-            styles = styles,
-        ) {
-            LcdDayNightIcon(
-                night = night,
-                color = p.textOnButton,
-                modifier = Modifier.size(30.dp),
-            )
-        }
+        LcdSplitLegendKey(
+            onTap = { onEvent(RadioUiEvent.ToggleDayNight) },
+            onHold = { onEvent(RadioUiEvent.ToggleScanLongPress) },
+            tap = { c, m -> LcdDayNightIcon(night = night, color = c, modifier = m) },
+            hold = { c, m -> LcdScanIcon(on = true, active = c, muted = c, modifier = m) },
+        )
     }
 }
 
 /**
- * One equal-width cell of [LcdHardwareKeyLegend]; also a touch target.
- *
- * When [holdLabel] is set the cell is divided: the [content] (tap action) sits in the upper zone and
- * a muted "HOLD · <label>" caption fills a shaded lower zone, so the press-and-hold action is
- * advertised right on the key.
+ * One equal-width legend cell, split by a 45° diagonal: the [tap] icon fills the top-left half
+ * (single press) and the [hold] icon the dimmer bottom-right half (press-and-hold). The whole cell
+ * is the touch target for both gestures. Each icon lambda receives its tint and a pre-sized,
+ * pre-aligned [Modifier] to draw into.
  */
 @Composable
-private fun RowScope.LcdLegendKey(
-    onClick: () -> Unit,
-    styles: LcdTextStyles,
-    onLongClick: (() -> Unit)? = null,
-    holdLabel: String? = null,
-    content: @Composable () -> Unit,
+private fun RowScope.LcdSplitLegendKey(
+    onTap: () -> Unit,
+    onHold: () -> Unit,
+    tap: @Composable (Color, Modifier) -> Unit,
+    hold: @Composable (Color, Modifier) -> Unit,
 ) {
     val p = RadioLcdTheme.palette
-    val interaction = remember { MutableInteractionSource() }
-    val baseModifier = Modifier
-        .weight(1f)
-        .fillMaxHeight()
-    val cellShape = RoundedCornerShape(0.dp)
-
-    val cellBody: @Composable () -> Unit = {
-        if (holdLabel != null) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Tap zone — the icon/label for a single press.
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    content()
-                }
-                // Divider + shaded hold zone advertise the press-and-hold action.
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(p.divider),
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(p.lcdSection)
-                        .padding(horizontal = 2.dp, vertical = 2.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "HOLD · $holdLabel",
-                        style = styles.status.copy(fontSize = 9.sp, lineHeight = 10.sp),
-                        color = p.textMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        } else {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                content()
-            }
-        }
-    }
-
-    // The clickable Surface(onClick = ...) and a manual detectTapGestures cannot share the same
-    // node: Surface's internal pointerInput consumes the tap before the manual one sees it. That
-    // is why TM7+'s on-screen REPLAY and DAY/NIGHT keys were inert — they had an onLongClick set,
-    // which routed through a no-op Surface.onClick and a detached gesture handler. Drop down to a
-    // non-clickable Surface and own both gestures when long-press is in play.
-    if (onLongClick != null) {
-        Surface(
-            modifier = baseModifier.pointerInput(onClick, onLongClick) {
+    Surface(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .pointerInput(onTap, onHold) {
                 detectTapGestures(
-                    onTap = { onClick() },
-                    onLongPress = { onLongClick() },
+                    onTap = { onTap() },
+                    onLongPress = { onHold() },
                 )
             },
-            shape = cellShape,
-            color = p.softKeyInactiveFill,
-        ) {
-            cellBody()
-        }
-    } else {
-        Surface(
-            onClick = onClick,
-            modifier = baseModifier,
-            shape = cellShape,
-            color = p.softKeyInactiveFill,
-            interactionSource = interaction,
-        ) {
-            cellBody()
+        shape = RoundedCornerShape(0.dp),
+        color = p.softKeyInactiveFill,
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 45° divider from bottom-left to top-right, separating the tap (top-left) and hold
+            // (bottom-right) halves.
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawLine(
+                    color = p.divider,
+                    start = Offset(0f, size.height),
+                    end = Offset(size.width, 0f),
+                    strokeWidth = 1.5.dp.toPx(),
+                )
+            }
+            tap(
+                p.textOnButton,
+                Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 4.dp, top = 3.dp)
+                    .size(20.dp),
+            )
+            hold(
+                p.textMuted,
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 4.dp, bottom = 3.dp)
+                    .size(18.dp),
+            )
         }
     }
 }
