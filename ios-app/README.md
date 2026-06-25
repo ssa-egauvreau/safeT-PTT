@@ -67,3 +67,15 @@ The **iOS TestFlight** workflow (`.github/workflows/ios-testflight.yml`) builds,
 | `APP_STORE_CONNECT_API_KEY_P8` | The `.p8` key contents, base64-encoded |
 
 Build number is derived from the workflow run number, so each run is a unique, increasing TestFlight build.
+
+### Automated (Xcode Cloud)
+
+Xcode Cloud clones a fresh checkout that has **no `SafeTMobile.xcodeproj`** (it's generated, not committed), so a post-clone hook regenerates it before the build. That hook is committed at **`ci_scripts/ci_post_clone.sh`** (repo root — Xcode Cloud only runs it from there): it installs XcodeGen via Homebrew and runs `ios-app/setup.sh`. Without it the build fails at *Resolve package dependencies* with `SafeTMobile.xcodeproj does not exist`.
+
+Set up the workflow in **App Store Connect → your app → Xcode Cloud** (or Xcode → Product → Xcode Cloud):
+
+1. Point the workflow at this repo and the **SafeTMobile** scheme, with the project at `ios-app/SafeTMobile.xcodeproj`.
+2. Grant Xcode Cloud access so it can clone the **codec2** and **opus** submodules (the native voice sources).
+3. Run it. The post-clone hook generates the project automatically — no other configuration needed.
+
+If you ever rename or move the hook, keep it at `ci_scripts/ci_post_clone.sh` in the repository root and keep it executable (`chmod +x`).
