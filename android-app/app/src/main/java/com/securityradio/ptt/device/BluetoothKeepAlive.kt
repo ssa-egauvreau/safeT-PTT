@@ -52,10 +52,9 @@ class BluetoothKeepAlive {
     fun isActive(): Boolean = running
 
     /**
-     * Fire a short (~[BURST_MS] ms) louder-but-still-inaudible burst right before a
-     * beep / PTT tone / spoken channel / transmit, to wake a head unit whose amp
-     * fully powers down on silence (which the quiet idle dither alone may not do in
-     * time, clipping the first syllable). No-op when Bluetooth isn't connected.
+     * Marks the next ~[BURST_MS] ms to stream [BURST] instead of [FILL]. Currently both are silent
+     * (see [BURST]) so this is effectively a no-op kept wired for a future tuned deep-sleep burst.
+     * No-op when Bluetooth isn't connected.
      */
     fun wakeBurst() {
         if (!running) return
@@ -162,34 +161,15 @@ class BluetoothKeepAlive {
         // active.
         val FILL = ByteArray(320) // zeros — silent keep-alive
 
-        /**
-         * How long a [wakeBurst] streams the wake signal before falling back to idle dither. Long
-         * enough to cover MediaPlayer prepare + the sound player's start lead, so a deep-sleeping
-         * amp is fully up before the audible content begins.
-         */
+        /** How long a [wakeBurst] streams [BURST] before falling back to [FILL]. */
         const val BURST_MS = 420L
 
-        /**
-         * Peak amplitude (16-bit) of the wake burst. Low enough to stay faint, high enough to wake
-         * a head unit whose amp deep-sleeps on silence (the TM7 case). The burst only fires on the
-         * FIRST sound after the route has gone idle (see AssetRadioUiSoundPlayer), so on amps that
-         * never sleep it's a rare, brief blip rather than a buzz before every tone. Tune down if a
-         * given fleet's head unit reproduces it audibly; tune up if first-syllable clipping remains.
-         */
-        private const val WAKE_AMPLITUDE = 600
-
-        // A brief low-level broadband burst — real signal (not zeros) so an amp that powers down on
-        // silence actually wakes. Generated once, deterministically (no per-call allocation, and no
-        // Math.random which is unavailable in some sandboxes).
-        val BURST: ByteArray = ByteArray(320).also { buf ->
-            val rnd = java.util.Random(0x5AFE7L)
-            var i = 0
-            while (i + 1 < buf.size) {
-                val s = rnd.nextInt(WAKE_AMPLITUDE * 2 + 1) - WAKE_AMPLITUDE
-                buf[i] = (s and 0xFF).toByte()
-                buf[i + 1] = ((s shr 8) and 0xFF).toByte()
-                i += 2
-            }
-        }
+        // The wake burst is SILENT (zeros), same as [FILL]. A non-zero "inaudible" burst was tried
+        // to wake head units whose amp deep-sleeps, but field units reproduced it as an audible buzz
+        // before every tone (PTT / volume / channel) — these amps are "always on", so they don't
+        // need an energy nudge and the continuous silent keep-alive already holds the link. Kept as
+        // a separate constant (and wakeBurst() wired) so a real deep-sleep head unit could re-enable
+        // a tuned, low-level burst later WITHOUT it ever buzzing on always-on amps by default.
+        val BURST = ByteArray(320) // zeros — silent (no audible wake buzz)
     }
 }
