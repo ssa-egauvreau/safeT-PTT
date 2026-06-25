@@ -65,6 +65,12 @@ data class RadioChannelCatalog(
     val aiDispatch: Set<String> = emptySet(),
     /** AI dispatch mode by lowercased channel name (non-off channels only). */
     val aiDispatchModes: Map<String, AiDispatchMode> = emptyMap(),
+    /** Agency supervised wake phrase (default "hey ai") for the on-device wake-word gate. */
+    val wakeWord: String = DEFAULT_WAKE_WORD,
     val origin: ChannelCatalogOrigin,
     val errorMessage: String?,
-)
+) {
+    companion object {
+        const val DEFAULT_WAKE_WORD = "hey ai"
+    }
+}

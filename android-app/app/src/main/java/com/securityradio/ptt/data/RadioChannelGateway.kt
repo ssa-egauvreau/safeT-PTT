@@ -54,12 +54,16 @@ class RadioChannelGateway(
                 }
             }
             serverReachabilityMonitor.reportSuccess()
+            val wakeWord = body.wakeWord?.trim()?.lowercase()?.replace(Regex("\\s+"), " ")
+                ?.takeIf { it.isNotEmpty() }
+                ?: RadioChannelCatalog.DEFAULT_WAKE_WORD
             RadioChannelCatalog(
                 channels = names,
                 permissions = permissions,
                 zones = zones,
                 aiDispatch = aiDispatch,
                 aiDispatchModes = aiDispatchModes,
+                wakeWord = wakeWord,
                 origin = ChannelCatalogOrigin.NETWORK,
                 errorMessage = null,
             )
@@ -72,6 +76,7 @@ class RadioChannelGateway(
                 zones = local.zones,
                 aiDispatch = local.aiDispatch,
                 aiDispatchModes = local.aiDispatchModes,
+                wakeWord = local.wakeWord,
                 origin = ChannelCatalogOrigin.LOCAL_FALLBACK,
                 errorMessage = e.message ?: e::class.java.simpleName,
             )

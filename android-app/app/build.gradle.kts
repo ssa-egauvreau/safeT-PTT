@@ -133,6 +133,11 @@ android {
         buildConfig = true
     }
 
+    androidResources {
+        // openWakeWord TFLite models must be memory-mappable (openFd), so keep them uncompressed.
+        noCompress += "tflite"
+    }
+
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
@@ -170,4 +175,9 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    // On-device wake-word spotter (openWakeWord TFLite models). Inference is gated behind a
+    // disabled-by-default flag and self-disables when the model assets are absent, so this only
+    // adds the runtime; it does nothing until a trained model is shipped.
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
 }

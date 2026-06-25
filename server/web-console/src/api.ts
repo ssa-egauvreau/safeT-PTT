@@ -1145,6 +1145,7 @@ export const api = {
       agency_prompt_source?: "custom" | "sunset_bundled" | "railway_default";
       model: string;
       dispatch_unit_id: string;
+      agency_wake_word?: string;
     }>("GET", "/v1/ai-dispatch/status"),
 
   setChannelAiDispatch: (channelName: string, mode: AiDispatchMode) =>

@@ -102,6 +102,10 @@ class VoiceRelayTransport(
      *  Held separately from the processor because the cue path needs the config
      *  even when there is no DSP processor (e.g. a roger-beep-only config). */
     private val postDecodeConfigProvider: () -> PostDecodeChain.Config? = { null },
+    /** On-device wake-word gate: buffers the start of each PTT utterance and, on key-up, emits a
+     *  `tx_meta` wake hint so the server can keep a confidently-non-wake supervised clip off the
+     *  paid cloud transcription lane. Null / disabled = no-op (default). */
+    private val wakeWordGate: WakeWordGate? = null,
 ) : StreamingPcmSink {
 
     private val _controlEvents = MutableSharedFlow<VoiceControlEvent>(extraBufferCapacity = 16)
@@ -575,6 +579,8 @@ class VoiceRelayTransport(
      */
     fun releaseTransmitHold() {
         discardPendingUplinkTail()
+        // Busy-deny / teardown: this audio never made the air, so drop the gate buffer (no hint).
+        wakeWordGate?.reset()
         codecRegistry.encoderFor(currentTxCodec)?.resetForTalkSpurt()
         val ws = webSocketRef.get() ?: return
         if (!socketReady.get()) return
@@ -619,7 +625,20 @@ class VoiceRelayTransport(
      */
     fun finishTransmitHold() {
         flushUplinkTail()
+        // Classify the just-ended utterance and tell the server whether it opened with the wake
+        // word, BEFORE release_air, so the recorder can stamp the hint on this transmission.
+        wakeWordGate?.finishAndClassify()?.let { sendTxMeta(it.wire) }
         releaseTransmitHoldKeepingTail()
+    }
+
+    /** Per-transmission wake-word gate hint for the server's supervised cloud-transcription gate. */
+    fun sendTxMeta(wake: String) {
+        val ws = webSocketRef.get() ?: return
+        if (!socketReady.get()) return
+        try {
+            ws.send(JSONObject().put("type", "tx_meta").put("wake", wake).toString())
+        } catch (_: Exception) {
+        }
     }
 
     private fun releaseTransmitHoldKeepingTail() {
@@ -712,6 +731,10 @@ class VoiceRelayTransport(
 
     override fun consumePcm(buffer: ByteArray, length: Int) {
         if (!wantOnline.get() || length <= 0) return
+
+        // Tap the leading mic PCM (16 kHz mono) for the on-device wake-word gate. No-op when the
+        // gate is disabled (the common case) — a cheap guarded append.
+        wakeWordGate?.feed(buffer, length)
 
         val encoder = codecRegistry.txEncoderFor(currentTxCodec)
         reconcileAccumulatorForCodecToggle(encoder?.codec)
