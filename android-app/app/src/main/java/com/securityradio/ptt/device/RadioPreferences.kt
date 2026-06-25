@@ -131,6 +131,14 @@ class RadioPreferences(context: Context) {
         prefs.edit().putString(KEY_AI_WAKE_WORD, word.trim().ifBlank { DEFAULT_AI_WAKE_WORD }).apply()
     }
 
+    /** Master switch for the on-device wake-word gate. Off until a trained model is integrated and
+     *  the per-fleet false-negative rate has been measured (see the on-device wake-word doc). */
+    fun isWakeWordGateEnabled(): Boolean = prefs.getBoolean(KEY_WAKE_WORD_GATE_ENABLED, false)
+
+    fun setWakeWordGateEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_WAKE_WORD_GATE_ENABLED, enabled).apply()
+    }
+
     fun isDisplayRotated180(): Boolean = prefs.getBoolean(KEY_DISPLAY_ROTATED_180, false)
 
     fun setDisplayRotated180(rotated: Boolean) {
@@ -340,6 +348,7 @@ class RadioPreferences(context: Context) {
         private const val KEY_ACCESSIBILITY_PROMPT_SUPPRESSED = "accessibility_prompt_suppressed"
         private const val KEY_AI_WAKE_WORD = "ai_wake_word"
         const val DEFAULT_AI_WAKE_WORD = "hey ai"
+        private const val KEY_WAKE_WORD_GATE_ENABLED = "wake_word_gate_enabled"
         private const val KEY_MIC_NOISE_SUPPRESSION = "mic_noise_suppression"
         private const val KEY_MIC_AUTO_GAIN = "mic_auto_gain"
         private const val KEY_STEREO_CHANNEL_SPLIT = "stereo_channel_split"

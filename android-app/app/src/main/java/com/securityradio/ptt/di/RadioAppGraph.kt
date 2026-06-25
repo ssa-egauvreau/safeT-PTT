@@ -36,7 +36,9 @@ import com.securityradio.ptt.device.RadioPreferences
 import com.securityradio.ptt.device.RadioUiSoundPlayer
 import com.securityradio.ptt.device.ScanVoiceListenTransport
 import com.securityradio.ptt.device.ServerReachabilityMonitor
+import com.securityradio.ptt.device.StubWakeWordSpotter
 import com.securityradio.ptt.device.VoiceRelayTransport
+import com.securityradio.ptt.device.WakeWordGate
 import com.securityradio.ptt.domain.ChannelRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -187,6 +189,13 @@ class RadioAppGraph(val application: Application) {
         },
         postDecodeProcessorProvider = { postDecodeProcessor.get() },
         postDecodeConfigProvider = { postDecodeConfig.get() },
+        // On-device wake-word gate — inert until a trained model replaces the stub spotter and the
+        // enable flag is turned on. The wake phrase comes from the agency catalog (synced to prefs).
+        wakeWordGate = WakeWordGate(
+            spotter = StubWakeWordSpotter(),
+            wakeWordProvider = { radioPreferences.getAiWakeWord() },
+            enabled = radioPreferences.isWakeWordGateEnabled(),
+        ),
     )
 
     val scanVoiceListen: ScanVoiceListenTransport = ScanVoiceListenTransport(
