@@ -34,6 +34,19 @@ class ChannelSpeechHelper(
     }
 
     /**
+     * Spoken when the operator changes zones (hold channel-up / channel-down): announce the ZONE
+     * name, not the landed channel's name. Gated on the same tune-announce preference, and flushes
+     * so the channel-tune cue for the same retune can't also speak.
+     */
+    fun speakZoneIfEnabled(zoneSpokenName: String) {
+        if (!preferences.isAnnounceChannelOnTuneEnabled()) return
+        if (!ready.get()) return
+        val utter = zoneSpokenName.trim()
+        if (utter.isEmpty()) return
+        speak(utter, flush = true)
+    }
+
+    /**
      * A dispatcher live-move is an unsolicited retune the operator did not initiate, so it is always
      * announced (independent of the tune-announce preference) and flushes any queued tune speech.
      */

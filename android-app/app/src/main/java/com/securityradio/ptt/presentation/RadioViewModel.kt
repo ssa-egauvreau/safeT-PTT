@@ -2097,9 +2097,10 @@ class RadioViewModel(
         val curIdx = zones.indexOf(zoneAt(channelIndex)).coerceAtLeast(0)
         val target = zones[(curIdx + delta + zones.size) % zones.size]
         channelIndex = zoneChannelIndices(target).first()
-        val tunedLabel = channelNames[channelIndex]
+        // Announce the ZONE name (not the landed channel) when stepping zones.
+        val zoneSpoken = target.number?.let { "Zone $it ${target.name}" } ?: target.name
         soundPlayer.playChannelSwitch {
-            speechHelper.speakChannelTuneIfEnabled(tunedLabel)
+            speechHelper.speakZoneIfEnabled(zoneSpoken)
         }
         _uiState.update {
             it.withTuning(channelNames, channelIndex).pruneScanSets().copy(
