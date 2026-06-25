@@ -167,7 +167,7 @@ class BluetoothKeepAlive {
          * enough to cover MediaPlayer prepare + the sound player's start lead, so a deep-sleeping
          * amp is fully up before the audible content begins.
          */
-        const val BURST_MS = 300L
+        const val BURST_MS = 420L
 
         /**
          * Peak amplitude (16-bit) of the wake burst. Low enough to stay faint, high enough to wake
@@ -176,7 +176,7 @@ class BluetoothKeepAlive {
          * never sleep it's a rare, brief blip rather than a buzz before every tone. Tune down if a
          * given fleet's head unit reproduces it audibly; tune up if first-syllable clipping remains.
          */
-        private const val WAKE_AMPLITUDE = 220
+        private const val WAKE_AMPLITUDE = 600
 
         // A brief low-level broadband burst — real signal (not zeros) so an amp that powers down on
         // silence actually wakes. Generated once, deterministically (no per-call allocation, and no

@@ -113,6 +113,12 @@ class AssetRadioUiSoundPlayer(
         return cold
     }
 
+    /** Run [block] now, or after the wake lead when the BT route was [cold] (for non-MediaPlayer
+     *  sound paths — volume check, busy — that can't hook a prepared listener). */
+    private fun afterWakeLead(cold: Boolean, block: () -> Unit) {
+        if (cold) main.postDelayed({ block() }, BT_WAKE_LEAD_MS) else block()
+    }
+
     /** Start [player] now, or after a short wake lead when the BT route was [cold]. */
     private fun startAfterWake(player: MediaPlayer, cold: Boolean, onStarted: (() -> Unit)? = null) {
         if (cold) {
@@ -309,13 +315,13 @@ class AssetRadioUiSoundPlayer(
     }
 
     override fun playVolumeCheck() {
-        nudgeRoute()
-        playVolumeCheckCapped(VOLUME_CHECK_MAX_MS)
+        val cold = nudgeRoute()
+        afterWakeLead(cold) { playVolumeCheckCapped(VOLUME_CHECK_MAX_MS) }
     }
 
     override fun startVolumeCheckLoop() {
-        nudgeRoute()
-        main.post {
+        val cold = nudgeRoute()
+        afterWakeLead(cold) { main.post {
             stopVolumeCheckLoopInternal()
             stopTalkPermitLoopInternal()
             startGaplessPingPongLoop(
@@ -330,7 +336,7 @@ class AssetRadioUiSoundPlayer(
                 setSwapRunnable = { volumeLoopSwapRunnable = it },
                 isActive = { volumeLoopPlayerA != null && volumeLoopPlayerB != null },
             )
-        }
+        } }
     }
 
     override fun stopVolumeCheckLoop() {
@@ -813,14 +819,15 @@ class AssetRadioUiSoundPlayer(
     }
 
     companion object {
-        /** Route counts as "cold" (amp likely asleep) when no UI sound has played for this long. */
-        private const val BT_WAKE_IDLE_MS = 1_200L
+        /** Route counts as "cold" (amp likely asleep) when no UI sound has played for this long.
+         *  Kept fairly short because some head-unit amps nap within ~1 s of silence. */
+        private const val BT_WAKE_IDLE_MS = 700L
 
         /**
          * How long to hold a sound's start after firing the wake burst on a cold BT route, so the
          * amp is up before the audible content. Only applied on the first sound after idle.
          */
-        private const val BT_WAKE_LEAD_MS = 160L
+        private const val BT_WAKE_LEAD_MS = 200L
 
         const val SOUNDS_DIR = "sounds"
         const val FILE_CHANNEL_SWITCH = "channel_switch.wav"

@@ -11,7 +11,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -498,7 +497,7 @@ fun RadioScreen(
                     onEvent = onEvent,
                     styles = styles,
                     night = lcdNightEffective,
-                    rowHeight = if (layout.compactSpacing) 58.dp else 64.dp,
+                    rowHeight = if (layout.compactSpacing) 66.dp else 74.dp,
                 )
             }
             }
@@ -2808,14 +2807,17 @@ private fun LcdHandsetToolbarScanBanner(
     val p = RadioLcdTheme.palette
     val receiving = state.scanBackgroundActive && state.scanBackgroundChannel.isNotBlank()
     val onCyan = Color(0xFF06222A)
+    // Fixed height for BOTH states so the box doesn't grow when a channel starts talking — receiving
+    // only changes the fill/contents, never the size, so nothing below shifts.
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 3.dp)
+            .height(46.dp)
             .clip(RoundedCornerShape(3.dp))
             .background(if (receiving) p.scanRx else p.scanRx.copy(alpha = 0.10f))
             .border(2.dp, p.scanRx, RoundedCornerShape(3.dp))
-            .padding(horizontal = 8.dp, vertical = if (receiving) 4.dp else 3.dp),
+            .padding(horizontal = 8.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2823,7 +2825,7 @@ private fun LcdHandsetToolbarScanBanner(
                 on = true,
                 active = if (receiving) onCyan else p.scanRx,
                 muted = p.textMuted,
-                modifier = Modifier.size(if (receiving) 24.dp else 18.dp),
+                modifier = Modifier.size(if (receiving) 26.dp else 20.dp),
             )
             Spacer(modifier = Modifier.width(8.dp))
             if (receiving) {
@@ -3733,11 +3735,10 @@ private fun LcdSoftKeyRow(
  * channel down, channel up, replay, day/night). The boxes sit above the keys and double as touch
  * targets for the same actions.
  *
- * Each cell is split by a 45° diagonal so a single key advertises BOTH of its functions with icons
- * (text was unreadable at this size): the TAP action sits in the top-left half, the HOLD action in
- * the dimmer bottom-right half. Channel keys — tap = channel step (single chevron), hold = zone
- * step (double chevron). Replay — tap = play last, hold = messages. Day/night — tap = day/night,
- * hold = scan configuration.
+ * Each cell is split TOP / BOTTOM by a bold high-contrast divider so a single key advertises BOTH
+ * of its functions with large icons: the TAP action on top, the HOLD action on the bottom. Channel
+ * keys — tap = channel step (single chevron), hold = zone step (double chevron). Replay — tap =
+ * play last, hold = messages. Day/night — tap = day/night, hold = scan configuration.
  */
 @Composable
 private fun LcdHardwareKeyLegend(
@@ -3747,36 +3748,43 @@ private fun LcdHardwareKeyLegend(
     rowHeight: Dp = 46.dp,
 ) {
     val p = RadioLcdTheme.palette
+    // High-contrast grid lines so the cell borders and the tap/hold split are clearly defined in
+    // both day (dark line on the grey key) and night (light line on the dark key).
+    val line = if (night) Color(0xFFB8C6DC) else Color(0xFF141414)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(rowHeight)
             .clip(RoundedCornerShape(2.dp))
-            .border(1.dp, p.divider, RoundedCornerShape(2.dp))
+            .border(1.5.dp, line, RoundedCornerShape(2.dp))
             .background(p.lcdSection),
     ) {
         LcdSplitLegendKey(
+            line = line,
             onTap = { onEvent(RadioUiEvent.ChannelDown) },
             onHold = { onEvent(RadioUiEvent.ZoneStepDown) },
             tap = { c, m -> LcdChevronIcon(up = false, color = c, modifier = m) },
             hold = { c, m -> LcdChevronIcon(up = false, doubled = true, color = c, modifier = m) },
         )
-        LcdLegendSeparator(p.divider)
+        LcdLegendSeparator(line)
         LcdSplitLegendKey(
+            line = line,
             onTap = { onEvent(RadioUiEvent.ChannelUp) },
             onHold = { onEvent(RadioUiEvent.ZoneStepUp) },
             tap = { c, m -> LcdChevronIcon(up = true, color = c, modifier = m) },
             hold = { c, m -> LcdChevronIcon(up = true, doubled = true, color = c, modifier = m) },
         )
-        LcdLegendSeparator(p.divider)
+        LcdLegendSeparator(line)
         LcdSplitLegendKey(
+            line = line,
             onTap = { onEvent(RadioUiEvent.PlayLastTransmission) },
             onHold = { onEvent(RadioUiEvent.ToggleMessageHistory) },
             tap = { c, m -> LcdReplayIcon(ready = c, muted = c, playing = true, modifier = m) },
             hold = { c, m -> LcdListChannelIcon(color = c, modifier = m) },
         )
-        LcdLegendSeparator(p.divider)
+        LcdLegendSeparator(line)
         LcdSplitLegendKey(
+            line = line,
             onTap = { onEvent(RadioUiEvent.ToggleDayNight) },
             onHold = { onEvent(RadioUiEvent.ToggleScanLongPress) },
             tap = { c, m -> LcdDayNightIcon(night = night, color = c, modifier = m) },
@@ -3786,13 +3794,14 @@ private fun LcdHardwareKeyLegend(
 }
 
 /**
- * One equal-width legend cell, split by a 45° diagonal: the [tap] icon fills the top-left half
- * (single press) and the [hold] icon the dimmer bottom-right half (press-and-hold). The whole cell
- * is the touch target for both gestures. Each icon lambda receives its tint and a pre-sized,
- * pre-aligned [Modifier] to draw into.
+ * One equal-width legend cell, split top / bottom: the [tap] icon fills the top half (single press)
+ * and the [hold] icon the bottom half (press-and-hold), separated by a bold [line] divider. Both
+ * icons are drawn large and at full brightness — the icon shape (single vs double chevron, etc.) is
+ * what distinguishes tap from hold. The whole cell is the touch target for both gestures.
  */
 @Composable
 private fun RowScope.LcdSplitLegendKey(
+    line: Color,
     onTap: () -> Unit,
     onHold: () -> Unit,
     tap: @Composable (Color, Modifier) -> Unit,
@@ -3812,31 +3821,32 @@ private fun RowScope.LcdSplitLegendKey(
         shape = RoundedCornerShape(0.dp),
         color = p.softKeyInactiveFill,
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // 45° divider from bottom-left to top-right, separating the tap (top-left) and hold
-            // (bottom-right) halves.
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawLine(
-                    color = p.divider,
-                    start = Offset(0f, size.height),
-                    end = Offset(size.width, 0f),
-                    strokeWidth = 1.5.dp.toPx(),
-                )
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Tap (single press) — top half.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                tap(p.textOnButton, Modifier.size(28.dp))
             }
-            tap(
-                p.textOnButton,
-                Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = 4.dp, top = 3.dp)
-                    .size(20.dp),
+            // Bold divider so the tap (top) / hold (bottom) split is obvious.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .background(line),
             )
-            hold(
-                p.textMuted,
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 4.dp, bottom = 3.dp)
-                    .size(18.dp),
-            )
+            // Hold (press-and-hold) — bottom half.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                hold(p.textOnButton, Modifier.size(26.dp))
+            }
         }
     }
 }
