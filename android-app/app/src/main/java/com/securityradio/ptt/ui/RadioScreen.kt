@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -60,6 +61,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -179,6 +181,17 @@ fun RadioShell(
 ) {
     val systemDark = isSystemInDarkTheme()
     val isNight = state.themeMode.isLcdNight(systemDark)
+
+    // A dedicated PTT handset should never sleep on its own — hold the screen on so the radio stays
+    // lit without per-device "screen timeout" / ADB tweaks. Scoped to the rugged handset profiles
+    // (TM-7 Plus, IRC590, S200) and the touch cockpit; ordinary phones (RESPONSIVE) keep the normal
+    // system timeout so the app doesn't pin a pocket phone awake.
+    val keepScreenOn = state.resolvedDeviceProfile != ResolvedDeviceProfile.RESPONSIVE
+    val view = LocalView.current
+    DisposableEffect(view, keepScreenOn) {
+        view.keepScreenOn = keepScreenOn
+        onDispose { view.keepScreenOn = false }
+    }
 
     LaunchedEffect(systemDark) {
         onEvent(RadioUiEvent.SystemDarkChanged(systemDark))
