@@ -41,7 +41,8 @@ import {
   writeAudit,
   type Permission,
 } from "./store.js";
-import { recordFrame, type FrameAttribution } from "./recorder.js";
+import { recordFrame, setRecordingWakeHint, type FrameAttribution } from "./recorder.js";
+import { normalizeWakeHint } from "./aiDispatch/supervisedMode.js";
 import {
   DEFAULT_VOICE_CODEC,
   VOICE_CODECS,
@@ -1000,6 +1001,7 @@ function handleVoiceControl(
     type?: string;
     unit_id?: string;
     display_name?: string;
+    wake?: string;
     command?: string;
     command_id?: string;
     status?: string;
@@ -1034,11 +1036,23 @@ function handleVoiceControl(
     if (!meta.joined) {
       return;
     }
-    if (meta.identity.kind !== "bridge" && meta.permission !== "talk_priority") {
-      return;
+    // On-device wake-word gate hint — allowed from ANY joined socket (handsets), since it can
+    // only ever cost the agency LESS (route a clip off the paid cloud lane) and the server stays
+    // authoritative. Unlike the talker-identity fields below, it isn't spoofable into harm.
+    if (json.wake !== undefined && meta.channelNorm) {
+      const hint = normalizeWakeHint(json.wake);
+      if (hint) {
+        setRecordingWakeHint(meta.agencyId, meta.channelNorm, hint);
+      }
     }
-    meta.txUnitId = String(json.unit_id ?? "").trim().toUpperCase().slice(0, 24) || null;
-    meta.txDisplayName = String(json.display_name ?? "").trim().slice(0, 64) || null;
+    // Talker attribution (spoofable identity) stays restricted to bridge / priority sockets.
+    if (json.unit_id !== undefined || json.display_name !== undefined) {
+      if (meta.identity.kind !== "bridge" && meta.permission !== "talk_priority") {
+        return;
+      }
+      meta.txUnitId = String(json.unit_id ?? "").trim().toUpperCase().slice(0, 24) || null;
+      meta.txDisplayName = String(json.display_name ?? "").trim().slice(0, 64) || null;
+    }
     return;
   }
   // Handset acknowledgement of an admin device command. Persisted to the audit

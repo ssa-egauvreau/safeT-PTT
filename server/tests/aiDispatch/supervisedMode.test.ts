@@ -15,6 +15,7 @@ import {
   DEFAULT_WAKE_WORD,
   hasSupervisedWakeWord,
   normalizeAiDispatchMode,
+  normalizeWakeHint,
   normalizeWakeWord,
   stripSupervisedWakeWord,
 } from "../../src/aiDispatch/supervisedMode.js";
@@ -88,4 +89,14 @@ test("a multi-word custom phrase tolerates flexible separators", () => {
 test("bare wake word with no body returns empty string (engaged), blank config falls back to default", () => {
   assert.equal(stripSupervisedWakeWord("dispatch", "dispatch"), "");
   assert.equal(stripSupervisedWakeWord("AI go", "   "), "go");
+});
+
+test("normalizeWakeHint accepts only the three known hints, else undefined", () => {
+  assert.equal(normalizeWakeHint("clear"), "clear");
+  assert.equal(normalizeWakeHint(" MAYBE "), "maybe");
+  assert.equal(normalizeWakeHint("none"), "none");
+  assert.equal(normalizeWakeHint("nope"), undefined);
+  assert.equal(normalizeWakeHint(""), undefined);
+  assert.equal(normalizeWakeHint(undefined), undefined);
+  assert.equal(normalizeWakeHint(42 as unknown), undefined);
 });

@@ -6,6 +6,7 @@ import { insertTransmission, setTranscript } from "./store.js";
 import { encodeWavPcm16, upsample8kTo16k } from "./wav.js";
 import { enqueueTranscription } from "./transcribe.js";
 import { isAiDispatchChannelCached } from "./aiDispatch/channelCache.js";
+import type { WakeHint } from "./aiDispatch/supervisedMode.js";
 import { createImbeDecoder } from "./imbeServerCodec.js";
 import { createCodec2Decoder } from "./codec2ServerCodec.js";
 import { createOpusDecoder } from "./opusServerCodec.js";
@@ -92,9 +93,29 @@ interface ActiveRecording extends FrameAttribution {
    *  mid-talk-spurt codec change (rare but possible) allocates a second
    *  entry rather than reusing the first. */
   decoders: Map<VoiceCodec, VoiceStreamDecoder>;
+  /** On-device wake-word gate hint for this transmission, set via [setRecordingWakeHint]. */
+  wakeHint?: WakeHint;
 }
 
 const active = new Map<string, ActiveRecording>();
+
+/**
+ * Stamp the on-device wake-word hint onto the in-flight recording (called when a handset sends a
+ * `tx_meta` with `wake`). On a supervised AI channel a confident "none" routes the clip off the
+ * paid cloud Whisper lane to the free local pool — the server still transcribes it and still makes
+ * the authoritative wake-word decision, so nothing is dropped; we only avoid paying to transcribe
+ * traffic the device is confident wasn't addressed to the dispatcher.
+ */
+export function setRecordingWakeHint(
+  agencyId: number,
+  channelNorm: string,
+  hint: WakeHint,
+): void {
+  const rec = active.get(recKey({ agencyId, channelNorm }));
+  if (rec) {
+    rec.wakeHint = hint;
+  }
+}
 let sweepTimer: NodeJS.Timeout | null = null;
 
 /** Identifies a vocoded frame (any codec) by its leading magic bytes — used to
@@ -144,7 +165,20 @@ async function finalize(rec: ActiveRecording): Promise<void> {
       // A plain bridge clip (TRANSCRIBE_BRIDGE=on, no AI) stays in the low lane.
       // Golden rule: an AI-dispatch clip routes to the (more accurate) cloud
       // Whisper when a cloud key is set; everything else stays on local Whisper.
-      enqueueTranscription(id, { priority: !rec.fromBridge || aiOn, cloud: aiOn });
+      // On-device wake-word gate: when a handset's spotter is confident this
+      // supervised-channel clip did NOT open with the wake word, keep it off the
+      // paid cloud lane (still transcribed locally + still run past the
+      // authoritative server-side wake check, so a real request is never lost).
+      const gateOffCloud = aiOn && rec.wakeHint === "none";
+      if (gateOffCloud) {
+        console.log(
+          `[transcribe] wake-gate: supervised clip ${id} on ${rec.channelName} routed local (device wake=none)`,
+        );
+      }
+      enqueueTranscription(id, {
+        priority: !rec.fromBridge || aiOn,
+        cloud: aiOn && !gateOffCloud,
+      });
     }
   } catch (error) {
     console.warn("Failed to save transmission recording", error);

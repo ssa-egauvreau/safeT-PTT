@@ -31,6 +31,21 @@ export function aiDispatchModeEnabled(mode: AiDispatchMode): boolean {
 /** Default supervised wake phrase when an agency hasn't configured its own. */
 export const DEFAULT_WAKE_WORD = "hey ai";
 
+/**
+ * On-device wake-word gate hint, reported by a handset's keyword-spotter for a transmission:
+ *   clear — confidently heard the wake word
+ *   maybe — uncertain
+ *   none  — confidently did NOT hear it
+ * Only "none" is acted on (route off the paid cloud lane); the server stays authoritative.
+ */
+export type WakeHint = "clear" | "maybe" | "none";
+
+/** Parse an untrusted client `wake` value into a [WakeHint], or undefined when absent/garbage. */
+export function normalizeWakeHint(raw: unknown): WakeHint | undefined {
+  const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  return s === "clear" || s === "maybe" || s === "none" ? s : undefined;
+}
+
 /** Normalize a configured wake word for storage / comparison: trim, lowercase, collapse spaces. */
 export function normalizeWakeWord(raw: unknown): string {
   return typeof raw === "string"
