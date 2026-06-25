@@ -21,6 +21,7 @@ import {
   getAiDispatchPlatformConfig,
   isAiDispatchUnit,
   resolveAiDispatchSystemPrompt,
+  resolveAiDispatchWakeWord,
 } from "./platformConfig.js";
 import { playPcmOnChannel } from "./playback.js";
 import { buildDeterministicDispatchAck } from "./dispatchAck.js";
@@ -467,14 +468,15 @@ async function processTransmission(transmissionId: number): Promise<void> {
     let parseTranscript = transcript;
 
     // Supervised mode: the dispatcher only engages when the transmission opens
-    // with the wake word "AI" ("AI, 27-000 show me on a patrol check"). Strip
-    // the wake word before parsing so the LLM never mistakes it for a callsign;
-    // keep the original transcript for the log.
+    // with the agency's wake word (default "hey ai" — e.g. "Hey AI, 27-000 show
+    // me on a patrol check"). Strip the wake word before parsing so the LLM never
+    // mistakes it for a callsign; keep the original transcript for the log.
     if (dispatchMode === "supervised") {
-      const woken = stripSupervisedWakeWord(transcript);
+      const wakeWord = await resolveAiDispatchWakeWord(tx.agency_id);
+      const woken = stripSupervisedWakeWord(transcript, wakeWord);
       if (woken === null) {
         outcome = "skipped_supervised_no_keyword";
-        error = 'Supervised mode: transmission did not open with the wake word "AI".';
+        error = `Supervised mode: transmission did not open with the wake word "${wakeWord}".`;
         return;
       }
       parseTranscript = woken || transcript;

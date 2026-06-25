@@ -8,6 +8,7 @@ import {
   agencyUsesSunsetSafetyBundledPrompt,
   getSunsetSafetyBundledPrompt,
 } from "./prompts/sunsetSafety.js";
+import { DEFAULT_WAKE_WORD, normalizeWakeWord } from "./supervisedMode.js";
 
 export type LlmProvider = "anthropic" | "openai";
 
@@ -140,6 +141,16 @@ export async function agencyPromptSource(agencyId: number): Promise<"custom" | "
     return "sunset_bundled";
   }
   return "railway_default";
+}
+
+/**
+ * Agency's supervised wake phrase (stored in agency_integrations), or the platform
+ * [DEFAULT_WAKE_WORD] ("hey ai") when unset. Drives both the server-side supervised matcher and
+ * the on-device wake-word gate.
+ */
+export async function resolveAiDispatchWakeWord(agencyId: number): Promise<string> {
+  const custom = await getAgencyIntegrationValue(agencyId, "ai_dispatch_wake_word");
+  return normalizeWakeWord(custom) || DEFAULT_WAKE_WORD;
 }
 
 export function normalizeDispatchUnitId(unitId: string): string {

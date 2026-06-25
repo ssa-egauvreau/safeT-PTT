@@ -91,6 +91,7 @@ import {
   setChannelAiDispatch,
   listChannelAiDispatchModes,
   getChannelAiDispatchRow,
+  setAgencyIntegrationValue,
   listMemberships,
   listPositions,
   listPositionHistory,
@@ -188,12 +189,17 @@ import {
   agencyPromptSource,
   getAiDispatchPlatformConfig,
   getAiDispatchPlatformStatus,
+  resolveAiDispatchWakeWord,
 } from "./aiDispatch/platformConfig.js";
 import { applyChannelTen33Marker } from "./aiDispatch/ten33Marker.js";
 import { resolveElevenLabsApiKey, resolveElevenLabsVoiceId } from "./aiDispatch/elevenLabsCreds.js";
 import { listAiDispatchLog } from "./aiDispatch/activityLog.js";
 import { getAiActivity } from "./aiDispatch/aiActivity.js";
-import { aiDispatchModeEnabled, normalizeAiDispatchMode } from "./aiDispatch/supervisedMode.js";
+import {
+  aiDispatchModeEnabled,
+  normalizeAiDispatchMode,
+  normalizeWakeWord,
+} from "./aiDispatch/supervisedMode.js";
 import { enqueueKbIngest } from "./aiDispatch/knowledgeBase/ingest.js";
 import { getEmbeddingModelName } from "./aiDispatch/knowledgeBase/embeddings.js";
 import { handleTen8Webhook, handleTen8WebhookGet } from "./ten8/webhook.js";
@@ -3173,6 +3179,7 @@ export function createApiRouter(): Router {
       const elevenKey = await resolveElevenLabsApiKey(agencyId);
       const voiceId = await resolveElevenLabsVoiceId(agencyId);
       const promptSource = await agencyPromptSource(agencyId);
+      const wakeWord = await resolveAiDispatchWakeWord(agencyId);
       res.json({
         platform_enabled: platform.enabled,
         platform_llm_configured: platform.llmConfigured,
@@ -3181,6 +3188,8 @@ export function createApiRouter(): Router {
         agency_prompt_source: promptSource,
         model: platform.model,
         dispatch_unit_id: platform.dispatchUnitId,
+        // Supervised wake phrase (default "hey ai"); drives the server matcher and the on-device gate.
+        agency_wake_word: wakeWord,
       });
     } catch (error) {
       fail(res, error);
@@ -3250,6 +3259,36 @@ export function createApiRouter(): Router {
       }
       const row = await getChannelAiDispatchRow(req.authUser!.agencyId!, channel);
       res.json({ enabled: row?.enabled === true, mode: row?.mode ?? "off" });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Admin: set the agency's supervised wake phrase (default "hey ai"). Validated to a short
+  // spoken phrase so the on-device keyword-spotter and the server matcher stay sane.
+  router.post("/ai-dispatch/wake-word", requireAgencyOperator, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const wakeWord = normalizeWakeWord(body.wake_word);
+      if (
+        wakeWord.length < 2 ||
+        wakeWord.length > 32 ||
+        !/^[a-z][a-z '-]*[a-z]$/.test(wakeWord)
+      ) {
+        res.status(400).json({ error: "invalid_wake_word" });
+        return;
+      }
+      await setAgencyIntegrationValue(agencyId, "ai_dispatch_wake_word", wakeWord, req.authUser!.id);
+      await writeAudit({
+        agencyId,
+        actorUserId: req.authUser!.id,
+        actorName: req.authUser!.username,
+        action: "ai_dispatch_wake_word",
+        target: wakeWord,
+        ip: clientIp(req),
+      });
+      res.json({ ok: true, wake_word: wakeWord });
     } catch (error) {
       fail(res, error);
     }
