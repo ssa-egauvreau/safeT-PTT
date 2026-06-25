@@ -19,6 +19,9 @@ data class RadioLcdPalette(
     val statusEmergency: Color,
     val statusRed: Color,
     val statusBlue: Color,
+    /** Scan-receive accent — cyan/teal, deliberately distinct from the amber 10-33 wash and the
+     *  blue home-RX highlight so an inverted scan box can't be mistaken for either. */
+    val scanRx: Color,
     val rxHighlight: Color,
     val divider: Color,
     val softKeyActiveFill: Color,
@@ -48,6 +51,7 @@ data class RadioLcdPalette(
             statusEmergency = Color(0xFFFF5A1F),
             statusRed = Color(0xFFD32F2F),
             statusBlue = Color(0xFF2B6DFF),
+            scanRx = Color(0xFF0AA5B8),
             rxHighlight = Color(0xFF2B6DFF),
             divider = Color(0xFFC8C8C8),
             softKeyActiveFill = Color(0xFF646464),
@@ -77,6 +81,7 @@ data class RadioLcdPalette(
             statusEmergency = Color(0xFFFF6B42),
             statusRed = Color(0xFFFF5252),
             statusBlue = Color(0xFF5B9FFF),
+            scanRx = Color(0xFF2BE0F0),
             rxHighlight = Color(0xFF5B9FFF),
             divider = Color(0xFF1E2A38),
             softKeyActiveFill = Color(0xFF253044),

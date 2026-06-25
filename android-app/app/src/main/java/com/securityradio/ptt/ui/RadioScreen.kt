@@ -11,6 +11,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -116,6 +117,7 @@ import com.securityradio.ptt.presentation.ThemeMode
 import com.securityradio.ptt.presentation.isLcdNight
 import com.securityradio.ptt.ui.lcd.LcdBatteryIcon
 import com.securityradio.ptt.ui.lcd.LcdBluetoothIcon
+import com.securityradio.ptt.ui.lcd.LcdChevronIcon
 import com.securityradio.ptt.ui.lcd.LcdDayNightIcon
 import com.securityradio.ptt.ui.lcd.LcdEmergencyGlyphIcon
 import com.securityradio.ptt.ui.lcd.LcdGlobeIcon
@@ -623,8 +625,24 @@ private fun UniversalCockpitScanBanner(state: RadioUiState, styles: LcdTextStyle
  * amber treatment; "AI · AUTO" keeps the rainbow. Hidden when off.
  */
 @Composable
-private fun AiDispatchBadge(mode: AiDispatchMode, styles: LcdTextStyles, modifier: Modifier = Modifier) {
-    val label = mode.badge ?: return
+private fun AiDispatchBadge(
+    mode: AiDispatchMode,
+    styles: LcdTextStyles,
+    modifier: Modifier = Modifier,
+    // Compact form for the pinned top-right corner: shorter label + tighter chrome so it can
+    // stack under the PRIORITY tag without crowding the clock.
+    compact: Boolean = false,
+) {
+    val full = mode.badge ?: return
+    val label = if (compact) {
+        when (mode) {
+            AiDispatchMode.SUPERVISED -> "AI SUP"
+            AiDispatchMode.FULL_AUTO -> "AI AUTO"
+            AiDispatchMode.OFF -> return
+        }
+    } else {
+        full
+    }
     val background = if (mode == AiDispatchMode.SUPERVISED) {
         SolidColor(Color(0xFFFFC371))
     } else {
@@ -641,12 +659,15 @@ private fun AiDispatchBadge(mode: AiDispatchMode, styles: LcdTextStyles, modifie
     Box(
         modifier = modifier
             .background(background, RoundedCornerShape(50))
-            .padding(horizontal = 12.dp, vertical = 3.dp),
+            .padding(horizontal = if (compact) 7.dp else 12.dp, vertical = if (compact) 1.dp else 3.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = "✦ $label",
-            style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 12.sp),
+            style = styles.status.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = if (compact) 11.sp else 12.sp,
+            ),
             color = Color(0xFF0B0B12),
             maxLines = 1,
         )
@@ -1848,8 +1869,9 @@ private fun LcdHandsetFillChannelBlock(
         } else {
             p.lcdAlt
         }
-    val zoneValue = state.zoneLabel.filter { it.isDigit() }
-        .ifEmpty { state.zoneLabel.trim().uppercase(Locale.US) }
+    // Full zone label ("1 PATROL"), not just the digits — operators want the zone NAME, not only
+    // its number. handsetZonePositionLabel() prepends "ZONE " (and avoids doubling it).
+    val zoneValue = state.zoneLabel.trim().uppercase(Locale.US)
     val channelValue = state.channelPosition.replace(" ", "")
     val radiosValue = state.radiosOnlineOnChannel?.toString() ?: "—"
     val (talkUnit, talkName) = handsetTalkAttribution(state)
@@ -2096,20 +2118,18 @@ private fun LcdHandsetFillChannelBlock(
                                     .padding(horizontal = 4.dp),
                             )
                         }
-                        AiDispatchBadge(
-                            mode = state.aiDispatchMode,
-                            styles = styles,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                        if (scanRxLive) {
-                            LcdHandsetScanRxStrip(
-                                channelName = state.scanBackgroundChannel,
-                                unitId = talkUnit,
-                                displayName = talkName,
+                        // TM7 shows AI status pinned in the top-right corner (under PRIORITY); other
+                        // handsets (IRC590) keep it centered here under the channel name.
+                        if (state.resolvedDeviceProfile != ResolvedDeviceProfile.TM7_PLUS) {
+                            AiDispatchBadge(
+                                mode = state.aiDispatchMode,
                                 styles = styles,
-                                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
+                                modifier = Modifier.padding(top = 4.dp),
                             )
                         }
+                        // Scan-receive now renders as the persistent inverted cyan box up in the
+                        // toolbar (LcdHandsetToolbarScanBanner) — not duplicated here — so the big
+                        // home channel name stays put while a scanned channel is talking.
                     }
                 }
                 if (!remoteEmergencyLive) {
@@ -2150,7 +2170,9 @@ private fun handsetZonePositionLabel(
     channelValue: String,
     codecLabel: String = "",
 ): String {
-    val zone = zoneValue.trim()
+    // Strip a leading "ZONE" the operator may already have baked into the portal zone name so we
+    // never render "ZONE ZONE 1 PATROL".
+    val zone = zoneValue.trim().removePrefix("ZONE").removePrefix("zone").trim()
     val channel = channelValue.trim()
     val base = when {
         zone.isNotEmpty() && channel.isNotEmpty() -> "ZONE $zone · $channel"
@@ -2701,17 +2723,29 @@ private fun LcdHandsetToolbarTm7TopRow(
                 .align(Alignment.Center)
                 .fillMaxWidth(),
         )
-        // PRIORITY / LISTEN-ONLY tag pinned top-right so it doesn't crowd the
-        // zone/channel/SCAN RX area below. Only renders for non-TALK channels.
+        // PRIORITY / LISTEN-ONLY tag and the AI-dispatch status both pinned to the very top-right
+        // corner (no gap above), stacked: priority first, AI status below it. Keeps them out of the
+        // zone/channel/SCAN RX area below. Permission tag only renders for non-TALK channels; the
+        // AI badge only for non-off AI modes.
         if (!state.isEmergencyActive) {
-            LcdPermissionBadge(
-                permission = state.currentChannelPermission,
-                styles = styles,
-                deviceProfile = state.resolvedDeviceProfile,
-                compactVertical = true,
-                fillWidth = false,
-                modifier = Modifier.align(Alignment.CenterEnd),
-            )
+            Column(
+                modifier = Modifier.align(Alignment.TopEnd),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                LcdPermissionBadge(
+                    permission = state.currentChannelPermission,
+                    styles = styles,
+                    deviceProfile = state.resolvedDeviceProfile,
+                    compactVertical = true,
+                    fillWidth = false,
+                )
+                AiDispatchBadge(
+                    mode = state.aiDispatchMode,
+                    styles = styles,
+                    compact = true,
+                )
+            }
         }
     }
 }
@@ -2753,37 +2787,57 @@ private fun LcdHandsetToolbarScanBanner(
     state: RadioUiState,
     styles: LcdTextStyles,
 ) {
+    // Persistent scan-receive box while scan is on: an inverted cyan panel (distinct from the
+    // amber 10-33 wash so it can't be confused with emergency traffic). Idle → an empty outlined
+    // box; receiving → the box fills cyan and shows the scanned channel that's currently talking,
+    // big and steady (no tiny one-line flashing text). Hidden entirely when scan is off.
+    if (!state.scanActive) return
     val p = RadioLcdTheme.palette
-    if (state.scanBackgroundActive && state.scanBackgroundChannel.isNotBlank()) {
-        return
-    }
-    if (state.scanActive && state.scanBackgroundChannel.isNotBlank()) {
-        val bannerScanColor = rememberScanIconActiveColor(
-            scanActive = true,
-            scanReceiving = true,
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 2.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+    val receiving = state.scanBackgroundActive && state.scanBackgroundChannel.isNotBlank()
+    val onCyan = Color(0xFF06222A)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 3.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(if (receiving) p.scanRx else p.scanRx.copy(alpha = 0.10f))
+            .border(2.dp, p.scanRx, RoundedCornerShape(3.dp))
+            .padding(horizontal = 8.dp, vertical = if (receiving) 4.dp else 3.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             LcdScanIcon(
                 on = true,
-                active = bannerScanColor,
+                active = if (receiving) onCyan else p.scanRx,
                 muted = p.textMuted,
-                modifier = Modifier.size(26.dp),
+                modifier = Modifier.size(if (receiving) 24.dp else 18.dp),
             )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "SCAN RX · ${state.scanBackgroundChannel}",
-                // Handset-only strip: match the handsets' display scale, not the 10.5 sp chrome.
-                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 27.sp, lineHeight = 31.sp),
-                color = p.statusAmber,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Spacer(modifier = Modifier.width(8.dp))
+            if (receiving) {
+                Text(
+                    text = state.scanBackgroundChannel,
+                    style = styles.status.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 28.sp,
+                        lineHeight = 30.sp,
+                    ),
+                    color = onCyan,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                Text(
+                    text = "SCAN",
+                    style = styles.status.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        lineHeight = 16.sp,
+                    ),
+                    color = p.scanRx,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -3663,12 +3717,14 @@ private fun LcdSoftKeyRow(
 
 /**
  * Bottom legend for the TM-7 Plus's four physical hardware keys (left to right:
- * channel down, channel up, replay, day/night). The boxes sit above the keys
- * and double as touch targets for the same actions.
+ * channel down, channel up, replay, day/night). The boxes sit above the keys and double as touch
+ * targets for the same actions.
  *
- * Each cell is split into two stacked zones so the operator can see, at a glance,
- * what a *single press* does (top, with the icon/label) versus what a *press-and-hold*
- * does (bottom "HOLD · …" caption). E.g. the day/night key: tap = day/night, hold = scan.
+ * Each cell is split by a 45° diagonal so a single key advertises BOTH of its functions with icons
+ * (text was unreadable at this size): the TAP action sits in the top-left half, the HOLD action in
+ * the dimmer bottom-right half. Channel keys — tap = channel step (single chevron), hold = zone
+ * step (double chevron). Replay — tap = play last, hold = messages. Day/night — tap = day/night,
+ * hold = scan configuration.
  */
 @Composable
 private fun LcdHardwareKeyLegend(
@@ -3686,143 +3742,88 @@ private fun LcdHardwareKeyLegend(
             .border(1.dp, p.divider, RoundedCornerShape(2.dp))
             .background(p.lcdSection),
     ) {
-        LcdLegendKey(
-            onClick = { onEvent(RadioUiEvent.ChannelDown) },
-            styles = styles,
-        ) {
-            LcdLegendLabel(text = "CH-", styles = styles, color = p.textOnButton)
-        }
+        LcdSplitLegendKey(
+            onTap = { onEvent(RadioUiEvent.ChannelDown) },
+            onHold = { onEvent(RadioUiEvent.ZoneStepDown) },
+            tap = { c, m -> LcdChevronIcon(up = false, color = c, modifier = m) },
+            hold = { c, m -> LcdChevronIcon(up = false, doubled = true, color = c, modifier = m) },
+        )
         LcdLegendSeparator(p.divider)
-        LcdLegendKey(
-            onClick = { onEvent(RadioUiEvent.ChannelUp) },
-            // Mirrors the physical channel-up key: hold toggles zone-select mode.
-            onLongClick = { onEvent(RadioUiEvent.ToggleZoneSelect) },
-            holdLabel = "ZONE",
-            styles = styles,
-        ) {
-            LcdLegendLabel(text = "CH+", styles = styles, color = p.textOnButton)
-        }
+        LcdSplitLegendKey(
+            onTap = { onEvent(RadioUiEvent.ChannelUp) },
+            onHold = { onEvent(RadioUiEvent.ZoneStepUp) },
+            tap = { c, m -> LcdChevronIcon(up = true, color = c, modifier = m) },
+            hold = { c, m -> LcdChevronIcon(up = true, doubled = true, color = c, modifier = m) },
+        )
         LcdLegendSeparator(p.divider)
-        LcdLegendKey(
-            onClick = { onEvent(RadioUiEvent.PlayLastTransmission) },
-            onLongClick = { onEvent(RadioUiEvent.ToggleMessageHistory) },
-            holdLabel = "MESSAGES",
-            styles = styles,
-        ) {
-            LcdReplayIcon(
-                ready = p.textOnButton,
-                muted = p.textOnButton,
-                playing = true,
-                modifier = Modifier.size(30.dp),
-            )
-        }
+        LcdSplitLegendKey(
+            onTap = { onEvent(RadioUiEvent.PlayLastTransmission) },
+            onHold = { onEvent(RadioUiEvent.ToggleMessageHistory) },
+            tap = { c, m -> LcdReplayIcon(ready = c, muted = c, playing = true, modifier = m) },
+            hold = { c, m -> LcdListChannelIcon(color = c, modifier = m) },
+        )
         LcdLegendSeparator(p.divider)
-        LcdLegendKey(
-            onClick = { onEvent(RadioUiEvent.ToggleDayNight) },
-            onLongClick = { onEvent(RadioUiEvent.ToggleScanLongPress) },
-            holdLabel = "SCAN",
-            styles = styles,
-        ) {
-            LcdDayNightIcon(
-                night = night,
-                color = p.textOnButton,
-                modifier = Modifier.size(30.dp),
-            )
-        }
+        LcdSplitLegendKey(
+            onTap = { onEvent(RadioUiEvent.ToggleDayNight) },
+            onHold = { onEvent(RadioUiEvent.ToggleScanLongPress) },
+            tap = { c, m -> LcdDayNightIcon(night = night, color = c, modifier = m) },
+            hold = { c, m -> LcdScanIcon(on = true, active = c, muted = c, modifier = m) },
+        )
     }
 }
 
 /**
- * One equal-width cell of [LcdHardwareKeyLegend]; also a touch target.
- *
- * When [holdLabel] is set the cell is divided: the [content] (tap action) sits in the upper zone and
- * a muted "HOLD · <label>" caption fills a shaded lower zone, so the press-and-hold action is
- * advertised right on the key.
+ * One equal-width legend cell, split by a 45° diagonal: the [tap] icon fills the top-left half
+ * (single press) and the [hold] icon the dimmer bottom-right half (press-and-hold). The whole cell
+ * is the touch target for both gestures. Each icon lambda receives its tint and a pre-sized,
+ * pre-aligned [Modifier] to draw into.
  */
 @Composable
-private fun RowScope.LcdLegendKey(
-    onClick: () -> Unit,
-    styles: LcdTextStyles,
-    onLongClick: (() -> Unit)? = null,
-    holdLabel: String? = null,
-    content: @Composable () -> Unit,
+private fun RowScope.LcdSplitLegendKey(
+    onTap: () -> Unit,
+    onHold: () -> Unit,
+    tap: @Composable (Color, Modifier) -> Unit,
+    hold: @Composable (Color, Modifier) -> Unit,
 ) {
     val p = RadioLcdTheme.palette
-    val interaction = remember { MutableInteractionSource() }
-    val baseModifier = Modifier
-        .weight(1f)
-        .fillMaxHeight()
-    val cellShape = RoundedCornerShape(0.dp)
-
-    val cellBody: @Composable () -> Unit = {
-        if (holdLabel != null) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Tap zone — the icon/label for a single press.
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    content()
-                }
-                // Divider + shaded hold zone advertise the press-and-hold action.
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(p.divider),
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(p.lcdSection)
-                        .padding(horizontal = 2.dp, vertical = 2.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "HOLD · $holdLabel",
-                        style = styles.status.copy(fontSize = 9.sp, lineHeight = 10.sp),
-                        color = p.textMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        } else {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                content()
-            }
-        }
-    }
-
-    // The clickable Surface(onClick = ...) and a manual detectTapGestures cannot share the same
-    // node: Surface's internal pointerInput consumes the tap before the manual one sees it. That
-    // is why TM7+'s on-screen REPLAY and DAY/NIGHT keys were inert — they had an onLongClick set,
-    // which routed through a no-op Surface.onClick and a detached gesture handler. Drop down to a
-    // non-clickable Surface and own both gestures when long-press is in play.
-    if (onLongClick != null) {
-        Surface(
-            modifier = baseModifier.pointerInput(onClick, onLongClick) {
+    Surface(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .pointerInput(onTap, onHold) {
                 detectTapGestures(
-                    onTap = { onClick() },
-                    onLongPress = { onLongClick() },
+                    onTap = { onTap() },
+                    onLongPress = { onHold() },
                 )
             },
-            shape = cellShape,
-            color = p.softKeyInactiveFill,
-        ) {
-            cellBody()
-        }
-    } else {
-        Surface(
-            onClick = onClick,
-            modifier = baseModifier,
-            shape = cellShape,
-            color = p.softKeyInactiveFill,
-            interactionSource = interaction,
-        ) {
-            cellBody()
+        shape = RoundedCornerShape(0.dp),
+        color = p.softKeyInactiveFill,
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 45° divider from bottom-left to top-right, separating the tap (top-left) and hold
+            // (bottom-right) halves.
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawLine(
+                    color = p.divider,
+                    start = Offset(0f, size.height),
+                    end = Offset(size.width, 0f),
+                    strokeWidth = 1.5.dp.toPx(),
+                )
+            }
+            tap(
+                p.textOnButton,
+                Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 4.dp, top = 3.dp)
+                    .size(20.dp),
+            )
+            hold(
+                p.textMuted,
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 4.dp, bottom = 3.dp)
+                    .size(18.dp),
+            )
         }
     }
 }

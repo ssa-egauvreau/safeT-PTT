@@ -31,6 +31,10 @@ class AssetRadioUiSoundPlayer(
 ) : RadioUiSoundPlayer {
 
     private val main = Handler(Looper.getMainLooper())
+
+    /** Wall-clock of the last UI sound start, for the Bluetooth cold-route wake heuristic. */
+    @Volatile
+    private var lastSoundStartedMs = 0L
     private val audioManager: AudioManager =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             app.getSystemService(AudioManager::class.java)!!
@@ -93,8 +97,35 @@ class AssetRadioUiSoundPlayer(
      * head unit whose amp powers down on silence is awake by the time the sound starts,
      * instead of swallowing its first syllable. No-op when no BT output is connected.
      */
-    private fun nudgeRoute() {
-        bluetoothKeepAlive?.wakeBurst()
+    /**
+     * Wake the Bluetooth output when it's likely asleep, returning true when the route was *cold*
+     * (BT connected and idle past [BT_WAKE_IDLE_MS]) so the caller can hold the sound's start for a
+     * short lead. On a cold route this fires a brief wake burst; the next sound within the idle
+     * window then starts immediately (no added latency), matching the field behaviour where only
+     * the FIRST sound after silence clips. No-op (returns false) when no BT output is connected.
+     */
+    private fun nudgeRoute(): Boolean {
+        val now = System.currentTimeMillis()
+        val cold = bluetoothKeepAlive?.isActive() == true &&
+            (now - lastSoundStartedMs > BT_WAKE_IDLE_MS)
+        lastSoundStartedMs = now
+        if (cold) bluetoothKeepAlive?.wakeBurst()
+        return cold
+    }
+
+    /** Start [player] now, or after a short wake lead when the BT route was [cold]. */
+    private fun startAfterWake(player: MediaPlayer, cold: Boolean, onStarted: (() -> Unit)? = null) {
+        if (cold) {
+            main.postDelayed({
+                runCatching {
+                    onStarted?.invoke()
+                    player.start()
+                }
+            }, BT_WAKE_LEAD_MS)
+        } else {
+            onStarted?.invoke()
+            player.start()
+        }
     }
 
     private fun MediaPlayer.applyUiAudio(): MediaPlayer {
@@ -145,11 +176,11 @@ class AssetRadioUiSoundPlayer(
     }
 
     override fun playTalkPermitThen(onFinished: () -> Unit, onStarted: (() -> Unit)?) {
-        nudgeRoute()
+        val cold = nudgeRoute()
         main.post {
             stopBusyLoopInternal()
             stopTalkPermitLoopInternal()
-            val player = createTalkPermitOneShot(onFinished, onStarted) ?: run {
+            val player = createTalkPermitOneShot(onFinished, onStarted, cold) ?: run {
                 onFinished()
                 return@post
             }
@@ -711,7 +742,7 @@ class AssetRadioUiSoundPlayer(
         attrs: AudioAttributes = uiAudioAttrs,
         onFinished: (() -> Unit)? = null,
     ) {
-        nudgeRoute()
+        val cold = nudgeRoute()
         main.post {
             val player = MediaPlayer()
             player.setAudioAttributes(attrs)
@@ -723,7 +754,7 @@ class AssetRadioUiSoundPlayer(
             }
             try {
                 player.setOnPreparedListener { prepared ->
-                    prepared.start()
+                    startAfterWake(prepared, cold)
                 }
                 player.setOnCompletionListener { completed ->
                     completed.release()
@@ -742,7 +773,11 @@ class AssetRadioUiSoundPlayer(
         }
     }
 
-    private fun createTalkPermitOneShot(onFinished: () -> Unit, onStarted: (() -> Unit)?): MediaPlayer? {
+    private fun createTalkPermitOneShot(
+        onFinished: () -> Unit,
+        onStarted: (() -> Unit)?,
+        cold: Boolean = false,
+    ): MediaPlayer? {
         val player = MediaPlayer().applyUiAudio()
         if (!applySource(player, FILE_TALK_PERMIT)) {
             player.release()
@@ -752,8 +787,7 @@ class AssetRadioUiSoundPlayer(
             player.apply {
                 isLooping = false
                 setOnPreparedListener { prepared ->
-                    onStarted?.invoke()
-                    prepared.start()
+                    startAfterWake(prepared, cold) { onStarted?.invoke() }
                 }
                 setOnCompletionListener { completed ->
                     completed.release()
@@ -779,6 +813,15 @@ class AssetRadioUiSoundPlayer(
     }
 
     companion object {
+        /** Route counts as "cold" (amp likely asleep) when no UI sound has played for this long. */
+        private const val BT_WAKE_IDLE_MS = 1_200L
+
+        /**
+         * How long to hold a sound's start after firing the wake burst on a cold BT route, so the
+         * amp is up before the audible content. Only applied on the first sound after idle.
+         */
+        private const val BT_WAKE_LEAD_MS = 160L
+
         const val SOUNDS_DIR = "sounds"
         const val FILE_CHANNEL_SWITCH = "channel_switch.wav"
         const val FILE_TALK_PERMIT = "ptt_permit.wav"

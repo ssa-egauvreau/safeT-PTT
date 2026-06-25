@@ -15,6 +15,9 @@ sealed interface RadioUiEvent {
     data object ChannelDown : RadioUiEvent
     /** Zone label tapped: enter zone-select mode, or commit the previewed zone when already in it. */
     data object ToggleZoneSelect : RadioUiEvent
+    /** Direct zone change (hold channel-up / channel-down): step to the adjacent zone. */
+    data object ZoneStepUp : RadioUiEvent
+    data object ZoneStepDown : RadioUiEvent
     data object RetryChannelSync : RadioUiEvent
     /** Open overlay to pick channels that participate in scan. */
     /** TM7 day/night long-press: toggle scan and open channel picker when enabling. */

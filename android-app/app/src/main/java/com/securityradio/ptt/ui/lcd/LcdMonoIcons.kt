@@ -379,6 +379,40 @@ fun LcdDayNightIcon(
     }
 }
 
+/**
+ * Up/down chevron. [doubled] stacks two chevrons — used on the hardware-key legend to mean a
+ * zone jump (hold) versus a single chevron for a channel step (tap).
+ */
+@Composable
+fun LcdChevronIcon(
+    up: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier,
+    doubled: Boolean = false,
+) {
+    Canvas(modifier) {
+        val stroke = lcdStroke(STATUS_STROKE)
+        val w = size.width
+        val h = size.height
+        fun chevron(centerY: Float, half: Float) {
+            val apexY = if (up) centerY - half else centerY + half
+            val baseY = if (up) centerY + half else centerY - half
+            val path = Path().apply {
+                moveTo(w * 0.22f, baseY)
+                lineTo(w * 0.5f, apexY)
+                lineTo(w * 0.78f, baseY)
+            }
+            drawPath(path, color = color, style = stroke)
+        }
+        if (doubled) {
+            chevron(h * 0.36f, h * 0.17f)
+            chevron(h * 0.66f, h * 0.17f)
+        } else {
+            chevron(h * 0.5f, h * 0.24f)
+        }
+    }
+}
+
 /** Bold "Z" — the zone marker. */
 @Composable
 fun LcdZoneIcon(

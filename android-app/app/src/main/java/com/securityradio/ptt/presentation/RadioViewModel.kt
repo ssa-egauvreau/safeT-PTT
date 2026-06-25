@@ -173,10 +173,15 @@ class RadioViewModel(
     @Volatile
     private var replayZoneToggledThisHold: Boolean = false
 
-    /** TM-7 Plus channel-up key: hold timer and whether this hold already toggled zone-select. */
+    /** TM-7 Plus channel-up key: hold timer and whether this hold already stepped the zone. */
     private var chanUpHoldJob: Job? = null
     @Volatile
     private var chanUpZoneToggledThisHold: Boolean = false
+
+    /** TM-7 Plus channel-down key: hold timer and whether this hold already stepped the zone. */
+    private var chanDownHoldJob: Job? = null
+    @Volatile
+    private var chanDownZoneToggledThisHold: Boolean = false
 
     /** Zone by lowercased channel name (from the portal); missing = the default zone. */
     private var channelZonesByName: Map<String, ChannelZone> = emptyMap()
@@ -195,6 +200,16 @@ class RadioViewModel(
 
     /** Clears the scan-RX banner after voice activity stops. */
     private var scanRxBannerClearJob: Job? = null
+
+    /**
+     * Wall-clock of the last scan voice chunk attributed by the real-time audio path
+     * ([onScanVoiceHeard]). The audio stream knows exactly which scanned channel we're hearing;
+     * the slow talk-activity poll only carries the server's single "scan" segment, which lags and
+     * can name a different channel — that mismatch is what made the SCAN RX banner show the wrong /
+     * combined channel (CHP talking → "CHP" + "Metronet"). While audio is fresh, it wins.
+     */
+    @Volatile
+    private var lastScanAudioMs = 0L
 
     @Volatile
     private var pttMicLiveThisHold: Boolean = false
@@ -402,7 +417,8 @@ class RadioViewModel(
                     HardwareButtonEvent.EmergencyPressed -> toggleEmergency()
                     HardwareButtonEvent.ChannelUpPressed -> onChannelUpKeyDown()
                     HardwareButtonEvent.ChannelUpReleased -> onChannelUpKeyUp()
-                    HardwareButtonEvent.ChannelDownPressed -> bumpChannel(-1)
+                    HardwareButtonEvent.ChannelDownPressed -> onChannelDownKeyDown()
+                    HardwareButtonEvent.ChannelDownReleased -> onChannelDownKeyUp()
                     HardwareButtonEvent.ScanTogglePressed -> {
                         _uiState.update { s -> onScanSoftKeyToggle(s) }
                         reconcileVoiceTransport()
@@ -866,10 +882,10 @@ class RadioViewModel(
     }
 
     /**
-     * TM-7 Plus: channel-up is dual-function — hold ≥ [ZONE_HOLD_MS] enters/exits zone-select,
-     * quick press steps on key-up. Every other profile keeps the immediate step on key-down:
-     * the Inrico intent-broadcast path delivers presses with no release, so deferring there
-     * would kill channel scrolling outright.
+     * TM-7 Plus: the channel keys are dual-function — a quick press steps the channel (on key-up),
+     * a hold ≥ [ZONE_HOLD_MS] steps the ZONE directly (up on channel-up, down on channel-down).
+     * Every other profile keeps the immediate channel step on key-down: the Inrico intent-broadcast
+     * path delivers presses with no release, so deferring there would kill channel scrolling.
      */
     private fun onChannelUpKeyDown() {
         if (_uiState.value.resolvedDeviceProfile != ResolvedDeviceProfile.TM7_PLUS) {
@@ -881,7 +897,7 @@ class RadioViewModel(
         chanUpHoldJob = viewModelScope.launch {
             delay(ZONE_HOLD_MS)
             chanUpZoneToggledThisHold = true
-            toggleZoneSelect()
+            zoneStep(+1)
         }
     }
 
@@ -896,6 +912,33 @@ class RadioViewModel(
             return
         }
         bumpChannel(+1)
+    }
+
+    private fun onChannelDownKeyDown() {
+        if (_uiState.value.resolvedDeviceProfile != ResolvedDeviceProfile.TM7_PLUS) {
+            bumpChannel(-1)
+            return
+        }
+        chanDownZoneToggledThisHold = false
+        chanDownHoldJob?.cancel()
+        chanDownHoldJob = viewModelScope.launch {
+            delay(ZONE_HOLD_MS)
+            chanDownZoneToggledThisHold = true
+            zoneStep(-1)
+        }
+    }
+
+    private fun onChannelDownKeyUp() {
+        if (_uiState.value.resolvedDeviceProfile != ResolvedDeviceProfile.TM7_PLUS) {
+            return
+        }
+        chanDownHoldJob?.cancel()
+        chanDownHoldJob = null
+        if (chanDownZoneToggledThisHold) {
+            chanDownZoneToggledThisHold = false
+            return
+        }
+        bumpChannel(-1)
     }
 
     private fun onTm7ScanLongPressToggle() {
@@ -940,6 +983,7 @@ class RadioViewModel(
             .any { channelNamesMatch(it, channelName) }
         if (!included) return
         if (channelNamesMatch(channelName, snap.channelLabel)) return
+        lastScanAudioMs = System.currentTimeMillis()
         scanRxBannerClearJob?.cancel()
         _uiState.update {
             it.copy(
@@ -1007,6 +1051,8 @@ class RadioViewModel(
             RadioUiEvent.ChannelUp -> bumpChannel(+1)
             RadioUiEvent.ChannelDown -> bumpChannel(-1)
             RadioUiEvent.ToggleZoneSelect -> toggleZoneSelect()
+            RadioUiEvent.ZoneStepUp -> zoneStep(+1)
+            RadioUiEvent.ZoneStepDown -> zoneStep(-1)
             RadioUiEvent.ToggleScanLongPress -> onTm7ScanLongPressToggle()
             RadioUiEvent.DisableScan -> disableScan()
             RadioUiEvent.ToggleScanSoftKey -> {
@@ -2036,6 +2082,35 @@ class RadioViewModel(
 
     // --- zones ------------------------------------------------------------
 
+    /**
+     * Direct zone change (hold channel-up / channel-down on TM-7 Plus): jump to the FIRST channel
+     * of the adjacent zone and announce it, with no intermediate select-and-commit step.
+     */
+    private fun zoneStep(delta: Int) {
+        if (channelNames.isEmpty() || _uiState.value.channelsLoading) return
+        val zones = zoneNames()
+        if (zones.size <= 1) {
+            soundPlayer.playChannelSwitch()
+            _uiState.update { it.copy(statusMessage = "NO ZONES CONFIGURED") }
+            return
+        }
+        val curIdx = zones.indexOf(zoneAt(channelIndex)).coerceAtLeast(0)
+        val target = zones[(curIdx + delta + zones.size) % zones.size]
+        channelIndex = zoneChannelIndices(target).first()
+        val tunedLabel = channelNames[channelIndex]
+        soundPlayer.playChannelSwitch {
+            speechHelper.speakChannelTuneIfEnabled(tunedLabel)
+        }
+        _uiState.update {
+            it.withTuning(channelNames, channelIndex).pruneScanSets().copy(
+                statusMessage = "ZONE: ${zoneDisplay(target).uppercase(Locale.US)}",
+                currentChannelPermission = currentPermission(),
+            )
+        }
+        viewModelScope.launch { pulsePresenceHeartbeatAndCount(expectOnline = true) }
+        reconcileVoiceTransport()
+    }
+
     /** Distinct zones in catalog order (the server sorts channels by zone number). */
     private fun zoneNames(): List<ChannelZone> {
         val seen = LinkedHashSet<ChannelZone>()
@@ -2898,6 +2973,11 @@ class RadioViewModel(
                     displayName = talkName,
                 )
                 val scanBg = scanBackgroundFromActivity(dto, snap)
+                // The real-time scan audio path is authoritative for the SCAN RX banner: if it
+                // attributed a chunk within the banner-hold window, don't let the slower server
+                // poll overwrite it with its (single, lagging) scan segment.
+                val scanAudioFresh =
+                    System.currentTimeMillis() - lastScanAudioMs < SCAN_RX_BANNER_HOLD_MS
                 _uiState.update {
                     it.copy(
                         rxAttributedLine = merged,
@@ -2905,8 +2985,8 @@ class RadioViewModel(
                         lastRxReplayCaption = replayCaption,
                         activeTalkUnitId = talkUnit,
                         activeTalkDisplayName = talkName,
-                        scanBackgroundActive = scanBg.first,
-                        scanBackgroundChannel = scanBg.second,
+                        scanBackgroundActive = if (scanAudioFresh) it.scanBackgroundActive else scanBg.first,
+                        scanBackgroundChannel = if (scanAudioFresh) it.scanBackgroundChannel else scanBg.second,
                     )
                 }
             }

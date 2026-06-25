@@ -125,6 +125,8 @@ class InricoHardwareService : AccessibilityService() {
                             HardwareButtonRelay.sendEvent(HardwareButtonEvent.PlayLastTransmissionReleased)
                         isChanUp ->
                             HardwareButtonRelay.sendEvent(HardwareButtonEvent.ChannelUpReleased)
+                        isChanDown ->
+                            HardwareButtonRelay.sendEvent(HardwareButtonEvent.ChannelDownReleased)
                     }
                 }
             }
