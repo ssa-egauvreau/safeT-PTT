@@ -193,6 +193,12 @@ targets:
         CFBundleDisplayName: safeT Mobile
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        # Declares the app uses only exempt encryption (standard HTTPS/TLS — no
+        # custom/proprietary crypto), so App Store Connect never holds a build
+        # on the "Missing Compliance" export-encryption question. This is what
+        # otherwise blocks the TestFlight post-action on every upload. Flip to
+        # true (and file the export docs) only if you add non-exempt encryption.
+        ITSAppUsesNonExemptEncryption: false
         # Server connection — set these for your deployment.
         APIBaseURL: "https://safet-ptt.com"
         RadioAPIKey: ""
