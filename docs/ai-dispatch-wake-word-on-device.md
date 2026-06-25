@@ -37,9 +37,12 @@ Runs a shared pretrained melspectrogram + embedding front-end and a small **per-
 3. The notebook uses Piper TTS to synthesize thousands of positive samples (varied voices/speeds/noise)
    plus a large negative set (general speech + radio chatter). Train, then **export the TFLite**
    wakeword model.
-4. Drop the `.tflite` into `android-app/app/src/main/assets/wakeword/` and implement
-   `OpenWakeWordSpotter : WakeWordSpotter` (TFLite Interpreter over the 16 kHz mono PCM the gate
-   buffers; feed in the openWakeWord frame size; read the per-frame score).
+4. Drop the three `.tflite` files into `android-app/app/src/main/assets/wakeword/`
+   (`melspectrogram.tflite`, `embedding_model.tflite`, and `<slug>.tflite`, e.g. `hey_ai.tflite`).
+   `OpenWakeWordSpotter` is already implemented and wired in — it runs the mel → embedding →
+   classifier pipeline over the buffered PCM and self-disables (returns `maybe`) until these assets
+   are present. On first integration, confirm the model tensor shapes / preprocessing constants in
+   `OpenWakeWordSpotter` match the shipped models (a mismatch is caught and self-disables).
 
 ## Recall-safe thresholds
 

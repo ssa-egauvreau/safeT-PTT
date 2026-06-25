@@ -36,6 +36,7 @@ import com.securityradio.ptt.device.RadioPreferences
 import com.securityradio.ptt.device.RadioUiSoundPlayer
 import com.securityradio.ptt.device.ScanVoiceListenTransport
 import com.securityradio.ptt.device.ServerReachabilityMonitor
+import com.securityradio.ptt.device.OpenWakeWordSpotter
 import com.securityradio.ptt.device.StubWakeWordSpotter
 import com.securityradio.ptt.device.VoiceRelayTransport
 import com.securityradio.ptt.device.WakeWordGate
@@ -192,7 +193,9 @@ class RadioAppGraph(val application: Application) {
         // On-device wake-word gate — inert until a trained model replaces the stub spotter and the
         // enable flag is turned on. The wake phrase comes from the agency catalog (synced to prefs).
         wakeWordGate = WakeWordGate(
-            spotter = StubWakeWordSpotter(),
+            // Real openWakeWord spotter; self-disables (returns MAYBE) until its TFLite model assets
+            // are shipped. Falls back to the stub if the TFLite runtime fails to construct at all.
+            spotter = runCatching { OpenWakeWordSpotter(application) }.getOrElse { StubWakeWordSpotter() },
             wakeWordProvider = { radioPreferences.getAiWakeWord() },
             enabled = radioPreferences.isWakeWordGateEnabled(),
         ),
