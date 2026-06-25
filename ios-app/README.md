@@ -76,6 +76,14 @@ Set up the workflow in **App Store Connect → your app → Xcode Cloud** (or Xc
 
 1. Point the workflow at this repo and the **SafeTMobile** scheme, with the project at `ios-app/SafeTMobile.xcodeproj`.
 2. Grant Xcode Cloud access so it can clone the **codec2** and **opus** submodules (the native voice sources).
-3. Run it. The post-clone hook generates the project automatically — no other configuration needed.
+3. Run it once. The post-clone hook generates the project automatically — no other configuration needed.
+
+**Auto-deploy every change to TestFlight.** To make a signed TestFlight build appear on every push to `main` with no manual step, edit the workflow (App Store Connect → Xcode Cloud → *Manage Workflows* → **Edit Workflow**):
+
+1. **Start Conditions** → replace the manual condition with **Branch Changes** on `main`. (Optional: under *Files and Folders* restrict it to `ios-app/` so server-only commits don't trigger an iOS build.)
+2. **Actions** → ensure there's an **Archive** action (Scheme **SafeTMobile**, Platform **iOS**) with **Deployment Preparation: TestFlight and App Store**.
+3. **Post-Actions** → add **TestFlight (Internal Testing)** and pick an internal testing group.
+
+Each Xcode Cloud build gets a unique, increasing build number automatically: `ci_post_clone.sh` stamps `CURRENT_PROJECT_VERSION` from Xcode Cloud's `CI_BUILD_NUMBER` before generating the project (local and GitHub Actions builds keep the static `project.yml` value), so repeated auto-deploys never collide on a duplicate build number. Bump `MARKETING_VERSION` in `project.yml` when you want a new TestFlight version string.
 
 If you ever rename or move the hook, keep it at `ci_scripts/ci_post_clone.sh` in the repository root and keep it executable (`chmod +x`).
