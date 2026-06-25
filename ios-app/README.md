@@ -70,7 +70,7 @@ Build number is derived from the workflow run number, so each run is a unique, i
 
 ### Automated (Xcode Cloud)
 
-Xcode Cloud clones a fresh checkout that has **no `SafeTMobile.xcodeproj`** (it's generated, not committed), so a post-clone hook regenerates it before the build. That hook is committed at **`ci_scripts/ci_post_clone.sh`** (repo root — Xcode Cloud only runs it from there): it installs XcodeGen via Homebrew and runs `ios-app/setup.sh`. Without it the build fails at *Resolve package dependencies* with `SafeTMobile.xcodeproj does not exist`.
+Xcode Cloud clones a fresh checkout that has **no `SafeTMobile.xcodeproj`** (it's generated, not committed), so a post-clone hook regenerates it before the build. Xcode Cloud looks for `ci_scripts/` **next to the Xcode project**, so the real hook lives at **`ios-app/ci_scripts/ci_post_clone.sh`** (a thin delegator at `ci_scripts/ci_post_clone.sh` in the repo root forwards to it as insurance). It installs XcodeGen via Homebrew and runs `ios-app/setup.sh`. Without it the build fails at *Resolve package dependencies*/Archive with `SafeTMobile.xcodeproj ... missing its project.pbxproj file`.
 
 Set up the workflow in **App Store Connect → your app → Xcode Cloud** (or Xcode → Product → Xcode Cloud):
 
@@ -86,4 +86,4 @@ Set up the workflow in **App Store Connect → your app → Xcode Cloud** (or Xc
 
 Each Xcode Cloud build gets a unique, increasing build number automatically: `ci_post_clone.sh` stamps `CURRENT_PROJECT_VERSION` from Xcode Cloud's `CI_BUILD_NUMBER` before generating the project (local and GitHub Actions builds keep the static `project.yml` value), so repeated auto-deploys never collide on a duplicate build number. Bump `MARKETING_VERSION` in `project.yml` when you want a new TestFlight version string.
 
-If you ever rename or move the hook, keep it at `ci_scripts/ci_post_clone.sh` in the repository root and keep it executable (`chmod +x`).
+If you ever move the hook, keep the real one at `ios-app/ci_scripts/ci_post_clone.sh` (next to the Xcode project, where Xcode Cloud looks) and keep both it and the repo-root delegator executable (`chmod +x`).
