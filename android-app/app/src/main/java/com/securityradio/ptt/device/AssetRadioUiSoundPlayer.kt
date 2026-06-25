@@ -824,10 +824,12 @@ class AssetRadioUiSoundPlayer(
         private const val BT_WAKE_IDLE_MS = 700L
 
         /**
-         * How long to hold a sound's start after firing the wake burst on a cold BT route, so the
-         * amp is up before the audible content. Only applied on the first sound after idle.
+         * Hold before starting a sound on a cold BT route, to let a wake burst bring the amp up
+         * first. Now 0: the wake burst is silent (it buzzed on always-on amps), so delaying the
+         * sound would only add latency with no benefit. Restore a small value only alongside a real
+         * (audible-enough) wake burst for a head unit that genuinely deep-sleeps.
          */
-        private const val BT_WAKE_LEAD_MS = 200L
+        private const val BT_WAKE_LEAD_MS = 0L
 
         const val SOUNDS_DIR = "sounds"
         const val FILE_CHANNEL_SWITCH = "channel_switch.wav"
