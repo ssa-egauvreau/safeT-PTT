@@ -844,6 +844,9 @@ export function createApiRouter(): Router {
   router.get("/me/channels", requireAgencyMember, async (req, res) => {
     try {
       const me = req.authUser!;
+      // Agency supervised wake phrase (default "hey ai"), delivered to handsets so the on-device
+      // wake-word gate knows what to listen for; harmless extra field for the console.
+      const wakeWord = await resolveAiDispatchWakeWord(me.agencyId!);
       if (me.role === "admin" || me.role === "dispatcher") {
         const agencyId = me.agencyId!;
         const all = await listChannels(agencyId);
@@ -879,6 +882,7 @@ export function createApiRouter(): Router {
               simulcast: true,
             })),
           ],
+          wake_word: wakeWord,
         });
         return;
       }
@@ -890,6 +894,7 @@ export function createApiRouter(): Router {
           ai_dispatch_enabled: aiModes.has(c.name),
           ai_dispatch_mode: aiModes.get(c.name) ?? "off",
         })),
+        wake_word: wakeWord,
       });
     } catch (error) {
       fail(res, error);

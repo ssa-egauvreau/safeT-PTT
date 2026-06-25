@@ -50,6 +50,17 @@ export const INTEGRATION_DEFINITIONS: IntegrationDefinition[] = [
       "Example: You are dispatch for Metro Fire. Use 10-4 for acknowledge. Units are called by number…",
   },
   {
+    key: "ai_dispatch_wake_word",
+    label: "AI dispatcher wake word",
+    description:
+      "Spoken phrase that engages the dispatcher on channels set to Supervised (e.g. “Hey AI, 27-000 show me on a patrol check”). " +
+      "If empty, the default “hey ai” is used. A short, distinctive phrase works best.",
+    kind: "text",
+    group: "ai_dispatch",
+    availability: "active",
+    placeholder: "hey ai",
+  },
+  {
     key: "outbound_webhook_url",
     label: "Outbound webhook URL",
     description:

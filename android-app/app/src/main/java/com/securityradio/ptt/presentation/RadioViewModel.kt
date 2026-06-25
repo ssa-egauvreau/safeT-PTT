@@ -2241,6 +2241,8 @@ class RadioViewModel(
         channelZonesByName = catalog.zones
         channelAiByName = catalog.aiDispatch
         channelAiModesByName = catalog.aiDispatchModes
+        // Persist the agency wake phrase for the on-device wake-word gate (survives restarts).
+        radioPreferences.setAiWakeWord(catalog.wakeWord)
         if (channelNames.isNotEmpty()) {
             channelIndex = channelIndex.coerceIn(0, channelNames.lastIndex)
         } else {

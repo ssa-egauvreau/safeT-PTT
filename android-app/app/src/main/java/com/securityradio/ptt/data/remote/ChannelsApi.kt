@@ -62,6 +62,8 @@ data class TalkerSnapshotDto(
 
 data class ChannelsResponseDto(
     @SerializedName("channels") val channels: List<ChannelDto>,
+    /** Agency supervised wake phrase (default "hey ai") for the on-device wake-word gate. */
+    @SerializedName("wake_word") val wakeWord: String? = null,
 )
 
 data class ChannelDto(

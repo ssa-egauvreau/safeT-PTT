@@ -138,6 +138,7 @@ export function ChannelPanel({
   const aiDispatchOn = aiDispatchMode !== "off";
   const [aiDispatchReady, setAiDispatchReady] = useState(false);
   const [aiDispatchHint, setAiDispatchHint] = useState<string | null>(null);
+  const [aiWakeWord, setAiWakeWord] = useState("hey ai");
   const [volume, setVolume] = useState(() => loadVolume(channel.id));
   const [muted, setMuted] = useState(() => loadMuted(channel.id));
   const [audioOutputId, setAudioOutputId] = useState(() => loadAudioOutputId(channel.id));
@@ -352,6 +353,7 @@ export function ChannelPanel({
           return;
         }
         setAiDispatchMode(row.mode ?? (row.enabled ? "full_auto" : "off"));
+        setAiWakeWord((status.agency_wake_word || "hey ai").trim());
         setAiDispatchReady(true);
         const hints: string[] = [];
         if (!status.platform_enabled) {
@@ -1104,6 +1106,9 @@ export function ChannelPanel({
               <span className="marker-note muted">
                 {AI_DISPATCH_MODE_NOTE[aiDispatchMode]}
                 {aiDispatchMode === "full_auto" ? ` ${AI_DISPATCH_ON_NOTE}` : ""}
+                {aiDispatchMode === "supervised"
+                  ? ` Wake word: “${aiWakeWord}” — change it under Admin → Integrations.`
+                  : ""}
               </span>
             )
           )}
