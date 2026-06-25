@@ -49,11 +49,22 @@ cd "$REPO_ROOT/ios-app"
 # CI_BUILD_NUMBER is set ONLY by Xcode Cloud (unset locally and in the GitHub
 # Actions checks), so non-Xcode-Cloud builds keep the pinned default. Patch
 # project.yml BEFORE setup.sh's `xcodegen generate` so the generated project
-# carries the new value. (BSD/macOS `sed -i ''` -- Xcode Cloud runners are
-# macOS, and the CI_BUILD_NUMBER guard keeps this off any other machine.)
+# carries the new value.
+#
+# Use a temp-file rewrite, NOT `sed -i`: `sed -i ''` is BSD-only and breaks if
+# PATH resolves `sed` to GNU sed (we prepend Homebrew above), which errors and --
+# under `set -e` -- would abort the script before xcodegen runs, leaving a
+# .xcodeproj with no project.pbxproj. Keep it non-fatal too: a missed stamp
+# (worst case, a duplicate-build-number upload rejection) must never block
+# generating the project below.
 if [ -n "${CI_BUILD_NUMBER:-}" ]; then
   echo "==> stamping CURRENT_PROJECT_VERSION = ${CI_BUILD_NUMBER} (Xcode Cloud build number)"
-  sed -i '' -E "s/(CURRENT_PROJECT_VERSION: )\"[0-9]+\"/\1\"${CI_BUILD_NUMBER}\"/" project.yml
+  if sed -E "s/(CURRENT_PROJECT_VERSION: )\"[0-9]+\"/\1\"${CI_BUILD_NUMBER}\"/" project.yml > project.yml.tmp; then
+    mv project.yml.tmp project.yml
+  else
+    echo "==> warning: could not stamp build number; using project.yml default" >&2
+    rm -f project.yml.tmp
+  fi
 fi
 
 # setup.sh copies Local.example.xcconfig -> Local.xcconfig, ensures the native
