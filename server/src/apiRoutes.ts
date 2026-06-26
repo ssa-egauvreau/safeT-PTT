@@ -7,6 +7,7 @@ import {
   requireOwner,
   signToken,
   verifyPassword,
+  isSessionSuperseded,
   type AuthUser,
   type Role,
 } from "./auth.js";
@@ -597,8 +598,8 @@ export function createApiRouter(): Router {
         // exempt from "newest sign-in wins" supersession, which otherwise
         // silently 401s a handset whenever the token generation bumps and leaves
         // the radio stuck on "SYNC FAILED" until a manual re-login. Console /
-        // admin / owner sessions still supersede normally.
-        if (auth.role !== "radio" && auth.gen !== cached.tokenGeneration) {
+        // admin / owner sessions still supersede normally. (See isSessionSuperseded.)
+        if (isSessionSuperseded(auth.role, auth.gen, cached.tokenGeneration)) {
           res.status(401).json({ error: "session_superseded" });
           return;
         }
@@ -616,7 +617,7 @@ export function createApiRouter(): Router {
       }
       // Newest sign-in wins — except for radio handsets, which are persistent
       // shared devices exempt from supersession (see the cached path above).
-      if (auth.role !== "radio" && auth.gen !== user.token_generation) {
+      if (isSessionSuperseded(auth.role, auth.gen, user.token_generation)) {
         res.status(401).json({ error: "session_superseded" });
         return;
       }

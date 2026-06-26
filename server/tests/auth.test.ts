@@ -63,6 +63,7 @@ const {
   TOKEN_TTL_SECONDS,
   authenticate,
   hashPassword,
+  isSessionSuperseded,
   requireAdmin,
   requireAuth,
   requireOwner,
@@ -322,6 +323,33 @@ test("authenticate: never throws even when header is wildly malformed", () => {
   );
   assert.equal(req.authUser, undefined);
   assert.equal(next.called, true);
+});
+
+// ---------------------------------------------------------------------------
+// isSessionSuperseded — "newest sign-in wins", with the radio exemption
+// ---------------------------------------------------------------------------
+
+test("isSessionSuperseded: console roles are superseded when the token generation is stale", () => {
+  // A dispatcher/admin/owner token whose `gen` is older than the user row's
+  // current generation has been replaced by a newer sign-in and must be
+  // rejected (REST → 401 session_superseded, voice WS → 401 Unauthorized).
+  for (const role of ["owner", "admin", "dispatcher"] as const) {
+    assert.equal(isSessionSuperseded(role, 1, 2), true, `${role}: stale gen → superseded`);
+    assert.equal(isSessionSuperseded(role, 5, 5), false, `${role}: matching gen → not superseded`);
+  }
+});
+
+test("isSessionSuperseded: radio handsets are NEVER superseded, even with a stale generation", () => {
+  // The bug this pins: a handset whose generation went stale (the same radio
+  // account signed in on the console or another handset) must keep BOTH its
+  // REST session AND its voice WebSocket. Before the fix the REST path exempted
+  // radio but the voice upgrade handler did not, so audio died after every
+  // re-sign-in elsewhere until a manual log-out/log-in.
+  assert.equal(isSessionSuperseded("radio", 1, 2), false, "stale gen must not supersede a handset");
+  assert.equal(isSessionSuperseded("radio", 0, 999), false, "any gap must not supersede a handset");
+  assert.equal(isSessionSuperseded("radio", 7, 7), false, "matching gen is obviously fine");
+  // A legacy radio token (gen 0) against a bumped row must still hold.
+  assert.equal(isSessionSuperseded("radio", 0, 3), false, "legacy gen-0 handset stays signed in");
 });
 
 // ---------------------------------------------------------------------------
