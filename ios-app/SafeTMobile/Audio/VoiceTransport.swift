@@ -300,22 +300,27 @@ final class VoiceTransport {
 
         pcmAcc.append(frame)
         let frameBytes = P25ImbeNative.Frames.pcm16kFrameBytes
-        while pcmAcc.count >= frameBytes {
-            // Copy into a fresh, zero-based Data (NOT a slice of pcmAcc). The
-            // conditioner and the native IMBE encoder reach into this buffer via
-            // withUnsafe[Mutable]Bytes + manual pointer indexing; handing them an
-            // offset slice that still aliases pcmAcc's storage corrupts pcmAcc's
-            // backing header, which later traps in flushUplinkTail's removeAll.
-            // `Data(_:)` forces a uniquely-owned contiguous copy (same guard
-            // flushUplinkTail already applies to its staged tail frame).
-            var scratch = Data(pcmAcc.prefix(frameBytes))
-            pcmAcc.removeFirst(frameBytes)
+        // Drain the accumulator WITHOUT per-frame slice + removeFirst churn.
+        // Each 640-byte frame is copied out with subdata(in:) — a fresh,
+        // uniquely-owned, zero-based Data, no prefix-slice aliasing pcmAcc's
+        // storage and no withUnsafeMutableBytes write into a buffer shared with
+        // pcmAcc — and pcmAcc is trimmed exactly ONCE at the end rather than on
+        // every frame. The old per-frame `Data(prefix)` + `removeFirst` ran
+        // ~50x/sec for the whole PTT hold; that is the Data grow/realloc churn a
+        // hold-PTT crash trapped inside (ensureUniqueBufferReference on pcmAcc's
+        // header). See the hold-PTT crash investigation.
+        var consumed = 0
+        while pcmAcc.count - consumed >= frameBytes {
+            let start = pcmAcc.startIndex + consumed
+            var scratch = pcmAcc.subdata(in: start ..< (start + frameBytes))
+            consumed += frameBytes
 
             txConditioner.conditionLe16(frame: &scratch, bypassExpanderAgc: bypassMicProcessing)
             guard let packet = encoder.encodeFrame(scratch) else { continue }
             task.send(.data(packet)) { _ in }
             VoiceLinkTelemetryReporter.shared.recordBytesSent(packet.count)
         }
+        if consumed > 0 { pcmAcc.removeFirst(consumed) }
     }
 
     /// Discard any fractional staged PCM on a mid-stream codec change so the
