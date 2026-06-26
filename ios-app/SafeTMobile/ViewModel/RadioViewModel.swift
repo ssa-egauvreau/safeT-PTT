@@ -207,39 +207,73 @@ final class RadioViewModel: ObservableObject {
 
     // MARK: - app lifecycle (Live Activity)
 
-    /// Tear the Live Activity down when the app leaves the foreground. iOS does
-    /// not reliably deliver a "terminated" callback when the operator swipe-kills
-    /// the app from the app switcher, which left the Dynamic Island stranded on
-    /// the last "IDLE" state. Ending it on background guarantees the island
-    /// clears whenever the app is closed; `reassertLiveActivity()` rebuilds it
-    /// the moment the operator returns.
+    /// Keep the Live Activity alive when the app leaves the foreground so the
+    /// Dynamic Island keeps showing the channel + who is talking while the app
+    /// runs in the background. The `audio` background mode keeps the voice
+    /// socket — and the RX `air_claimed`/`air_released` handlers — live, and
+    /// `Activity.update` works locally from those handlers without push tokens
+    /// (the app is never suspended while audio is active). We just refresh to
+    /// the current state on the way out; an activity stranded by a real process
+    /// kill is reaped at next launch by `endOrphanedActivities()`.
     func endLiveActivityForBackground() {
-        if #available(iOS 16.2, *) {
-            RadioLiveActivityController.shared.end()
-        }
+        if #available(iOS 16.2, *) { refreshLiveActivity() }
     }
 
-    /// Re-create the Live Activity on return to the foreground, reflecting the
-    /// current TX/RX/IDLE state so the island comes straight back.
+    /// Re-sync the Live Activity on return to the foreground.
     func reassertLiveActivity() {
-        guard #available(iOS 16.2, *), let channel = currentChannel else { return }
+        if #available(iOS 16.2, *) { refreshLiveActivity() }
+    }
+
+    /// Push the current channel / TX-RX-IDLE state / active talker (and the
+    /// scanned channel a talker is on) to the Dynamic Island. Safe to call from
+    /// the RX handlers, PTT edges, and scene transitions — `startOrUpdate`
+    /// requests the activity once and updates it in place thereafter.
+    @available(iOS 16.2, *)
+    private func refreshLiveActivity() {
+        guard let channel = currentChannel else { return }
         let stateLabel: String
         let callsign: String?
         if uiState.isTransmitting {
             stateLabel = "TX"
             callsign = uiState.localShortUnitId
-        } else if uiState.isReceivingAudio {
+        } else if uiState.isReceivingAudio || !uiState.activeTalkUnitId.isEmpty {
             stateLabel = "RX"
             callsign = uiState.activeTalkUnitId.isEmpty ? nil : uiState.activeTalkUnitId
         } else {
             stateLabel = "IDLE"
             callsign = nil
         }
+        let info = liveActivityTalkerInfo()
         RadioLiveActivityController.shared.startOrUpdate(
             channel: channel,
             callsign: callsign,
-            stateLabel: stateLabel
+            stateLabel: stateLabel,
+            talker: stateLabel == "IDLE" ? nil : info.talker,
+            scanChannel: stateLabel == "IDLE" ? nil : info.scanChannel
         )
+    }
+
+    /// Derive the active-talker label and — when the traffic is on a scanned
+    /// channel rather than the tuned one — the scanned channel name for the
+    /// Live Activity, from the same state the in-app RX display uses.
+    private func liveActivityTalkerInfo() -> (talker: String?, scanChannel: String?) {
+        let unit = uiState.activeTalkUnitId
+        let name = uiState.activeTalkDisplayName
+        let talker: String?
+        if !unit.isEmpty {
+            talker = name.isEmpty ? unit : "\(unit) · \(name)"
+        } else if !uiState.rxAttributedLine.isEmpty {
+            talker = uiState.rxAttributedLine
+        } else {
+            talker = nil
+        }
+        let scanChannel: String?
+        if uiState.rxFromScan, let ch = uiState.scanRxChannel, !ch.isEmpty {
+            scanChannel = ch
+        } else {
+            scanChannel = nil
+        }
+        return (talker, scanChannel)
     }
 
     // MARK: - widget data
@@ -544,22 +578,7 @@ final class RadioViewModel: ObservableObject {
         voiceTransport.onReceivingChange = { [weak self] receiving in
             guard let self else { return }
             self.uiState.isReceivingAudio = receiving
-            if #available(iOS 16.2, *), let channel = self.currentChannel {
-                if receiving {
-                    let callsign = self.uiState.activeTalkUnitId.isEmpty ? nil : self.uiState.activeTalkUnitId
-                    RadioLiveActivityController.shared.startOrUpdate(
-                        channel: channel,
-                        callsign: callsign,
-                        stateLabel: "RX"
-                    )
-                } else if !self.uiState.isTransmitting {
-                    RadioLiveActivityController.shared.startOrUpdate(
-                        channel: channel,
-                        callsign: nil,
-                        stateLabel: "IDLE"
-                    )
-                }
-            }
+            if #available(iOS 16.2, *) { self.refreshLiveActivity() }
             self.updateWidgetData()
         }
         voiceTransport.onBusy = { [weak self] holder in
@@ -586,6 +605,7 @@ final class RadioViewModel: ObservableObject {
             if unitUpper.isEmpty || unitUpper == self.unitId { return }
             self.uiState.activeTalkUnitId = unitUpper
             self.uiState.activeTalkDisplayName = displayName ?? ""
+            if #available(iOS 16.2, *) { self.refreshLiveActivity() }
         }
         voiceTransport.onAirReleased = { [weak self] channel in
             guard let self else { return }
@@ -594,6 +614,7 @@ final class RadioViewModel: ObservableObject {
                channel.caseInsensitiveCompare(cur) != .orderedSame { return }
             self.uiState.activeTalkUnitId = ""
             self.uiState.activeTalkDisplayName = ""
+            if #available(iOS 16.2, *) { self.refreshLiveActivity() }
         }
     }
 

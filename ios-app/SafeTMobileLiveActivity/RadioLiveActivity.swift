@@ -12,8 +12,15 @@ struct RadioLiveActivity: Widget {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(context.state.channel)
                         .font(.headline)
-                    if let callsign = context.state.callsign, !callsign.isEmpty {
+                    if let talker = context.state.talker, !talker.isEmpty {
+                        Text(talker).font(.caption).lineLimit(1)
+                    } else if let callsign = context.state.callsign, !callsign.isEmpty {
                         Text(callsign).font(.caption)
+                    }
+                    if let scan = context.state.scanChannel, !scan.isEmpty {
+                        Text("SCAN · \(scan)")
+                            .font(.caption2)
+                            .foregroundColor(.green)
                     }
                 }
                 Spacer()
@@ -30,8 +37,17 @@ struct RadioLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.trailing) {
                     statePill(context.state.stateLabel)
                 }
+                DynamicIslandExpandedRegion(.center) {
+                    if let scan = context.state.scanChannel, !scan.isEmpty {
+                        Text("SCAN · \(scan)")
+                            .font(.caption2.bold())
+                            .foregroundColor(.green)
+                    }
+                }
                 DynamicIslandExpandedRegion(.bottom) {
-                    if let callsign = context.state.callsign, !callsign.isEmpty {
+                    if let talker = context.state.talker, !talker.isEmpty {
+                        Text(talker).font(.subheadline)
+                    } else if let callsign = context.state.callsign, !callsign.isEmpty {
                         Text(callsign).font(.subheadline)
                     }
                 }

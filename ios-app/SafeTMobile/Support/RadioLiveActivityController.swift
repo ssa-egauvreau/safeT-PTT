@@ -15,11 +15,14 @@ final class RadioLiveActivityController {
     /// existing one in place. Calling this on every channel mutation keeps the
     /// widget surface in sync without leaking an extra activity per channel
     /// switch.
-    func startOrUpdate(channel: String, callsign: String?, stateLabel: String) {
+    func startOrUpdate(channel: String, callsign: String?, stateLabel: String,
+                       talker: String? = nil, scanChannel: String? = nil) {
         let state = RadioActivityAttributes.ContentState(
             channel: channel,
             callsign: callsign,
-            stateLabel: stateLabel
+            stateLabel: stateLabel,
+            talker: talker,
+            scanChannel: scanChannel
         )
         if let activity = currentActivity {
             currentChannel = channel
