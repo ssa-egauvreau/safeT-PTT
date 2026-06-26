@@ -74,21 +74,6 @@ final class VoiceAudio {
     /// race on the `Data` heap buffer — the PTT-release crash.
     private let captureLock = NSLock()
 
-    // MARK: - media-listen mode (experimental)
-
-    /// When true, the radio LISTENS with a media-style `.playback` session and
-    /// only switches to the voice-processing (`.playAndRecord` + `.voiceChat`)
-    /// session for the duration of a PTT transmission — so iOS stops treating the
-    /// app as an ongoing phone call while merely monitoring. Default false keeps
-    /// the always-on voice session (known-good RX, no per-PTT engine restart).
-    /// Read/written only on the main actor (start, capture, the toggle sink).
-    var mediaListenMode = false
-    /// Set while we are intentionally tearing the engine down to swap audio
-    /// profiles (listen <-> talk). The interruption / configuration-change
-    /// observers must NOT run their recovery during that window or they race the
-    /// restart and can wedge the engine. Main-actor only, like the transitions.
-    private var suppressRecovery = false
-
     /// Software jitter buffer + PLC between decoded PCM and the player. The
     /// relay forwards frames the instant they arrive over WebSocket (no
     /// smoothing on either side) — without this buffer, network jitter
@@ -156,11 +141,6 @@ final class VoiceAudio {
     /// change so background RX resumes instead of staying silent. Each step is
     /// guarded, so it's a no-op when audio is already healthy.
     private func recoverAudio(reactivateSession: Bool) {
-        // A profile swap (media-listen <-> talk) stops and restarts the engine on
-        // purpose; let switchProfile own that and bail so we don't double-restart.
-        // setActive(true) reactivates whichever category is currently set, so this
-        // recovers both the always-on voice session and the media-listen session.
-        if suppressRecovery { return }
         if reactivateSession {
             try? AVAudioSession.sharedInstance().setActive(true, options: [])
         }
@@ -178,23 +158,14 @@ final class VoiceAudio {
     /// Activates the audio session and starts the engine. Must be called after
     /// `AudioSessionManager.requestRecordPermission()` returns true.
     func start() throws {
-        if mediaListenMode {
-            // Listen as media: `.playback`, no mic, so iOS doesn't treat the app
-            // as an ongoing call while only monitoring. The mic is brought up on
-            // demand in startCapture() for the length of a transmission. Do NOT
-            // touch engine.inputNode here — that would wire the mic and defeat the
-            // whole point (and is unavailable under `.playback` anyway).
-            try AudioSessionManager.configureForListen()
-        } else {
-            try AudioSessionManager.configureForVoice()
-            // Touch the input node BEFORE starting the engine so the engine wires
-            // the mic route up front. Without this, the first access happens lazily
-            // inside startCapture() — and on a running playback-only engine, the
-            // input node's `outputFormat(forBus: 0)` can return a 0-channel /
-            // 0-sample-rate format. Installing a tap with that format crashes
-            // AVAudioEngine with `IsFormatSampleRateAndChannelCountValid(format)`.
-            _ = engine.inputNode
-        }
+        try AudioSessionManager.configureForVoice()
+        // Touch the input node BEFORE starting the engine so the engine wires
+        // the mic route up front. Without this, the first access happens lazily
+        // inside startCapture() — and on a running playback-only engine, the
+        // input node's `outputFormat(forBus: 0)` can return a 0-channel /
+        // 0-sample-rate format. Installing a tap with that format crashes
+        // AVAudioEngine with `IsFormatSampleRateAndChannelCountValid(format)`.
+        _ = engine.inputNode
         if !engine.isRunning {
             engine.prepare()
             try engine.start()
@@ -222,15 +193,6 @@ final class VoiceAudio {
     func startCapture() -> UInt64? {
         guard !capturing else { return captureSessionId }
 
-        if mediaListenMode {
-            // Bring up the voice-processing session for this transmission. This
-            // restarts the engine (the hardware clock moves from .playback's
-            // 48 kHz to the voice I/O's 16 kHz), so it adds a brief hitch at
-            // key-up — the .pttPermit cue covers some of it, and RX isn't needed
-            // while transmitting (half-duplex).
-            switchProfile(wireInput: true, configure: AudioSessionManager.configureForVoice)
-        }
-
         let inputNode = engine.inputNode
         let nativeFormat = inputNode.outputFormat(forBus: 0)
         // Defensive guard: if the audio session lost record permission, the input
@@ -238,14 +200,7 @@ final class VoiceAudio {
         // wired, `outputFormat` can return a 0-channel / 0 Hz format. Installing
         // a tap with that crashes AVAudioEngine. Bail cleanly so PTT just no-ops
         // instead of taking the app down.
-        guard nativeFormat.channelCount > 0, nativeFormat.sampleRate > 0 else {
-            // Couldn't bring the mic up — fall back to the media listen session so
-            // we don't sit in the call-style profile without actually capturing.
-            if mediaListenMode {
-                switchProfile(wireInput: false, configure: AudioSessionManager.configureForListen)
-            }
-            return nil
-        }
+        guard nativeFormat.channelCount > 0, nativeFormat.sampleRate > 0 else { return nil }
 
         let pcm16Mono16k = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
@@ -295,56 +250,6 @@ final class VoiceAudio {
         captureBuffer.removeAll(keepingCapacity: false)
         captureConverter = nil
         captureLock.unlock()
-        if mediaListenMode {
-            // Transmission over — drop the mic and go back to the media listen
-            // session so the "phone call" treatment ends the moment PTT releases.
-            switchProfile(wireInput: false, configure: AudioSessionManager.configureForListen)
-        }
-    }
-
-    /// Stop the engine, apply a new audio-session profile, then bring the engine
-    /// and players back up. The media-listen <-> talk swap can't be done on a
-    /// running engine: the session's hardware clock changes (`.playback` at 48 kHz
-    /// vs. the voice I/O at 16 kHz), which forces an engine reconfigure. The
-    /// `suppressRecovery` bracket stops the interruption / configuration-change
-    /// observers from racing their own restart against this one; a config-change
-    /// note delivered late (after the bracket clears) is harmless because every
-    /// step here and in recoverAudio is guarded/idempotent.
-    private func switchProfile(wireInput: Bool, configure: () throws -> Void) {
-        suppressRecovery = true
-        defer { suppressRecovery = false }
-        if engine.isRunning { engine.stop() }
-        // If the session reconfigure throws we still try to restart the engine on
-        // the previous category rather than leaving RX dead; the next transition
-        // (or recoverAudio) gets another shot.
-        try? configure()
-        // Under the talk profile, wire the mic up front so the subsequent tap
-        // install sees a valid input format (same reason as start()).
-        if wireInput { _ = engine.inputNode }
-        engine.prepare()
-        do { try engine.start() } catch { return }
-        if !player.isPlaying { player.play() }
-        if !replayPlayer.isPlaying { replayPlayer.play() }
-    }
-
-    /// Live-apply the media-listen toggle so the operator can A/B the two RX paths
-    /// on a single build (flip it while someone is talking to compare). Only
-    /// re-applies when the engine is up and idle — never mid-transmission; if a
-    /// transmission is in progress the change lands on the next PTT release, which
-    /// reads the updated `mediaListenMode`.
-    func updateListenMode(_ enabled: Bool) {
-        guard mediaListenMode != enabled else { return }
-        mediaListenMode = enabled
-        guard engine.isRunning else { return }
-        captureLock.lock()
-        let isCapturing = capturing
-        captureLock.unlock()
-        guard !isCapturing else { return }
-        if enabled {
-            switchProfile(wireInput: false, configure: AudioSessionManager.configureForListen)
-        } else {
-            switchProfile(wireInput: true, configure: AudioSessionManager.configureForVoice)
-        }
     }
 
     private func handle(captureBuffer source: AVAudioPCMBuffer, target: AVAudioFormat, sessionId: UInt64) {
