@@ -23,7 +23,7 @@ import type { Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 import { normalizedChannel } from "./presence.js";
-import { verifyToken, type AuthUser } from "./auth.js";
+import { verifyToken, isSessionSuperseded, type AuthUser } from "./auth.js";
 import { getPool } from "./db.js";
 import {
   setAiDispatchChannelCached,
@@ -1267,7 +1267,13 @@ export function attachVoiceRelay(
                 socket.destroy();
                 return;
               }
-              if (user.gen !== cached.tokenGeneration) {
+              // Newest sign-in wins — but radio handsets are persistent shared
+              // devices exempt from supersession, exactly as on the REST path.
+              // Without this, a handset whose generation went stale (the same
+              // radio account signed in on the console / another handset) keeps
+              // REST working but gets its voice socket 401'd, so audio dies until
+              // a manual log-out/log-in. (See isSessionSuperseded.)
+              if (isSessionSuperseded(user.role, user.gen, cached.tokenGeneration)) {
                 socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
                 socket.destroy();
                 return;
@@ -1307,7 +1313,9 @@ export function attachVoiceRelay(
               }
               // Newest sign-in wins: reject a stale token here too so an auto-
               // reconnecting browser cannot briefly resurrect its dropped socket.
-              if (user.gen !== dbUser.token_generation) {
+              // Radio handsets are exempt (persistent shared devices) — same rule
+              // as the cached path and the REST middleware.
+              if (isSessionSuperseded(user.role, user.gen, dbUser.token_generation)) {
                 if (!lookupErrored) {
                   setCachedAuth(user.id, {
                     tokenGeneration: dbUser.token_generation,

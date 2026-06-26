@@ -119,6 +119,26 @@ export function verifyToken(token: string): AuthUser | null {
   }
 }
 
+/**
+ * "Newest sign-in wins" supersession check, shared by the REST middleware and
+ * the voice-WebSocket upgrade handler so the rule lives in exactly one place.
+ *
+ * A session is superseded when its token's generation is older than the user
+ * row's current `token_generation` — EXCEPT for `radio` handsets. Handsets are
+ * persistent, shared devices that stay signed in until a manual sign-out (their
+ * tokens carry no expiry), so they are never superseded: otherwise signing the
+ * same radio account in on another handset / the console silently 401s the
+ * first handset — on REST it shows "SYNC FAILED", and on the voice socket it
+ * drops audio until a manual log-out/log-in mints a fresh-generation token.
+ * Console / admin / owner sessions still supersede normally.
+ */
+export function isSessionSuperseded(role: Role, tokenGen: number, currentGen: number): boolean {
+  if (role === "radio") {
+    return false;
+  }
+  return tokenGen !== currentGen;
+}
+
 function bearerToken(req: Request): string | null {
   const header = req.header("authorization") ?? "";
   if (header.toLowerCase().startsWith("bearer ")) {
