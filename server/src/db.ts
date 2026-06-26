@@ -122,6 +122,11 @@ export async function ensureSchema(): Promise<void> {
   // Optional agency-branding logo, uploaded by an agency admin.
   await p.query(`ALTER TABLE agencies ADD COLUMN IF NOT EXISTS logo BYTEA;`);
   await p.query(`ALTER TABLE agencies ADD COLUMN IF NOT EXISTS logo_mime TEXT;`);
+  // Read-only location-feed key for external map integrations (e.g. a parking /
+  // patrol console plotting radio positions). Grants ONLY the location read
+  // endpoints for this agency — never PTT, admin, or any write. Kept separate
+  // from radio_key so revoking external map access never disturbs handsets.
+  await p.query(`ALTER TABLE agencies ADD COLUMN IF NOT EXISTS location_read_key TEXT UNIQUE;`);
   // Default voice codec applied to newly-created channels for this agency.
   // Validated against the VOICE_CODECS list in voiceCodecs.ts; existing
   // rows backfill to 'imbe' so behaviour stays identical to pre-multi-codec.
