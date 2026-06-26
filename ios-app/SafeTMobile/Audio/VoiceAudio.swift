@@ -115,6 +115,41 @@ final class VoiceAudio {
         ) { [weak self] _ in
             self?.jitterBuffer.setBackgrounded(false)
         })
+        // Recover audio after an interruption (incoming call, Siri, another app's
+        // audio, a clock alarm) or an engine config/route change (Bluetooth
+        // connect/disconnect, speaker switch). Without this the engine stays
+        // stopped once the interruption ends and RX goes permanently silent —
+        // the "background audio cuts out and never comes back" bug.
+        lifecycleObservers.append(center.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self,
+                  let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  AVAudioSession.InterruptionType(rawValue: raw) == .ended else { return }
+            self.recoverAudio(reactivateSession: true)
+        })
+        lifecycleObservers.append(center.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
+        ) { [weak self] _ in
+            // A route/format change stops the engine; the session is still
+            // active, so just restart the graph.
+            self?.recoverAudio(reactivateSession: false)
+        })
+    }
+
+    /// Restart the playback engine + players after an interruption or config
+    /// change so background RX resumes instead of staying silent. Each step is
+    /// guarded, so it's a no-op when audio is already healthy.
+    private func recoverAudio(reactivateSession: Bool) {
+        if reactivateSession {
+            try? AVAudioSession.sharedInstance().setActive(true, options: [])
+        }
+        if !engine.isRunning {
+            engine.prepare()
+            do { try engine.start() } catch { return }
+        }
+        if !player.isPlaying { player.play() }
+        if !replayPlayer.isPlaying { replayPlayer.play() }
     }
     #else
     private func observeAppLifecycle() {}
