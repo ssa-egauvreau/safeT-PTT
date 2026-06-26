@@ -27,6 +27,13 @@ contextBridge.exposeInMainWorld("api", {
   openSafeT: () => ipcRenderer.invoke("safet:open"),
   getAutoStart: () => ipcRenderer.invoke("autostart:get"),
   setAutoStart: (enabled) => ipcRenderer.invoke("autostart:set", enabled),
+  checkForUpdates: () => ipcRenderer.invoke("update:check"),
+  installUpdate: () => ipcRenderer.invoke("update:install"),
+  onUpdateStatus: (cb) => {
+    const listener = (_e, s) => cb(s);
+    ipcRenderer.on("update-status", listener);
+    return () => ipcRenderer.removeListener("update-status", listener);
+  },
   onLog: (cb) => {
     const listener = (_e, line) => cb(line);
     ipcRenderer.on("pipeline-log", listener);

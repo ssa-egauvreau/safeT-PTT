@@ -38,7 +38,8 @@ Windows installer you then double-click.
 Open `\\wsl.localhost\Ubuntu\home\<you>\safeT-PTT\sdr-bridge\desktop\` in File
 Explorer and double-click **`Build SafeT SDR.cmd`**. It installs the build tools
 (first run downloads Electron, a few minutes), builds the installer, and opens the
-`dist` folder. Run the `SafeT SDR Setup 1.0.0.exe` it produces.
+`dist` folder. Run the `SafeT SDR Setup <version>.exe` it produces (the
+`<version>` matches `package.json` — currently 1.12.0).
 
 ### Or build by hand
 
@@ -48,7 +49,7 @@ In Ubuntu:
 cd ~/safeT-PTT/sdr-bridge/desktop
 sudo apt-get install -y wine64 || sudo apt-get install -y wine   # needed to build a Windows installer from Linux
 npm install
-npm run dist        # -> dist/SafeT SDR Setup 1.0.0.exe
+npm run dist        # -> dist/SafeT SDR Setup <version>.exe
 ```
 
 (Prefer building on Windows? Install Node for Windows, then run `npm install` and
@@ -56,13 +57,59 @@ npm run dist        # -> dist/SafeT SDR Setup 1.0.0.exe
 
 ## Install & use
 
-1. Run the generated **`SafeT SDR Setup 1.0.0.exe`** → installs with a desktop +
-   Start-menu icon.
-2. Double-click **SafeT SDR**.
-3. **Settings** tab → fill in radio settings, Icecast passwords, SafeT login → **Save**.
+1. Run the generated **`SafeT SDR Setup <version>.exe`** (from the `dist` folder) →
+   installs with a Desktop + Start-menu icon.
+   > **You must run the installer.** Launching via `npm start` / `electron .` or
+   > from `dist\win-unpacked` is *not* the installed app — its taskbar entry has
+   > no stable identity and won't pin properly. Always install the Setup `.exe`.
+2. **Pin it to the taskbar:** open the Start menu, find **SafeT SDR**, right-click →
+   **Pin to taskbar** (or **More → Pin to taskbar**). Now it's one click — no
+   folders, no commands. (If you had pinned an older dev build, unpin it first so
+   the pin points at the freshly installed app.)
+3. Launch **SafeT SDR**.
+4. **Settings** tab → fill in radio settings, Icecast passwords, SafeT login → **Save**.
    Tick **Start automatically when I log in** if you want it hands-off.
-4. **Dashboard** tab → **Start**. Approve the one admin prompt (to attach the dongle).
-5. Watch the status cards go green. Use **Open SafeT console** to manage talkgroups.
+5. **Dashboard** tab → **Start**. Approve the one admin prompt (to attach the dongle).
+6. Watch the status cards go green. Use **Open SafeT console** to manage talkgroups.
+
+## Updating the app
+
+Once a build with auto-update is installed, the app keeps itself current: it
+checks for updates at launch and every 6 hours, **silently downloads** a newer
+version in the background, and installs it the next time you quit (or click
+**Restart now** when the "update ready" prompt appears). The **⟳ Updates** button
+in the top bar checks on demand. If the update server is unreachable, the app
+just keeps running on its current version — updates never block startup.
+
+**How releases are published (one-time setup).** Auto-update pulls from a
+separate, **public** binaries-only GitHub repo so the main `safeT-PTT` repo can
+stay private without baking any token into the app:
+
+1. Create a public repo for releases — default name `ssa-egauvreau/safet-sdr-releases`
+   (to use a different name, change the `publish:` block in `electron-builder.yml`).
+2. In the `safeT-PTT` repo settings, add a secret **`RELEASES_TOKEN`** = a GitHub
+   PAT with **Contents: read/write** on that releases repo (the default
+   `GITHUB_TOKEN` can't push to a different repo).
+
+**Shipping a new version:**
+
+1. Make your changes, bump `version` in `package.json` (the UI shows it next to
+   the logo — that's how you confirm a client picked up new code).
+2. Commit, then push a tag: `git tag sdr-desktop-v1.12.0 && git push origin sdr-desktop-v1.12.0`.
+3. The **Release SafeT SDR Desktop** GitHub Action builds the Windows installer
+   and publishes `SafeT SDR Setup <version>.exe` + `latest.yml` to the releases
+   repo. Installed clients pick it up within ~6 hours (or immediately via **⟳ Updates**).
+
+> **First time only:** auto-update activates for versions published *after* the
+> first auto-update-capable build is installed. Install **1.12.0** manually once
+> (build it, or download it from the releases repo); every version after that
+> updates itself.
+>
+> **Code signing / SmartScreen:** the installer is unsigned, so Windows
+> SmartScreen shows an "unknown publisher" prompt on first install and may
+> reappear on each update (click **More info → Run anyway**). This is expected for
+> an internal app. To silence it, sign the build (e.g. Azure Trusted Signing) by
+> setting `CSC_LINK`/`CSC_KEY_PASSWORD` in the release workflow.
 
 ## How it maps to the old manual steps
 

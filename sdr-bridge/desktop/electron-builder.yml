@@ -30,3 +30,15 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: SafeT SDR
   artifactName: ${productName} Setup ${version}.${ext}
+
+# Auto-update feed. The installer + latest.yml are published to a SEPARATE,
+# PUBLIC "releases" repo (binaries only, no source). electron-updater reads
+# release assets over GitHub's CDN with NO token, so the main safeT-PTT repo can
+# stay PRIVATE and clients still update. To use a different repo/owner, change
+# the two lines below (and point the CI release workflow's RELEASES_TOKEN at it).
+# See sdr-bridge/desktop/README.md → "Updating the app".
+publish:
+  - provider: github
+    owner: ssa-egauvreau
+    repo: safet-sdr-releases
+    releaseType: release

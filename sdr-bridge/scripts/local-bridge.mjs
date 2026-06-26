@@ -14,7 +14,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createSocket } from "node:dgram";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isAuthWsFailure, wsFailureAuthAction, wsFailureText } from "./lib/ws-auth.mjs";
@@ -187,6 +187,7 @@ function statusRow(b) {
       lastTxAudioPct: null, // % of the keyed span that had real decoded audio
       txCount: 0,
       via: null, // for scan rows: which talkgroup fed the last clip
+      recent: [], // for scan rows: rolling history of the last calls heard on this feed
     };
     chanStatus.set(b.name, r);
   }
@@ -198,6 +199,8 @@ function mark(b, patch) {
   statusDirty = true;
 }
 
+const SCAN_RECENT_CAP = 20; // how many recent calls each scan feed remembers
+
 function markTxFrame(b, now, via = null) {
   const r = statusRow(b);
   if (!r.transmitting) {
@@ -205,6 +208,16 @@ function markTxFrame(b, now, via = null) {
     r.lastTxStartMs = now;
     r.txCount++;
     r._txRx0 = r.rxBytes || 0; // decode-coverage baseline for this transmission
+    // Scan rows log each call that crosses the feed so the desktop can show
+    // WHAT traffic went to "Scan All", not just the most recent label. durMs is
+    // filled in below when the call ends (no closing frame ever arrives). The
+    // radio ID isn't carried on the tagged UDP path, so source stays null here.
+    if (r.scan && via) {
+      const entry = { label: via, tgid: monitor.holderTgid ?? null, source: null, atMs: now, durMs: null };
+      r.recent.unshift(entry);
+      if (r.recent.length > SCAN_RECENT_CAP) r.recent.length = SCAN_RECENT_CAP;
+      r._openRecent = entry;
+    }
   }
   r.lastFrameMs = now;
   if (via) r.via = via;
@@ -228,6 +241,11 @@ setInterval(() => {
       const got = (r.rxBytes || 0) - (r._txRx0 ?? 0);
       r.lastTxAudioPct =
         !r.scan && expected > 300 ? Math.max(0, Math.min(100, Math.round((got / expected) * 100))) : null;
+      // Close out the scan-history entry opened at tx start with its duration.
+      if (r._openRecent) {
+        r._openRecent.durMs = r.lastTxDurMs;
+        r._openRecent = null;
+      }
       statusDirty = true;
     }
   }
@@ -235,12 +253,28 @@ setInterval(() => {
   // desktop app's PROOF OF LIFE for this process (pgrep proved unreliable).
   if (!statusDirty && ++heartbeatTick % 5 !== 0) return;
   statusDirty = false;
+  writeStatus(now);
+}, 1000).unref();
+
+/** Serialize the status atomically: write a temp file then rename(2) over the
+ * real one. A plain writeFileSync is NOT atomic — the desktop's `cat` can catch
+ * a half-written multi-KB file, JSON.parse throws, and the whole Channels panel
+ * blanks for that poll. rename within the same dir (/tmp) is atomic, so a reader
+ * always sees either the old or the new COMPLETE file. The replacer drops
+ * internal `_`-prefixed bookkeeping (e.g. _txRx0, _openRecent) from the file. */
+function writeStatus(now) {
   try {
-    writeFileSync(STATUS_FILE, JSON.stringify({ updatedAt: now, bridges: [...chanStatus.values()] }));
+    const json = JSON.stringify(
+      { updatedAt: now, bridges: [...chanStatus.values()] },
+      (k, v) => (k[0] === "_" ? undefined : v),
+    );
+    const tmp = STATUS_FILE + ".tmp";
+    writeFileSync(tmp, json);
+    renameSync(tmp, STATUS_FILE);
   } catch {
     /* status is best-effort */
   }
-}, 1000).unref();
+}
 
 // "Scan All" hub: monitor bridges (source /monitor) are fed by whichever
 // talkgroup is currently keyed — a scanner that plays one call at a time. The
@@ -255,6 +289,7 @@ const MONITOR_HOLD_EXPIRE_MS = 1500;
 const monitor = {
   members: [], // { ws, bridge }
   holder: null,
+  holderTgid: null, // numeric talkgroup id of the current holder (for scan history)
   lastFrameMs: 0,
   /** holder name -> "end your silence hang now" (a paced sender's cut()). */
   cutters: new Map(),
@@ -271,10 +306,13 @@ const monitor = {
   contend(name) {
     if (this.holder && this.holder !== name) this.cutters.get(this.holder)?.();
   },
-  claim(name) {
+  claim(name, tgid = null) {
     const now = Date.now();
     if (this.holder !== null && now - this.lastFrameMs > MONITOR_HOLD_EXPIRE_MS) this.holder = null;
-    if (this.holder === null) this.holder = name;
+    if (this.holder === null) {
+      this.holder = name;
+      this.holderTgid = tgid;
+    }
     if (this.holder !== name) return false;
     this.lastFrameMs = now;
     return true;
@@ -409,7 +447,7 @@ function runScanAllIngest(port, tgRoutes, tgNames) {
     (frame, silent) => {
       // Claim on every emitted frame — silence fill included — so the hold
       // survives decode gaps and the call stays ONE transmission on scan.
-      if (currentName && monitor.claim(currentName)) monitor.send(frame, silent);
+      if (currentName && monitor.claim(currentName, currentTg)) monitor.send(frame, silent);
     },
     {
       onHangEnd: () => {
@@ -433,7 +471,7 @@ function runScanAllIngest(port, tgRoutes, tgNames) {
       if (paced.draining()) return; // previous call still playing — one at a time
       paced.cut(); // only hanging on silence: yield the feed to the new call
     }
-    if (!monitor.claim(name)) {
+    if (!monitor.claim(name, tgid)) {
       monitor.contend(name); // holder may just be silence-hanging — cut it
       return;
     }
@@ -578,7 +616,7 @@ function runBridge(bridge, udpPort, { portIsPrimary = false } = {}) {
       }
       // Also feed the Scan-All channels. Silence fill claims too, so the scan
       // hold survives decode gaps and the call stays one transmission there.
-      if (monitor.claim(bridge.name)) monitor.send(frame, silent);
+      if (monitor.claim(bridge.name, srow.tgid)) monitor.send(frame, silent);
       else if (!silent) monitor.contend(bridge.name);
     },
     {
