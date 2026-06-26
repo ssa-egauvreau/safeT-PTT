@@ -55,5 +55,19 @@ final class RadioLiveActivityController {
         guard let prior else { return }
         Task { await prior.end(nil, dismissalPolicy: .immediate) }
     }
+
+    /// Ends any Live Activities left running by a *previous* process — e.g. a
+    /// crash or force-quit that skipped the normal `end()` paths and stranded
+    /// the activity on the Lock Screen / Dynamic Island. After such an exit the
+    /// system-side activity is still alive, but this fresh singleton's
+    /// `currentActivity` is nil, so nothing would otherwise reap it. Safe to
+    /// call at launch and on foreground: it never ends the activity this
+    /// process currently owns.
+    func endOrphanedActivities() {
+        let keepId = currentActivity?.id
+        for activity in Activity<RadioActivityAttributes>.activities where activity.id != keepId {
+            Task { await activity.end(nil, dismissalPolicy: .immediate) }
+        }
+    }
 }
 #endif

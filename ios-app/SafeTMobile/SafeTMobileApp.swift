@@ -12,6 +12,20 @@ struct SafeTMobileApp: App {
     }()
     @StateObject private var settings = SettingsStore.shared
 
+    init() {
+        #if canImport(ActivityKit)
+        if #available(iOS 16.2, *) {
+            // A crash or force-quit can't run our normal Live Activity end()
+            // paths, so an activity from the previous process can stay stranded
+            // on the Lock Screen / Dynamic Island. Reap any such orphans at
+            // launch, before the radio requests a fresh one.
+            Task { @MainActor in
+                RadioLiveActivityController.shared.endOrphanedActivities()
+            }
+        }
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
