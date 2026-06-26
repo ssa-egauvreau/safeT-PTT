@@ -60,7 +60,6 @@ final class RadioViewModel: ObservableObject {
     private var hardwarePttCancellable: AnyCancellable?
     private var volumeCancellable: AnyCancellable?
     private var routeCancellable: AnyCancellable?
-    private var listenModeCancellable: AnyCancellable?
     private var remotePttObserver: NSObjectProtocol?
     private var lastReceivedAudio = Data()
 
@@ -544,11 +543,6 @@ final class RadioViewModel: ObservableObject {
         routeCancellable = SettingsStore.shared.$audioRoute
             .receive(on: RunLoop.main)
             .sink { AudioSessionManager.applyRoute($0) }
-        // Live-apply the experimental media-listen toggle so the operator can
-        // compare the two RX paths on one build without relaunching.
-        listenModeCancellable = SettingsStore.shared.$mediaListenMode
-            .receive(on: RunLoop.main)
-            .sink { [weak self] enabled in self?.voiceAudio.updateListenMode(enabled) }
         voiceTransport.onJoined = { [weak self] joined in
             guard let self else { return }
             // The joined ack names the channel's TX codec — drive the badge.
@@ -631,9 +625,6 @@ final class RadioViewModel: ObservableObject {
             uiState.statusMessage = "MIC DENIED — VOICE OFF"
             return
         }
-        // Authoritative set before the engine starts; the toggle sink applies any
-        // later live change. Both read the same SettingsStore value.
-        voiceAudio.mediaListenMode = SettingsStore.shared.mediaListenMode
         do {
             try voiceAudio.start()
             voiceStarted = true

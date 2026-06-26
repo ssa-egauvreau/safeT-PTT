@@ -64,15 +64,6 @@ final class SettingsStore: ObservableObject {
     @Published var playbackVolume: Float {
         didSet { defaults.set(playbackVolume, forKey: Keys.playbackVolume) }
     }
-    /// Experimental "media-style" listening: while only monitoring, use a
-    /// `.playback` audio session instead of the always-on voice-call session, so
-    /// iOS stops treating the app as an ongoing phone call (no constant mic-in-use
-    /// indicator, other audio isn't commandeered). The voice-call session is
-    /// brought up only for the duration of a transmission. Default off keeps the
-    /// known-good always-on voice path.
-    @Published var mediaListenMode: Bool {
-        didSet { defaults.set(mediaListenMode, forKey: Keys.mediaListenMode) }
-    }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -83,7 +74,6 @@ final class SettingsStore: ObservableObject {
         audioRoute = AudioRoute(rawValue: rawRoute) ?? .auto
         notificationSoundsEnabled = (defaults.object(forKey: Keys.notificationSounds) as? Bool) ?? true
         playbackVolume = defaults.object(forKey: Keys.playbackVolume) as? Float ?? 1.0
-        mediaListenMode = defaults.bool(forKey: Keys.mediaListenMode)
     }
 
     // MARK: - Scan selection persistence
@@ -111,7 +101,6 @@ final class SettingsStore: ObservableObject {
         static let audioRoute = "safet.audioRoute"
         static let notificationSounds = "safet.notificationSoundsEnabled"
         static let playbackVolume = "safet.playbackVolume"
-        static let mediaListenMode = "safet.mediaListenMode"
         static let scanChannels = "safet.scanIncludedChannels"
         static let scanActive = "safet.scanActive"
     }
