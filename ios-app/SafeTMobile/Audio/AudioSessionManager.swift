@@ -9,6 +9,14 @@ import AVFoundation
 /// voice-processing I/O's fixed 16 kHz clock/buffering. RX integrity wins over
 /// loudness, so `.voiceChat` stays; the volume work is handled separately without
 /// touching the playback path.
+///
+/// `configureForListen()` is the opt-in "media-style" alternative (Settings →
+/// Audio → Media Audio Mode): a `.playback` session used WHILE ONLY MONITORING
+/// so iOS no longer treats the app as an ongoing phone call. `VoiceAudio` swaps
+/// to `configureForVoice()` for the duration of each transmission and back. The
+/// always-on path (`configureForVoice()` held for the whole session) remains the
+/// default precisely because it sidesteps the 16 kHz→48 kHz resample the
+/// `.playback` listen path has to do.
 enum AudioSessionManager {
     static func configureForVoice() throws {
         let session = AVAudioSession.sharedInstance()
@@ -23,6 +31,28 @@ enum AudioSessionManager {
         )
         try session.setActive(true, options: [])
         applyRoute(SettingsStore.shared.audioRoute)
+    }
+
+    /// Media-style listen session for `mediaListenMode`: `.playback` opens NO
+    /// input, so iOS shows no mic-in-use indicator and the app isn't treated as a
+    /// live call while the operator is only monitoring. RX plays at full media
+    /// loudness through the current output route (speaker, or A2DP Bluetooth /
+    /// wired headphones when connected). The mic-bearing `.playAndRecord` session
+    /// is restored by `configureForVoice()` for the length of each transmission.
+    ///
+    /// Earpiece routing isn't honored here — `overrideOutputAudioPort(.speaker)`
+    /// and receiver routing are `.playAndRecord` concepts — so `.playback` always
+    /// uses the loud route, which is what we want for hands-off monitoring anyway.
+    static func configureForListen() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(
+            .playback,
+            mode: .default,
+            // A2DP so incoming voice reaches Bluetooth headphones / a car stereo;
+            // no HFP mic profile is needed because `.playback` never opens input.
+            options: [.allowBluetoothA2DP]
+        )
+        try session.setActive(true, options: [])
     }
 
     static func deactivate() {

@@ -124,10 +124,13 @@ struct SettingsScreen: View {
             }
             .foregroundColor(.safetText)
             .tint(.safetGreen)
+            Toggle("Media Audio Mode (Beta)", isOn: $settings.mediaListenMode)
+                .tint(.safetGreen)
+                .foregroundColor(.safetText)
         } header: {
             Text("Audio")
         } footer: {
-            Text("Notification sounds cover channel-switch beeps and PTT cues. Emergency alerts always play regardless of this setting. Playback volume controls incoming voice audio.")
+            Text("Notification sounds cover channel-switch beeps and PTT cues. Emergency alerts always play regardless of this setting. Playback volume controls incoming voice audio.\n\nMedia Audio Mode (Beta): while you're only listening, the app behaves like a media player instead of holding an open phone call — no constant in-use mic dot, and your other audio isn't taken over. It switches to call-quality audio while you transmit. If incoming voice sounds garbled or the start of your transmission gets clipped, turn this off.")
                 .font(.safet(size: 11))
                 .foregroundColor(.safetTextDim)
         }
