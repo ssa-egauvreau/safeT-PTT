@@ -54,7 +54,11 @@ final class VoiceTransport {
 
     private let txConditioner = ImbeTxConditioner()
     private var pcmAcc = Data()
-    private var pcmFrameScratch = Data(count: P25ImbeNative.Frames.pcm16kFrameBytes)
+    // The per-frame encode scratch is a LOCAL var in sendCapturedOnMain /
+    // flushUplinkTail, never a shared instance buffer: it's mutated in place via
+    // withUnsafeMutableBytes + native pointer indexing, so a Data reused across
+    // those two methods is a heap-corruption footgun (the crash seen while
+    // holding PTT traps in a Data buffer mutation on this path).
     private var lastConsumeNs: UInt64 = 0
     private var warnedClearTx = false
     /// Tracks the codec the last frame was encoded with so a mid-stream
@@ -226,9 +230,8 @@ final class VoiceTransport {
         if padded.count < frameBytes {
             padded.append(Data(count: frameBytes - padded.count))
         }
-        pcmFrameScratch = padded
-        txConditioner.conditionLe16(frame: &pcmFrameScratch, bypassExpanderAgc: bypassMicProcessing)
-        guard let packet = encoder.encodeFrame(pcmFrameScratch) else { return }
+        txConditioner.conditionLe16(frame: &padded, bypassExpanderAgc: bypassMicProcessing)
+        guard let packet = encoder.encodeFrame(padded) else { return }
         task.send(.data(packet)) { _ in }
         VoiceLinkTelemetryReporter.shared.recordBytesSent(packet.count)
     }
@@ -305,11 +308,11 @@ final class VoiceTransport {
             // backing header, which later traps in flushUplinkTail's removeAll.
             // `Data(_:)` forces a uniquely-owned contiguous copy (same guard
             // flushUplinkTail already applies to its staged tail frame).
-            pcmFrameScratch = Data(pcmAcc.prefix(frameBytes))
+            var scratch = Data(pcmAcc.prefix(frameBytes))
             pcmAcc.removeFirst(frameBytes)
 
-            txConditioner.conditionLe16(frame: &pcmFrameScratch, bypassExpanderAgc: bypassMicProcessing)
-            guard let packet = encoder.encodeFrame(pcmFrameScratch) else { continue }
+            txConditioner.conditionLe16(frame: &scratch, bypassExpanderAgc: bypassMicProcessing)
+            guard let packet = encoder.encodeFrame(scratch) else { continue }
             task.send(.data(packet)) { _ in }
             VoiceLinkTelemetryReporter.shared.recordBytesSent(packet.count)
         }
