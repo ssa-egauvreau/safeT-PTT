@@ -55,6 +55,9 @@ export interface AgencyRow {
   name: string;
   slug: string;
   radio_key: string | null;
+  /** Read-only key for external location-map integrations; null until issued.
+   *  Grants only GET /locations + /locations/history, never PTT/admin. */
+  location_read_key: string | null;
   disabled: boolean;
   created_at: string;
   /** Codec applied to new channels created in this agency. Existing
@@ -80,7 +83,7 @@ export interface AgencySummary extends AgencyRow {
 }
 
 const AGENCY_COLS =
-  "id, name, slug, radio_key, disabled, created_at, default_codec, stripe_customer_id, stripe_subscription_id, subscription_status, plan_tier, trial_ends_at, transmission_retention_days, logs_unlimited, billing_email, signup_completed_at, trial_email_used";
+  "id, name, slug, radio_key, location_read_key, disabled, created_at, default_codec, stripe_customer_id, stripe_subscription_id, subscription_status, plan_tier, trial_ends_at, transmission_retention_days, logs_unlimited, billing_email, signup_completed_at, trial_email_used";
 
 type AgencyRowRaw = Omit<AgencyRow, "default_codec" | "subscription_status" | "plan_tier"> & {
   default_codec: string;
@@ -148,7 +151,7 @@ export async function uniqueAgencySlug(name: string): Promise<string> {
 export async function listAgencies(): Promise<AgencySummary[]> {
   type Raw = Omit<AgencySummary, "default_codec"> & { default_codec: string };
   const res = await requirePool().query<Raw & AgencyRowRaw>(
-    `SELECT a.id, a.name, a.slug, a.radio_key, a.disabled, a.created_at, a.default_codec,
+    `SELECT a.id, a.name, a.slug, a.radio_key, a.location_read_key, a.disabled, a.created_at, a.default_codec,
             a.stripe_customer_id, a.stripe_subscription_id, a.subscription_status, a.plan_tier,
             a.trial_ends_at, a.transmission_retention_days, a.logs_unlimited, a.billing_email,
             a.signup_completed_at, a.trial_email_used,
@@ -184,6 +187,23 @@ export async function getAgencyByRadioKey(key: string): Promise<AgencyRow | null
     [key.trim()],
   );
   return res.rows[0] ? asAgencyRow(res.rows[0]) : null;
+}
+
+/** Resolves the agency for a read-only location-feed request from its key. */
+export async function getAgencyByLocationKey(key: string): Promise<AgencyRow | null> {
+  if (!key.trim()) {
+    return null;
+  }
+  const res = await requirePool().query<AgencyRowRaw>(
+    `SELECT ${AGENCY_COLS} FROM agencies WHERE location_read_key = $1 AND disabled = FALSE;`,
+    [key.trim()],
+  );
+  return res.rows[0] ? asAgencyRow(res.rows[0]) : null;
+}
+
+/** Issues (`key`) or revokes (`null`) an agency's read-only location-feed key. */
+export async function setLocationReadKey(agencyId: number, key: string | null): Promise<void> {
+  await requirePool().query(`UPDATE agencies SET location_read_key = $2 WHERE id = $1;`, [agencyId, key]);
 }
 
 /**
@@ -1903,15 +1923,28 @@ export async function upsertPosition(input: {
   }
 }
 
-export async function listPositions(agencyId: number): Promise<RadioPosition[]> {
+/**
+ * Latest fix per unit for an agency, newest-first. When `since` (an ISO-8601
+ * timestamp) is given, only units whose fix changed strictly after it are
+ * returned — the delta a polling map integration uses to avoid re-pulling the
+ * full roster every tick. An unparseable `since` is ignored (full list).
+ */
+export async function listPositions(agencyId: number, since?: string): Promise<RadioPosition[]> {
+  const where = ["p.agency_id = $1"];
+  const vals: unknown[] = [agencyId];
+  const sinceTrimmed = since?.trim();
+  if (sinceTrimmed && Number.isFinite(Date.parse(sinceTrimmed))) {
+    where.push(`p.updated_at > $2::timestamptz`);
+    vals.push(sinceTrimmed);
+  }
   const res = await requirePool().query<RadioPosition>(
     `SELECT p.unit_id, p.user_id, p.display_name, p.channel_name, p.lat, p.lon,
             p.accuracy_m, p.heading, p.speed_mps, p.client_type, p.updated_at,
             u.device_type
      FROM radio_positions p
      LEFT JOIN users u ON u.id = p.user_id
-     WHERE p.agency_id = $1 ORDER BY p.updated_at DESC;`,
-    [agencyId],
+     WHERE ${where.join(" AND ")} ORDER BY p.updated_at DESC;`,
+    vals,
   );
   return res.rows;
 }

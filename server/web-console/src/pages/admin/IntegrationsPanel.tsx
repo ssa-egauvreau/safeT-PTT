@@ -150,6 +150,8 @@ export function IntegrationsPanel() {
 
       {error && <p className="error">{error}</p>}
 
+      <LocationKeyCard />
+
       {data?.prompt_source === "sunset_bundled" && (
         <p className="muted" style={{ marginBottom: "1rem", maxWidth: "52rem" }}>
           Your agency uses the <strong>built-in Sunset Safety dispatcher prompt</strong> from the
@@ -206,6 +208,144 @@ export function IntegrationsPanel() {
         Refresh
       </button>
     </div>
+  );
+}
+
+/**
+ * Read-only location-feed key for external map integrations (e.g. a parking /
+ * patrol console plotting radio positions). The key authenticates only the
+ * GET /locations + /locations/history endpoints — never PTT, admin, or any
+ * write — so it's safe to hand to a third-party server.
+ */
+function LocationKeyCard() {
+  const [key, setKey] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [reveal, setReveal] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void api
+      .getLocationKey()
+      .then((res) => {
+        if (alive) {
+          setKey(res.location_read_key);
+        }
+      })
+      .catch((err) => {
+        if (alive) {
+          setError(describeError(err));
+        }
+      })
+      .finally(() => {
+        if (alive) {
+          setLoaded(true);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function rotate() {
+    const verb = key ? "Rotate" : "Generate";
+    if (key && !window.confirm("Rotate the location key? The current key stops working immediately.")) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.rotateLocationKey();
+      setKey(res.location_read_key);
+      setReveal(true);
+    } catch (err) {
+      setError(`${verb} failed: ${describeError(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke() {
+    if (!window.confirm("Revoke the location key? Any external map using it loses access. Handsets are unaffected.")) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.revokeLocationKey();
+      setKey(null);
+      setReveal(false);
+    } catch (err) {
+      setError(`Revoke failed: ${describeError(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function copy() {
+    if (!key) {
+      return;
+    }
+    void navigator.clipboard?.writeText(key).then(
+      () => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      },
+      () => undefined,
+    );
+  }
+
+  return (
+    <section className="card-like" style={{ marginBottom: "1.5rem", maxWidth: "52rem", padding: "1rem 1.25rem" }}>
+      <h3 style={{ marginTop: 0, fontSize: "1rem" }}>Location feed key (external maps)</h3>
+      <p className="muted" style={{ fontSize: "0.9rem", marginBottom: "0.75rem" }}>
+        A <strong>read-only</strong> key an outside system (e.g. a patrol / parking map) uses to pull
+        your radios' live GPS positions server-side. It unlocks only the location endpoints —{" "}
+        <strong>never PTT, admin, or any change</strong> — and is separate from your handset radio
+        key, so revoking it here never disturbs handsets. The consumer sends it as the{" "}
+        <code>X-SafeT-Location-Key</code> header against{" "}
+        <code>/v1/locations</code> and <code>/v1/locations/history</code>.
+      </p>
+
+      {error && <p className="error">{error}</p>}
+
+      {!loaded ? (
+        <p className="muted">Loading…</p>
+      ) : key ? (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+            <input
+              type={reveal ? "text" : "password"}
+              className="input"
+              readOnly
+              value={key}
+              style={{ width: "100%", maxWidth: "28rem", fontFamily: "monospace" }}
+              onFocus={(e) => e.currentTarget.select()}
+            />
+            <button type="button" className="btn secondary" onClick={() => setReveal((v) => !v)}>
+              {reveal ? "Hide" : "Reveal"}
+            </button>
+            <button type="button" className="btn secondary" onClick={copy}>
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button type="button" className="btn secondary" disabled={busy} onClick={() => void rotate()}>
+              {busy ? "Working…" : "Rotate"}
+            </button>
+            <button type="button" className="btn secondary" disabled={busy} onClick={() => void revoke()}>
+              Revoke
+            </button>
+          </div>
+        </>
+      ) : (
+        <button type="button" className="btn" disabled={busy} onClick={() => void rotate()}>
+          {busy ? "Generating…" : "Generate key"}
+        </button>
+      )}
+    </section>
   );
 }
 

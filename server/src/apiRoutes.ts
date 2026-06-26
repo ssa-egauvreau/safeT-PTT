@@ -49,6 +49,7 @@ import {
   deleteUser,
   generateRadioKey,
   getAgencyById,
+  getAgencyByLocationKey,
   getAgencyBySlug,
   getChannelById,
   getChannelByName,
@@ -73,6 +74,7 @@ import {
   listAgencies,
   listAlerts,
   setAlertImage,
+  setLocationReadKey,
   getAlertImage,
   addAlertResponse,
   listAlertResponses,
@@ -459,6 +461,36 @@ function requireAgencyMember(req: Request, res: Response, next: NextFunction): v
 /** Agency a key-authenticated handset request belongs to (0 only in DB-less local dev). */
 function radioAgencyId(req: Request): number {
   return req.agency?.id ?? 0;
+}
+
+/**
+ * Agency authorized to read the location feed, for an endpoint reachable two
+ * ways: a signed-in agency member (console JWT), or a read-only location key
+ * (header `X-SafeT-Location-Key` or `?location_key=`) issued to an external
+ * map integration. The key grants ONLY the location read endpoints — it is
+ * never accepted for PTT, admin, or any write. Resolves to `{ agencyId }`, or
+ * `{ status, error }` describing how to reject.
+ */
+async function resolveLocationReadAgency(
+  req: Request,
+): Promise<{ agencyId: number } | { status: number; error: string }> {
+  if (req.authUser) {
+    if (req.authUser.agencyId == null) {
+      return { status: 403, error: "forbidden" };
+    }
+    return { agencyId: req.authUser.agencyId };
+  }
+  const headerRaw = req.headers["x-safet-location-key"];
+  const headerVal = Array.isArray(headerRaw) ? headerRaw[0] : headerRaw;
+  const key = (headerVal ?? (typeof req.query.location_key === "string" ? req.query.location_key : null))?.trim();
+  if (!key) {
+    return { status: 401, error: "unauthorized" };
+  }
+  const agency = await getAgencyByLocationKey(key).catch(() => null);
+  if (!agency || agency.disabled) {
+    return { status: 401, error: "unauthorized" };
+  }
+  return { agencyId: agency.id };
 }
 
 /** ISO-8601 UTC for handset clients (pg may return Date or string). */
@@ -3699,9 +3731,18 @@ export function createApiRouter(): Router {
     }
   });
 
-  router.get("/locations", requireAgencyMember, async (req, res) => {
+  // Live positions for the agency. Reachable by a console JWT or a read-only
+  // location key (see resolveLocationReadAgency). `?since=<iso>` returns only
+  // units whose fix changed after that time — the delta a polling map uses.
+  router.get("/locations", async (req, res) => {
     try {
-      res.json({ positions: await listPositions(req.authUser!.agencyId!) });
+      const access = await resolveLocationReadAgency(req);
+      if ("status" in access) {
+        res.status(access.status).json({ error: access.error });
+        return;
+      }
+      const since = typeof req.query.since === "string" ? req.query.since : undefined;
+      res.json({ positions: await listPositions(access.agencyId, since) });
     } catch (error) {
       fail(res, error);
     }
@@ -3733,8 +3774,14 @@ export function createApiRouter(): Router {
   });
 
   // Recorded GPS track for one radio — drives the map's "search GPS logs" tool.
-  router.get("/locations/history", requireAgencyMember, async (req, res) => {
+  // Same dual auth as GET /locations (console JWT or read-only location key).
+  router.get("/locations/history", async (req, res) => {
     try {
+      const access = await resolveLocationReadAgency(req);
+      if ("status" in access) {
+        res.status(access.status).json({ error: access.error });
+        return;
+      }
       const unit = String(req.query.unit ?? "").trim().toUpperCase();
       if (!unit) {
         res.status(400).json({ error: "missing_unit" });
@@ -3743,12 +3790,47 @@ export function createApiRouter(): Router {
       const from = typeof req.query.from === "string" ? req.query.from : undefined;
       const to = typeof req.query.to === "string" ? req.query.to : undefined;
       const samples = await listPositionHistory({
-        agencyId: req.authUser!.agencyId!,
+        agencyId: access.agencyId,
         unitId: unit,
         from,
         to,
       });
       res.json({ unit, samples });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // --- admin: read-only location-feed key (external map integrations) -----
+  // The key authenticates GET /locations + /locations/history only — never
+  // PTT, admin, or any write. An agency admin issues/rotates/revokes it; hand
+  // it to an external patrol-map (e.g. GateGuard) so it polls positions
+  // server-side without a full operator login.
+  router.get("/admin/location-key", requireAdmin, async (req, res) => {
+    try {
+      const agency = await getAgencyById(req.authUser!.agencyId!);
+      res.json({ location_read_key: agency?.location_read_key ?? null });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Issue or rotate the key (rotating invalidates the previous one immediately).
+  router.post("/admin/location-key", requireAdmin, async (req, res) => {
+    try {
+      const key = generateRadioKey();
+      await setLocationReadKey(req.authUser!.agencyId!, key);
+      res.json({ location_read_key: key });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Revoke the key — external map access stops, handsets are unaffected.
+  router.delete("/admin/location-key", requireAdmin, async (req, res) => {
+    try {
+      await setLocationReadKey(req.authUser!.agencyId!, null);
+      res.json({ ok: true });
     } catch (error) {
       fail(res, error);
     }
