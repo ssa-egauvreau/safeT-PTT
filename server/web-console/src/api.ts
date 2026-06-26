@@ -1281,6 +1281,15 @@ export const api = {
       value,
     }),
 
+  /** Read-only location-feed key for external map integrations (e.g. GateGuard). */
+  getLocationKey: () =>
+    request<{ location_read_key: string | null }>("GET", "/v1/admin/location-key"),
+  /** Issue or rotate the key (rotating invalidates the previous one immediately). */
+  rotateLocationKey: () =>
+    request<{ location_read_key: string }>("POST", "/v1/admin/location-key"),
+  /** Revoke the key — external map access stops, handsets are unaffected. */
+  revokeLocationKey: () => request<{ ok: boolean }>("DELETE", "/v1/admin/location-key"),
+
   /** Latest OTA APK published for handsets (same feed the radio app polls). */
   getAndroidAppRelease: () => request<AndroidAppRelease>("GET", "/v1/app/android/version"),
 
