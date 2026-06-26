@@ -486,8 +486,13 @@ if (window.api.onUpdateStatus) {
     else if (s.state === "none") { m.textContent = ""; toast("You're on the latest version."); }
     else if (s.state === "error") { m.textContent = ""; toast("Update check failed (offline?)."); }
     else if (s.state === "ready") {
-      m.textContent = `v${s.version} ready`;
-      if (confirm(`Update v${s.version} downloaded. Restart SafeT SDR now to install?`)) window.api.installUpdate();
+      m.textContent = `v${s.version} ready — quit to install`;
+      // Only prompt when the window is actually visible; when it's hidden in the
+      // tray a confirm() would block invisibly. Either way it installs on quit
+      // (autoInstallOnAppQuit), and the native toast already notified the user.
+      if (!document.hidden && confirm(`Update v${s.version} downloaded. Restart SafeT SDR now to install?`)) {
+        window.api.installUpdate();
+      }
     }
   });
 }

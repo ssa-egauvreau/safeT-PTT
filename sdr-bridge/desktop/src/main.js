@@ -110,6 +110,14 @@ function showWindow() {
 // current version. Only ever active in an installed (packaged) build.
 function setupAutoUpdate() {
   if (!autoUpdater || !app.isPackaged) return;
+  // Log update activity to a file so a silent "it never updated" can be
+  // diagnosed (the in-app toast is transient). Optional — never fatal.
+  try {
+    autoUpdater.logger = require("electron-log");
+    autoUpdater.logger.transports.file.level = "info";
+  } catch {
+    /* electron-log not installed — updates still work, just unlogged */
+  }
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   const send = (state, extra) => {
