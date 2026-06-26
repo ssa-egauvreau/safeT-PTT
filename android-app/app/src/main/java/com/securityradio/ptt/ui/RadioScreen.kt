@@ -119,6 +119,7 @@ import com.securityradio.ptt.presentation.isLcdNight
 import com.securityradio.ptt.ui.lcd.LcdBatteryIcon
 import com.securityradio.ptt.ui.lcd.LcdBluetoothIcon
 import com.securityradio.ptt.ui.lcd.LcdChevronIcon
+import com.securityradio.ptt.ui.lcd.LcdZoneIcon
 import com.securityradio.ptt.ui.lcd.LcdDayNightIcon
 import com.securityradio.ptt.ui.lcd.LcdEmergencyGlyphIcon
 import com.securityradio.ptt.ui.lcd.LcdGlobeIcon
@@ -3763,16 +3764,16 @@ private fun LcdHardwareKeyLegend(
             line = line,
             onTap = { onEvent(RadioUiEvent.ChannelDown) },
             onHold = { onEvent(RadioUiEvent.ZoneStepDown) },
-            tap = { c, m -> LcdChevronIcon(up = false, color = c, modifier = m) },
-            hold = { c, m -> LcdChevronIcon(up = false, doubled = true, color = c, modifier = m) },
+            tap = { c, _ -> LcdLegendLabel(text = "CH-", styles = styles, color = c) },
+            hold = { c, _ -> LegendZoneArrow(up = false, color = c) },
         )
         LcdLegendSeparator(line)
         LcdSplitLegendKey(
             line = line,
             onTap = { onEvent(RadioUiEvent.ChannelUp) },
             onHold = { onEvent(RadioUiEvent.ZoneStepUp) },
-            tap = { c, m -> LcdChevronIcon(up = true, color = c, modifier = m) },
-            hold = { c, m -> LcdChevronIcon(up = true, doubled = true, color = c, modifier = m) },
+            tap = { c, _ -> LcdLegendLabel(text = "CH+", styles = styles, color = c) },
+            hold = { c, _ -> LegendZoneArrow(up = true, color = c) },
         )
         LcdLegendSeparator(line)
         LcdSplitLegendKey(
@@ -3848,6 +3849,18 @@ private fun RowScope.LcdSplitLegendKey(
                 hold(p.textOnButton, Modifier.size(26.dp))
             }
         }
+    }
+}
+
+/** Zone-step glyph for the legend hold zone: a "Z" with an up/down arrow (zone up / zone down). */
+@Composable
+private fun LegendZoneArrow(up: Boolean, color: Color) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        LcdZoneIcon(color = color, modifier = Modifier.size(20.dp))
+        LcdChevronIcon(up = up, color = color, modifier = Modifier.size(14.dp))
     }
 }
 
