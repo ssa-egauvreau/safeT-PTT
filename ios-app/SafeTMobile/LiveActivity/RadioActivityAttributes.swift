@@ -14,6 +14,14 @@ struct RadioActivityAttributes: ActivityAttributes {
         var channel: String
         var callsign: String?
         var stateLabel: String
+        // Active transmitter ("UNIT · Name") shown on the Dynamic Island while
+        // someone is talking; nil when idle. New fields are appended with `= nil`
+        // defaults so the shared Codable shape stays back-compatible and existing
+        // ContentState(...) call sites keep compiling.
+        var talker: String? = nil
+        // Set when the active talker is on a SCANNED channel rather than the
+        // tuned one, so the island can show e.g. "SCAN · TAC-2".
+        var scanChannel: String? = nil
     }
 }
 #endif
