@@ -95,6 +95,7 @@ const STATUS_FILE = "/tmp/sdr-bridge-status.json";
 const SCAN_RECENT_CAP = 20; // how many recent calls each scan feed remembers
 const rows = new Map();
 let statusDirty = true;
+let heartbeatTick = 0;
 function row(name, channel, scan = false, tgid = null) {
   let r = rows.get(name);
   if (!r) {
@@ -104,7 +105,11 @@ function row(name, channel, scan = false, tgid = null) {
   return r;
 }
 setInterval(() => {
-  if (!statusDirty) return;
+  // Write on change, AND at least every 5s regardless: the file's mtime is the
+  // desktop app's PROOF OF LIFE for this bridge. Without the heartbeat the file
+  // goes stale between calls and the dashboard reads "Stopped" (calls only
+  // refresh it when they happen, and quiet talkgroups can idle for minutes).
+  if (!statusDirty && ++heartbeatTick % 5 !== 0) return;
   statusDirty = false;
   // Atomic write: a plain writeFileSync lets the desktop's `cat` catch a
   // half-written file (JSON.parse throws → the Channels panel blanks). Writing a
