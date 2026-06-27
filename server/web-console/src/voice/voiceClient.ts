@@ -311,6 +311,12 @@ export class VoiceChannelClient {
   private capSource: MediaStreamAudioSourceNode | null = null;
   private capNode: AudioWorkletNode | null = null;
   private transmitting = false;
+  /** Uplink mute deadline (`performance.now()` ms). While this is `> 0` and in the
+   *  future, captured frames are dropped in the worklet callback — keeping the
+   *  local talk-permit tone (and its acoustic tail) off the transmitted audio
+   *  without delaying mic warm-up. Set by `startTransmit`, cleared once it passes
+   *  or on `stopTransmit`. */
+  private uplinkUnmuteAt = 0;
   private markerTimer: number | null = null;
   private readonly localTones = new Set<AudioBufferSourceNode>();
   /** Active looping soundboard tone-outs, keyed by tone-out id. */
@@ -1064,8 +1070,15 @@ export class VoiceChannelClient {
     }
   }
 
-  /** Begins microphone capture and transmission. Throws on permission/mic failure. */
-  async startTransmit(): Promise<void> {
+  /**
+   * Begins microphone capture and transmission. Throws on permission/mic failure.
+   *
+   * `muteUplinkMs` (default 0) suppresses outgoing audio for that many ms after
+   * keying up — used to keep the talk-permit tone the operator hears locally off
+   * the air. The mic path still warms up immediately, so the first words spoken
+   * after the tone transmit normally; only the tone window is dropped.
+   */
+  async startTransmit(muteUplinkMs = 0): Promise<void> {
     if (this.transmitting) {
       return;
     }
@@ -1141,6 +1154,15 @@ export class VoiceChannelClient {
       const ws = this.ws;
       if (!this.transmitting || !ws || ws.readyState !== WebSocket.OPEN || !(event.data instanceof ArrayBuffer)) {
         return;
+      }
+      // Talk-permit mute window: until it passes, drop captured frames so the
+      // permit tone the operator hears locally never ships to peers (nor to the
+      // recorder / AI-dispatch sideband). Mic capture itself keeps running.
+      if (this.uplinkUnmuteAt > 0) {
+        if (performance.now() < this.uplinkUnmuteAt) {
+          return;
+        }
+        this.uplinkUnmuteAt = 0;
       }
       const pcmBuf = event.data;
       if (this.digitalTx) {
@@ -1245,6 +1267,9 @@ export class VoiceChannelClient {
     this.capNode.connect(sink);
     sink.connect(this.capCtx.destination);
 
+    // Arm the talk-permit mute window BEFORE flipping `transmitting` on, so no
+    // captured frame can escape before the gate is in place.
+    this.uplinkUnmuteAt = muteUplinkMs > 0 ? performance.now() + muteUplinkMs : 0;
     this.transmitting = true;
     this.setState("transmitting");
   }
@@ -1254,6 +1279,7 @@ export class VoiceChannelClient {
       return;
     }
     this.transmitting = false;
+    this.uplinkUnmuteAt = 0;
     if (this.capNode) {
       this.capNode.port.onmessage = null;
       this.capNode.disconnect();

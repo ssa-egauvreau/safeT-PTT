@@ -74,6 +74,13 @@ final class VoiceTransport {
     // file in practice.
     var activeCaptureSessionId: UInt64?
 
+    /// Uplink mute deadline (`ProcessInfo.systemUptime`). While this is `> 0` and in
+    /// the future, captured frames are dropped — never encoded, accumulated, or
+    /// sent — so the local talk-permit tone (and its acoustic tail) is kept off the
+    /// air without delaying mic warm-up. Cleared once the window passes or on
+    /// uplink teardown.
+    private var uplinkUnmuteAt: TimeInterval = 0
+
     /// Registry of every voice codec this client can encode + decode (IMBE,
     /// Codec2, Opus, AMBE+2 — same wire format as Android and the web console).
     private let codecRegistry: VoiceCodecRegistry = {
@@ -197,6 +204,16 @@ final class VoiceTransport {
         resetUplinkState()
     }
 
+    /// Mute the uplink for `seconds` from now: frames the mic captures while the
+    /// local permit tone is still sounding are dropped (never encoded or sent), so
+    /// peers never hear the tone or its tail. Capture itself keeps running, so the
+    /// operator's first words right after the tone still make the air. Call this
+    /// AFTER `startUplinkCapture` (which resets the window to 0).
+    func holdUplink(forSeconds seconds: TimeInterval) {
+        guard seconds > 0 else { return }
+        uplinkUnmuteAt = ProcessInfo.processInfo.systemUptime + seconds
+    }
+
     func stopUplinkCapture() {
         activeCaptureSessionId = nil
         codecRegistry.txEncoder(for: currentTxCodec)?.resetForTalkSpurt()
@@ -254,6 +271,7 @@ final class VoiceTransport {
         pcmAcc.removeAll(keepingCapacity: true)
         txConditioner.reset()
         lastConsumeNs = 0
+        uplinkUnmuteAt = 0
     }
 
     /// Send one captured PCM16 frame (320 bytes @ 16 kHz). Encodes to IMBE when available.
@@ -266,6 +284,14 @@ final class VoiceTransport {
     private func sendCapturedOnMain(_ frame: Data, captureSessionId: UInt64) {
         guard let task, !frame.isEmpty else { return }
         guard activeCaptureSessionId == captureSessionId else { return }
+
+        // Talk-permit mute window: drop everything the mic captured while the local
+        // permit tone was still sounding so its tail never reaches peers. Returning
+        // before any accumulation keeps `pcmAcc` empty until real voice starts.
+        if uplinkUnmuteAt > 0 {
+            if ProcessInfo.processInfo.systemUptime < uplinkUnmuteAt { return }
+            uplinkUnmuteAt = 0
+        }
 
         let encoder = codecRegistry.txEncoder(for: currentTxCodec)
         reconcileAccumulatorForCodecToggle(encoder?.codec)

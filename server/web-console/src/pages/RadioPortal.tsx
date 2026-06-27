@@ -321,7 +321,10 @@ export function RadioPortal() {
     if (!client) return;
     pttHeldRef.current = true;
     try {
-      await client.startTransmit();
+      // Mute the uplink for the permit tone's length so peers don't hear the tone
+      // the operator hears locally; then play it. The mute is armed inside
+      // startTransmit before frames flow, so nothing escapes ahead of the gate.
+      await client.startTransmit(sounds.permitMuteWindowMs());
       sounds.permit();
       // Two race-cancel cases after the await:
       //   1. The user released the button before startTransmit() resolved (typical: mic

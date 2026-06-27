@@ -55,6 +55,12 @@ let lostLinkAlertInterval: number | null = null;
 const BUSY_ALERT_MS = 2000;
 const LOST_LINK_ALERT_INTERVAL_MS = 15_000;
 
+/** Settle guard added after the permit tone before the uplink un-mutes, so the
+ *  tone's acoustic tail / output latency can't bleed onto transmitted audio. */
+const PERMIT_TAIL_GUARD_MS = 150;
+/** Fallback permit length (ms) used until the clip's real duration has loaded. */
+const PERMIT_FALLBACK_MS = 280;
+
 /** Server tone-set version last seen — a change means the tones must be re-pulled. */
 let soundsVersion: string | null = null;
 
@@ -69,6 +75,56 @@ function template(url: string): HTMLAudioElement {
     cache.set(url, element);
   }
   return element;
+}
+
+/** Real permit-clip duration (ms), cached once its metadata loads. Lets the mute
+ *  window be correct on the FIRST key-up even right after an agency swaps in a
+ *  longer custom permit tone — otherwise that first press would fall back to the
+ *  bundled-length estimate and under-mute, leaking the longer tone's tail. */
+let permitDurationMs: number | null = null;
+
+/** Read + cache the permit clip's real duration; if metadata isn't ready yet,
+ *  catch it once it loads (and nudge the load). Best-effort, never throws.
+ *  Called whenever the permit clip (re)resolves, so by key-up the duration is
+ *  known. Re-arms on a fresh clip so a prior tone's length isn't reused. */
+function warmPermitDuration(): void {
+  const el = template(resolved.permit);
+  if (Number.isFinite(el.duration) && el.duration > 0) {
+    permitDurationMs = Math.round(el.duration * 1000);
+    return;
+  }
+  permitDurationMs = null;
+  el.addEventListener(
+    "loadedmetadata",
+    () => {
+      if (Number.isFinite(el.duration) && el.duration > 0) {
+        permitDurationMs = Math.round(el.duration * 1000);
+      }
+    },
+    { once: true },
+  );
+  try {
+    el.load();
+  } catch {
+    /* best-effort metadata warm */
+  }
+}
+
+/**
+ * How long to mute the uplink after keying up so the talk-permit tone (and its
+ * tail) stays off the air: the resolved permit clip's length plus a settle
+ * guard. Adapts to an agency's custom permit tone automatically. Prefers the
+ * clip's live duration, then the cached value warmed at refresh/preload time,
+ * and only falls back to a fixed estimate before either is known.
+ */
+function permitMuteWindowMs(): number {
+  const el = template(resolved.permit);
+  const liveMs =
+    Number.isFinite(el.duration) && el.duration > 0
+      ? Math.round(el.duration * 1000)
+      : null;
+  const durMs = liveMs ?? permitDurationMs ?? PERMIT_FALLBACK_MS;
+  return durMs + PERMIT_TAIL_GUARD_MS;
 }
 
 function play(key: SoundKey): void {
@@ -211,6 +267,9 @@ async function refresh(force = false): Promise<void> {
     resetMarker1033Cache(); // the 10-33 marker re-decodes from the updated tone
   }
   await Promise.all((Object.keys(SOUNDS) as SoundKey[]).map(loadCustom));
+  // The permit clip may have just resolved to a new custom tone — warm its real
+  // duration so the next key-up mutes for the right length, not the fallback.
+  warmPermitDuration();
 }
 
 /**
@@ -239,6 +298,9 @@ function startAutoRefresh(): () => void {
 export const sounds = {
   /** Talk-permit tone — played when the operator keys up. */
   permit: () => play("permit"),
+  /** Uplink mute window (ms) — pass to `startTransmit` so the permit tone the
+   *  operator hears locally isn't transmitted to peers. */
+  permitMuteWindowMs,
   /** Channel-change blip. */
   channelSwitch: () => play("channelSwitch"),
   /** Emergency alert tone. */
@@ -337,6 +399,9 @@ export const sounds = {
     for (const key of Object.keys(SOUNDS) as SoundKey[]) {
       template(resolved[key]);
     }
+    // Warm the permit duration up front so the first key-up after console open
+    // mutes for the right length (refresh() warms it again after any custom pull).
+    warmPermitDuration();
     void refresh(true);
   },
   /** Starts watching for admin tone uploads; returns a stop function. */
