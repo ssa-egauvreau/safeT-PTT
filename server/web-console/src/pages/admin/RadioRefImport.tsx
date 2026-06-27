@@ -11,6 +11,15 @@ interface TalkRow {
 
 const BASE_URL_KEY = "sdrStreamBaseUrl";
 
+/** "2m ago"-style relative time for the discovered-talkgroup list. */
+function agoLabel(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.round(m / 60)}h ago`;
+}
+
 /** Split one delimited line (comma or tab), honoring "quoted, fields". */
 function splitLine(line: string, delim: string): string[] {
   const out: string[] = [];
@@ -113,8 +122,41 @@ export function RadioRefImport({
   const [raw, setRaw] = useState("");
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadingHeard, setLoadingHeard] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
+
+  /** Pull the talkgroups the SDR has actually decoded on Scan All (and that
+   *  don't have a bridge yet) into the working list, pre-ticked. */
+  async function loadHeard() {
+    setLoadingHeard(true);
+    setError(null);
+    setResult(null);
+    try {
+      const { talkgroups } = await api.observedTalkgroups();
+      if (talkgroups.length === 0) {
+        setResult(
+          "Nothing new on Scan All yet — talkgroups show up here a few seconds after they're decoded, " +
+            "and drop off once you've bridged them. (Needs the SDR bridge running.)",
+        );
+        return;
+      }
+      const now = Date.now();
+      mergeRows(
+        talkgroups.map((t) => ({
+          tgid: t.tgid,
+          alpha: t.label || `TG ${t.tgid}`,
+          desc: `heard ${t.count}× · ${agoLabel(now - t.lastHeard)}`,
+          tag: "",
+        })),
+      );
+      setResult(`Loaded ${talkgroups.length} talkgroup${talkgroups.length === 1 ? "" : "s"} heard on Scan All — tick the ones you want and Create.`);
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setLoadingHeard(false);
+    }
+  }
 
   /** Add one hand-typed talkgroup. */
   function addManual() {
@@ -346,6 +388,18 @@ export function RadioRefImport({
           <p className="field-hint">
             The decimal Talkgroup ID from RadioReference, and the channel name you want it to show
             as. Add as many as you like.
+          </p>
+        </div>
+
+        {/* Discovered on Scan All — pick from what's actually been heard */}
+        <div className="field">
+          <button type="button" className="btn" onClick={() => void loadHeard()} disabled={loadingHeard}>
+            {loadingHeard ? "Loading…" : "📡 Load talkgroups heard on Scan All"}
+          </button>
+          <p className="field-hint">
+            Pulls the talkgroups your SDR has actually decoded on Scan All that don&apos;t have a
+            channel yet — so you can pick from what&apos;s on the air instead of hunting RadioReference
+            IDs. They&apos;re added to the list below, pre-ticked; refreshes each time you click.
           </p>
         </div>
 
