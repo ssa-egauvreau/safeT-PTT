@@ -650,23 +650,24 @@ async function getStatus() {
   // but THIS process runs on the Windows clock — comparing the two drifts after
   // sleep/resume and falsely reports "Stopped" (channels then vanish). So we
   // compute the file's age in ONE wsl.exe call using WSL's OWN clock (stat mtime
-  // vs `date`), which is skew-free. Doing it in the SAME call as the read avoids
-  // the flaky second wsl.exe spawn that an earlier stat/date attempt hit.
+  // vs `date`), which is skew-free. Age is in whole SECONDS on purpose: `date
+  // +%s%3N` emits full nanoseconds on some distros (e.g. Ubuntu's, observed in
+  // the field), which blows the math up to ~1e18 and falsely reads "Stopped".
   status.bridge = { running: false, channels: 0, active: 0 };
   status.channels = [];
   const stj = await runWsl(
     "f=/tmp/sdr-bridge-status.json; " +
-      'if [ -f "$f" ]; then echo "AGEMS $(( $(date +%s%3N) - $(stat -c %Y "$f")000 ))"; cat "$f"; ' +
-      "else echo 'AGEMS 999999999'; echo '{}'; fi",
+      'if [ -f "$f" ]; then echo "AGES $(( $(date +%s) - $(stat -c %Y "$f") ))"; cat "$f"; ' +
+      "else echo 'AGES 999999'; echo '{}'; fi",
   );
   try {
-    let ageMs = Number.POSITIVE_INFINITY;
+    let ageSec = Number.POSITIVE_INFINITY;
     let body = stj.stdout;
     const nl = stj.stdout.indexOf("\n");
     if (nl >= 0) {
-      const m = stj.stdout.slice(0, nl).match(/^AGEMS\s+(-?\d+)/);
+      const m = stj.stdout.slice(0, nl).match(/^AGES\s+(-?\d+)/);
       if (m) {
-        ageMs = Number(m[1]);
+        ageSec = Number(m[1]);
         body = stj.stdout.slice(nl + 1);
       }
     }
@@ -674,7 +675,7 @@ async function getStatus() {
     // Fresh if the file was written in the last 15s (the bridge force-writes
     // every 5s, so this tolerates two missed writes). Negative age (a backward
     // clock step) still counts as fresh.
-    status.bridge.running = Number.isFinite(ageMs) && ageMs < 15000;
+    status.bridge.running = Number.isFinite(ageSec) && ageSec < 15;
     if (status.bridge.running && Array.isArray(detail.bridges)) {
       status.channels = detail.bridges;
       status.bridge.channels = detail.bridges.filter((c) => c.state === "on air").length;
