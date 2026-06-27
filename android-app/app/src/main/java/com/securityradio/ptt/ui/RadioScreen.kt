@@ -1800,6 +1800,9 @@ private fun LcdMainChannelBlock(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            if (layout.showScanConfigureLink) {
+                LcdResponsiveScanList(state = state, styles = styles)
+            }
             if (layout.showScanConfigureLink && state.scanActive && state.channelCatalog.size > 1) {
                 Text(
                     text = "CONFIGURE SCAN LIST",
@@ -1810,6 +1813,149 @@ private fun LcdMainChannelBlock(
                         .fillMaxWidth(),
                     textAlign = TextAlign.Center,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Scan member list for the responsive (phone) layout.
+ *
+ * The rugged handsets get their own big SCAN RX box ([LcdHandsetToolbarScanBanner]);
+ * the plain LCD chrome previously showed only a SCANNING on/off banner, so a phone
+ * operator couldn't tell WHICH scanned channel was producing the audio. This mirrors
+ * the iOS scan card: a SCAN RX header naming the channel currently receiving, then
+ * the scanned channels (home / priority RX first) with the live one highlighted and
+ * badged TALKING. Display-only — "CONFIGURE SCAN LIST" below still edits the picks.
+ *
+ * All inputs are profile-independent state already set by the scan/voice path, so
+ * this is purely the rendering the responsive layout was missing.
+ */
+@Composable
+private fun LcdResponsiveScanList(
+    state: RadioUiState,
+    styles: LcdTextStyles,
+    modifier: Modifier = Modifier,
+) {
+    if (!state.scanActive || state.channelCatalog.size <= 1) return
+    val p = RadioLcdTheme.palette
+    val onCyan = Color(0xFF06222A)
+    val receivingName = state.scanBackgroundChannel.trim()
+    val receiving = state.scanBackgroundActive && receivingName.isNotEmpty()
+
+    // The home (tuned) channel is always priority RX — list it first, then the picks.
+    val homeIndex =
+        state.channelCatalog.indexOfFirst { it.equals(state.channelLabel, ignoreCase = true) }
+    val memberIndices = buildList {
+        if (homeIndex >= 0) add(homeIndex)
+        state.scanIncludedChannelIndices.sorted().forEach { if (it != homeIndex) add(it) }
+    }
+    if (memberIndices.isEmpty()) return
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(4.dp))
+            .background(p.lcdSection)
+            .border(
+                width = 1.dp,
+                color = (if (receiving) p.scanRx else p.statusAmber).copy(alpha = 0.6f),
+                shape = RoundedCornerShape(4.dp),
+            )
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            LcdScanIcon(
+                on = true,
+                active = if (receiving) p.scanRx else p.statusAmber,
+                muted = p.textMuted,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = if (receiving) {
+                    "SCAN RX · ${receivingName.uppercase(Locale.US)}"
+                } else {
+                    "SCANNING · ${memberIndices.size}"
+                },
+                style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp),
+                color = if (receiving) p.scanRx else p.statusAmber,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        // Bounded + scrollable: a long scan list never pushes the controls below it
+        // off-screen. The parent chrome column isn't scrollable, so this nested
+        // scroll is safe (no same-direction infinite-constraint conflict).
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 184.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            memberIndices.forEach { index ->
+                val rawLabel = state.channelCatalog.getOrNull(index).orEmpty()
+                val label = state.channelCatalogDisplay.getOrNull(index)
+                    ?.takeIf { it.isNotBlank() } ?: rawLabel
+                val isHome = index == homeIndex
+                val isLive = receiving && rawLabel.equals(receivingName, ignoreCase = true)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(if (isLive) p.scanRx else Color.Transparent)
+                        .padding(horizontal = 6.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(
+                                when {
+                                    isLive -> onCyan
+                                    isHome -> p.statusBlue
+                                    else -> p.textMuted
+                                },
+                            ),
+                    )
+                    Text(
+                        text = label.uppercase(Locale.US),
+                        style = styles.body.copy(
+                            fontWeight = if (isLive || isHome) FontWeight.Bold else FontWeight.Normal,
+                        ),
+                        color = when {
+                            isLive -> onCyan
+                            isHome -> p.textPrimary
+                            else -> p.textSecondary
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (isLive) {
+                        Text(
+                            text = "TALKING",
+                            style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
+                            color = onCyan,
+                            maxLines = 1,
+                        )
+                    } else if (isHome) {
+                        Text(
+                            text = "PRIORITY",
+                            style = styles.status.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp),
+                            color = p.statusBlue,
+                            maxLines = 1,
+                        )
+                    }
+                }
             }
         }
     }
