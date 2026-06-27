@@ -53,6 +53,21 @@ export function parseMultipart(body, contentType) {
   return { fields, file };
 }
 
+/** Parse sdrtrunk's `patches` field into a list of talkgroup ids. sdrtrunk
+ *  reports the talkgroups regrouped/patched into a call (a console multi-select
+ *  or patch) here; the format varies (a JSON array like "[16,304]", or a
+ *  comma/space list), so we just pull every positive integer out. Returns []
+ *  when absent. */
+export function parsePatchIds(raw) {
+  if (raw == null || raw === "") return [];
+  const ids = [];
+  for (const m of String(raw).matchAll(/\d+/g)) {
+    const n = Number(m[0]);
+    if (Number.isFinite(n) && n > 0) ids.push(n);
+  }
+  return ids;
+}
+
 /** Normalize one parsed upload into a call object, or null for a test ping. */
 export function callFromUpload({ fields, file }) {
   if (fields.test != null && fields.test !== "" && fields.test !== "0") return null; // connection test
@@ -63,6 +78,9 @@ export function callFromUpload({ fields, file }) {
     talkgroupLabel: (fields.talkgroupLabel || fields.talkgroup_label || "").trim() || null,
     source: (fields.source || "").trim() || null,
     talkerAlias: (fields.talkerAlias || fields.talker_alias || "").trim() || null,
+    // Talkgroups this call is patched/multi-selected into (P25 regroup) — used
+    // to deliver a patched call to its member channels, not just Scan All.
+    patches: parsePatchIds(fields.patches ?? fields.patched_talkgroups),
     frequency: Number(fields.frequency) || null,
     dateTimeSec: Number(fields.dateTime ?? fields.date_time) || null,
     filename: file.filename || "call.mp3",

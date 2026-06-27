@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { callFromUpload, createCallUploadServer, parseMultipart } from "./sdrtrunk-rdio.mjs";
+import { callFromUpload, createCallUploadServer, parseMultipart, parsePatchIds } from "./sdrtrunk-rdio.mjs";
 
 const B = "----safetBoundary123";
 /** Assemble a multipart/form-data body from string fields + one binary file. */
@@ -61,6 +61,30 @@ test("callFromUpload: rdio-scanner-style underscore field names still map", () =
   assert.equal(call.frequency, 856212500);
   assert.equal(call.dateTimeSec, 1781131741);
   assert.equal(call.audio.length, 4);
+});
+
+test("parsePatchIds: pulls talkgroup ids out of the various patches formats", () => {
+  assert.deepEqual(parsePatchIds("[16,304]"), [16, 304]); // sdrtrunk JSON array
+  assert.deepEqual(parsePatchIds("16, 304"), [16, 304]); // comma list
+  assert.deepEqual(parsePatchIds("16 304"), [16, 304]); // space list
+  assert.deepEqual(parsePatchIds(""), []);
+  assert.deepEqual(parsePatchIds(null), []);
+  assert.deepEqual(parsePatchIds(undefined), []);
+});
+
+test("callFromUpload: a patched (multi-select) call carries its patched talkgroups", () => {
+  const body = multipart(
+    { talkgroup: "2730", talkgroupLabel: "OCSD Communications Silver 1", patches: "[16,304]" },
+    { field: "audio", filename: "c.mp3", data: Buffer.from([1, 2, 3, 4]) },
+  );
+  const call = callFromUpload(parseMultipart(body, CT));
+  assert.equal(call.talkgroupId, 2730);
+  assert.deepEqual(call.patches, [16, 304]); // DSP-DSP (16) etc. ride along
+});
+
+test("callFromUpload: a normal call has an empty patches list", () => {
+  const body = multipart({ talkgroup: "391", talkgroupLabel: "TAN-CALL" }, { field: "audio", filename: "c.mp3", data: Buffer.from([1, 2, 3, 4]) });
+  assert.deepEqual(callFromUpload(parseMultipart(body, CT)).patches, []);
 });
 
 test("callFromUpload: a test ping (test=1) yields null", () => {
