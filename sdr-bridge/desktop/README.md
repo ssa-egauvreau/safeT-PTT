@@ -94,17 +94,20 @@ token.
 > aren't readable by installed apps without a token, so auto-update would
 > silently stop otherwise.
 
-**Shipping a new version:**
+**Shipping a new version — fully automatic:**
 
-1. Make your changes, bump `version` in `package.json` (the UI shows it next to
-   the logo — that's how you confirm a client picked up new code).
+1. Make your changes and bump `version` in `package.json` (the UI shows it next
+   to the logo — that's how you confirm a client picked up new code).
 2. Commit and merge to `main`.
-3. Publish the release — either push a tag
-   (`git tag sdr-desktop-v1.12.1 && git push origin sdr-desktop-v1.12.1`) **or**
-   open the repo's **Actions → Release SafeT SDR Desktop → Run workflow**. CI
-   builds the Windows installer and publishes `SafeT SDR Setup <version>.exe` +
-   `latest.yml` to the Releases page.
+3. That's it. The **Release SafeT SDR Desktop** Action fires on the merge,
+   builds the Windows installer, and publishes `SafeT SDR Setup <version>.exe` +
+   `latest.yml` to the Releases page. It only runs when the version is new (a
+   desktop change with no version bump just skips), so it never double-publishes.
 4. Installed clients pick it up within ~6 hours (or immediately via **⟳ Updates**).
+
+> You can still trigger it by hand from **Actions → Release SafeT SDR Desktop →
+> Run workflow** (e.g. to retry a failed run) — same version-already-released
+> guard applies.
 
 > **First time only:** the app's update feed is baked in at build time, so the
 > *currently installed* copy must be one built with this `publish:` config.

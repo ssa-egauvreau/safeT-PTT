@@ -307,7 +307,21 @@ async function main() {
       if (!frames.length) return;
       const label = call.talkgroupLabel || (call.talkgroupId != null ? `TG ${call.talkgroupId}` : "SDR");
       const sourceLabel = call.source ? `${label} [${call.source}]` : label;
-      const dest = call.talkgroupId != null ? tgToChannel.get(call.talkgroupId) : null;
+      // Route to the call's own talkgroup channel AND to every talkgroup it's
+      // PATCHED / multi-selected into. A dispatch console multi-select (e.g.
+      // "OCSD Communications Silver 1" carrying DSP-DSP) keys under the patch's
+      // talkgroup, so without this the call reaches only Scan All. sdrtrunk
+      // reports the regroup members in `patches`. Dedup so a channel that is
+      // both the primary and a patch member never gets the call twice.
+      const dests = new Set();
+      if (call.talkgroupId != null) {
+        const d = tgToChannel.get(call.talkgroupId);
+        if (d) dests.add(d);
+      }
+      for (const p of call.patches || []) {
+        const d = tgToChannel.get(p);
+        if (d) dests.add(d);
+      }
       // Real talker for the handset display: radio ID as the unit number,
       // talkgroup alias as the name (talker alias fills in when the system
       // sent one and the talkgroup has no label).
@@ -315,10 +329,12 @@ async function main() {
       // Structured call info for the Scan All history feed (label without the
       // "[source]" suffix; radio ID kept separate so the UI can format it).
       const info = { label, tgid: call.talkgroupId ?? null, source: call.source ?? null };
-      if (dest) dest.enqueue(frames, sourceLabel, talker, info);
+      for (const d of dests) d.enqueue(frames, sourceLabel, talker, info);
       for (const sc of scanChannels) sc.enqueue(frames, sourceLabel, talker, info); // Scan All gets every call
       const who = call.talkerAlias || call.source; // radio that keyed up, when the system sent it
-      console.log(`[sdrtrunk] call TG ${call.talkgroupId} "${label}"${who ? ` from ${who}` : ""} ${(frames.length * FRAME_MS) / 1000}s -> ${dest ? dest.channelName : "(scan only)"}`);
+      const destNames = [...dests].map((d) => d.channelName).join(", ") || "(scan only)";
+      const patchNote = call.patches && call.patches.length ? ` patches[${call.patches.join(",")}]` : "";
+      console.log(`[sdrtrunk] call TG ${call.talkgroupId} "${label}"${who ? ` from ${who}` : ""}${patchNote} ${(frames.length * FRAME_MS) / 1000}s -> ${destNames}`);
     },
     log: (m) => console.log(`[sdrtrunk] ${m}`),
   });
