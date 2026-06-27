@@ -96,6 +96,24 @@ const SCAN_RECENT_CAP = 20; // how many recent calls each scan feed remembers
 const rows = new Map();
 let statusDirty = true;
 let heartbeatTick = 0;
+
+// Roster of every talkgroup heard (tgid -> {label, count, lastHeardMs}), reported
+// to the SafeT server every ~30s so the console can offer a "discovered → add"
+// picker. The bridge is the only place that knows a call's numeric talkgroup id.
+const seenTgs = new Map();
+async function reportObservedTalkgroups() {
+  if (!token || !seenTgs.size) return;
+  const talkgroups = [...seenTgs.entries()].map(([tgid, s]) => ({ tgid, label: s.label, count: s.count, lastHeardMs: s.lastHeardMs }));
+  try {
+    await fetch(`${baseUrl}/admin/bridges/observed`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ talkgroups }),
+    });
+  } catch {
+    /* best-effort — the console picker just won't refresh */
+  }
+}
 function row(name, channel, scan = false, tgid = null) {
   let r = rows.get(name);
   if (!r) {
@@ -293,6 +311,10 @@ async function main() {
   }
   console.log(`[sdrtrunk] ready: ${tgToChannel.size} talkgroup + ${scanChannels.length} scan channel(s).`);
 
+  // Report heard talkgroups to SafeT so the console's "discovered → add" picker
+  // stays current.
+  setInterval(() => void reportObservedTalkgroups(), 30000).unref();
+
   await createCallUploadServer({
     port: UPLOAD_PORT,
     onCall: async (call) => {
@@ -307,6 +329,15 @@ async function main() {
       if (!frames.length) return;
       const label = call.talkgroupLabel || (call.talkgroupId != null ? `TG ${call.talkgroupId}` : "SDR");
       const sourceLabel = call.source ? `${label} [${call.source}]` : label;
+      // Remember this talkgroup for the console's "discovered → add" picker.
+      if (call.talkgroupId != null) {
+        const s = seenTgs.get(call.talkgroupId);
+        seenTgs.set(call.talkgroupId, {
+          label: call.talkgroupLabel || s?.label || `TG ${call.talkgroupId}`,
+          count: (s?.count || 0) + 1,
+          lastHeardMs: Date.now(),
+        });
+      }
       // Route to the call's own talkgroup channel AND to every talkgroup it's
       // PATCHED / multi-selected into. A dispatch console multi-select (e.g.
       // "OCSD Communications Silver 1" carrying DSP-DSP) keys under the patch's

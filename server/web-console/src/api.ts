@@ -600,6 +600,16 @@ export interface BridgeStatus {
   reason?: string | null;
 }
 
+/** A talkgroup the SDR bridge has heard on Scan All but that has no bridge yet. */
+export interface ObservedTalkgroup {
+  tgid: number;
+  label: string;
+  /** Approximate calls heard this bridge session. */
+  count: number;
+  /** Epoch ms when it was last heard. */
+  lastHeard: number;
+}
+
 /** A custom soundboard tone-out — an operator-fired audio clip. */
 export interface ToneOut {
   id: number;
@@ -1326,6 +1336,9 @@ export const api = {
   updateBridge: (id: number, patch: Partial<BridgeInput>) =>
     request<{ bridge: Bridge }>("PATCH", `/v1/admin/bridges/${id}`, patch),
   deleteBridge: (id: number) => request<{ ok: boolean }>("DELETE", `/v1/admin/bridges/${id}`),
+  /** Talkgroups heard on Scan All that don't have a bridge yet (for the picker). */
+  observedTalkgroups: () =>
+    request<{ talkgroups: ObservedTalkgroup[] }>("GET", "/v1/admin/bridges/observed"),
   /** Enabled audio-device bridges this agency can run from the desktop console. */
   listRunnableBridges: () => request<{ bridges: Bridge[] }>("GET", "/v1/bridges/runnable"),
 

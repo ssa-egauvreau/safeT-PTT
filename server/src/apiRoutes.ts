@@ -1716,9 +1716,85 @@ export function createApiRouter(): Router {
 
   // --- radio bridges (admin) ---------------------------------------------
 
+  // In-memory roster of talkgroups the SDR bridge has HEARD on Scan All, per
+  // agency. The SDR bridge is the only place that knows a call's numeric
+  // talkgroup id (the transmission log stores only the alias + radio id), so it
+  // POSTs what it hears here every ~30s and the console offers a "discovered →
+  // add" picker from it. Ephemeral and best-effort: not persisted, pruned by
+  // age, capped per agency — losing it just means waiting for the next report.
+  interface ObservedTg {
+    label: string;
+    count: number;
+    lastHeardMs: number;
+  }
+  const observedTalkgroups = new Map<number, Map<number, ObservedTg>>(); // agencyId -> tgid -> info
+  const OBSERVED_TTL_MS = 60 * 60 * 1000; // forget a talkgroup not heard in an hour
+  const OBSERVED_MAX = 500; // per-agency cap
+
+  function recordObserved(agencyId: number, items: Array<Record<string, unknown>>) {
+    let roster = observedTalkgroups.get(agencyId);
+    if (!roster) {
+      roster = new Map();
+      observedTalkgroups.set(agencyId, roster);
+    }
+    const now = Date.now();
+    for (const it of items) {
+      const tgid = Number(it.tgid);
+      if (!Number.isInteger(tgid) || tgid <= 0) continue;
+      const prev = roster.get(tgid);
+      const label = String(it.label ?? prev?.label ?? `TG ${tgid}`).slice(0, 80);
+      const count = Math.max(1, Math.round(Number(it.count) || prev?.count || 1));
+      const lastHeardMs = Number(it.lastHeardMs) || now;
+      roster.set(tgid, { label, count, lastHeardMs });
+    }
+    for (const [tgid, info] of roster) if (now - info.lastHeardMs > OBSERVED_TTL_MS) roster.delete(tgid);
+    if (roster.size > OBSERVED_MAX) {
+      const keep = [...roster.entries()].sort((a, b) => b[1].lastHeardMs - a[1].lastHeardMs).slice(0, OBSERVED_MAX);
+      roster.clear();
+      for (const [tgid, info] of keep) roster.set(tgid, info);
+    }
+  }
+
   router.get("/admin/bridges", requireAdmin, async (req, res) => {
     try {
       res.json({ bridges: await listBridges(req.authUser!.agencyId!) });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // The SDR bridge reports the talkgroups it has heard on Scan All here.
+  router.post("/admin/bridges/observed", requireAdmin, async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const list = Array.isArray(body.talkgroups) ? body.talkgroups : [];
+      recordObserved(req.authUser!.agencyId!, list as Array<Record<string, unknown>>);
+      res.json({ ok: true });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Talkgroups heard on Scan All that DON'T already have a bridge — the console's
+  // "discovered, click to add" list. Already-bridged ones (mount /tg<id>) are
+  // filtered out so the picker shows only what you're missing.
+  router.get("/admin/bridges/observed", requireAdmin, async (req, res) => {
+    try {
+      const agencyId = req.authUser!.agencyId!;
+      const now = Date.now();
+      const bridged = new Set<number>();
+      for (const bridge of await listBridges(agencyId)) {
+        const match = String(bridge.source_url ?? "").match(/\/tg(\d+)\/?$/i);
+        if (match) bridged.add(Number(match[1]));
+      }
+      const roster = observedTalkgroups.get(agencyId);
+      const talkgroups = roster
+        ? [...roster.entries()]
+            .filter(([tgid, info]) => !bridged.has(tgid) && now - info.lastHeardMs <= OBSERVED_TTL_MS)
+            .sort((a, b) => b[1].lastHeardMs - a[1].lastHeardMs)
+            .map(([tgid, info]) => ({ tgid, label: info.label, count: info.count, lastHeard: info.lastHeardMs }))
+        : [];
+      res.json({ talkgroups });
     } catch (error) {
       fail(res, error);
     }
