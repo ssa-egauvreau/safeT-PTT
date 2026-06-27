@@ -72,6 +72,10 @@ final class RadioViewModel: ObservableObject {
     /// uplink at key-up, so the tone's acoustic tail / output latency can't bleed
     /// onto the air. See onPttPressed.
     private static let permitTailGuardSeconds: TimeInterval = 0.15
+    /// Larger guard when the output is Bluetooth: A2DP/HFP latency keeps the tone
+    /// sounding in the earpiece well after the phone finishes it, so the mic has to
+    /// wait longer for the full tone to clear before transmitting.
+    private static let permitTailGuardBluetoothSeconds: TimeInterval = 0.3
 
     private static let isoFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
@@ -690,7 +694,12 @@ final class RadioViewModel: ObservableObject {
         // matching how a real radio's mic opens after the chirp instead of during it.
         let permitToneSeconds = sounds.permitToneSeconds()
         if permitToneSeconds > 0 {
-            voiceTransport.holdUplink(forSeconds: permitToneSeconds + Self.permitTailGuardSeconds)
+            // On Bluetooth the tone is still sounding in the earpiece after the
+            // phone finishes it (A2DP/HFP latency), so wait longer for it to clear.
+            let guardSeconds = AudioSessionManager.isBluetoothOutput
+                ? Self.permitTailGuardBluetoothSeconds
+                : Self.permitTailGuardSeconds
+            voiceTransport.holdUplink(forSeconds: permitToneSeconds + guardSeconds)
         }
         uiState.statusMessage = P25ImbeNative.isAvailable ? "ON AIR · IMBE" : "ON AIR · CLEAR PCM"
         uiState.isTransmitting = true

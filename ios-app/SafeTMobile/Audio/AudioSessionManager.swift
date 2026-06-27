@@ -29,6 +29,17 @@ enum AudioSessionManager {
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
     }
 
+    /// True when the active OUTPUT route is a Bluetooth device. The PTT path holds
+    /// the permit-tone mute window longer on Bluetooth: A2DP/HFP output latency
+    /// means the tone is still sounding in the earpiece after the phone has
+    /// "finished" playing it, so the mic must wait longer to keep the tone (and its
+    /// tail) off the air.
+    static var isBluetoothOutput: Bool {
+        let btTypes: Set<AVAudioSession.Port> = [.bluetoothHFP, .bluetoothLE, .bluetoothA2DP]
+        return AVAudioSession.sharedInstance().currentRoute.outputs
+            .contains { btTypes.contains($0.portType) }
+    }
+
     static func applyRoute(_ route: SettingsStore.AudioRoute) {
         let session = AVAudioSession.sharedInstance()
         switch route {

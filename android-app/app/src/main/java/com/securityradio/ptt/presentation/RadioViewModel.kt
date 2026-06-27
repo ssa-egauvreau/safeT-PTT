@@ -1895,8 +1895,16 @@ class RadioViewModel(
             // re-key) during the guard must abort this now-stale grant. A generation
             // mismatch means a newer hold owns the mic; re-read fresh UI state for
             // the gate decision below rather than the pre-delay snapshot.
-            if (PERMIT_TAIL_GUARD_MS > 0L) {
-                delay(PERMIT_TAIL_GUARD_MS)
+            // On Bluetooth the tone is still sounding in the earpiece after the
+            // MediaPlayer reports it finished (A2DP/HFP output latency), so wait
+            // longer for the full tone to clear before opening the uplink.
+            val guardMs = if (externalAudioOutputMonitor.bluetoothConnected.value) {
+                PERMIT_TAIL_GUARD_BT_MS
+            } else {
+                PERMIT_TAIL_GUARD_MS
+            }
+            if (guardMs > 0L) {
+                delay(guardMs)
                 if (generation != pttHoldGeneration) return@launch
                 s = _uiState.value
                 if (!s.isPttPressed || s.pttBusyTone) return@launch
@@ -3347,6 +3355,11 @@ class RadioViewModel(
          *  this is the radio-style "wait for the permit chirp" settle, not added
          *  mic-startup latency. */
         const val PERMIT_TAIL_GUARD_MS = 150L
+        /** Larger guard when a Bluetooth output is connected: A2DP/HFP output
+         *  latency keeps the tone sounding in the earpiece after the MediaPlayer
+         *  reports it finished, so the mic must wait longer for the full tone to
+         *  clear before transmitting. */
+        const val PERMIT_TAIL_GUARD_BT_MS = 300L
 
         /** Post-release mic drain: keeps capturing briefly so the final word's
          *  buffered audio reaches the relay instead of being cut off. Sized to
