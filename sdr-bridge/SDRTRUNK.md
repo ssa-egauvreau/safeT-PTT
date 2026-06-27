@@ -92,6 +92,13 @@ If specific talkgroups are silent while others work, check sdrtrunk's
 needs a slot — Phase 2 carries two calls per frequency) and that you're on a
 recent sdrtrunk (0.6.x) build, which has the current Phase 2 decoder fixes.
 
+> **Whole areas missing (e.g. "OCSD Transit North", "Carbon Canyon",
+> TAN-NORTH/SOUTH)?** That's not a talkgroup problem — OC CCCS is a **multi-site**
+> system and sdrtrunk only follows **one site per channel config**. Those
+> talkgroups ride sites you're not locked to. See
+> **[CCCS-MULTISITE.md](./CCCS-MULTISITE.md)** for why, and how to configure a
+> second site (North / Carbon Canyon) on your other dongle.
+
 ## Verifying
 
 - sdrtrunk's **Streaming** tab shows the `SafeT` stream connected with a

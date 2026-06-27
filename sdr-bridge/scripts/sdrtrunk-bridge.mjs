@@ -15,7 +15,7 @@
  * Run from sdr-bridge/:  node scripts/sdrtrunk-bridge.mjs
  */
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCallUploadServer } from "./lib/sdrtrunk-rdio.mjs";
@@ -92,12 +92,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Live per-channel status for the desktop "Channels" panel (same shape the
 // trunk-recorder bridge writes, so the UI is unchanged).
 const STATUS_FILE = "/tmp/sdr-bridge-status.json";
+const SCAN_RECENT_CAP = 20; // how many recent calls each scan feed remembers
 const rows = new Map();
 let statusDirty = true;
 function row(name, channel, scan = false, tgid = null) {
   let r = rows.get(name);
   if (!r) {
-    r = { name, channel, tgid, scan, state: "connecting", transmitting: false, rxFrames: 0, rxBytes: 0, portFrames: 0, portBytes: 0, lastFrameMs: 0, lastTxStartMs: null, lastTxEndMs: null, lastTxDurMs: null, lastTxAudioPct: null, txCount: 0, via: null };
+    r = { name, channel, tgid, scan, state: "connecting", transmitting: false, rxFrames: 0, rxBytes: 0, portFrames: 0, portBytes: 0, lastFrameMs: 0, lastTxStartMs: null, lastTxEndMs: null, lastTxDurMs: null, lastTxAudioPct: null, txCount: 0, via: null, recent: [] };
     rows.set(name, r);
   }
   return r;
@@ -105,8 +106,18 @@ function row(name, channel, scan = false, tgid = null) {
 setInterval(() => {
   if (!statusDirty) return;
   statusDirty = false;
+  // Atomic write: a plain writeFileSync lets the desktop's `cat` catch a
+  // half-written file (JSON.parse throws → the Channels panel blanks). Writing a
+  // temp file then rename(2)-ing it within /tmp is atomic, so a reader always
+  // sees a COMPLETE file. The replacer drops `_`-prefixed internal bookkeeping.
   try {
-    writeFileSync(STATUS_FILE, JSON.stringify({ updatedAt: Date.now(), bridges: [...rows.values()] }));
+    const json = JSON.stringify(
+      { updatedAt: Date.now(), bridges: [...rows.values()] },
+      (k, v) => (k[0] === "_" ? undefined : v),
+    );
+    const tmp = STATUS_FILE + ".tmp";
+    writeFileSync(tmp, json);
+    renameSync(tmp, STATUS_FILE);
   } catch {
     /* best-effort */
   }
@@ -121,14 +132,31 @@ class Channel {
     this.ws = null;
     this.queue = [];
     this.draining = false;
+    this.backoffMs = 2000; // grows on repeated drops, resets after a stable connection
     this.row = row(unit || channelName, channelName, scan, tgid);
     this.connect();
   }
   connect() {
+    const connectedAt = Date.now();
     const ws = new WS(`${wsBase()}/v1/voice/stream?token=${encodeURIComponent(token)}`);
     ws.binaryType = "arraybuffer";
+    // Keepalive: idle voice sockets get reaped by NAT/proxies between calls
+    // (1006 in batches — see local-bridge.mjs), only noticed when the next call's
+    // first frames hit the dead socket. A 20s ping keeps idle timers from firing
+    // AND, after ~3 missed pongs (~60s), terminates a half-open socket so the
+    // reconnect runs BETWEEN calls instead of eating the head of the next one.
+    let missedPongs = 0;
+    ws.on?.("pong", () => { missedPongs = 0; });
     const ka = setInterval(() => {
-      if (ws.readyState === 1) try { ws.ping?.(); } catch { /* dying */ }
+      if (ws.readyState !== 1) return;
+      try {
+        if (typeof ws.ping === "function") {
+          if (++missedPongs >= 3) { (ws.terminate ?? ws.close).call(ws); return; }
+          ws.ping();
+        } else {
+          ws.send('{"type":"ping"}'); // relay ignores unknown control types
+        }
+      } catch { /* dying — drop handler owns recovery */ }
     }, 20000);
     ka.unref?.();
     ws.onopen = () => {
@@ -161,31 +189,49 @@ class Channel {
         this.ws = null;
         if (this.row.state === "on air") { this.row.state = "reconnecting"; statusDirty = true; }
       }
-      setTimeout(() => this.connect(), 2000);
+      // A connection that stayed up >60s was healthy — reset the backoff. Rapid
+      // repeated drops grow it (2s→30s) so a server hiccup isn't hammered.
+      if (Date.now() - connectedAt > 60000) this.backoffMs = 2000;
+      const wait = this.backoffMs;
+      this.backoffMs = Math.min(this.backoffMs * 2, 30000);
+      setTimeout(() => this.connect(), wait);
     };
     ws.onerror = drop;
     ws.onclose = drop;
   }
-  enqueue(frames, label, talker = null) {
-    this.queue.push({ frames, label, talker });
+  enqueue(frames, label, talker = null, info = null) {
+    this.queue.push({ frames, label, talker, info });
     if (this.queue.length > 50) this.queue.splice(0, this.queue.length - 50); // never backlog forever
     if (!this.draining) void this.drain();
   }
   async drain() {
     this.draining = true;
     while (this.queue.length) {
-      const { frames, label, talker } = this.queue.shift();
-      await this.play(frames, label, talker);
+      const { frames, label, talker, info } = this.queue.shift();
+      await this.play(frames, label, talker, info);
     }
     this.draining = false;
   }
-  async play(frames, label, talker = null) {
+  async play(frames, label, talker = null, info = null) {
     if (!frames.length) return;
     const r = this.row;
     r.transmitting = true;
     r.lastTxStartMs = Date.now();
     r.txCount++;
     if (label) r.via = label;
+    // Scan rows log each call so the desktop can show WHAT traffic crossed
+    // "Scan All", not just the most recent label. sdrtrunk uploads whole calls,
+    // so the duration is known up front (no end-fill needed).
+    if (r.scan && info) {
+      r.recent.unshift({
+        label: info.label || label,
+        tgid: info.tgid ?? null,
+        source: info.source ?? null,
+        atMs: r.lastTxStartMs,
+        durMs: frames.length * FRAME_MS,
+      });
+      if (r.recent.length > SCAN_RECENT_CAP) r.recent.length = SCAN_RECENT_CAP;
+    }
     statusDirty = true;
     // Attribute this call to the real over-the-air talker before the first
     // frame claims the channel: radio ID as the unit, talkgroup alias as the
@@ -261,8 +307,11 @@ async function main() {
       // talkgroup alias as the name (talker alias fills in when the system
       // sent one and the talkgroup has no label).
       const talker = { unit: call.source, name: call.talkgroupLabel || call.talkerAlias };
-      if (dest) dest.enqueue(frames, sourceLabel, talker);
-      for (const sc of scanChannels) sc.enqueue(frames, sourceLabel, talker); // Scan All gets every call
+      // Structured call info for the Scan All history feed (label without the
+      // "[source]" suffix; radio ID kept separate so the UI can format it).
+      const info = { label, tgid: call.talkgroupId ?? null, source: call.source ?? null };
+      if (dest) dest.enqueue(frames, sourceLabel, talker, info);
+      for (const sc of scanChannels) sc.enqueue(frames, sourceLabel, talker, info); // Scan All gets every call
       const who = call.talkerAlias || call.source; // radio that keyed up, when the system sent it
       console.log(`[sdrtrunk] call TG ${call.talkgroupId} "${label}"${who ? ` from ${who}` : ""} ${(frames.length * FRAME_MS) / 1000}s -> ${dest ? dest.channelName : "(scan only)"}`);
     },

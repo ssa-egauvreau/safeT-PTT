@@ -317,6 +317,9 @@ $("stopBtn").addEventListener("click", async () => {
   } finally {
     $("stopBtn").disabled = false;
     setRunState("off");
+    // A real stop: drop the retained channel rows so the panel reflects it.
+    lastChannels = [];
+    renderChannels([]);
   }
 });
 
@@ -348,12 +351,24 @@ async function poll() {
     setCard("card-decoder", "ok", txt);
   } else setCard("card-decoder", "warn", "Running, acquiring lock…");
 
-  const b = s.bridge || { running: false, channels: 0 };
+  const b = s.bridge || { running: false, channels: 0, active: 0 };
   if (b.running && b.channels > 0) setCard("card-bridge", "ok", `${b.channels} channels on air`);
+  else if (b.running && b.active > 0) setCard("card-bridge", "ok", "Delivering audio");
   else if (b.running) setCard("card-bridge", "warn", "Connecting…");
   else setCard("card-bridge", "bad", b.lastLog ? `Stopped — ${b.lastLog}` : "Stopped");
 
-  renderChannels(s.channels || []);
+  // Keep the last-good channel list so a single empty/partial status read (a
+  // mid-write file, a slow wsl call) never blanks the whole panel. Only clear
+  // when the bridge is genuinely down (a real stop), not on a transient blip.
+  if (s.channels && s.channels.length) {
+    lastChannels = s.channels;
+    renderChannels(lastChannels);
+  } else if (b.running) {
+    renderChannels(lastChannels); // transient empty while alive — hold the rows
+  } else {
+    lastChannels = [];
+    renderChannels([]);
+  }
 
   const running = s.decoder.running || s.pipelineRunning;
   if (running && $("runState").textContent !== "Starting…") setRunState("on");
@@ -364,6 +379,10 @@ async function poll() {
 
 // ---- per-channel status (live "is audio reaching SafeT" view) -------------
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+// Last non-empty channel list, so a transient empty status read never blanks
+// the panel (see poll()).
+let lastChannels = [];
 
 function fmtClock(ms) {
   return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
@@ -397,13 +416,30 @@ function renderChannels(chans) {
         last = `${fmtClock(c.lastTxStartMs)} · ${fmtDur(c.lastTxDurMs ?? 0)}${pct}${c.scan && c.via ? " — " + esc(c.via) : ""}`;
       }
 
-      return `<tr class="${c.transmitting ? "live" : ""}">
+      const mainRow = `<tr class="${c.transmitting ? "live" : ""}">
         <td><span class="chandot ${dot}"></span></td>
         <td>${esc(c.channel)}${c.scan ? ' <span class="tag">scan</span>' : ""}</td>
         <td>${c.tgid ?? "—"}</td>
         <td>${esc(c.state)}</td>
         <td>${last}</td>
         <td>${c.txCount || 0}</td></tr>`;
+
+      // Scan All channels carry a rolling history of which talkgroups fed them —
+      // render it as an indented activity feed beneath the row so you can see
+      // exactly what traffic crossed Scan All, not just the most recent call.
+      let activity = "";
+      if (c.scan && Array.isArray(c.recent) && c.recent.length) {
+        const items = c.recent
+          .map((it) => {
+            const who = it.source ? ` <span class="dim">[${esc(it.source)}]</span>` : "";
+            const dur = it.durMs != null ? ` · ${fmtDur(it.durMs)}` : "";
+            return `<div class="scan-line"><span class="dim">${fmtClock(it.atMs)}</span> ${esc(it.label)}${who}${dur}</div>`;
+          })
+          .join("");
+        activity = `<tr class="scan-activity"><td></td><td colspan="5">
+          <div class="scan-activity-head">Recent traffic on ${esc(c.channel)}</div>${items}</td></tr>`;
+      }
+      return mainRow + activity;
     })
     .join("");
 }
@@ -433,6 +469,33 @@ $("saveDiag").addEventListener("click", async () => {
     toast("Diagnostics failed: " + (e.message || e));
   }
 });
+
+// ---- updates -------------------------------------------------------------
+$("checkUpdate").addEventListener("click", () => {
+  toast("Checking for updates…");
+  window.api.checkForUpdates().then((r) => {
+    if (r && r.ok === false) toast("Updates only work in the installed app (not a dev run).");
+  });
+});
+if (window.api.onUpdateStatus) {
+  window.api.onUpdateStatus((s) => {
+    const m = $("updateMsg");
+    if (s.state === "checking") m.textContent = "checking…";
+    else if (s.state === "available") m.textContent = `downloading v${s.version}…`;
+    else if (s.state === "downloading") m.textContent = `update ${s.percent}%`;
+    else if (s.state === "none") { m.textContent = ""; toast("You're on the latest version."); }
+    else if (s.state === "error") { m.textContent = ""; toast("Update check failed (offline?)."); }
+    else if (s.state === "ready") {
+      m.textContent = `v${s.version} ready — quit to install`;
+      // Only prompt when the window is actually visible; when it's hidden in the
+      // tray a confirm() would block invisibly. Either way it installs on quit
+      // (autoInstallOnAppQuit), and the native toast already notified the user.
+      if (!document.hidden && confirm(`Update v${s.version} downloaded. Restart SafeT SDR now to install?`)) {
+        window.api.installUpdate();
+      }
+    }
+  });
+}
 
 // ---- boot ----------------------------------------------------------------
 (async function init() {

@@ -1,0 +1,46 @@
+name: Release SafeT SDR Desktop
+
+# Builds the SafeT SDR Windows app (sdr-bridge/desktop) on a Windows runner and
+# PUBLISHES the installer + latest.yml so installed copies auto-update.
+#
+# Releases go to a SEPARATE, PUBLIC binaries-only repo (see the `publish` block
+# in sdr-bridge/desktop/electron-builder.yml) so the main safeT-PTT repo can stay
+# private while clients still update over GitHub's CDN with no token in the app.
+#
+# One-time setup (see sdr-bridge/desktop/README.md → "Updating the app"):
+#   1. Create the public releases repo (default: ssa-egauvreau/safet-sdr-releases).
+#   2. Add a repo secret RELEASES_TOKEN = a PAT with Contents:read-write on it
+#      (the default GITHUB_TOKEN can't push to a different repo).
+#
+# To ship a new version: bump version in sdr-bridge/desktop/package.json, commit,
+# then push a tag, e.g.:  git tag sdr-desktop-v1.12.0 && git push origin sdr-desktop-v1.12.0
+on:
+  push:
+    tags:
+      - 'sdr-desktop-v*'
+  workflow_dispatch:
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: sdr-bridge/desktop
+        run: npm install
+
+      - name: Build + publish installer and latest.yml
+        working-directory: sdr-bridge/desktop
+        run: npm run release
+        env:
+          # Token for the PUBLIC releases repo named in electron-builder.yml's
+          # publish block. Falls back to GITHUB_TOKEN only if you point publish
+          # at THIS repo (works while it's public; breaks once it goes private).
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN || secrets.GITHUB_TOKEN }}

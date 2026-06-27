@@ -646,17 +646,47 @@ async function getStatus() {
   } // end trunk-recorder branch
 
   // Local SafeT bridge: a single source of truth — the status file the bridge
-  // rewrites at least every 5s. Its own updatedAt stamp decides liveness (a
-  // second wsl.exe call for stat/date proved flaky and showed false "Stopped").
-  status.bridge = { running: false, channels: 0 };
+  // rewrites at least every 5s. The bridge stamps updatedAt with the WSL clock,
+  // but THIS process runs on the Windows clock — comparing the two drifts after
+  // sleep/resume and falsely reports "Stopped" (channels then vanish). So we
+  // compute the file's age in ONE wsl.exe call using WSL's OWN clock (stat mtime
+  // vs `date`), which is skew-free. Doing it in the SAME call as the read avoids
+  // the flaky second wsl.exe spawn that an earlier stat/date attempt hit.
+  status.bridge = { running: false, channels: 0, active: 0 };
   status.channels = [];
-  const stj = await runWsl("cat /tmp/sdr-bridge-status.json 2>/dev/null || echo '{}'");
+  const stj = await runWsl(
+    "f=/tmp/sdr-bridge-status.json; " +
+      'if [ -f "$f" ]; then echo "AGEMS $(( $(date +%s%3N) - $(stat -c %Y "$f")000 ))"; cat "$f"; ' +
+      "else echo 'AGEMS 999999999'; echo '{}'; fi",
+  );
   try {
-    const detail = JSON.parse(stj.stdout);
-    status.bridge.running = Number.isFinite(detail.updatedAt) && Date.now() - detail.updatedAt < 15000;
+    let ageMs = Number.POSITIVE_INFINITY;
+    let body = stj.stdout;
+    const nl = stj.stdout.indexOf("\n");
+    if (nl >= 0) {
+      const m = stj.stdout.slice(0, nl).match(/^AGEMS\s+(-?\d+)/);
+      if (m) {
+        ageMs = Number(m[1]);
+        body = stj.stdout.slice(nl + 1);
+      }
+    }
+    const detail = JSON.parse(body);
+    // Fresh if the file was written in the last 15s (the bridge force-writes
+    // every 5s, so this tolerates two missed writes). Negative age (a backward
+    // clock step) still counts as fresh.
+    status.bridge.running = Number.isFinite(ageMs) && ageMs < 15000;
     if (status.bridge.running && Array.isArray(detail.bridges)) {
       status.channels = detail.bridges;
       status.bridge.channels = detail.bridges.filter((c) => c.state === "on air").length;
+      // "active" = channels delivering audio now or within the last 60s. The
+      // bridge card keys off this so it stops showing "Connecting…" while calls
+      // clearly flow but the voice sockets are mid-reconnect between calls.
+      // Compared against the file's own updatedAt (both WSL-stamped) so it's
+      // immune to the same host/WSL clock skew the liveness check avoids.
+      const ref = Number.isFinite(detail.updatedAt) ? detail.updatedAt : 0;
+      status.bridge.active = detail.bridges.filter(
+        (c) => c.transmitting || (c.lastTxStartMs && ref - c.lastTxStartMs < 60000),
+      ).length;
     }
   } catch {
     /* partial write — next poll gets it */

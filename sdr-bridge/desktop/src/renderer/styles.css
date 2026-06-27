@@ -150,4 +150,10 @@ table.report td.good { color: var(--green); font-weight: 700; }
 table.report tr.live td { background: rgba(239, 68, 68, 0.08); }
 table.report td .dim { opacity: 0.5; }
 table.report .tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--accent); color: #fff; margin-left: 6px; vertical-align: middle; }
+/* Scan All "recent traffic" feed: an indented, muted sub-row under the row. */
+table.report tr.scan-activity td { background: rgba(255, 255, 255, 0.02); padding-top: 4px; padding-bottom: 6px; }
+.scan-activity-head { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
+.scan-line { font-size: 12px; line-height: 1.5; }
+.scan-line .dim { opacity: 0.5; }
 .brand .ver { font-size: 11px; color: var(--muted); font-weight: 400; margin-left: 2px; align-self: flex-end; padding-bottom: 2px; }
+.brand .link-btn { margin-left: 8px; padding: 2px 8px; font-size: 11px; }
