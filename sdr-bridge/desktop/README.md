@@ -81,29 +81,36 @@ version in the background, and installs it the next time you quit (or click
 in the top bar checks on demand. If the update server is unreachable, the app
 just keeps running on its current version — updates never block startup.
 
-**How releases are published (one-time setup).** Auto-update pulls from a
-separate, **public** binaries-only GitHub repo so the main `safeT-PTT` repo can
-stay private without baking any token into the app:
+**Where releases are published.** Right now the `publish:` block in
+`electron-builder.yml` targets the **`safeT-PTT` repo's Releases**. While that
+repo is **public**, this needs *zero* setup — CI publishes with the built-in
+`GITHUB_TOKEN`, and installed apps read the release over GitHub's CDN with no
+token.
 
-1. Create a public repo for releases — default name `ssa-egauvreau/safet-sdr-releases`
-   (to use a different name, change the `publish:` block in `electron-builder.yml`).
-2. In the `safeT-PTT` repo settings, add a secret **`RELEASES_TOKEN`** = a GitHub
-   PAT with **Contents: read/write** on that releases repo (the default
-   `GITHUB_TOKEN` can't push to a different repo).
+> ⚠️ **Before you make `safeT-PTT` private:** switch `publish.repo` in
+> `electron-builder.yml` to a separate **public** binaries-only repo (e.g.
+> `safet-sdr-releases`) and add a `RELEASES_TOKEN` secret (a PAT with
+> **Contents: read/write** on it) so CI can push there. Private release assets
+> aren't readable by installed apps without a token, so auto-update would
+> silently stop otherwise.
 
 **Shipping a new version:**
 
 1. Make your changes, bump `version` in `package.json` (the UI shows it next to
    the logo — that's how you confirm a client picked up new code).
-2. Commit, then push a tag: `git tag sdr-desktop-v1.12.0 && git push origin sdr-desktop-v1.12.0`.
-3. The **Release SafeT SDR Desktop** GitHub Action builds the Windows installer
-   and publishes `SafeT SDR Setup <version>.exe` + `latest.yml` to the releases
-   repo. Installed clients pick it up within ~6 hours (or immediately via **⟳ Updates**).
+2. Commit and merge to `main`.
+3. Publish the release — either push a tag
+   (`git tag sdr-desktop-v1.12.1 && git push origin sdr-desktop-v1.12.1`) **or**
+   open the repo's **Actions → Release SafeT SDR Desktop → Run workflow**. CI
+   builds the Windows installer and publishes `SafeT SDR Setup <version>.exe` +
+   `latest.yml` to the Releases page.
+4. Installed clients pick it up within ~6 hours (or immediately via **⟳ Updates**).
 
-> **First time only:** auto-update activates for versions published *after* the
-> first auto-update-capable build is installed. Install **1.12.0** manually once
-> (build it, or download it from the releases repo); every version after that
-> updates itself.
+> **First time only:** the app's update feed is baked in at build time, so the
+> *currently installed* copy must be one built with this `publish:` config.
+> Easiest path: run the release workflow once, then **download
+> `SafeT SDR Setup <version>.exe` from the new Release and install it** — from
+> then on every later version updates itself, no manual installs.
 >
 > **Code signing / SmartScreen:** the installer is unsigned, so Windows
 > SmartScreen shows an "unknown publisher" prompt on first install and may

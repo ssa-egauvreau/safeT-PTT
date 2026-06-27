@@ -484,7 +484,12 @@ if (window.api.onUpdateStatus) {
     else if (s.state === "available") m.textContent = `downloading v${s.version}…`;
     else if (s.state === "downloading") m.textContent = `update ${s.percent}%`;
     else if (s.state === "none") { m.textContent = ""; toast("You're on the latest version."); }
-    else if (s.state === "error") { m.textContent = ""; toast("Update check failed (offline?)."); }
+    else if (s.state === "error") {
+      m.textContent = "";
+      // Surface the real reason — most often there's simply no release published
+      // yet to check against, which is not the same as being offline.
+      toast(s.message ? "Update check failed: " + s.message : "Update check failed — no release published yet, or you're offline.");
+    }
     else if (s.state === "ready") {
       m.textContent = `v${s.version} ready — quit to install`;
       // Only prompt when the window is actually visible; when it's hidden in the
