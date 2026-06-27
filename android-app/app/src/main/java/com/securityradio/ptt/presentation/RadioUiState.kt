@@ -327,7 +327,7 @@ data class RadioUiState(
             channelCatalogPermissions = emptyList(),
             scanIncludedChannelIndices = emptySet(),
             scanPickerVisible = false,
-            displayLine1 = "SUNSET SAFETY AGENCY",
+            displayLine1 = "SAFET PTT",
             displayLine2 = "OPERATIONS",
             displayLine3 = "CHANNELS: LOADING",
             softKeyLabels = listOf("PTT", "MENU", "SCAN", "", "CHAN"),

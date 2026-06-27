@@ -267,6 +267,7 @@ class RadioViewModel(
                 sessionAgencyName = radioPreferences.getSessionAgencyName().ifBlank {
                     radioPreferences.getSessionAgencySlug()
                 },
+                displayLine1 = agencyBannerLine(),
                 externalMicConnected = externalMicAtStart,
                 speakerMuted = mediaOutputMuted(),
                 batteryPercent = BatteryStatusProbe.percent(application),
@@ -2479,6 +2480,7 @@ class RadioViewModel(
                 sessionAgencyName = radioPreferences.getSessionAgencyName().ifBlank {
                     radioPreferences.getSessionAgencySlug()
                 },
+                displayLine1 = agencyBannerLine(),
             )
         }
         locationReporter.configure(refreshed)
@@ -2868,6 +2870,19 @@ class RadioViewModel(
             channelCatalogPermissions = permissionsForCatalog(channelNames),
             scanIncludedChannelIndices = pruned,
         )
+    }
+
+    /**
+     * Top LCD banner line: the signed-in agency's name (falling back to its slug),
+     * uppercased. Replaces the old hardcoded "SUNSET SAFETY AGENCY" so a handset on
+     * any agency shows its own name. Blank only before sign-in, where a neutral
+     * product label stands in rather than mislabeling the device as another agency.
+     */
+    private fun agencyBannerLine(): String {
+        val name = radioPreferences.getSessionAgencyName().ifBlank {
+            radioPreferences.getSessionAgencySlug()
+        }.trim()
+        return if (name.isEmpty()) "SAFET PTT" else name.uppercase(Locale.US)
     }
 
     private fun RadioUiState.withTuning(names: List<String>, index: Int): RadioUiState {
