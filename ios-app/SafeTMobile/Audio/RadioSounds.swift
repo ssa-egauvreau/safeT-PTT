@@ -47,6 +47,17 @@ final class RadioSounds {
         players[cue]?.stop()
     }
 
+    /// How long the talk-permit tone will ACTUALLY sound (seconds): its asset
+    /// length, or 0 when the tone is suppressed (UI sounds off) or its asset is
+    /// missing. Mirrors the suppression check in `play(_:)` so the PTT path mutes
+    /// the uplink only for a tone that really plays — a suppressed tone must cost
+    /// the operator no transmitted speech. The caller adds its own settle guard.
+    func permitToneSeconds() -> TimeInterval {
+        guard SettingsStore.shared.notificationSoundsEnabled,
+              let player = player(for: .pttPermit) else { return 0 }
+        return player.duration
+    }
+
     private func player(for cue: Cue) -> AVAudioPlayer? {
         if let existing = players[cue] { return existing }
         guard let url = Bundle.main.url(forResource: cue.rawValue, withExtension: "wav") else {

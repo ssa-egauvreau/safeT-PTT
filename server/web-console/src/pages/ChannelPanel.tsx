@@ -251,7 +251,10 @@ export function ChannelPanel({
     }
     pttHeldRef.current = true;
     try {
-      await client.startTransmit();
+      // Mute the uplink for the permit tone's length so peers don't hear the tone
+      // the operator hears locally; then play it. The mute is armed inside
+      // startTransmit before frames flow, so nothing escapes ahead of the gate.
+      await client.startTransmit(sounds.permitMuteWindowMs());
       sounds.permit();
     } catch (err) {
       const code = err instanceof Error ? err.message : "";

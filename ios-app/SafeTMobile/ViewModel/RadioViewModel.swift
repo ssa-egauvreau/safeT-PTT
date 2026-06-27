@@ -68,6 +68,10 @@ final class RadioViewModel: ObservableObject {
     /// Post-release mic drain (Android parity): keeps capturing briefly so the
     /// final word's buffered audio reaches the relay instead of being cut off.
     private static let txReleaseTailNanoseconds: UInt64 = 400_000_000
+    /// Settle guard added on top of the permit tone's own length when muting the
+    /// uplink at key-up, so the tone's acoustic tail / output latency can't bleed
+    /// onto the air. See onPttPressed.
+    private static let permitTailGuardSeconds: TimeInterval = 0.15
 
     private static let isoFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
@@ -678,6 +682,16 @@ final class RadioViewModel: ObservableObject {
             return
         }
         voiceTransport.startUplinkCapture(sessionId: captureSessionId)
+        // Keep the permit tone (and its acoustic tail) off the air: mute the uplink
+        // for the tone's length plus a short settle guard — but ONLY when the tone
+        // actually sounded (permitToneSeconds is 0 when UI sounds are off), so we
+        // never clip the operator's real speech for a tone they never heard. Capture
+        // is already live, so the first words right after the tone still transmit,
+        // matching how a real radio's mic opens after the chirp instead of during it.
+        let permitToneSeconds = sounds.permitToneSeconds()
+        if permitToneSeconds > 0 {
+            voiceTransport.holdUplink(forSeconds: permitToneSeconds + Self.permitTailGuardSeconds)
+        }
         uiState.statusMessage = P25ImbeNative.isAvailable ? "ON AIR · IMBE" : "ON AIR · CLEAR PCM"
         uiState.isTransmitting = true
         updateWidgetData()

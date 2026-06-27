@@ -1877,10 +1877,31 @@ class RadioViewModel(
     }
 
     private fun grantMicrophoneAfterVerification() {
+        // Snapshot the hold generation BEFORE the guard delay below. The delay is a
+        // suspension point: a release + fast re-key during it would otherwise let
+        // this stale grant (from the previous hold) open the NEW hold's mic — and,
+        // because the new hold hasn't pre-warmed yet, open it ungated, bleeding the
+        // permit tone onto the air. The post-release drain job uses the same guard.
+        val generation = pttHoldGeneration
         viewModelScope.launch {
-            val s = _uiState.value
+            var s = _uiState.value
             if (!s.isPttPressed || s.pttBusyTone) return@launch
             if (pttMicLiveThisHold) return@launch
+            // Hold the uplink muted a touch past the permit tone before opening the
+            // gate, so the tone's acoustic tail (and any audio-route output latency)
+            // can't bleed onto the air. The pre-warmed capture keeps reading-and-
+            // discarding through this guard, so it adds no startup latency to the
+            // operator's first words. Re-check after the wait: a release (and any
+            // re-key) during the guard must abort this now-stale grant. A generation
+            // mismatch means a newer hold owns the mic; re-read fresh UI state for
+            // the gate decision below rather than the pre-delay snapshot.
+            if (PERMIT_TAIL_GUARD_MS > 0L) {
+                delay(PERMIT_TAIL_GUARD_MS)
+                if (generation != pttHoldGeneration) return@launch
+                s = _uiState.value
+                if (!s.isPttPressed || s.pttBusyTone) return@launch
+                if (pttMicLiveThisHold) return@launch
+            }
             pttMicLiveThisHold = true
             if (s.micPermissionGranted) {
                 if (pttMicCapture.isCapturing) {
@@ -3318,6 +3339,14 @@ class RadioViewModel(
         const val MOVE_BANNER_MS = 6_000L
         const val AIR_POLL_MS = 250L
         const val AIR_AUDIO_STABLE_POLLS = 1
+
+        /** Keep the mic muted this long after the talk-permit tone finishes before
+         *  opening the uplink, so the tone's acoustic tail / audio-route output
+         *  latency never reaches peers. The pre-warmed capture keeps running through
+         *  this guard (read-and-discard), so the operator loses no first syllable —
+         *  this is the radio-style "wait for the permit chirp" settle, not added
+         *  mic-startup latency. */
+        const val PERMIT_TAIL_GUARD_MS = 150L
 
         /** Post-release mic drain: keeps capturing briefly so the final word's
          *  buffered audio reaches the relay instead of being cut off. Sized to
