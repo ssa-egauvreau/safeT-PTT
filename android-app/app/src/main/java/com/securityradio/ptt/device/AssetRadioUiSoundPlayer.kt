@@ -28,6 +28,12 @@ class AssetRadioUiSoundPlayer(
     private val app: Application,
     private val customSounds: CustomSoundStore,
     private val bluetoothKeepAlive: BluetoothKeepAlive? = null,
+    /**
+     * Returns true when inbound radio voice is currently flowing (home or scan), which already
+     * keeps the Bluetooth route awake. When it is, [nudgeRoute] skips the wake burst and its lead
+     * delay — the route doesn't need waking and the tone should start immediately.
+     */
+    private val routeAwakeProvider: () -> Boolean = { false },
 ) : RadioUiSoundPlayer {
 
     private val main = Handler(Looper.getMainLooper())
@@ -106,7 +112,11 @@ class AssetRadioUiSoundPlayer(
      */
     private fun nudgeRoute(): Boolean {
         val now = System.currentTimeMillis()
+        // Cold only when a BT output is connected, no UI sound played recently, AND no inbound
+        // voice is flowing. Live radio traffic (home or scan) already holds the route awake, so a
+        // burst then is pointless and the tone must not be delayed behind a lead it doesn't need.
         val cold = bluetoothKeepAlive?.isActive() == true &&
+            !routeAwakeProvider() &&
             (now - lastSoundStartedMs > BT_WAKE_IDLE_MS)
         lastSoundStartedMs = now
         if (cold) bluetoothKeepAlive?.wakeBurst()
@@ -824,12 +834,14 @@ class AssetRadioUiSoundPlayer(
         private const val BT_WAKE_IDLE_MS = 700L
 
         /**
-         * Hold before starting a sound on a cold BT route, to let a wake burst bring the amp up
-         * first. Now 0: the wake burst is silent (it buzzed on always-on amps), so delaying the
-         * sound would only add latency with no benefit. Restore a small value only alongside a real
-         * (audible-enough) wake burst for a head unit that genuinely deep-sleeps.
+         * Hold before starting a sound on a *cold* BT route, to let the wake burst bring the amp up
+         * first so the tone's opening isn't swallowed. Applies only when the route was actually cold
+         * (no recent sound and no inbound voice) — a warm route plays with zero added latency. Kept
+         * inside the user's "150-200 ms" wake window; raise if the first syllable still clips,
+         * lower to trim latency. Must stay below [BluetoothKeepAlive] BURST_MS so the burst is still
+         * streaming when the tone starts.
          */
-        private const val BT_WAKE_LEAD_MS = 0L
+        private const val BT_WAKE_LEAD_MS = 180L
 
         const val SOUNDS_DIR = "sounds"
         const val FILE_CHANNEL_SWITCH = "channel_switch.wav"

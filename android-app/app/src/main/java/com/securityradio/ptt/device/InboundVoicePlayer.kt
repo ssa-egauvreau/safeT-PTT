@@ -27,16 +27,18 @@ import android.os.SystemClock
  * network stalls produce a short fade-to-silence via PLC instead of a hard
  * cutout.
  *
- * [keepWarmProvider] is forwarded to the jitter buffers: when a Bluetooth output
- * is connected it suppresses idle teardown so the link stays warm and the start
- * of each transmission isn't clipped by the link's cold-start latency.
+ * [bluetoothConnectedProvider] is forwarded to the jitter buffers: when a
+ * Bluetooth output is connected they pre-roll a larger startup cushion so the
+ * A2DP link's cold-start ramp doesn't clip the opening syllable of a spurt. (The
+ * route is no longer held warm between transmissions — it's allowed to sleep so
+ * the silent ear of a stereo split doesn't buzz; the cushion masks the wake-up.)
  */
 class InboundVoicePlayer(
     private val lastRxRecorder: LastRxAudioRecorder? = null,
     private val listenGainProvider: () -> Float = { 1f },
     private val onScanRxActivity: ((channelName: String) -> Unit)? = null,
     private val stereoSplitProvider: () -> Boolean = { false },
-    private val keepWarmProvider: () -> Boolean = { false },
+    private val bluetoothConnectedProvider: () -> Boolean = { false },
     /** Per-ear volume multipliers, applied only in stereo-split mode. 1.0 = unchanged. */
     private val leftVolumeProvider: () -> Float = { 1f },
     private val rightVolumeProvider: () -> Float = { 1f },
@@ -47,6 +49,22 @@ class InboundVoicePlayer(
 
     @Volatile
     private var mainRxHoldUntilMs: Long = 0L
+
+    /** Wall-clock ([SystemClock.elapsedRealtime]) of the last inbound voice frame actually played,
+     *  from either the home or scan path. Used to tell the UI sound player the route is already
+     *  awake so it can skip the pre-tone Bluetooth wake burst. */
+    @Volatile
+    private var lastInboundActivityMs: Long = 0L
+
+    /**
+     * True when inbound radio voice (home or scan) played within the last [INBOUND_AWAKE_WINDOW_MS],
+     * i.e. the audio route is currently being kept awake by live traffic. Lets callers skip waking
+     * a route that doesn't need it.
+     */
+    fun isInboundRecentlyActive(): Boolean {
+        val last = lastInboundActivityMs
+        return last != 0L && SystemClock.elapsedRealtime() - last <= INBOUND_AWAKE_WINDOW_MS
+    }
 
     /**
      * Store-and-forward queue for scan audio: one scan transmission plays at a
@@ -64,21 +82,21 @@ class InboundVoicePlayer(
     private val monoBuffer = InboundJitterBuffer(
         trackFactory = { createTrack(AudioFormat.CHANNEL_OUT_MONO) },
         pan = StereoPan.NONE,
-        keepWarmProvider = keepWarmProvider,
+        bluetoothConnectedProvider = bluetoothConnectedProvider,
     )
 
     /** Stereo-split path: home channel in the left ear. */
     private val mainLeftBuffer = InboundJitterBuffer(
         trackFactory = { createTrack(AudioFormat.CHANNEL_OUT_STEREO) },
         pan = StereoPan.LEFT,
-        keepWarmProvider = keepWarmProvider,
+        bluetoothConnectedProvider = bluetoothConnectedProvider,
     )
 
     /** Stereo-split path: scan channels in the right ear. */
     private val scanRightBuffer = InboundJitterBuffer(
         trackFactory = { createTrack(AudioFormat.CHANNEL_OUT_STEREO) },
         pan = StereoPan.RIGHT,
-        keepWarmProvider = keepWarmProvider,
+        bluetoothConnectedProvider = bluetoothConnectedProvider,
     )
 
     @Volatile
@@ -104,9 +122,9 @@ class InboundVoicePlayer(
     /** PCM from the tuned (home) channel WebSocket. */
     fun writePcmFromMain(chunk: ByteArray) {
         if (released || chunk.isEmpty()) return
-        if (chunk.isNotEmpty()) {
-            mainRxHoldUntilMs = SystemClock.elapsedRealtime() + MAIN_RX_HOLD_MS
-        }
+        val now = SystemClock.elapsedRealtime()
+        mainRxHoldUntilMs = now + MAIN_RX_HOLD_MS
+        lastInboundActivityMs = now
         lastRxRecorder?.onInboundPcm(chunk)
         val stereo = stereoSplitProvider()
         val out = applyGain(chunk, if (stereo) leftVolumeProvider() else 1f) ?: return
@@ -128,6 +146,7 @@ class InboundVoicePlayer(
      *  reaches this frame's turn. Home-channel priority is enforced by the queue. */
     private fun playScanChunkNow(channelName: String, chunk: ByteArray) {
         if (released || chunk.isEmpty()) return
+        lastInboundActivityMs = SystemClock.elapsedRealtime()
         val stereo = stereoSplitProvider()
         val out = applyGain(chunk, if (stereo) rightVolumeProvider() else 1f) ?: return
         ensureMode(stereo)
@@ -234,5 +253,9 @@ class InboundVoicePlayer(
 
     private companion object {
         const val MAIN_RX_HOLD_MS = 400L
+
+        /** Inbound voice within this window means the route is still awake from live traffic.
+         *  Matches the UI sound player's cold-route idle threshold so the two agree on "awake". */
+        const val INBOUND_AWAKE_WINDOW_MS = 700L
     }
 }
