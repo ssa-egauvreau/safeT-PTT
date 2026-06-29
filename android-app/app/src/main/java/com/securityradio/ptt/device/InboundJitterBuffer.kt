@@ -65,12 +65,14 @@ class InboundJitterBuffer(
      */
     private val pan: StereoPan = StereoPan.NONE,
     /**
-     * When this returns `true` the idle teardown is suppressed: the playout loop
-     * keeps feeding the AudioTrack silence instead of releasing it. Used to hold
-     * a Bluetooth audio link warm so the first frames of the next transmission
-     * are not swallowed by the link's cold-start latency.
+     * Returns `true` while a Bluetooth output is connected. It raises the per-spurt startup
+     * cushion (see [effectiveTargetFrames]) so the A2DP link's cold-start ramp doesn't clip the
+     * opening syllable. It does NOT keep the track alive: idle teardown still releases the track
+     * after [IDLE_RELEASE_MS] so the route — and any amplified accessory's amp — powers down
+     * instead of buzzing on an always-on output. The extra cushion is what covers the cold start
+     * when the next spurt arrives on a route that has since slept.
      */
-    private val keepWarmProvider: () -> Boolean = { false },
+    private val bluetoothConnectedProvider: () -> Boolean = { false },
 ) {
 
     private val lock = ReentrantLock()
@@ -294,13 +296,12 @@ class InboundJitterBuffer(
             // the audio route — and any amplified accessory's amp — powers down
             // instead of buzzing on an always-on output. The next enqueue()
             // lazily recreates the track, mirroring first-frame startup.
-            // ...unless a Bluetooth link is connected: tearing the track down
-            // would let the link sleep, and waking it on the next transmission
-            // swallows the PTT tone and the first syllable. Keep feeding silence
-            // so the link stays warm and playback starts instantly.
-            if (!keepWarmProvider() &&
-                lastEnqueueMs != 0L && now - lastEnqueueMs >= IDLE_RELEASE_MS
-            ) {
+            // This now applies on Bluetooth too: holding the link warm forever
+            // left the silent ear of a stereo split reproducing the head unit's
+            // amp noise as a constant static buzz. The link is allowed to sleep;
+            // the larger Bluetooth startup cushion ([effectiveTargetFrames])
+            // masks the cold-start ramp on the next spurt instead.
+            if (lastEnqueueMs != 0L && now - lastEnqueueMs >= IDLE_RELEASE_MS) {
                 running = false
                 return null
             }
@@ -353,13 +354,14 @@ class InboundJitterBuffer(
 
     /**
      * Cushion to build before a spurt starts playing. On a Bluetooth link
-     * ([keepWarmProvider]) the floor is raised so each spurt buffers extra
-     * lead-in: the A2DP pipeline has its inherent ramp-up latency, and pre-rolling
-     * more silence before the first voice frame keeps that ramp from eating the
-     * opening syllable. Wired/built-in routes keep the low-latency floor.
+     * ([bluetoothConnectedProvider]) the floor is raised so each spurt buffers
+     * extra lead-in: the A2DP pipeline has its inherent ramp-up latency, and
+     * pre-rolling more silence before the first voice frame keeps that ramp from
+     * eating the opening syllable — which matters more now that the link is left
+     * to sleep between spurts. Wired/built-in routes keep the low-latency floor.
      */
     private fun effectiveTargetFrames(): Int =
-        if (keepWarmProvider()) maxOf(targetFrames, BT_MIN_TARGET_FRAMES) else targetFrames
+        if (bluetoothConnectedProvider()) maxOf(targetFrames, BT_MIN_TARGET_FRAMES) else targetFrames
 
     /**
      * Conceal an underrun by re-emitting the most recent frame with a linear

@@ -1657,9 +1657,10 @@ class RadioViewModel(
     }
 
     private fun onPttPressed() {
-        // Wake the Bluetooth route the instant the user keys up so the talk-permit
-        // tone and the start of transmit audio aren't clipped by a sleeping A2DP amp.
-        bluetoothKeepAlive.wakeBurst()
+        // Waking the Bluetooth route is handled by the tone paths themselves: both
+        // playTalkPermitThen() and startBusyLoop() fire a gated wake burst right before
+        // they play, but ONLY when the route is idle (no recent sound, no inbound voice).
+        // Bursting unconditionally here would add a faint nudge over live scan/home audio.
         // Refuse PTT locally on listen-only channels: no relay attempt, no
         // talk-permit tone, just the busy alert and a clear status line. The
         // server would reject anyway, but doing it here keeps the UX honest.

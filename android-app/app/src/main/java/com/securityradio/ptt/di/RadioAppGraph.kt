@@ -76,11 +76,17 @@ class RadioAppGraph(val application: Application) {
 
     val customSoundStore = CustomSoundStore(application)
 
-    /** Holds the Bluetooth A2DP route awake so beeps/TTS/PTT tones don't get clipped. */
+    /** Wakes the Bluetooth A2DP route with a short burst just before a tone so it isn't clipped. */
     val bluetoothKeepAlive: BluetoothKeepAlive = BluetoothKeepAlive()
 
     val soundPlayer: RadioUiSoundPlayer =
-        AssetRadioUiSoundPlayer(application, customSoundStore, bluetoothKeepAlive)
+        AssetRadioUiSoundPlayer(
+            application,
+            customSoundStore,
+            bluetoothKeepAlive,
+            // Skip the pre-tone wake burst when live radio voice is already holding the route awake.
+            routeAwakeProvider = { inboundVoicePlayer.isInboundRecentlyActive() },
+        )
 
     val localUnitIdentifier: LocalUnitIdentifier = LocalUnitIdentifier(application)
 
@@ -119,9 +125,10 @@ class RadioAppGraph(val application: Application) {
             radioPreferences.isStereoChannelSplitEnabled() &&
                 externalAudioOutputMonitor.stereoCapable.value
         },
-        // Hold the AudioTrack warm while a Bluetooth output is connected so the
-        // link doesn't sleep and clip the start of the next transmission.
-        keepWarmProvider = { externalAudioOutputMonitor.bluetoothConnected.value },
+        // While a Bluetooth output is connected, pre-roll a larger startup cushion so the
+        // A2DP cold-start ramp doesn't clip the opening syllable (the link is allowed to
+        // sleep between spurts, so the next one starts cold).
+        bluetoothConnectedProvider = { externalAudioOutputMonitor.bluetoothConnected.value },
         // Independent left/right trims for the stereo split (read live).
         leftVolumeProvider = { radioPreferences.getStereoLeftVolume() },
         rightVolumeProvider = { radioPreferences.getStereoRightVolume() },
