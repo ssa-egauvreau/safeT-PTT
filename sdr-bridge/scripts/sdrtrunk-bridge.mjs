@@ -39,6 +39,20 @@ const UPLOAD_PORT = Number(cfg.sdrtrunk?.uploadPort) || 8765;
 const FRAME_BYTES = 640; // 20 ms @ 16 kHz mono s16le
 const FRAME_MS = 20;
 
+// Auth: the bridge logs in with a CONSOLE account, whose JWT expires after the
+// server's 12h TOKEN_TTL. The relay only checks the token at the WS UPGRADE, so a
+// socket that's already open survives token expiry — but the FIRST reconnect past
+// the 12h mark is 401'd, and the old code then retried the SAME dead token forever
+// (audio gone, no self-recovery: the 6/27 6:30 AM outage). Fix: on a confirmed
+// 401/403 at the upgrade, re-authenticate and reconnect with the fresh token.
+// Re-login ONLY on a real auth failure, never on a timer — a fresh login bumps
+// this account's token generation and would supersede the bridge's own still-open
+// sockets (matches local-bridge.mjs's hard-won note).
+let token = null;
+const ALL_DOWN_EXIT_MS = 5 * 60 * 1000; // every channel offline this long -> exit for a clean relaunch
+const channels = []; // every Channel, so the health backstop can see if all are down
+let allDownSince = 0;
+
 function wsBase() {
   const u = new URL(baseUrl);
   return `${u.protocol === "https:" ? "wss:" : "ws:"}//${u.host}`;
@@ -60,6 +74,26 @@ async function getBridges(token) {
   const res = await fetch(`${baseUrl}/admin/bridges`, { headers: { authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`bridges -> ${res.status}`);
   return (await res.json()).bridges ?? [];
+}
+
+/** Re-authenticate and swap in a fresh module-level token. Guarded so overlapping
+ *  triggers (the periodic refresh plus several sockets failing auth at once) share
+ *  one login. Already-open sockets keep running — the relay only checks the token
+ *  at the upgrade — so the fresh token is simply what the NEXT (re)connect uses. */
+let reloginPromise = null;
+async function refreshToken(reason = "scheduled") {
+  if (reloginPromise) return reloginPromise;
+  reloginPromise = (async () => {
+    try {
+      token = await login();
+      console.log(`[sdrtrunk] re-authenticated (${reason}).`);
+    } catch (e) {
+      console.warn(`[sdrtrunk] re-auth failed (${reason}): ${e.message}`);
+    } finally {
+      reloginPromise = null;
+    }
+  })();
+  return reloginPromise;
 }
 
 /** ffmpeg-decode an uploaded call (MP3/M4A/WAV) to 16 kHz mono s16le PCM.
@@ -157,6 +191,7 @@ class Channel {
     this.draining = false;
     this.backoffMs = 2000; // grows on repeated drops, resets after a stable connection
     this.row = row(unit || channelName, channelName, scan, tgid);
+    channels.push(this);
     this.connect();
   }
   connect() {
@@ -203,6 +238,7 @@ class Channel {
     // every blip (1 → 2 → 4 → 8 …) and the roster showed the bridge joined to
     // each channel many times over.
     let dropped = false;
+    let authRejected = false;
     const drop = () => {
       if (dropped) return;
       dropped = true;
@@ -212,6 +248,14 @@ class Channel {
         this.ws = null;
         if (this.row.state === "on air") { this.row.state = "reconnecting"; statusDirty = true; }
       }
+      // A 401/403 at the upgrade means the token is expired or superseded — it
+      // will NEVER succeed on retry with the SAME token. Refresh it first so the
+      // reconnect below carries a valid one (the 6/27 6:30 AM outage fix).
+      if (authRejected) {
+        this.row.state = "reauthenticating";
+        statusDirty = true;
+        void refreshToken("401 on upgrade");
+      }
       // A connection that stayed up >60s was healthy — reset the backoff. Rapid
       // repeated drops grow it (2s→30s) so a server hiccup isn't hammered.
       if (Date.now() - connectedAt > 60000) this.backoffMs = 2000;
@@ -219,7 +263,20 @@ class Channel {
       this.backoffMs = Math.min(this.backoffMs * 2, 30000);
       setTimeout(() => this.connect(), wait);
     };
-    ws.onerror = drop;
+    // The relay rejects a bad token at the HTTP upgrade, before the socket opens.
+    // Capture the 401/403 so drop() re-auths instead of looping on a dead token.
+    // Both shapes are handled because which one fires depends on the ws build:
+    // node's `ws` emits `unexpected-response`; a bare error carries the status in
+    // its message.
+    ws.on?.("unexpected-response", (_req, res) => {
+      if (res && (res.statusCode === 401 || res.statusCode === 403)) authRejected = true;
+      drop();
+    });
+    ws.onerror = (event) => {
+      const msg = String((event && (event.message || (event.error && event.error.message))) || "");
+      if (/Unexpected server response: 40[13]/.test(msg)) authRejected = true;
+      drop();
+    };
     ws.onclose = drop;
   }
   enqueue(frames, label, talker = null, info = null) {
@@ -283,8 +340,6 @@ class Channel {
   }
 }
 
-let token = null;
-
 async function main() {
   if (!baseUrl || !safet.username || !safet.password) {
     console.error("sdrtrunk-bridge: config/system.json needs safet.baseUrl / username / password.");
@@ -310,6 +365,18 @@ async function main() {
     process.exit(1);
   }
   console.log(`[sdrtrunk] ready: ${tgToChannel.size} talkgroup + ${scanChannels.length} scan channel(s).`);
+
+  // Health backstop: if EVERY channel's socket has been down for a few minutes
+  // (auth wall, server down, host asleep), exit so run-all.sh relaunches us with
+  // a brand-new login instead of looping in-process forever.
+  setInterval(() => {
+    if (channels.some((c) => c.ws && c.ws.readyState === 1)) { allDownSince = 0; return; }
+    if (!allDownSince) allDownSince = Date.now();
+    else if (Date.now() - allDownSince > ALL_DOWN_EXIT_MS) {
+      console.error(`[sdrtrunk] all channels offline ${Math.round((Date.now() - allDownSince) / 1000)}s — exiting for a clean relaunch.`);
+      process.exit(1);
+    }
+  }, 30000).unref();
 
   // Report heard talkgroups to SafeT so the console's "discovered → add" picker
   // stays current.
