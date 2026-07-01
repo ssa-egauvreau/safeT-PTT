@@ -127,6 +127,12 @@ export async function ensureSchema(): Promise<void> {
   // endpoints for this agency — never PTT, admin, or any write. Kept separate
   // from radio_key so revoking external map access never disturbs handsets.
   await p.query(`ALTER TABLE agencies ADD COLUMN IF NOT EXISTS location_read_key TEXT UNIQUE;`);
+  // Inbound key for the external SSA shift portal (POST /v1/ssa/shift). Like
+  // location_read_key it is a single opaque key that both identifies the agency
+  // and authenticates the request, kept separate from radio_key so revoking
+  // portal access never disturbs handsets. It grants ONLY the shift-assignment
+  // endpoints — never PTT, admin, or any other write.
+  await p.query(`ALTER TABLE agencies ADD COLUMN IF NOT EXISTS shift_key TEXT UNIQUE;`);
   // Default voice codec applied to newly-created channels for this agency.
   // Validated against the VOICE_CODECS list in voiceCodecs.ts; existing
   // rows backfill to 'imbe' so behaviour stays identical to pre-multi-codec.
@@ -730,6 +736,41 @@ export async function ensureSchema(): Promise<void> {
   await p.query(
     `CREATE INDEX IF NOT EXISTS idx_audio_lab_presets_agency_updated
        ON audio_lab_presets (agency_id, updated_at DESC);`,
+  );
+
+  // SSA shift assignments — pushed by the external SSA portal when an officer
+  // starts a shift and picks their radio + patrol vehicle. Maps the radio's
+  // self-reported unit id to the officer's callsign + friendly name, which the
+  // voice relay applies at join so the map, other radios, the recorder, and the
+  // AI dispatcher all attribute the officer's callsign (e.g. "351") instead of
+  // the raw radio / vehicle number the car radio would otherwise report.
+  // `radio_kind` distinguishes a mobile (car) radio from a portable (handheld).
+  // At most one row per radio is active at a time (partial unique index); a
+  // callsign may span two active radios (an officer carrying a handheld while
+  // also assigned a car radio), each tagged with its own radio_kind.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS shift_assignments (
+      id SERIAL PRIMARY KEY,
+      agency_id INT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      radio_unit_id TEXT NOT NULL,
+      officer_callsign TEXT NOT NULL,
+      officer_display_name TEXT,
+      vehicle_unit TEXT,
+      radio_kind TEXT,
+      external_ref TEXT,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      ended_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await p.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_shift_active_radio
+       ON shift_assignments (agency_id, radio_unit_id) WHERE active;`,
+  );
+  await p.query(
+    `CREATE INDEX IF NOT EXISTS idx_shift_active_callsign
+       ON shift_assignments (agency_id, officer_callsign) WHERE active;`,
   );
 
   // --- migrate any pre-existing single-tenant data into the default agency ---

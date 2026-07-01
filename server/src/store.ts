@@ -58,6 +58,9 @@ export interface AgencyRow {
   /** Read-only key for external location-map integrations; null until issued.
    *  Grants only GET /locations + /locations/history, never PTT/admin. */
   location_read_key: string | null;
+  /** Inbound key for the external SSA shift portal; null until issued. Grants
+   *  only the /v1/ssa/shift endpoints, never PTT/admin. */
+  shift_key: string | null;
   disabled: boolean;
   created_at: string;
   /** Codec applied to new channels created in this agency. Existing
@@ -83,7 +86,7 @@ export interface AgencySummary extends AgencyRow {
 }
 
 const AGENCY_COLS =
-  "id, name, slug, radio_key, location_read_key, disabled, created_at, default_codec, stripe_customer_id, stripe_subscription_id, subscription_status, plan_tier, trial_ends_at, transmission_retention_days, logs_unlimited, billing_email, signup_completed_at, trial_email_used";
+  "id, name, slug, radio_key, location_read_key, shift_key, disabled, created_at, default_codec, stripe_customer_id, stripe_subscription_id, subscription_status, plan_tier, trial_ends_at, transmission_retention_days, logs_unlimited, billing_email, signup_completed_at, trial_email_used";
 
 type AgencyRowRaw = Omit<AgencyRow, "default_codec" | "subscription_status" | "plan_tier"> & {
   default_codec: string;
@@ -151,7 +154,7 @@ export async function uniqueAgencySlug(name: string): Promise<string> {
 export async function listAgencies(): Promise<AgencySummary[]> {
   type Raw = Omit<AgencySummary, "default_codec"> & { default_codec: string };
   const res = await requirePool().query<Raw & AgencyRowRaw>(
-    `SELECT a.id, a.name, a.slug, a.radio_key, a.location_read_key, a.disabled, a.created_at, a.default_codec,
+    `SELECT a.id, a.name, a.slug, a.radio_key, a.location_read_key, a.shift_key, a.disabled, a.created_at, a.default_codec,
             a.stripe_customer_id, a.stripe_subscription_id, a.subscription_status, a.plan_tier,
             a.trial_ends_at, a.transmission_retention_days, a.logs_unlimited, a.billing_email,
             a.signup_completed_at, a.trial_email_used,
@@ -204,6 +207,23 @@ export async function getAgencyByLocationKey(key: string): Promise<AgencyRow | n
 /** Issues (`key`) or revokes (`null`) an agency's read-only location-feed key. */
 export async function setLocationReadKey(agencyId: number, key: string | null): Promise<void> {
   await requirePool().query(`UPDATE agencies SET location_read_key = $2 WHERE id = $1;`, [agencyId, key]);
+}
+
+/** Resolves the agency for an SSA shift-portal request from its inbound key. */
+export async function getAgencyByShiftKey(key: string): Promise<AgencyRow | null> {
+  if (!key.trim()) {
+    return null;
+  }
+  const res = await requirePool().query<AgencyRowRaw>(
+    `SELECT ${AGENCY_COLS} FROM agencies WHERE shift_key = $1 AND disabled = FALSE;`,
+    [key.trim()],
+  );
+  return res.rows[0] ? asAgencyRow(res.rows[0]) : null;
+}
+
+/** Issues (`key`) or revokes (`null`) an agency's SSA shift-portal key. */
+export async function setShiftKey(agencyId: number, key: string | null): Promise<void> {
+  await requirePool().query(`UPDATE agencies SET shift_key = $2 WHERE id = $1;`, [agencyId, key]);
 }
 
 /**
@@ -1558,6 +1578,161 @@ export async function deleteUnitAlias(agencyId: number, unitId: string): Promise
   return (res.rowCount ?? 0) > 0;
 }
 
+// --- SSA shift assignments (radio ↔ officer / vehicle) -------------------
+
+/** Radio form-factors the SSA portal may assign to a shift. */
+export const RADIO_KINDS = ["car", "handheld"] as const;
+export type RadioKind = (typeof RADIO_KINDS)[number];
+
+/**
+ * Coerce a portal-supplied radio kind onto the allow-list, tolerating the
+ * common synonyms an officer-facing portal might send. Returns null for
+ * anything unrecognized so a garbage value never lands in the DB or a map badge.
+ */
+export function normalizeRadioKind(value: unknown): RadioKind | null {
+  const v = String(value ?? "").trim().toLowerCase();
+  if (v === "car" || v === "mobile" || v === "vehicle" || v === "cruiser") {
+    return "car";
+  }
+  if (v === "handheld" || v === "portable" || v === "ht" || v === "hand-held") {
+    return "handheld";
+  }
+  return null;
+}
+
+export interface ShiftAssignment {
+  id: number;
+  agency_id: number;
+  /** The unit id the physical radio reports at join — the assignment's key. */
+  radio_unit_id: string;
+  /** What the officer is called on air / on the map (e.g. "351"). */
+  officer_callsign: string;
+  officer_display_name: string | null;
+  /** Patrol vehicle number for the shift — informational. */
+  vehicle_unit: string | null;
+  radio_kind: RadioKind | null;
+  /** Opaque id from the portal (its shift / roster row) for traceability. */
+  external_ref: string | null;
+  active: boolean;
+  started_at: string;
+  ended_at: string | null;
+  updated_at: string;
+}
+
+const SHIFT_COLS =
+  "id, agency_id, radio_unit_id, officer_callsign, officer_display_name, vehicle_unit, radio_kind, external_ref, active, started_at, ended_at, updated_at";
+
+/**
+ * The active assignment for a radio, keyed by the unit id it reports at join.
+ * The lookup is case-insensitive because join identities are upper-cased while
+ * a portal may send mixed case. Returns null when the radio is unassigned.
+ */
+export async function getActiveShiftAssignment(
+  agencyId: number,
+  radioUnitId: string,
+): Promise<ShiftAssignment | null> {
+  const unit = radioUnitId.trim().toUpperCase();
+  if (!unit) {
+    return null;
+  }
+  const res = await requirePool().query<ShiftAssignment>(
+    `SELECT ${SHIFT_COLS} FROM shift_assignments
+      WHERE agency_id = $1 AND upper(radio_unit_id) = $2 AND active
+      ORDER BY started_at DESC LIMIT 1;`,
+    [agencyId, unit],
+  );
+  return res.rows[0] ?? null;
+}
+
+/** Every currently-active assignment for an agency, newest first. */
+export async function listActiveShiftAssignments(agencyId: number): Promise<ShiftAssignment[]> {
+  const res = await requirePool().query<ShiftAssignment>(
+    `SELECT ${SHIFT_COLS} FROM shift_assignments
+      WHERE agency_id = $1 AND active ORDER BY started_at DESC;`,
+    [agencyId],
+  );
+  return res.rows;
+}
+
+/**
+ * Start (or replace) a radio's active shift assignment. Any prior active row for
+ * the SAME radio is ended first so the partial unique index never trips — an
+ * officer swapping radios or re-starting a shift simply supersedes the old row.
+ * A callsign is intentionally allowed to span two active radios (a handheld plus
+ * a car radio for the same officer), each carrying its own radio_kind.
+ */
+export async function upsertShiftAssignment(input: {
+  agencyId: number;
+  radioUnitId: string;
+  officerCallsign: string;
+  officerDisplayName: string | null;
+  vehicleUnit: string | null;
+  radioKind: RadioKind | null;
+  externalRef: string | null;
+}): Promise<ShiftAssignment> {
+  const radioUnitId = input.radioUnitId.trim().toUpperCase();
+  const officerCallsign = input.officerCallsign.trim().toUpperCase();
+  const client = await requirePool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `UPDATE shift_assignments
+          SET active = FALSE, ended_at = now(), updated_at = now()
+        WHERE agency_id = $1 AND active AND upper(radio_unit_id) = $2;`,
+      [input.agencyId, radioUnitId],
+    );
+    const res = await client.query<ShiftAssignment>(
+      `INSERT INTO shift_assignments
+         (agency_id, radio_unit_id, officer_callsign, officer_display_name, vehicle_unit, radio_kind, external_ref)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING ${SHIFT_COLS};`,
+      [
+        input.agencyId,
+        radioUnitId,
+        officerCallsign,
+        input.officerDisplayName,
+        input.vehicleUnit,
+        input.radioKind,
+        input.externalRef,
+      ],
+    );
+    await client.query("COMMIT");
+    return res.rows[0]!;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * End a shift by deactivating the active row(s) that match the given radio
+ * and/or callsign. Passing only a callsign ends every radio that officer holds
+ * (handheld + car); passing a radio ends just that device. Returns how many
+ * rows were ended.
+ */
+export async function endShiftAssignment(input: {
+  agencyId: number;
+  radioUnitId?: string | null;
+  officerCallsign?: string | null;
+}): Promise<number> {
+  const radioUnitId = input.radioUnitId?.trim().toUpperCase() || null;
+  const officerCallsign = input.officerCallsign?.trim().toUpperCase() || null;
+  if (!radioUnitId && !officerCallsign) {
+    return 0;
+  }
+  const res = await requirePool().query(
+    `UPDATE shift_assignments
+        SET active = FALSE, ended_at = now(), updated_at = now()
+      WHERE agency_id = $1 AND active
+        AND (($2::text IS NOT NULL AND upper(radio_unit_id) = $2)
+          OR ($3::text IS NOT NULL AND upper(officer_callsign) = $3));`,
+    [input.agencyId, radioUnitId, officerCallsign],
+  );
+  return res.rowCount ?? 0;
+}
+
 // --- transmissions -------------------------------------------------------
 
 export interface TransmissionRow {
@@ -1845,7 +2020,12 @@ export async function listTransmissionIdsMissingAiDispatchLog(limit = 100): Prom
 // --- radio positions (GPS) ----------------------------------------------
 
 export interface RadioPosition {
+  /** The label shown on the map: the officer's shift callsign when an active
+   *  assignment covers this radio, else the radio's own reported unit id. */
   unit_id: string;
+  /** The radio's raw self-reported unit id (before any shift-callsign overlay),
+   *  so a consumer can still key a marker per physical radio. */
+  radio_unit_id: string;
   user_id: number | null;
   display_name: string | null;
   channel_name: string | null;
@@ -1856,6 +2036,9 @@ export interface RadioPosition {
   speed_mps: number | null;
   /** Device category of the reporting account (handheld, unit_radio, …), or null. */
   device_type: string | null;
+  /** Form-factor from the active SSA shift assignment: "car" | "handheld" | null.
+   *  Lets the map badge a patrol-vehicle radio distinctly from a portable. */
+  radio_kind: string | null;
   /** Platform the unit is reporting from: "ios" | "android" | "web" | "radio" | …
    *  Null until the client has been updated to send `client_type`. */
   client_type: string | null;
@@ -1937,12 +2120,23 @@ export async function listPositions(agencyId: number, since?: string): Promise<R
     where.push(`p.updated_at > $2::timestamptz`);
     vals.push(sinceTrimmed);
   }
+  // Overlay the active shift assignment (if any) so the map shows the officer's
+  // callsign + friendly name and can badge car vs handheld — without rewriting
+  // the position row, which stays keyed on the radio's own unit id. The raw id
+  // is still returned as `radio_unit_id` for per-radio marker keying.
   const res = await requirePool().query<RadioPosition>(
-    `SELECT p.unit_id, p.user_id, p.display_name, p.channel_name, p.lat, p.lon,
+    `SELECT COALESCE(sa.officer_callsign, p.unit_id) AS unit_id,
+            p.unit_id AS radio_unit_id,
+            p.user_id,
+            COALESCE(sa.officer_display_name, p.display_name) AS display_name,
+            p.channel_name, p.lat, p.lon,
             p.accuracy_m, p.heading, p.speed_mps, p.client_type, p.updated_at,
-            u.device_type
+            u.device_type,
+            sa.radio_kind
      FROM radio_positions p
      LEFT JOIN users u ON u.id = p.user_id
+     LEFT JOIN shift_assignments sa
+       ON sa.agency_id = p.agency_id AND sa.active AND upper(sa.radio_unit_id) = upper(p.unit_id)
      WHERE ${where.join(" AND ")} ORDER BY p.updated_at DESC;`,
     vals,
   );
