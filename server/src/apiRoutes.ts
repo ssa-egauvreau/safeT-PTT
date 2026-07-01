@@ -26,6 +26,7 @@ import {
   listOnlineUnits,
   notifyChannelCodec,
   refreshSimulcastSockets,
+  refreshAgencyShiftIdentities,
   type PresenceStatus,
   type RosterMember,
 } from "./voiceRelay.js";
@@ -51,7 +52,15 @@ import {
   generateRadioKey,
   getAgencyById,
   getAgencyByLocationKey,
+  getAgencyByShiftKey,
   getAgencyBySlug,
+  setShiftKey,
+  getActiveShiftAssignment,
+  listActiveShiftAssignments,
+  upsertShiftAssignment,
+  endShiftAssignment,
+  normalizeRadioKind,
+  resolveShiftCallsign,
   getChannelById,
   getChannelByName,
   getSimulcastByName,
@@ -488,6 +497,39 @@ async function resolveLocationReadAgency(
     return { status: 401, error: "unauthorized" };
   }
   const agency = await getAgencyByLocationKey(key).catch(() => null);
+  if (!agency || agency.disabled) {
+    return { status: 401, error: "unauthorized" };
+  }
+  return { agencyId: agency.id };
+}
+
+/**
+ * Agency authorized to push shift assignments, reachable two ways: a signed-in
+ * agency operator (admin/dispatcher JWT), or the external SSA portal presenting
+ * its inbound shift key (header `X-SafeT-Shift-Key` or `?shift_key=`). The key
+ * grants ONLY the /ssa/shift endpoints — never PTT, admin, or any other write.
+ * Radio and dispatcher-less member accounts are rejected on the JWT path so a
+ * handset token can never rewrite callsigns. Resolves `{ agencyId }` or a reject.
+ */
+async function resolveShiftAgency(
+  req: Request,
+): Promise<{ agencyId: number } | { status: number; error: string }> {
+  if (req.authUser) {
+    if (req.authUser.agencyId == null) {
+      return { status: 403, error: "forbidden" };
+    }
+    if (req.authUser.role !== "admin" && req.authUser.role !== "dispatcher") {
+      return { status: 403, error: "forbidden" };
+    }
+    return { agencyId: req.authUser.agencyId };
+  }
+  const headerRaw = req.headers["x-safet-shift-key"];
+  const headerVal = Array.isArray(headerRaw) ? headerRaw[0] : headerRaw;
+  const key = (headerVal ?? (typeof req.query.shift_key === "string" ? req.query.shift_key : null))?.trim();
+  if (!key) {
+    return { status: 401, error: "unauthorized" };
+  }
+  const agency = await getAgencyByShiftKey(key).catch(() => null);
   if (!agency || agency.disabled) {
     return { status: 401, error: "unauthorized" };
   }
@@ -3261,8 +3303,13 @@ export function createApiRouter(): Router {
         return;
       }
       const agencyId = radioAgencyId(req);
+      // Resolve the radio's raw unit id to its active shift callsign so the
+      // emergency correlates with the callsign-keyed roster / map / positions
+      // (otherwise an assigned radio's alert never lights up). Raise and clear
+      // resolve identically, so clearing by the raw unit id still matches.
+      const callsign = await resolveShiftCallsign(agencyId, unit);
       if (body.active === false) {
-        const cleared = await clearEmergenciesFromUnit(agencyId, unit, unit);
+        const cleared = await clearEmergenciesFromUnit(agencyId, callsign, callsign);
         res.json({ ok: true, cleared });
         return;
       }
@@ -3272,8 +3319,8 @@ export function createApiRouter(): Router {
         channelName: body.channel ? String(body.channel) : null,
         targetUnit: null,
         fromUserId: null,
-        fromName: body.display_name ? String(body.display_name) : unit,
-        fromUnit: unit,
+        fromName: body.display_name ? String(body.display_name) : callsign,
+        fromUnit: callsign,
         message: body.message ? String(body.message) : "Emergency activated",
       });
       res.status(201).json({ alert });
@@ -3913,6 +3960,156 @@ export function createApiRouter(): Router {
     }
   });
 
+  // --- admin: SSA shift-portal key ---------------------------------------
+  // Authenticates POST /ssa/shift + /ssa/shift/end only — never PTT, admin, or
+  // any other write. An agency admin issues/rotates/revokes it and pastes it
+  // into the SSA officer portal so that portal can push shift assignments
+  // server-to-server without a full operator login.
+  router.get("/admin/shift-key", requireAdmin, async (req, res) => {
+    try {
+      const agency = await getAgencyById(req.authUser!.agencyId!);
+      res.json({ shift_key: agency?.shift_key ?? null });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Issue or rotate the key (rotating invalidates the previous one immediately).
+  router.post("/admin/shift-key", requireAdmin, async (req, res) => {
+    try {
+      const key = generateRadioKey();
+      await setShiftKey(req.authUser!.agencyId!, key);
+      res.json({ shift_key: key });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Revoke the key — the SSA portal can no longer push assignments.
+  router.delete("/admin/shift-key", requireAdmin, async (req, res) => {
+    try {
+      await setShiftKey(req.authUser!.agencyId!, null);
+      res.json({ ok: true });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // --- SSA shift portal (external, per-agency shift key) -----------------
+  // The SSA officer portal calls these when an officer starts / ends a shift
+  // and picks their radio + patrol vehicle. Auth is the per-agency shift key
+  // (header `X-SafeT-Shift-Key` or `?shift_key=`), or an operator JWT. Assigning
+  // maps the radio's self-reported unit id to the officer's callsign + name, so
+  // the live map, other radios, the recording log, and the AI dispatcher all
+  // attribute the officer callsign (e.g. "351") instead of the raw radio /
+  // vehicle number — and tags whether the radio is a car or a handheld.
+  router.post("/ssa/shift", async (req, res) => {
+    try {
+      const access = await resolveShiftAgency(req);
+      if ("status" in access) {
+        res.status(access.status).json({ error: access.error });
+        return;
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const radioUnitId = String(body.radio_unit_id ?? "").trim();
+      const officerCallsign = String(body.officer_callsign ?? "").trim();
+      if (!radioUnitId || !officerCallsign) {
+        res
+          .status(400)
+          .json({ error: "missing_fields", hint: "radio_unit_id and officer_callsign are required" });
+        return;
+      }
+      const rawKind = body.radio_kind;
+      const radioKind = normalizeRadioKind(rawKind);
+      if (rawKind != null && String(rawKind).trim() !== "" && radioKind === null) {
+        res.status(400).json({ error: "invalid_radio_kind", hint: "radio_kind must be 'car' or 'handheld'" });
+        return;
+      }
+      const assignment = await upsertShiftAssignment({
+        agencyId: access.agencyId,
+        radioUnitId,
+        officerCallsign,
+        officerDisplayName: body.officer_display_name ? String(body.officer_display_name).trim() : null,
+        vehicleUnit: body.vehicle_unit ? String(body.vehicle_unit).trim() : null,
+        radioKind,
+        externalRef: body.external_ref ? String(body.external_ref).trim() : null,
+      });
+      // Apply to any already-joined socket for this radio so a connected
+      // handset picks up the new callsign without waiting to re-join.
+      await refreshAgencyShiftIdentities(access.agencyId);
+      await writeAudit({
+        agencyId: access.agencyId,
+        actorUserId: req.authUser?.id ?? null,
+        actorName: req.authUser?.username ?? "ssa-portal",
+        action: "ssa_shift_start",
+        target: assignment.radio_unit_id,
+        detail: {
+          officer_callsign: assignment.officer_callsign,
+          radio_kind: assignment.radio_kind,
+          vehicle_unit: assignment.vehicle_unit,
+          external_ref: assignment.external_ref,
+        },
+      });
+      res.json({ assignment });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // End a shift — deactivate the assignment(s) for a radio and/or a callsign.
+  router.post("/ssa/shift/end", async (req, res) => {
+    try {
+      const access = await resolveShiftAgency(req);
+      if ("status" in access) {
+        res.status(access.status).json({ error: access.error });
+        return;
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const radioUnitId = body.radio_unit_id ? String(body.radio_unit_id).trim() : null;
+      const officerCallsign = body.officer_callsign ? String(body.officer_callsign).trim() : null;
+      if (!radioUnitId && !officerCallsign) {
+        res
+          .status(400)
+          .json({ error: "missing_fields", hint: "radio_unit_id or officer_callsign is required" });
+        return;
+      }
+      const ended = await endShiftAssignment({ agencyId: access.agencyId, radioUnitId, officerCallsign });
+      // Revert any already-joined socket for the ended radio(s) to their own id.
+      await refreshAgencyShiftIdentities(access.agencyId);
+      await writeAudit({
+        agencyId: access.agencyId,
+        actorUserId: req.authUser?.id ?? null,
+        actorName: req.authUser?.username ?? "ssa-portal",
+        action: "ssa_shift_end",
+        target: radioUnitId ?? officerCallsign,
+        detail: { radio_unit_id: radioUnitId, officer_callsign: officerCallsign, ended },
+      });
+      res.json({ ok: true, ended });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
+  // Current active assignments — the portal reconciles its shift board against
+  // this. `?radio_unit_id=` narrows to a single radio's active assignment.
+  router.get("/ssa/shift", async (req, res) => {
+    try {
+      const access = await resolveShiftAgency(req);
+      if ("status" in access) {
+        res.status(access.status).json({ error: access.error });
+        return;
+      }
+      const radioUnitId = typeof req.query.radio_unit_id === "string" ? req.query.radio_unit_id.trim() : "";
+      if (radioUnitId) {
+        res.json({ assignment: await getActiveShiftAssignment(access.agencyId, radioUnitId) });
+        return;
+      }
+      res.json({ assignments: await listActiveShiftAssignments(access.agencyId) });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
   // --- console: map geofence overlays ------------------------------------
 
   router.get("/geofences", requireAgencyMember, async (req, res) => {
@@ -4260,6 +4457,9 @@ export function createApiRouter(): Router {
         res.status(400).json({ error: "missing_message" });
         return;
       }
+      // Use the operator's active shift callsign (if any) so a self-emergency
+      // from an assigned account correlates with the callsign-keyed roster/map.
+      const fromUnit = me.unitId ? await resolveShiftCallsign(agencyId, me.unitId) : null;
       const alert = await createAlert({
         agencyId,
         kind,
@@ -4267,7 +4467,7 @@ export function createApiRouter(): Router {
         targetUnit,
         fromUserId: me.id,
         fromName: me.displayName,
-        fromUnit: me.unitId,
+        fromUnit,
         message: message ?? (kind === "emergency" ? "Emergency" : null),
       });
       await writeAudit({

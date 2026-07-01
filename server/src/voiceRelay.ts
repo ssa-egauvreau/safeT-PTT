@@ -30,6 +30,8 @@ import {
   isAiDispatchChannelCached,
 } from "./aiDispatch/channelCache.js";
 import {
+  getActiveShiftAssignment,
+  listActiveShiftAssignments,
   getAgencyById,
   getBridgeById,
   getChannelByName,
@@ -126,6 +128,13 @@ interface ClientMeta {
   channelId: number | null;
   userId: number | null;
   displayName: string | null;
+  /** The radio's own reported unit id, before any SSA shift-callsign override —
+   *  the key used to re-resolve this socket's identity when its assignment
+   *  changes mid-connection (`refreshAgencyShiftIdentities`). */
+  radioUnitId: string;
+  /** The display name before any shift override, so ending a shift reverts to
+   *  the radio's own name rather than stranding the officer name. */
+  baseDisplayName: string | null;
   /** Per-transmission talker attribution override (`tx_meta` control frame):
    *  an SDR/radio bridge relaying a decoded P25 call names the real
    *  over-the-air talker (radio ID + talkgroup alias) instead of its own
@@ -151,6 +160,9 @@ interface ClientMeta {
   recordListenPcm: boolean;
   /** Cached from the users table for console accounts (roster / live control). */
   deviceType: string | null;
+  /** Form-factor from the active SSA shift assignment ("car" | "handheld"),
+   *  resolved at join. Null when the radio is unassigned. */
+  radioKind: string | null;
   /** Codec the client should use to transmit on this channel — taken from the
    *  channel row at join time, updated by [notifyChannelCodec] when an admin
    *  flips the channel's codec while clients are connected. */
@@ -196,6 +208,8 @@ export interface RosterMember {
   client: string;
   /** Account device category (unit_radio, phone, dispatch_console, …) when known. */
   device_type?: string | null;
+  /** Radio form-factor from the active SSA shift assignment: "car" | "handheld" | null. */
+  radio_kind?: string | null;
   connected_ms: number;
   /** Derived from live signals (talker / GPS speed / active emergency); set by the roster route. */
   status?: PresenceStatus;
@@ -215,6 +229,7 @@ interface RosterRecord {
   kind: "account" | "legacy" | "bridge";
   client: string;
   deviceType: string | null;
+  radioKind: string | null;
   joinedAt: number;
 }
 
@@ -464,12 +479,59 @@ export function listChannelRoster(agencyId: number, channelRaw: unknown): Roster
         kind: record.kind,
         client: record.client,
         device_type: record.deviceType,
+        radio_kind: record.radioKind,
         connected_ms: now - record.joinedAt,
       });
     }
   }
   members.sort((a, b) => b.connected_ms - a.connected_ms);
   return members;
+}
+
+/**
+ * Re-resolve the SSA shift identity of every already-joined socket in an agency
+ * against the current active assignments, updating each socket's live unit id /
+ * display name / radio_kind (and its roster record) in place. Called after the
+ * SSA portal starts, replaces, or ends an assignment so a radio that is already
+ * connected picks up the change on its next keyup and in the roster, rather than
+ * carrying the join-time identity until it happens to re-join. One DB query for
+ * the whole agency; a no-op without a database. Best-effort — never throws.
+ */
+export async function refreshAgencyShiftIdentities(agencyId: number): Promise<void> {
+  if (!getPool()) {
+    return;
+  }
+  let assignments: Awaited<ReturnType<typeof listActiveShiftAssignments>>;
+  try {
+    assignments = await listActiveShiftAssignments(agencyId);
+  } catch {
+    return;
+  }
+  const byRadio = new Map<string, (typeof assignments)[number]>();
+  for (const a of assignments) {
+    byRadio.set(a.radio_unit_id.trim().toUpperCase(), a);
+  }
+  for (const [ws, meta] of clientMeta) {
+    if (meta.agencyId !== agencyId || !meta.joined || meta.identity.kind === "bridge") {
+      continue;
+    }
+    const a = byRadio.get(meta.radioUnitId.toUpperCase());
+    const newUnit = a ? a.officer_callsign.trim().toUpperCase() || meta.radioUnitId : meta.radioUnitId;
+    const newDisplay = a ? a.officer_display_name ?? meta.baseDisplayName : meta.baseDisplayName;
+    const newKind = a ? a.radio_kind ?? null : null;
+    if (meta.unitId === newUnit && meta.displayName === newDisplay && meta.radioKind === newKind) {
+      continue;
+    }
+    meta.unitId = newUnit;
+    meta.displayName = newDisplay;
+    meta.radioKind = newKind;
+    const rec = voiceRoster.get(ws);
+    if (rec) {
+      rec.unitId = newUnit;
+      rec.displayName = newDisplay;
+      rec.radioKind = newKind;
+    }
+  }
 }
 
 /** One channel and the members currently connected to it. */
@@ -662,6 +724,7 @@ export interface VoiceRosterTestRecord {
   kind: "account" | "legacy" | "bridge";
   client?: string;
   deviceType?: string | null;
+  radioKind?: string | null;
   joinedAt?: number;
 }
 
@@ -682,6 +745,7 @@ export function __setVoiceRosterRecordForTest(record: VoiceRosterTestRecord): vo
     kind: record.kind,
     client: record.client ?? "unknown",
     deviceType: record.deviceType ?? null,
+    radioKind: record.radioKind ?? null,
     joinedAt: record.joinedAt ?? Date.now(),
   });
 }
@@ -720,6 +784,8 @@ export function __registerVoiceMemberForTest(opts: {
     channelId: null,
     userId: null,
     displayName: opts.displayName ?? null,
+    radioUnitId: opts.unitId ?? "",
+    baseDisplayName: opts.displayName ?? null,
     txUnitId: null,
     txDisplayName: null,
     permission: opts.permission ?? "talk",
@@ -740,6 +806,7 @@ export function __registerVoiceMemberForTest(opts: {
     aiDispatchListenPcm: false,
     recordListenPcm: false,
     deviceType: null,
+    radioKind: null,
     codec: DEFAULT_VOICE_CODEC,
     caps: [],
   });
@@ -1388,6 +1455,8 @@ export function attachVoiceRelay(
             channelId: null,
             userId: null,
             displayName: null,
+            radioUnitId: "",
+            baseDisplayName: null,
             txUnitId: null,
             txDisplayName: null,
             permission: "listen_only",
@@ -1399,6 +1468,7 @@ export function attachVoiceRelay(
             aiDispatchListenPcm: false,
             recordListenPcm: true,
             deviceType: null,
+            radioKind: null,
             codec: DEFAULT_VOICE_CODEC,
             caps: [],
           });
@@ -1523,8 +1593,38 @@ export function attachVoiceRelay(
       permission = "talk";
     }
 
+    // SSA shift assignment: the external portal maps this radio's self-reported
+    // unit id to the officer's callsign + name for the shift. Applying it here —
+    // before `meta.unitId` is set — makes every downstream consumer (the /v1/air
+    // attribution, the roster, the recorder, and therefore the AI dispatcher's
+    // `transmissions.unit_id`) show the officer's callsign instead of the raw
+    // radio / vehicle number. This is the fix for a car radio's unit number
+    // leaking through as the callsign. The pre-override identity is remembered
+    // so a mid-shift reassignment/end can re-resolve this socket
+    // (`refreshAgencyShiftIdentities`). Bridges keep their configured identity;
+    // skipped without a database (local dev).
+    const baseUnitId = unitId;
+    const baseDisplayName = displayName;
+    let radioKind: string | null = null;
+    if (meta.identity.kind !== "bridge" && getPool()) {
+      try {
+        const assignment = await getActiveShiftAssignment(meta.agencyId, unitId);
+        if (assignment) {
+          unitId = assignment.officer_callsign.trim().toUpperCase() || unitId;
+          displayName = assignment.officer_display_name ?? displayName;
+          radioKind = assignment.radio_kind ?? null;
+        }
+      } catch {
+        // No database or a transient error — fall back to the radio's own
+        // identity rather than blocking the join.
+      }
+    }
+
     const chanKey = channelKey(meta.agencyId, chNorm);
     meta.unitId = unitId;
+    meta.radioUnitId = baseUnitId;
+    meta.baseDisplayName = baseDisplayName;
+    meta.radioKind = radioKind;
     meta.txUnitId = null;
     meta.txDisplayName = null;
     meta.channelNorm = chNorm;
@@ -1570,6 +1670,7 @@ export function attachVoiceRelay(
       kind: meta.identity.kind,
       client: normalizeClient(json.client),
       deviceType: meta.deviceType,
+      radioKind,
       // Keep the original join time across re-joins to the same channel
       // (Android re-sends `join` on the same socket periodically).
       joinedAt: prior && prior.channelKey === chanKey ? prior.joinedAt : Date.now(),
