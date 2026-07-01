@@ -31,13 +31,17 @@ A **shift assignment** maps one radio to one officer for a shift:
 
 Rules:
 
-- **One active assignment per radio.** Re-posting the same `radio_unit_id`
-  supersedes the previous assignment (officer swapped radios / restarted shift).
-- **A callsign may span two radios.** An officer carrying a handheld *and* driving
-  a car radio can have both active under callsign `351`, each tagged with its own
-  `radio_kind`.
-- Assignments take effect on the radio's **next voice join / keyup** (handsets
-  re-join periodically, so this is typically seconds) and on the **next map poll**.
+- **One active assignment per callsign, and per radio.** An officer is on one
+  radio at a time. Re-posting the same `radio_unit_id`, or moving a `callsign`
+  to a new radio, supersedes the previous assignment. (The callsign becomes the
+  unit's identity across every correlated surface — air, roster, map,
+  emergencies — so it must map to exactly one radio.) If an officer switches
+  from their handheld to a car radio mid-shift, POST the new radio; the old one
+  is ended automatically. The vehicle they're driving is recorded as
+  `vehicle_unit` regardless of which radio they're on.
+- Assignments apply to an **already-connected** radio immediately (its next
+  keyup and the roster reflect the new callsign), and to the **next map poll**;
+  a radio that connects later picks it up at join.
 
 ## Auth
 

@@ -30,7 +30,7 @@ import express from "express";
 import { createApiRouter } from "../src/apiRoutes.js";
 import { authenticate, signToken, type AuthUser } from "../src/auth.js";
 import { clearAuthCache, setCachedAuth } from "../src/sessionCache.js";
-import { normalizeRadioKind, RADIO_KINDS } from "../src/store.js";
+import { normalizeRadioKind, RADIO_KINDS, resolveShiftCallsign } from "../src/store.js";
 
 // --- normalizeRadioKind -------------------------------------------------
 
@@ -53,6 +53,16 @@ test("normalizeRadioKind: unknown / empty values become null (never a garbage ba
   for (const bad of ["", "  ", "truck", "drone", null, undefined, 42, {}]) {
     assert.equal(normalizeRadioKind(bad), null, `${JSON.stringify(bad)} should normalize to null`);
   }
+});
+
+// --- resolveShiftCallsign (DB-less degradation) -------------------------
+
+test("resolveShiftCallsign: without a database returns the radio's own id, upper-cased", async () => {
+  // No DATABASE_URL in the test process → the emergency/ingress path must fall
+  // back to the raw radio id rather than throw, so handsets keep working.
+  assert.equal(await resolveShiftCallsign(1, "3351"), "3351");
+  assert.equal(await resolveShiftCallsign(1, " 3351 "), "3351");
+  assert.equal(await resolveShiftCallsign(1, ""), "");
 });
 
 // --- route wiring + auth gates ------------------------------------------

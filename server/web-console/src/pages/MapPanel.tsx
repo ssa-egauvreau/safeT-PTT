@@ -86,8 +86,15 @@ function isInactive(iso: string): boolean {
   return Number.isFinite(ms) && ms > INACTIVE_MS;
 }
 
-/** A unit that reports as an in-car radio gets the cruiser glyph; everything else, a handheld. */
-function glyphFor(deviceType: string | null): string {
+/**
+ * A car radio gets the cruiser glyph; a handheld gets the portable glyph. The
+ * SSA shift assignment's `radio_kind` wins when present (the officer literally
+ * picked car vs handheld for the shift); otherwise fall back to the account
+ * device_type.
+ */
+function glyphFor(deviceType: string | null, radioKind?: string | null): string {
+  if (radioKind === "car") return CAR_GLYPH;
+  if (radioKind === "handheld") return RADIO_GLYPH;
   return deviceType === "unit_radio" ? CAR_GLYPH : RADIO_GLYPH;
 }
 
@@ -112,6 +119,7 @@ function radioDivIcon(
   deviceType: string | null,
   heading: number | null,
   label: string,
+  radioKind?: string | null,
 ): L.DivIcon {
   const arrow =
     heading == null
@@ -122,7 +130,7 @@ function radioDivIcon(
     html:
       `<div class="rm">` +
       `<div class="rm-pin ${state}">${arrow}` +
-      `<svg class="rm-glyph" viewBox="0 0 24 24">${glyphFor(deviceType)}</svg>` +
+      `<svg class="rm-glyph" viewBox="0 0 24 24">${glyphFor(deviceType, radioKind)}</svg>` +
       `</div>` +
       `<div class="rm-label">${escapeHtml(label)}</div>` +
       `</div>`,
@@ -533,11 +541,15 @@ export function MapView({ variant = "embedded", onPopOut }: MapViewProps) {
             typeof p.speed_mps === "number" && p.speed_mps > 0.5
               ? `${Math.round(p.speed_mps * 2.237)} mph`
               : null;
+          // "Car" / "Handheld" from the officer's SSA shift assignment, when set.
+          const radioKindLabel =
+            p.radio_kind === "car" ? "Car radio" : p.radio_kind === "handheld" ? "Handheld" : null;
           const popup =
             (inEmergency ? `<b class="popup-emg">EMERGENCY</b><br/>` : "") +
             `<b>${escapeHtml(label)}</b><br/>` +
             `Channel: ${escapeHtml(p.channel_name ?? "—")}<br/>` +
             `Unit: ${escapeHtml(aliasRef.current(p.unit_id))}<br/>` +
+            (radioKindLabel ? `Radio: ${escapeHtml(radioKindLabel)}<br/>` : "") +
             (p.device_type
               ? `Device: ${escapeHtml(deviceTypeLabel(p.device_type))}<br/>`
               : "") +
@@ -547,13 +559,13 @@ export function MapView({ variant = "embedded", onPopOut }: MapViewProps) {
               : "") +
             `Updated ${escapeHtml(ageText(p.updated_at))}`;
 
-          const iconKey = `${state}:${p.device_type ?? "x"}:${
+          const iconKey = `${state}:${p.device_type ?? "x"}:${p.radio_kind ?? "x"}:${
             heading == null ? "x" : Math.round(heading / 15)
           }:${label}`;
           let entry = markersRef.current.get(p.unit_id);
           if (!entry) {
             const marker = L.marker(latlng, {
-              icon: radioDivIcon(state, p.device_type, heading, label),
+              icon: radioDivIcon(state, p.device_type, heading, label, p.radio_kind),
               zIndexOffset: inEmergency ? 1000 : 0,
             }).addTo(map);
             entry = { marker, iconKey };
@@ -561,7 +573,7 @@ export function MapView({ variant = "embedded", onPopOut }: MapViewProps) {
           } else {
             entry.marker.setLatLng(latlng);
             if (entry.iconKey !== iconKey) {
-              entry.marker.setIcon(radioDivIcon(state, p.device_type, heading, label));
+              entry.marker.setIcon(radioDivIcon(state, p.device_type, heading, label, p.radio_kind));
               entry.marker.setZIndexOffset(inEmergency ? 1000 : 0);
               entry.iconKey = iconKey;
             }

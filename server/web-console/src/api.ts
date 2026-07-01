@@ -366,7 +366,10 @@ export interface TalkActivity {
 }
 
 export interface RadioPosition {
+  /** The label to show: the officer's shift callsign when assigned, else the raw radio id. */
   unit_id: string;
+  /** The radio's own reported id (before any shift-callsign overlay). */
+  radio_unit_id?: string;
   user_id: number | null;
   display_name: string | null;
   channel_name: string | null;
@@ -377,6 +380,9 @@ export interface RadioPosition {
   speed_mps: number | null;
   /** Device category of the reporting account (handheld, unit_radio, …), or null. */
   device_type: string | null;
+  /** Form-factor from the active SSA shift assignment: "car" | "handheld" | null.
+   *  Preferred over device_type for the map glyph when present. */
+  radio_kind?: string | null;
   updated_at: string;
 }
 

@@ -26,6 +26,7 @@ import {
   listOnlineUnits,
   notifyChannelCodec,
   refreshSimulcastSockets,
+  refreshAgencyShiftIdentities,
   type PresenceStatus,
   type RosterMember,
 } from "./voiceRelay.js";
@@ -59,6 +60,7 @@ import {
   upsertShiftAssignment,
   endShiftAssignment,
   normalizeRadioKind,
+  resolveShiftCallsign,
   getChannelById,
   getChannelByName,
   getSimulcastByName,
@@ -3301,8 +3303,13 @@ export function createApiRouter(): Router {
         return;
       }
       const agencyId = radioAgencyId(req);
+      // Resolve the radio's raw unit id to its active shift callsign so the
+      // emergency correlates with the callsign-keyed roster / map / positions
+      // (otherwise an assigned radio's alert never lights up). Raise and clear
+      // resolve identically, so clearing by the raw unit id still matches.
+      const callsign = await resolveShiftCallsign(agencyId, unit);
       if (body.active === false) {
-        const cleared = await clearEmergenciesFromUnit(agencyId, unit, unit);
+        const cleared = await clearEmergenciesFromUnit(agencyId, callsign, callsign);
         res.json({ ok: true, cleared });
         return;
       }
@@ -3312,8 +3319,8 @@ export function createApiRouter(): Router {
         channelName: body.channel ? String(body.channel) : null,
         targetUnit: null,
         fromUserId: null,
-        fromName: body.display_name ? String(body.display_name) : unit,
-        fromUnit: unit,
+        fromName: body.display_name ? String(body.display_name) : callsign,
+        fromUnit: callsign,
         message: body.message ? String(body.message) : "Emergency activated",
       });
       res.status(201).json({ alert });
@@ -4027,6 +4034,9 @@ export function createApiRouter(): Router {
         radioKind,
         externalRef: body.external_ref ? String(body.external_ref).trim() : null,
       });
+      // Apply to any already-joined socket for this radio so a connected
+      // handset picks up the new callsign without waiting to re-join.
+      await refreshAgencyShiftIdentities(access.agencyId);
       await writeAudit({
         agencyId: access.agencyId,
         actorUserId: req.authUser?.id ?? null,
@@ -4064,6 +4074,8 @@ export function createApiRouter(): Router {
         return;
       }
       const ended = await endShiftAssignment({ agencyId: access.agencyId, radioUnitId, officerCallsign });
+      // Revert any already-joined socket for the ended radio(s) to their own id.
+      await refreshAgencyShiftIdentities(access.agencyId);
       await writeAudit({
         agencyId: access.agencyId,
         actorUserId: req.authUser?.id ?? null,
@@ -4445,6 +4457,9 @@ export function createApiRouter(): Router {
         res.status(400).json({ error: "missing_message" });
         return;
       }
+      // Use the operator's active shift callsign (if any) so a self-emergency
+      // from an assigned account correlates with the callsign-keyed roster/map.
+      const fromUnit = me.unitId ? await resolveShiftCallsign(agencyId, me.unitId) : null;
       const alert = await createAlert({
         agencyId,
         kind,
@@ -4452,7 +4467,7 @@ export function createApiRouter(): Router {
         targetUnit,
         fromUserId: me.id,
         fromName: me.displayName,
-        fromUnit: me.unitId,
+        fromUnit,
         message: message ?? (kind === "emergency" ? "Emergency" : null),
       });
       await writeAudit({

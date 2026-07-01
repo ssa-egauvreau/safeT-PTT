@@ -745,9 +745,10 @@ export async function ensureSchema(): Promise<void> {
   // AI dispatcher all attribute the officer's callsign (e.g. "351") instead of
   // the raw radio / vehicle number the car radio would otherwise report.
   // `radio_kind` distinguishes a mobile (car) radio from a portable (handheld).
-  // At most one row per radio is active at a time (partial unique index); a
-  // callsign may span two active radios (an officer carrying a handheld while
-  // also assigned a car radio), each tagged with its own radio_kind.
+  // Because the callsign becomes the unit's identity across every correlated
+  // surface (air, roster, map, emergencies), exactly one active row exists per
+  // radio AND per callsign — an officer is on one radio at a time; starting a
+  // shift on a new radio supersedes the previous one.
   await p.query(`
     CREATE TABLE IF NOT EXISTS shift_assignments (
       id SERIAL PRIMARY KEY,
@@ -769,7 +770,7 @@ export async function ensureSchema(): Promise<void> {
        ON shift_assignments (agency_id, radio_unit_id) WHERE active;`,
   );
   await p.query(
-    `CREATE INDEX IF NOT EXISTS idx_shift_active_callsign
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_shift_active_callsign
        ON shift_assignments (agency_id, officer_callsign) WHERE active;`,
   );
 

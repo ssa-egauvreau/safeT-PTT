@@ -1584,6 +1584,11 @@ export async function deleteUnitAlias(agencyId: number, unitId: string): Promise
 export const RADIO_KINDS = ["car", "handheld"] as const;
 export type RadioKind = (typeof RADIO_KINDS)[number];
 
+/** Namespace for the per-agency transaction advisory lock that serializes shift
+ *  writes so concurrent portal posts can't both insert an active row and trip a
+ *  partial unique index (they supersede in a defined order instead). */
+const SHIFT_ADVISORY_LOCK_NS = 0x5348; // "SH"
+
 /**
  * Coerce a portal-supplied radio kind onto the allow-list, tolerating the
  * common synonyms an officer-facing portal might send. Returns null for
@@ -1655,11 +1660,48 @@ export async function listActiveShiftAssignments(agencyId: number): Promise<Shif
 }
 
 /**
- * Start (or replace) a radio's active shift assignment. Any prior active row for
- * the SAME radio is ended first so the partial unique index never trips — an
- * officer swapping radios or re-starting a shift simply supersedes the old row.
- * A callsign is intentionally allowed to span two active radios (a handheld plus
- * a car radio for the same officer), each carrying its own radio_kind.
+ * The callsign an assigned radio should present, or the radio's own unit id when
+ * it is unassigned (or there is no database). Used at handset ingress points
+ * outside the voice join — e.g. an emergency raised over REST — so a radio's
+ * identity is the same officer callsign across every correlated surface (air,
+ * roster, map, emergencies), never a mix of callsign and raw radio/vehicle id.
+ */
+export async function resolveShiftCallsign(agencyId: number, rawUnitId: string): Promise<string> {
+  const raw = rawUnitId.trim().toUpperCase();
+  if (!raw || !getPool()) {
+    return raw;
+  }
+  try {
+    const assignment = await getActiveShiftAssignment(agencyId, raw);
+    return assignment ? assignment.officer_callsign.trim().toUpperCase() || raw : raw;
+  } catch {
+    return raw;
+  }
+}
+
+/** Bumps the map `updated_at` for the given radios so an assignment start/end is
+ *  picked up by `?since=` delta polls even without a fresh GPS fix. */
+async function touchPositions(client: PoolClient, agencyId: number, radioUnitIds: string[]): Promise<void> {
+  const ids = [...new Set(radioUnitIds.map((u) => u.trim().toUpperCase()).filter(Boolean))];
+  if (!ids.length) {
+    return;
+  }
+  await client.query(
+    `UPDATE radio_positions SET updated_at = now()
+      WHERE agency_id = $1 AND upper(unit_id) = ANY($2::text[]);`,
+    [agencyId, ids],
+  );
+}
+
+/**
+ * Start (or replace) a radio's active shift assignment. Because the callsign
+ * becomes the unit's identity everywhere, any prior active row for the SAME
+ * radio OR the SAME callsign is ended first — one officer is on one radio at a
+ * time; starting a shift on a new radio (or moving a callsign to a new radio)
+ * supersedes the old row. A per-agency advisory lock serializes concurrent
+ * portal posts so two of them can't both insert an active row and trip a
+ * partial unique index. Positions for the affected radios are touched so the
+ * change is picked up by `?since=` map deltas without waiting for a GPS fix.
  */
 export async function upsertShiftAssignment(input: {
   agencyId: number;
@@ -1675,11 +1717,14 @@ export async function upsertShiftAssignment(input: {
   const client = await requirePool().connect();
   try {
     await client.query("BEGIN");
-    await client.query(
+    await client.query(`SELECT pg_advisory_xact_lock($1, $2);`, [input.agencyId, SHIFT_ADVISORY_LOCK_NS]);
+    const superseded = await client.query<{ radio_unit_id: string }>(
       `UPDATE shift_assignments
           SET active = FALSE, ended_at = now(), updated_at = now()
-        WHERE agency_id = $1 AND active AND upper(radio_unit_id) = $2;`,
-      [input.agencyId, radioUnitId],
+        WHERE agency_id = $1 AND active
+          AND (upper(radio_unit_id) = $2 OR upper(officer_callsign) = $3)
+        RETURNING radio_unit_id;`,
+      [input.agencyId, radioUnitId, officerCallsign],
     );
     const res = await client.query<ShiftAssignment>(
       `INSERT INTO shift_assignments
@@ -1696,6 +1741,7 @@ export async function upsertShiftAssignment(input: {
         input.externalRef,
       ],
     );
+    await touchPositions(client, input.agencyId, [radioUnitId, ...superseded.rows.map((r) => r.radio_unit_id)]);
     await client.query("COMMIT");
     return res.rows[0]!;
   } catch (error) {
@@ -1708,9 +1754,8 @@ export async function upsertShiftAssignment(input: {
 
 /**
  * End a shift by deactivating the active row(s) that match the given radio
- * and/or callsign. Passing only a callsign ends every radio that officer holds
- * (handheld + car); passing a radio ends just that device. Returns how many
- * rows were ended.
+ * and/or callsign, and return how many were ended. Positions for the affected
+ * radios are touched so the map reverts to the raw radio id on the next delta.
  */
 export async function endShiftAssignment(input: {
   agencyId: number;
@@ -1722,15 +1767,28 @@ export async function endShiftAssignment(input: {
   if (!radioUnitId && !officerCallsign) {
     return 0;
   }
-  const res = await requirePool().query(
-    `UPDATE shift_assignments
-        SET active = FALSE, ended_at = now(), updated_at = now()
-      WHERE agency_id = $1 AND active
-        AND (($2::text IS NOT NULL AND upper(radio_unit_id) = $2)
-          OR ($3::text IS NOT NULL AND upper(officer_callsign) = $3));`,
-    [input.agencyId, radioUnitId, officerCallsign],
-  );
-  return res.rowCount ?? 0;
+  const client = await requirePool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`SELECT pg_advisory_xact_lock($1, $2);`, [input.agencyId, SHIFT_ADVISORY_LOCK_NS]);
+    const ended = await client.query<{ radio_unit_id: string }>(
+      `UPDATE shift_assignments
+          SET active = FALSE, ended_at = now(), updated_at = now()
+        WHERE agency_id = $1 AND active
+          AND (($2::text IS NOT NULL AND upper(radio_unit_id) = $2)
+            OR ($3::text IS NOT NULL AND upper(officer_callsign) = $3))
+        RETURNING radio_unit_id;`,
+      [input.agencyId, radioUnitId, officerCallsign],
+    );
+    await touchPositions(client, input.agencyId, ended.rows.map((r) => r.radio_unit_id));
+    await client.query("COMMIT");
+    return ended.rowCount ?? 0;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // --- transmissions -------------------------------------------------------
