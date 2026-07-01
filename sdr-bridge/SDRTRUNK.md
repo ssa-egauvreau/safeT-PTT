@@ -99,6 +99,77 @@ recent sdrtrunk (0.6.x) build, which has the current Phase 2 decoder fixes.
 > **[CCCS-MULTISITE.md](./CCCS-MULTISITE.md)** for why, and how to configure a
 > second site (North / Carbon Canyon) on your other dongle.
 
+## Stability: stopping the every-few-hours OOM crash (v0.6.1)
+
+The production rig froze every few hours: SDRTrunk's Java heap climbed to its
+`-Xmx` cap and OOM-crashed, taking down the **whole** feed (Countywide
+included). Two independent root causes, both diagnosed live:
+
+### The 3-tuner cell layout
+
+Three RTL-SDR dongles cover the OC CCCS system:
+
+| Dongle | Role | Tuned block |
+|--------|------|-------------|
+| RTL #1 | **Countywide** control (856.7125 / 857.4625) | 856–860 MHz |
+| RTL #2 | **853 MHz secondary-cell controls** — North, South, Carbon Canyon, Northwest, Southwest | ~852–853 MHz |
+| E4000 | **Voice** — follows Countywide's TDMA grants | Countywide voice |
+
+The secondary cells' **voice** grants come out on **~851 MHz**, which is
+**outside every one of these three windows**.
+
+### Root cause 1 — secondary-cell voice-chase thrash (config, fixable here)
+
+The five 853-cell control channels shipped with
+`traffic_channel_pool_size="20"`, so SDRTrunk tried to **follow** their voice
+grants. Because that voice is out of band on all three dongles, SDRTrunk could
+never source a tuner and looped
+`Unable to source channel ... searching for another tuner` **hundreds of times
+an hour**. That flooded the event-log buffer (grew to ~4 GB) and leaked the
+heap straight to the `-Xmx` cap.
+
+**Fix: run the secondary cells CONTROL-ONLY.** Set their
+`traffic_channel_pool_size="0"`: SDRTrunk still decodes each control channel
+(so talkgroup awareness / affiliation is preserved) but follows **zero** voice
+grants — no chase, no thrash. **Countywide keeps its pool (30)** so it still
+follows voice via the E4000.
+
+Enforce it idempotently (writes a timestamped `.bak`, preserves the file's
+encoding + CRLF, and only touches enabled non-Countywide channels):
+
+```bash
+cd sdr-bridge
+SDRTRUNK_PLAYLIST="C:\Users\<you>\SDRTrunk\playlist\OCCCCs.xml" npm run harden:sdrtrunk
+# or pass the path: node scripts/sdrtrunk-harden-channels.mjs <playlist.xml>
+```
+
+After it runs, the 5 secondary controls read `traffic_channel_pool_size="0"`,
+Countywide stays `30`, and the app log stops spamming
+`Unable to source channel`. This is **separate** from the alias list — the
+alias generator (`scripts/sdrtrunk-playlist.mjs`) only writes
+`sdrtrunk/safet-aliases.xml` and never touches channels or tuners, so this
+channel edit persists across alias regen.
+
+### Root cause 2 — SDRTrunk v0.6.1 baseline heap leak (upstream)
+
+Even with the thrash gone, SDRTrunk v0.6.1 **still slowly leaks** the heap
+(~5–6 GB over several hours). There's no config fix for this in 0.6.1; mitigate
+with a **periodic restart of just the SDRTrunk process**. SafeT SDR's watchdog
+relaunches it automatically, which resets the Java heap.
+
+- `scripts/restart-sdrtrunk.ps1` kills **only** the SDRTrunk `java` process
+  (matched by its `*sdr-trunk-windows*` path — Blue Iris, CodeProject.AI, and
+  any other Java are left untouched) and appends to
+  `Desktop\sdrtrunk-restart.log`.
+- `scripts/install-sdrtrunk-restart-task.ps1` registers a Windows Task
+  Scheduler job **"SDRTrunk Heap Restart"** that runs it **every 4 hours** at
+  highest privileges. Copy `restart-sdrtrunk.ps1` to the Desktop first (the
+  task points at `%USERPROFILE%\Desktop\restart-sdrtrunk.ps1`), then run the
+  installer once from an elevated PowerShell.
+
+A ~4h cadence keeps the heap well under the cap between resets. Countywide
+re-locks within seconds of each relaunch, so the outage per restart is a blip.
+
 ## Verifying
 
 - sdrtrunk's **Streaming** tab shows the `SafeT` stream connected with a
@@ -114,3 +185,13 @@ recent sdrtrunk (0.6.x) build, which has the current Phase 2 decoder fixes.
 
 If sdrtrunk's stream shows errors, re-check the Host URL and that
 `127.0.0.1:8765` is reachable from Windows (mirrored networking, or the WSL IP).
+
+For the stability fixes above:
+
+- After `harden:sdrtrunk`, the 5 secondary controls show
+  `traffic_channel_pool_size="0"` and Countywide stays `30`.
+- The app log no longer spams `Unable to source channel`.
+- SDRTrunk runs many hours without the heap hitting the `-Xmx` cap; the
+  scheduled task restarts it on cadence (entries in
+  `Desktop\sdrtrunk-restart.log`), Countywide keeps locking, and the SafeT
+  stream stays **Connected** with 0 upload errors.

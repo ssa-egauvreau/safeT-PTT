@@ -10,6 +10,7 @@
     "start": "bash scripts/run-all.sh",
     "bridge": "node scripts/local-bridge.mjs",
     "generate": "node scripts/generate.mjs",
+    "harden:sdrtrunk": "node scripts/sdrtrunk-harden-channels.mjs",
     "import-bridges": "node scripts/import-bridges.mjs",
     "setup": "node scripts/generate.mjs && node scripts/import-bridges.mjs"
   },
