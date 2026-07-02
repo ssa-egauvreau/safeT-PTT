@@ -35,6 +35,9 @@ final class RadioViewModel: ObservableObject {
     private var channelIndex = 0
     private var inboxSince = 0
     private var inboxPrimed = false
+    /// Consecutive generic-401 catalog failures. Two in a row are treated as a
+    /// definitive token rejection (expired / rotated secret) — see loadCatalog.
+    private var consecutiveUnauthorized = 0
     /// Bumped on every emergency toggle so an out-of-order request completion
     /// (rapid double-tap) can't apply a stale result to this safety-critical state.
     private var emergencyGeneration = 0
@@ -59,8 +62,12 @@ final class RadioViewModel: ObservableObject {
     private var hardwarePtt: HardwarePttController?
     private var hardwarePttCancellable: AnyCancellable?
     private var volumeCancellable: AnyCancellable?
+    private var boostCancellable: AnyCancellable?
     private var routeCancellable: AnyCancellable?
     private var remotePttObserver: NSObjectProtocol?
+    /// Ownership token for the NetworkPathMonitor callback — lets deinit clear
+    /// only OUR registration, never a successor view-model's.
+    private var networkCallbackToken = 0
     private var lastReceivedAudio = Data()
 
     private static let widgetDefaults = UserDefaults(suiteName: "group.com.safetptt.mobile")
@@ -120,11 +127,16 @@ final class RadioViewModel: ObservableObject {
         }
         locationReporter.start()
         wireVoiceCallbacks()
-        NetworkPathMonitor.shared.onChange = { [weak self] reachable in
+        networkCallbackToken = NetworkPathMonitor.shared.setCallback { [weak self] reachable in
             Task { @MainActor in
                 guard reachable, let self else { return }
                 self.voiceTransport.retryNow()
                 self.scanTransport.retryNow()
+                // Connectivity is back — resync the REST side right away too
+                // instead of waiting for the next 15 s catalog tick.
+                if !self.uiState.channelsLoading, self.uiState.networkLabel != "ONLINE" {
+                    await self.loadCatalog()
+                }
             }
         }
 
@@ -174,18 +186,19 @@ final class RadioViewModel: ObservableObject {
         // here is safe — deinit may be called off-main, but
         // RadioLiveActivityController.end() flips its currentActivity to nil
         // synchronously inside the Task we dispatch below.
-        Task { @MainActor [voiceTransport, voiceAudio, scanTransport] in
+        Task { @MainActor [voiceTransport, voiceAudio, scanTransport, networkCallbackToken] in
             voiceTransport.disconnect()
             scanTransport.disconnect()
             voiceAudio.stop()
             if #available(iOS 16.2, *) {
                 RadioLiveActivityController.shared.end()
             }
-            // Drop the network callback so a stale `[weak self]` capture
-            // doesn't keep firing into a half-torn-down VM after deinit. The
-            // RootView's `.id(user.id)` switch can otherwise leave the
-            // singleton pointing at a deallocated closure.
-            NetworkPathMonitor.shared.onChange = nil
+            // Drop OUR network callback (token-guarded) so a stale `[weak self]`
+            // capture doesn't keep firing after deinit. Token-guarded because a
+            // session handoff (silent re-auth / RootView `.id` switch) registers
+            // the successor VM's callback before this async teardown runs — an
+            // unconditional clear would disconnect the new VM.
+            NetworkPathMonitor.shared.clearCallback(token: networkCallbackToken)
         }
     }
 
@@ -244,7 +257,11 @@ final class RadioViewModel: ObservableObject {
         if uiState.isTransmitting {
             stateLabel = "TX"
             callsign = uiState.localShortUnitId
-        } else if uiState.isReceivingAudio || !uiState.activeTalkUnitId.isEmpty {
+        } else if uiState.isReceivingAudio || !uiState.activeTalkUnitId.isEmpty
+                    || !uiState.rxAttributedLine.isEmpty || uiState.scanRxChannel != nil {
+            // Home-channel voice, a poll-attributed talker, or live traffic on
+            // a scanned channel all count as RX — the island should never sit
+            // on IDLE while the speaker is playing someone.
             stateLabel = "RX"
             callsign = uiState.activeTalkUnitId.isEmpty ? nil : uiState.activeTalkUnitId
         } else {
@@ -275,8 +292,11 @@ final class RadioViewModel: ObservableObject {
         } else {
             talker = nil
         }
+        // Surface the scanned channel whenever scan audio is what's playing.
+        // `scanRxChannel` is set the instant a scan frame reaches the speaker,
+        // independent of the slower poll attribution.
         let scanChannel: String?
-        if uiState.rxFromScan, let ch = uiState.scanRxChannel, !ch.isEmpty {
+        if let ch = uiState.scanRxChannel, !ch.isEmpty {
             scanChannel = ch
         } else {
             scanChannel = nil
@@ -318,6 +338,7 @@ final class RadioViewModel: ObservableObject {
             rebuildChannelOptions()
             uiState.channelsLoading = false
             uiState.channelSyncError = nil
+            consecutiveUnauthorized = 0
             uiState.networkLabel = "ONLINE"
             uiState.channelCatalog = channelNames
             // Only stamp the connection start on the rising edge — `loadCatalog()`
@@ -326,13 +347,6 @@ final class RadioViewModel: ObservableObject {
             // every refresh.
             if uiState.connectionStartedAt == nil { uiState.connectionStartedAt = Date() }
             uiState.isReconnecting = false
-            if #available(iOS 16.2, *), let channel = channelNames.indices.contains(channelIndex) ? channelNames[channelIndex] : channelNames.first {
-                RadioLiveActivityController.shared.startOrUpdate(
-                    channel: channel,
-                    callsign: nil,
-                    stateLabel: "IDLE"
-                )
-            }
             // Drop any scan entries that no longer exist in the catalog so the
             // picker / transport never tries to listen to a removed channel.
             let validKeys = Set(channelNames.map { $0.lowercased() })
@@ -347,6 +361,12 @@ final class RadioViewModel: ObservableObject {
                 uiState.scanIncludedChannels = uiState.scanIncludedChannels.intersection(validKeys)
             }
             applyTuning()
+            // Re-derive the Live Activity from CURRENT state rather than
+            // forcing "IDLE". This runs from the 15 s catalog poll — the old
+            // hard-coded IDLE write kept stomping the island back to idle even
+            // while someone was actively talking (the "island always says
+            // idle" bug).
+            if #available(iOS 16.2, *) { refreshLiveActivity() }
             uiState.statusMessage = "READY"
             locationReporter.setChannel(currentChannel)
             await startVoiceIfNeeded()
@@ -358,16 +378,32 @@ final class RadioViewModel: ObservableObject {
         } catch {
             uiState.channelsLoading = false
             uiState.networkLabel = "OFFLINE"
-            // Only a DEFINITIVE session-invalid error (account disabled, a
-            // superseded console session, agency disabled) drops to the login
-            // screen — a generic/transient 401 just shows "SYNC FAILED" and keeps
-            // retrying, so a blip can't kick the operator out. (Radio tokens are
-            // now exempt from supersession server-side, so this should be rare.)
+            // Auth handling: a DEFINITIVE session-invalid error (account
+            // disabled, superseded console session, agency disabled) reports
+            // an auth rejection immediately. A generic 401 (`unauthorized`) is
+            // what an EXPIRED or secret-rotated token produces — the server
+            // can't tell us more — but a single one is also what a proxy blip
+            // can look like, so it only counts as a rejection after two in a
+            // row. Rejections trigger the shell's silent re-auth (see
+            // RadioScreen.onChange(authRejectionCount)) instead of stranding
+            // the operator on a permanently broken radio.
             if let apiError = error as? RadioApiError, apiError.isTerminalSession {
-                uiState.sessionInvalid = true
+                consecutiveUnauthorized = 0
+                uiState.authRejectionCount += 1
                 uiState.statusMessage = "SIGN IN REQUIRED"
-                uiState.channelSyncError = "Session expired — sign in again"
+                uiState.channelSyncError = "Session expired — signing in again"
+            } else if let apiError = error as? RadioApiError, apiError.status == 401 {
+                consecutiveUnauthorized += 1
+                if consecutiveUnauthorized >= 2 {
+                    uiState.authRejectionCount += 1
+                    uiState.statusMessage = "SIGN IN REQUIRED"
+                    uiState.channelSyncError = "Session expired — signing in again"
+                } else {
+                    uiState.channelSyncError = "Channel sync failed"
+                    uiState.statusMessage = "SYNC FAILED"
+                }
             } else {
+                consecutiveUnauthorized = 0
                 uiState.channelSyncError = "Channel sync failed"
                 uiState.statusMessage = "SYNC FAILED"
             }
@@ -511,17 +547,17 @@ final class RadioViewModel: ObservableObject {
         // previous channel.
         inboxSince = 0
         inboxPrimed = false
+        // The talker attribution belongs to the channel we just left — clear it
+        // so neither the display nor the Live Activity carries it over.
+        uiState.rxAttributedLine = ""
+        uiState.rxFromScan = false
+        uiState.activeTalkUnitId = ""
+        uiState.activeTalkDisplayName = ""
         locationReporter.setChannel(currentChannel)
         if let channel = currentChannel {
             voiceTransport.join(channel: channel)
-            if #available(iOS 16.2, *) {
-                RadioLiveActivityController.shared.startOrUpdate(
-                    channel: channel,
-                    callsign: nil,
-                    stateLabel: "IDLE"
-                )
-            }
         }
+        if #available(iOS 16.2, *) { refreshLiveActivity() }
         // The home channel is excluded from the scan listen set, so a tune
         // change has to refresh the transport even if the scan list itself
         // didn't change.
@@ -548,6 +584,10 @@ final class RadioViewModel: ObservableObject {
         volumeCancellable = SettingsStore.shared.$playbackVolume
             .receive(on: RunLoop.main)
             .sink { [weak self] vol in self?.voiceAudio.playbackVolume = vol }
+        voiceAudio.playbackBoost = Self.boostGain(fromDb: SettingsStore.shared.rxBoostDb)
+        boostCancellable = SettingsStore.shared.$rxBoostDb
+            .receive(on: RunLoop.main)
+            .sink { [weak self] db in self?.voiceAudio.playbackBoost = Self.boostGain(fromDb: db) }
         routeCancellable = SettingsStore.shared.$audioRoute
             .receive(on: RunLoop.main)
             .sink { AudioSessionManager.applyRoute($0) }
@@ -624,6 +664,12 @@ final class RadioViewModel: ObservableObject {
             self.uiState.activeTalkDisplayName = ""
             if #available(iOS 16.2, *) { self.refreshLiveActivity() }
         }
+    }
+
+    /// dB → linear gain for the RX loudness boost, clamped to the setting's
+    /// 0–12 dB range.
+    private static func boostGain(fromDb db: Float) -> Float {
+        powf(10.0, max(0, min(db, 12)) / 20.0)
     }
 
     private func startVoiceIfNeeded() async {
@@ -704,13 +750,7 @@ final class RadioViewModel: ObservableObject {
         uiState.statusMessage = P25ImbeNative.isAvailable ? "ON AIR · IMBE" : "ON AIR · CLEAR PCM"
         uiState.isTransmitting = true
         updateWidgetData()
-        if #available(iOS 16.2, *), let channel = currentChannel {
-            RadioLiveActivityController.shared.startOrUpdate(
-                channel: channel,
-                callsign: uiState.localShortUnitId,
-                stateLabel: "TX"
-            )
-        }
+        if #available(iOS 16.2, *) { refreshLiveActivity() }
         startPttAirPolling()
 
         // Background busy validation. If the channel was already taken when we
@@ -780,13 +820,9 @@ final class RadioViewModel: ObservableObject {
             voiceTransport.stopUplinkCapture()
         }
         uiState.statusMessage = "RX IDLE"
-        if #available(iOS 16.2, *), let channel = currentChannel {
-            RadioLiveActivityController.shared.startOrUpdate(
-                channel: channel,
-                callsign: nil,
-                stateLabel: "IDLE"
-            )
-        }
+        // Derive rather than force IDLE — another unit may already be talking
+        // the moment we unkey.
+        if #available(iOS 16.2, *) { refreshLiveActivity() }
     }
 
     // MARK: - emergency / GPS
@@ -927,13 +963,16 @@ final class RadioViewModel: ObservableObject {
 
     private func handleScanRx(channel: String) {
         guard uiState.scanActive else { return }
+        let isNew = uiState.scanRxChannel != channel
         uiState.scanRxChannel = channel
+        if isNew, #available(iOS 16.2, *) { refreshLiveActivity() }
         scanBannerClearTask?.cancel()
         scanBannerClearTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(800))
             guard let self, !Task.isCancelled else { return }
             if self.uiState.scanRxChannel == channel {
                 self.uiState.scanRxChannel = nil
+                if #available(iOS 16.2, *) { self.refreshLiveActivity() }
             }
         }
     }
@@ -955,7 +994,12 @@ final class RadioViewModel: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(VoiceTiming.catalogPollSeconds))
                 guard let self else { return }
-                if self.uiState.networkLabel == "ONLINE" {
+                // Refresh while ONLINE *and* retry while OFFLINE. The poll used
+                // to skip whenever the label wasn't ONLINE — but a failed sync
+                // sets OFFLINE, so a single blip permanently stopped catalog /
+                // presence / inbox polling until the operator tapped RETRY SYNC.
+                // Only an in-flight load is skipped.
+                if !self.uiState.channelsLoading {
                     await self.loadCatalog()
                 }
             }
@@ -1070,6 +1114,10 @@ final class RadioViewModel: ObservableObject {
             uiState.rxFromScan = mergedFromScan
             uiState.activeTalkUnitId = talkUnit
             uiState.activeTalkDisplayName = talkName
+            // The poll is the fallback attribution path (bridge/SDR traffic and
+            // anything the WS air_claimed push missed) — keep the Dynamic
+            // Island in step with it, not just with the push path.
+            if #available(iOS 16.2, *) { refreshLiveActivity() }
         }
     }
 

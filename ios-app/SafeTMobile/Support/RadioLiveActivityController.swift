@@ -10,6 +10,11 @@ final class RadioLiveActivityController {
 
     private var currentActivity: Activity<RadioActivityAttributes>?
     private var currentChannel: String = ""
+    /// Tail of the serialized update chain. `Activity.update` is async and the
+    /// callers fire-and-forget, so two rapid state changes (RX → IDLE) used to
+    /// race and could land on the island in the wrong order — the stale write
+    /// then stuck. Every update awaits the previous one instead.
+    private var updateChain: Task<Void, Never>?
 
     /// Starts a Live Activity if one isn't already running, or updates the
     /// existing one in place. Calling this on every channel mutation keeps the
@@ -26,7 +31,7 @@ final class RadioLiveActivityController {
         )
         if let activity = currentActivity {
             currentChannel = channel
-            Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+            enqueueUpdate(activity, state)
             return
         }
         let attributes = RadioActivityAttributes()
@@ -35,16 +40,15 @@ final class RadioLiveActivityController {
         currentChannel = channel
     }
 
-    /// Updates the running activity's callsign/stateLabel without changing the
-    /// channel. No-op when no activity is currently running.
-    func update(callsign: String?, stateLabel: String) {
-        guard let activity = currentActivity else { return }
-        let state = RadioActivityAttributes.ContentState(
-            channel: currentChannel,
-            callsign: callsign,
-            stateLabel: stateLabel
-        )
-        Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+    /// Chain the update behind whatever is already in flight so states apply
+    /// in the exact order the radio produced them.
+    private func enqueueUpdate(_ activity: Activity<RadioActivityAttributes>,
+                               _ state: RadioActivityAttributes.ContentState) {
+        let previous = updateChain
+        updateChain = Task {
+            await previous?.value
+            await activity.update(ActivityContent(state: state, staleDate: nil))
+        }
     }
 
     /// Tears down the current Live Activity. The currentActivity reference is
@@ -53,10 +57,15 @@ final class RadioLiveActivityController {
     /// fall into the "already running" branch.
     func end() {
         let prior = currentActivity
+        let priorChain = updateChain
         currentActivity = nil
         currentChannel = ""
+        updateChain = nil
         guard let prior else { return }
-        Task { await prior.end(nil, dismissalPolicy: .immediate) }
+        Task {
+            await priorChain?.value
+            await prior.end(nil, dismissalPolicy: .immediate)
+        }
     }
 
     /// Ends any Live Activities left running by a *previous* process — e.g. a

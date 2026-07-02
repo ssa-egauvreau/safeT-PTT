@@ -64,6 +64,13 @@ final class SettingsStore: ObservableObject {
     @Published var playbackVolume: Float {
         didSet { defaults.set(playbackVolume, forKey: Keys.playbackVolume) }
     }
+    /// Extra RX make-up gain in dB (0–12), applied with a soft limiter in the
+    /// playback path. iOS runs the session in voice-chat (phone call) mode,
+    /// which the OS attenuates like a call — without make-up gain incoming
+    /// voice is noticeably quieter than media audio at the same volume setting.
+    @Published var rxBoostDb: Float {
+        didSet { defaults.set(rxBoostDb, forKey: Keys.rxBoostDb) }
+    }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -74,6 +81,7 @@ final class SettingsStore: ObservableObject {
         audioRoute = AudioRoute(rawValue: rawRoute) ?? .auto
         notificationSoundsEnabled = (defaults.object(forKey: Keys.notificationSounds) as? Bool) ?? true
         playbackVolume = defaults.object(forKey: Keys.playbackVolume) as? Float ?? 1.0
+        rxBoostDb = defaults.object(forKey: Keys.rxBoostDb) as? Float ?? 6.0
     }
 
     // MARK: - Scan selection persistence
@@ -101,6 +109,7 @@ final class SettingsStore: ObservableObject {
         static let audioRoute = "safet.audioRoute"
         static let notificationSounds = "safet.notificationSoundsEnabled"
         static let playbackVolume = "safet.playbackVolume"
+        static let rxBoostDb = "safet.rxBoostDb"
         static let scanChannels = "safet.scanIncludedChannels"
         static let scanActive = "safet.scanActive"
     }

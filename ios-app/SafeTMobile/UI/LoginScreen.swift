@@ -16,16 +16,8 @@ struct LoginScreen: View {
             VStack(spacing: 18) {
                 Spacer()
 
-                VStack(spacing: 4) {
-                    Text("safeT")
-                        .font(.safet(size: 36, weight: .heavy, design: .rounded))
-                        .foregroundColor(.safetSignal)
-                    Text("MOBILE")
-                        .font(.safet(size: 14, weight: .bold))
-                        .tracking(6)
-                        .foregroundColor(.safetTextDim)
-                }
-                .padding(.bottom, 16)
+                SafeTLogoView()
+                    .padding(.bottom, 16)
 
                 field(
                     title: "USERNAME",
@@ -77,7 +69,14 @@ struct LoginScreen: View {
             }
             .padding(24)
         }
-        .onAppear { focused = .username }
+        .onAppear {
+            // Prefill the last signed-in username (a session expiry lands the
+            // operator here — they should only have to retype the password).
+            if username.isEmpty {
+                username = session.lastUsername
+            }
+            focused = username.isEmpty ? .username : .password
+        }
     }
 
     private func field(

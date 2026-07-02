@@ -29,6 +29,16 @@ final class VoiceAudio {
         set { player.volume = newValue }
     }
 
+    /// Linear RX make-up gain (≥ 1.0) applied at the PCM16 → float conversion
+    /// with a tanh soft limiter, compensating for the loudness the OS shaves
+    /// off in voice-chat (phone call) mode. Deliberately implemented as pure
+    /// sample math — NOT as a node-graph change — because the playback engine +
+    /// jitter buffer are clocking-sensitive (a previous session-mode change to
+    /// make RX louder garbled live audio and had to be reverted).
+    var playbackBoost: Float = 1.0 {
+        didSet { jitterBuffer.setGain(playbackBoost) }
+    }
+
 
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
@@ -391,7 +401,9 @@ final class VoiceAudio {
     }
 
     /// Converts a little-endian PCM16 mono/16 kHz blob into a float32
-    /// `AVAudioPCMBuffer` in the player's processing format.
+    /// `AVAudioPCMBuffer` in the player's processing format, applying the RX
+    /// make-up boost (soft-limited so a hot signal saturates instead of
+    /// hard-clipping).
     private func makeBuffer(from pcm16: Data) -> AVAudioPCMBuffer? {
         let sampleCount = pcm16.count / 2
         guard sampleCount > 0,
@@ -399,11 +411,14 @@ final class VoiceAudio {
                                             frameCapacity: AVAudioFrameCount(sampleCount)),
               let channel = buffer.floatChannelData else { return nil }
         buffer.frameLength = AVAudioFrameCount(sampleCount)
+        let boost = playbackBoost
+        let boosted = boost > 1.001
         pcm16.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             let samples = raw.bindMemory(to: Int16.self)
             let out = channel[0]
             for i in 0..<sampleCount {
-                out[i] = Float(Int16(littleEndian: samples[i])) / 32_768.0
+                let x = Float(Int16(littleEndian: samples[i])) / 32_768.0
+                out[i] = boosted ? tanhf(x * boost) : x
             }
         }
         return buffer
