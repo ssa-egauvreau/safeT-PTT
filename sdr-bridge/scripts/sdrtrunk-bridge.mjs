@@ -130,6 +130,14 @@ const SCAN_RECENT_CAP = 20; // how many recent calls each scan feed remembers
 const rows = new Map();
 let statusDirty = true;
 let heartbeatTick = 0;
+// Freeze-detection feed for the desktop watchdog: sdrtrunk can hang without
+// dying (heap-exhaustion GC spiral — process "up", zero calls). We stamp when
+// the LAST call upload arrived (and when this bridge started, so "no calls
+// yet" is measurable too); the watchdog restarts sdrtrunk when the gap grows
+// past its stall threshold. Both stamps use this (WSL) clock, same as
+// updatedAt, so the comparison is immune to Windows/WSL clock skew.
+const startedAtMs = Date.now();
+let lastCallUploadMs = 0;
 
 // Roster of every talkgroup heard (tgid -> {label, count, lastHeardMs}), reported
 // to the SafeT server every ~30s so the console can offer a "discovered → add"
@@ -169,7 +177,7 @@ setInterval(() => {
   // sees a COMPLETE file. The replacer drops `_`-prefixed internal bookkeeping.
   try {
     const json = JSON.stringify(
-      { updatedAt: Date.now(), bridges: [...rows.values()] },
+      { updatedAt: Date.now(), startedAtMs, lastCallUploadMs, bridges: [...rows.values()] },
       (k, v) => (k[0] === "_" ? undefined : v),
     );
     const tmp = STATUS_FILE + ".tmp";
@@ -385,6 +393,10 @@ async function main() {
   await createCallUploadServer({
     port: UPLOAD_PORT,
     onCall: async (call) => {
+      // Stamp receipt BEFORE decode: any upload proves sdrtrunk is alive and
+      // decoding, even if this particular call fails to transcode.
+      lastCallUploadMs = Date.now();
+      statusDirty = true;
       let pcm;
       try {
         pcm = await decodeToPcm(call.audio);

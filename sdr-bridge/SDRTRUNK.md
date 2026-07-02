@@ -159,16 +159,57 @@ relaunches it automatically, which resets the Java heap.
 
 - `scripts/restart-sdrtrunk.ps1` kills **only** the SDRTrunk `java` process
   (matched by its `*sdr-trunk-windows*` path — Blue Iris, CodeProject.AI, and
-  any other Java are left untouched) and appends to
-  `Desktop\sdrtrunk-restart.log`.
+  any other Java are left untouched), waits ~60s for the SafeT SDR watchdog to
+  relaunch it, and — if the desktop app isn't running to do that — **relaunches
+  SDRTrunk itself** from the killed process's own install folder. Every outcome
+  is appended to `Desktop\sdrtrunk-restart.log`, so a scheduled restart can
+  never leave the feed dead.
 - `scripts/install-sdrtrunk-restart-task.ps1` registers a Windows Task
   Scheduler job **"SDRTrunk Heap Restart"** that runs it **every 4 hours** at
   highest privileges. Copy `restart-sdrtrunk.ps1` to the Desktop first (the
   task points at `%USERPROFILE%\Desktop\restart-sdrtrunk.ps1`), then run the
-  installer once from an elevated PowerShell.
+  installer once from an elevated PowerShell. Re-copy + re-run after pulling a
+  newer version of the script.
 
 A ~4h cadence keeps the heap well under the cap between resets. Countywide
 re-locks within seconds of each relaunch, so the outage per restart is a blip.
+
+### Root cause 3 — freezes the process-check watchdog can't see
+
+Before the heap finally OOMs, the JVM spends a long stretch in a **GC
+death-spiral: the process is alive but decodes nothing**. SafeT SDR's watchdog
+used to check only that the SDRTrunk process *exists*, so a frozen SDRTrunk
+passed as healthy and the feed sat dead until someone RDP'd in (or the next
+4-hour scheduled kill).
+
+**Fix: the watchdog now watches CALL FLOW, not just the process.** The WSL
+bridge stamps `lastCallUploadMs` into `/tmp/sdr-bridge-status.json` on every
+call sdrtrunk uploads. If the SDRTrunk process is up, the bridge is alive, and
+**no call has arrived for 15 minutes** (15 min of dead air on a countywide
+public-safety system means a hung decoder, not a quiet system), the watchdog
+kills and relaunches sdrtrunk automatically. Requires the SafeT SDR desktop
+app running (it hosts the watchdog).
+
+Tune it via the desktop app's `settings.json` (`%APPDATA%\safet-sdr\` →
+`"sdrtrunkStallMinutes": 15`); set `0` to disable. After a stall restart the
+watchdog waits one full window before it will stall-restart again, so genuinely
+quiet air can't cause a restart loop.
+
+### If it still goes down — checklist
+
+1. `npm run harden:sdrtrunk` has been run since the last playlist change
+   (secondary controls show `traffic_channel_pool_size="0"`).
+2. The **"SDRTrunk Heap Restart"** scheduled task exists and
+   `Desktop\sdrtrunk-restart.log` shows entries every 4 h. Re-copy the current
+   `restart-sdrtrunk.ps1` to the Desktop — the newer version relaunches
+   SDRTrunk itself when the desktop app is closed.
+3. The **SafeT SDR desktop app is running** (it hosts both watchdogs). Enable
+   its auto-start-at-login setting so a Windows reboot brings everything back.
+4. Give the JVM headroom: in the sdrtrunk folder edit `bin\sdr-trunk.bat` (or
+   SDRTrunk's User Preferences → JVM memory) and raise `-Xmx` if the box has
+   RAM to spare — more headroom stretches the time between forced restarts.
+5. Consider a newer sdrtrunk 0.6.x nightly — the v0.6.1 baseline leak is
+   upstream, and later builds carry decoder/memory fixes.
 
 ## Verifying
 
@@ -195,3 +236,6 @@ For the stability fixes above:
   scheduled task restarts it on cadence (entries in
   `Desktop\sdrtrunk-restart.log`), Countywide keeps locking, and the SafeT
   stream stays **Connected** with 0 upload errors.
+- If SDRTrunk ever hangs mid-window, the desktop log shows
+  `[watchdog] sdrtrunk frozen? process up but no calls for N min — restarting
+  it…` and calls resume within a minute or two — no RDP needed.

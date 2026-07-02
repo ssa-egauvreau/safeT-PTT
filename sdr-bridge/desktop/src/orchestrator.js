@@ -18,7 +18,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 
-const DEFAULTS = { distro: "Ubuntu", projectDir: "~/safeT-PTT/sdr-bridge", sdrtrunkPath: "" };
+// sdrtrunkStallMinutes: the freeze watchdog restarts sdrtrunk when the process
+// is up but NO call upload has arrived for this long (0 disables). 15 min of
+// dead air on a countywide P25 system means a hung JVM, not a quiet system.
+const DEFAULTS = { distro: "Ubuntu", projectDir: "~/safeT-PTT/sdr-bridge", sdrtrunkPath: "", sdrtrunkStallMinutes: 15 };
 
 // ---- app settings (distro / projectDir) ---------------------------------
 
@@ -473,6 +476,7 @@ async function restartPipeline() {
 let watchdogTimer = null;
 let lastRecoverAt = 0;
 let lastLocked = null;
+let lastStallRestartAt = 0; // separate, longer cooldown for freeze restarts
 
 /** Strip ANSI color codes — trunk-recorder colorizes its logs, which otherwise
  * breaks regexes that expect e.g. a number right after "TG:". */
@@ -511,6 +515,57 @@ async function watchdogTick() {
       lastRecoverAt = Date.now();
       onLogLine("[watchdog] sdrtrunk not running — relaunching…");
       await launchSdrtrunk().catch((e) => onLogLine("[watchdog] relaunch error: " + (e.message || e)));
+      return;
+    }
+    // Freeze detection: the process being "up" proves nothing — a JVM whose
+    // heap hit -Xmx sits in a GC death-spiral for hours, alive but decoding
+    // nothing (the every-few-hours "offline until someone RDPs in" failure).
+    // The real health signal is CALL FLOW: the WSL bridge stamps
+    // lastCallUploadMs on every RdioScanner upload. Process up + bridge alive
+    // + no upload for sdrtrunkStallMinutes → kill and relaunch sdrtrunk.
+    const stallMin = Number(getSettings().sdrtrunkStallMinutes);
+    if (!(stallMin > 0)) return;
+    // One-window cooldown: after a stall restart the last-call stamp stays old
+    // until the first new call arrives, so without this the stall condition
+    // would re-fire every tick during genuinely quiet air.
+    if (Date.now() - lastStallRestartAt < stallMin * 60000) return;
+    const stj = await runWsl(
+      "f=/tmp/sdr-bridge-status.json; " +
+        'if [ -f "$f" ]; then echo "AGES $(( $(date +%s) - $(stat -c %Y "$f") ))"; cat "$f"; ' +
+        "else echo 'AGES 999999'; echo '{}'; fi",
+      { timeout: 8000 },
+    );
+    try {
+      let ageSec = Number.POSITIVE_INFINITY;
+      let body = stj.stdout;
+      const nl = stj.stdout.indexOf("\n");
+      if (nl >= 0) {
+        const m = stj.stdout.slice(0, nl).match(/^AGES\s+(-?\d+)/);
+        if (m) {
+          ageSec = Number(m[1]);
+          body = stj.stdout.slice(nl + 1);
+        }
+      }
+      // Stale status file = the bridge itself is down (it has its own respawn
+      // loop) — no verdict on sdrtrunk, so don't restart it on that evidence.
+      if (!Number.isFinite(ageSec) || ageSec >= 15) return;
+      const detail = JSON.parse(body);
+      // All three stamps share the WSL clock, so the math is skew-free. Fall
+      // back to bridge start for the "no calls ever" case; bail if an older
+      // bridge (pre-stamps) wrote the file.
+      const ref = Number(detail.updatedAt) || 0;
+      const last = Number(detail.lastCallUploadMs) || Number(detail.startedAtMs) || 0;
+      if (!ref || !last) return;
+      if (ref - last < stallMin * 60000) return;
+      lastRecoverAt = Date.now();
+      lastStallRestartAt = Date.now();
+      const quietMin = Math.round((ref - last) / 60000);
+      onLogLine(`[watchdog] sdrtrunk frozen? process up but no calls for ${quietMin} min — restarting it…`);
+      notify("SafeT SDR — restarting sdrtrunk", `No calls decoded for ${quietMin} min; restarting sdrtrunk.`);
+      await stopSdrtrunk().catch(() => {});
+      await launchSdrtrunk().catch((e) => onLogLine("[watchdog] relaunch error: " + (e.message || e)));
+    } catch {
+      /* partial status write — next tick gets it */
     }
     return;
   }
