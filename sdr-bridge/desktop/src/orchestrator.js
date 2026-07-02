@@ -18,7 +18,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 
-const DEFAULTS = { distro: "Ubuntu", projectDir: "~/safeT-PTT/sdr-bridge", sdrtrunkPath: "" };
+// sdrtrunkStallMinutes: the freeze watchdog restarts sdrtrunk when the process
+// is up but NO call upload has arrived for this long (0 disables). 15 min of
+// dead air on a countywide P25 system means a hung JVM, not a quiet system.
+// sdrtrunkRestartHours: cadence restart that resets the Java heap before the
+// v0.6.1 slow leak reaches -Xmx (0 disables). Built in so the rig needs no
+// Task Scheduler setup; the restart-sdrtrunk.ps1 task remains an optional
+// backstop for when this app isn't running.
+const DEFAULTS = { distro: "Ubuntu", projectDir: "~/safeT-PTT/sdr-bridge", sdrtrunkPath: "", sdrtrunkStallMinutes: 15, sdrtrunkRestartHours: 4 };
 
 // ---- app settings (distro / projectDir) ---------------------------------
 
@@ -310,6 +317,11 @@ async function launchSdrtrunk() {
     `$bat = if (Test-Path -PathType Leaf $p) { $p } else { Join-Path $p 'bin\\sdr-trunk.bat' }; ` +
     `if (-not (Test-Path $bat)) { 'no-bat'; exit }; ` +
     `if (Get-Process -Name 'sdr-trunk','java' -ErrorAction SilentlyContinue | Where-Object { $_.Path -like (Join-Path (Split-Path (Split-Path $bat)) '*') }) { 'already'; exit }; ` +
+    // sdr-trunk.bat is a Gradle start script, so it appends %JAVA_OPTS% to the
+    // JVM flags. ExitOnOutOfMemoryError turns the v0.6.1 heap-cap failure from
+    // a frozen zombie (GC death-spiral the process check can't see) into an
+    // instant exit the watchdog relaunches within one 15s tick.
+    `$env:JAVA_OPTS = ("$env:JAVA_OPTS -XX:+ExitOnOutOfMemoryError").Trim(); ` +
     `Start-Process -FilePath $bat -WorkingDirectory (Split-Path (Split-Path $bat)) -WindowStyle Minimized; 'launched'`;
   const r = await runPowershell(["-Command", ps], { timeout: 20000 });
   const out = (r.stdout || "").trim();
@@ -318,7 +330,48 @@ async function launchSdrtrunk() {
     return { ok: false, message: "sdr-trunk.bat not found" };
   }
   onLogLine(out.includes("already") ? "[sdrtrunk] already running." : "[sdrtrunk] launched on Windows.");
+  // Cadence-restart clock. "already" also counts: we can't know how long a
+  // pre-existing sdrtrunk has run, so the first cadence restart lands one full
+  // window from now — conservative, never early.
+  sdrtrunkLaunchStamp = Date.now();
   return { ok: true };
+}
+
+/** Enforce the OOM-safe channel config (secondary-cell controls at
+ *  traffic_channel_pool_size="0" — see SDRTRUNK.md "Root cause 1") on every
+ *  Start, so a playlist edit or sdrtrunk re-save can't quietly reintroduce the
+ *  voice-chase thrash that leaks the heap. Runs while sdrtrunk is CLOSED (same
+ *  window as the alias install); the script is idempotent and writes a
+ *  timestamped .bak before any change. */
+async function hardenSdrtrunkChannels() {
+  const { projectDir } = getSettings();
+  const playlistDir = path.join(os.homedir(), "SDRTrunk", "playlist");
+  let files = [];
+  try {
+    files = fs.readdirSync(playlistDir).filter((f) => f.endsWith(".xml"));
+  } catch {
+    return; // no sdrtrunk user dir yet — nothing to harden
+  }
+  if (!files.length) return;
+  // Same "active playlist" pick as the alias installer: most recently written.
+  const target = files
+    .map((f) => ({ f, m: fs.statSync(path.join(playlistDir, f)).mtimeMs }))
+    .sort((a, b) => b.m - a.m)[0].f;
+  const winPath = path.join(playlistDir, target);
+  if (winPath.includes("'")) {
+    onLogLine("[sdrtrunk] harden skipped: playlist path contains a quote.");
+    return;
+  }
+  // The harden script lives in the WSL repo (freshly git-pulled by Start);
+  // wslpath maps the Windows playlist path into it. Backslashes are literal
+  // inside bash single quotes, so the Windows path passes through verbatim.
+  const r = await runWsl(
+    `cd ${projectDir} && node scripts/sdrtrunk-harden-channels.mjs "$(wslpath '${winPath}')" 2>&1 | tail -4`,
+    { timeout: 30000 },
+  );
+  for (const line of (r.stdout || r.stderr || "").split(/\r?\n/)) {
+    if (line.trim()) onLogLine(`[sdrtrunk] harden: ${line.trim()}`);
+  }
 }
 
 async function stopSdrtrunk() {
@@ -394,6 +447,7 @@ async function startPipeline({ quiet = false } = {}) {
     // would overwrite our edit on its next save otherwise).
     await stopSdrtrunk().catch(() => {});
     await installSdrtrunkAliases().catch((e) => onLogLine(`[sdrtrunk] alias install error: ${e.message}`));
+    await hardenSdrtrunkChannels().catch((e) => onLogLine(`[sdrtrunk] harden error: ${e.message}`));
     const tr = await launchSdrtrunk();
     onLogLine("[start] running the sdrtrunk -> SafeT call bridge…");
     spawnPipeline();
@@ -473,6 +527,8 @@ async function restartPipeline() {
 let watchdogTimer = null;
 let lastRecoverAt = 0;
 let lastLocked = null;
+let lastStallRestartAt = 0; // separate, longer cooldown for freeze restarts
+let sdrtrunkLaunchStamp = 0; // when sdrtrunk was (re)launched — cadence-restart clock
 
 /** Strip ANSI color codes — trunk-recorder colorizes its logs, which otherwise
  * breaks regexes that expect e.g. a number right after "TG:". */
@@ -511,6 +567,70 @@ async function watchdogTick() {
       lastRecoverAt = Date.now();
       onLogLine("[watchdog] sdrtrunk not running — relaunching…");
       await launchSdrtrunk().catch((e) => onLogLine("[watchdog] relaunch error: " + (e.message || e)));
+      return;
+    }
+    // Cadence heap restart: sdrtrunk v0.6.1 slowly leaks toward -Xmx even when
+    // healthy, so restart it on a timer BEFORE the heap gets there. Built in
+    // here (no Task Scheduler setup on the rig); Countywide re-locks within
+    // seconds, so each restart is a blip.
+    const restartHours = Number(getSettings().sdrtrunkRestartHours);
+    if (restartHours > 0 && sdrtrunkLaunchStamp && Date.now() - sdrtrunkLaunchStamp > restartHours * 3600000) {
+      lastRecoverAt = Date.now();
+      onLogLine(`[watchdog] cadence heap restart — sdrtrunk has run ~${restartHours}h; restarting it…`);
+      notify("SafeT SDR — heap restart", `Restarting sdrtrunk after ${restartHours}h (v0.6.1 leak workaround).`);
+      await stopSdrtrunk().catch(() => {});
+      await launchSdrtrunk().catch((e) => onLogLine("[watchdog] relaunch error: " + (e.message || e)));
+      return;
+    }
+    // Freeze detection: the process being "up" proves nothing — a JVM whose
+    // heap hit -Xmx sits in a GC death-spiral for hours, alive but decoding
+    // nothing (the every-few-hours "offline until someone RDPs in" failure).
+    // The real health signal is CALL FLOW: the WSL bridge stamps
+    // lastCallUploadMs on every RdioScanner upload. Process up + bridge alive
+    // + no upload for sdrtrunkStallMinutes → kill and relaunch sdrtrunk.
+    const stallMin = Number(getSettings().sdrtrunkStallMinutes);
+    if (!(stallMin > 0)) return;
+    // One-window cooldown: after a stall restart the last-call stamp stays old
+    // until the first new call arrives, so without this the stall condition
+    // would re-fire every tick during genuinely quiet air.
+    if (Date.now() - lastStallRestartAt < stallMin * 60000) return;
+    const stj = await runWsl(
+      "f=/tmp/sdr-bridge-status.json; " +
+        'if [ -f "$f" ]; then echo "AGES $(( $(date +%s) - $(stat -c %Y "$f") ))"; cat "$f"; ' +
+        "else echo 'AGES 999999'; echo '{}'; fi",
+      { timeout: 8000 },
+    );
+    try {
+      let ageSec = Number.POSITIVE_INFINITY;
+      let body = stj.stdout;
+      const nl = stj.stdout.indexOf("\n");
+      if (nl >= 0) {
+        const m = stj.stdout.slice(0, nl).match(/^AGES\s+(-?\d+)/);
+        if (m) {
+          ageSec = Number(m[1]);
+          body = stj.stdout.slice(nl + 1);
+        }
+      }
+      // Stale status file = the bridge itself is down (it has its own respawn
+      // loop) — no verdict on sdrtrunk, so don't restart it on that evidence.
+      if (!Number.isFinite(ageSec) || ageSec >= 15) return;
+      const detail = JSON.parse(body);
+      // All three stamps share the WSL clock, so the math is skew-free. Fall
+      // back to bridge start for the "no calls ever" case; bail if an older
+      // bridge (pre-stamps) wrote the file.
+      const ref = Number(detail.updatedAt) || 0;
+      const last = Number(detail.lastCallUploadMs) || Number(detail.startedAtMs) || 0;
+      if (!ref || !last) return;
+      if (ref - last < stallMin * 60000) return;
+      lastRecoverAt = Date.now();
+      lastStallRestartAt = Date.now();
+      const quietMin = Math.round((ref - last) / 60000);
+      onLogLine(`[watchdog] sdrtrunk frozen? process up but no calls for ${quietMin} min — restarting it…`);
+      notify("SafeT SDR — restarting sdrtrunk", `No calls decoded for ${quietMin} min; restarting sdrtrunk.`);
+      await stopSdrtrunk().catch(() => {});
+      await launchSdrtrunk().catch((e) => onLogLine("[watchdog] relaunch error: " + (e.message || e)));
+    } catch {
+      /* partial status write — next tick gets it */
     }
     return;
   }

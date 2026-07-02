@@ -1,7 +1,9 @@
 # install-sdrtrunk-restart-task.ps1
 # Registers the Windows Task Scheduler job that runs restart-sdrtrunk.ps1 every
-# 4 hours at highest privileges, working around SDRTrunk v0.6.1's slow heap leak
-# (the watchdog relaunches SDRTrunk fresh after each kill — see SDRTRUNK.md).
+# 4 hours at highest privileges, working around SDRTrunk v0.6.1's slow heap leak.
+# restart-sdrtrunk.ps1 kills SDRTrunk, waits for the SafeT SDR watchdog to
+# relaunch it, and relaunches it ITSELF if the watchdog isn't running — so the
+# cadence restart never leaves the feed dead (see SDRTRUNK.md).
 #
 # restart-sdrtrunk.ps1 is expected to live on the Desktop (the task points at
 # %USERPROFILE%\Desktop\restart-sdrtrunk.ps1). Copy it there first if it isn't
