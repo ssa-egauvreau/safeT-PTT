@@ -134,8 +134,12 @@ heap straight to the `-Xmx` cap.
 grants — no chase, no thrash. **Countywide keeps its pool (30)** so it still
 follows voice via the E4000.
 
-Enforce it idempotently (writes a timestamped `.bak`, preserves the file's
-encoding + CRLF, and only touches enabled non-Countywide channels):
+**As of SafeT SDR v1.13.0 this runs automatically on every Start** (right
+after the alias install, while sdrtrunk is closed), so a playlist edit or
+sdrtrunk re-save can't quietly reintroduce the thrash — watch for
+`[sdrtrunk] harden:` lines in the app log. It can still be run by hand
+(idempotent, writes a timestamped `.bak`, preserves the file's encoding +
+CRLF, and only touches enabled non-Countywide channels):
 
 ```bash
 cd sdr-bridge
@@ -154,8 +158,18 @@ channel edit persists across alias regen.
 
 Even with the thrash gone, SDRTrunk v0.6.1 **still slowly leaks** the heap
 (~5–6 GB over several hours). There's no config fix for this in 0.6.1; mitigate
-with a **periodic restart of just the SDRTrunk process**. SafeT SDR's watchdog
-relaunches it automatically, which resets the Java heap.
+with a **periodic restart of just the SDRTrunk process**, which resets the
+Java heap.
+
+**As of SafeT SDR v1.13.0 the cadence restart is built into the app**: the
+watchdog restarts sdrtrunk every **4 hours** by default
+(`"sdrtrunkRestartHours"` in the app's settings.json; `0` disables), and it
+launches sdrtrunk with `-XX:+ExitOnOutOfMemoryError` so a heap that *does* hit
+the cap kills the process instantly — which the watchdog heals in ~15 s —
+instead of leaving a frozen zombie. No Task Scheduler setup needed.
+
+The scheduled task below is now an **optional backstop** for when the desktop
+app itself isn't running:
 
 - `scripts/restart-sdrtrunk.ps1` kills **only** the SDRTrunk `java` process
   (matched by its `*sdr-trunk-windows*` path — Blue Iris, CodeProject.AI, and
@@ -197,14 +211,16 @@ quiet air can't cause a restart loop.
 
 ### If it still goes down — checklist
 
-1. `npm run harden:sdrtrunk` has been run since the last playlist change
-   (secondary controls show `traffic_channel_pool_size="0"`).
-2. The **"SDRTrunk Heap Restart"** scheduled task exists and
-   `Desktop\sdrtrunk-restart.log` shows entries every 4 h. Re-copy the current
-   `restart-sdrtrunk.ps1` to the Desktop — the newer version relaunches
-   SDRTrunk itself when the desktop app is closed.
-3. The **SafeT SDR desktop app is running** (it hosts both watchdogs). Enable
+1. **SafeT SDR is v1.13.0 or newer** (title bar / About; the app auto-updates
+   from GitHub Releases — restart it once to apply a downloaded update). That
+   build hardens the playlist on every Start, cadence-restarts sdrtrunk every
+   4 h, restarts it when calls stall for 15 min, and launches it with
+   `-XX:+ExitOnOutOfMemoryError`.
+2. The **SafeT SDR desktop app is running** (it hosts every watchdog). Enable
    its auto-start-at-login setting so a Windows reboot brings everything back.
+3. Optional backstop for when the app is closed: copy `restart-sdrtrunk.ps1`
+   to the Desktop and run `install-sdrtrunk-restart-task.ps1` once (elevated).
+   The current script relaunches SDRTrunk itself if no watchdog does.
 4. Give the JVM headroom: in the sdrtrunk folder edit `bin\sdr-trunk.bat` (or
    SDRTrunk's User Preferences → JVM memory) and raise `-Xmx` if the box has
    RAM to spare — more headroom stretches the time between forced restarts.
