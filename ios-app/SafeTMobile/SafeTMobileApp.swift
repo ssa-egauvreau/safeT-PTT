@@ -47,8 +47,11 @@ private struct RootView: View {
             // StateObject autoclosure owns the VM lifetime. Constructing the
             // VM at the call site would build a fresh instance on every
             // RootView re-render, defeating @StateObject's retention.
+            // The identity includes the token (not just the user) so a silent
+            // re-auth — same user, fresh token — tears down the old view-model
+            // and builds a new one that connects with the new token.
             RadioScreen(user: user, token: token)
-                .id(user.id)
+                .id("\(user.id):\(token.hashValue)")
         } else {
             LoginScreen()
         }

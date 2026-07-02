@@ -117,6 +117,19 @@ struct SettingsScreen: View {
                     .tint(.safetGreen)
             }
             .padding(.vertical, 4)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Loudness Boost")
+                        .foregroundColor(.safetText)
+                    Spacer()
+                    Text(settings.rxBoostDb <= 0 ? "Off" : "+\(Int(settings.rxBoostDb)) dB")
+                        .font(.safet(size: 13, design: .monospaced))
+                        .foregroundColor(.safetTextDim)
+                }
+                Slider(value: $settings.rxBoostDb, in: 0...12, step: 1)
+                    .tint(.safetGreen)
+            }
+            .padding(.vertical, 4)
             Picker("Audio Route", selection: $settings.audioRoute) {
                 ForEach(SettingsStore.AudioRoute.allCases, id: \.self) { route in
                     Label(route.label, systemImage: route.icon).tag(route)
@@ -127,7 +140,7 @@ struct SettingsScreen: View {
         } header: {
             Text("Audio")
         } footer: {
-            Text("Notification sounds cover channel-switch beeps and PTT cues. Emergency alerts always play regardless of this setting. Playback volume controls incoming voice audio.")
+            Text("Notification sounds cover channel-switch beeps and PTT cues. Emergency alerts always play regardless of this setting. Playback volume controls incoming voice audio. Loudness boost adds make-up gain — iOS plays radio voice through its phone-call audio path, which is quieter than media; lower the boost if loud transmissions sound crunchy.")
                 .font(.safet(size: 11))
                 .foregroundColor(.safetTextDim)
         }

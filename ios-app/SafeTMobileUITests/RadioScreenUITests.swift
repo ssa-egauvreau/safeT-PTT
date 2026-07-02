@@ -15,8 +15,9 @@ final class RadioScreenUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["safeT"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["USERNAME"].exists)
+        // The wordmark is now part of the SafeTLogoView lockup, exposed as a
+        // single accessibility element labelled "safeT Mobile".
+        XCTAssertTrue(app.staticTexts["USERNAME"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["PASSWORD"].exists)
         XCTAssertTrue(app.buttons["SIGN IN"].exists)
     }

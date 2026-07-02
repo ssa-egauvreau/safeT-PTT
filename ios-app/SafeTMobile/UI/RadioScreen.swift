@@ -176,11 +176,14 @@ struct RadioScreen: View {
             default: break
             }
         }
-        .onChange(of: viewModel.uiState.sessionInvalid) { invalid in
-            // The saved login was rejected (401). Drop to the login screen
-            // automatically instead of sitting on a broken radio — clearing the
-            // session flips RootView to LoginScreen.
-            if invalid { session.logout() }
+        .onChange(of: viewModel.uiState.authRejectionCount) { count in
+            // The saved login was rejected (expired/invalid token). Silently
+            // re-authenticate with the stored credentials — success publishes a
+            // fresh token, which rebuilds this screen with a working session.
+            // Only when re-auth is impossible (no stored credentials, password
+            // changed) does AuthSession fall back to the login screen.
+            guard count > 0 else { return }
+            Task { await session.recoverSession() }
         }
         .sheet(isPresented: $showingDispatch) { sheetWrap("DISPATCH", isPresented: $showingDispatch) {
             if let token = session.token {

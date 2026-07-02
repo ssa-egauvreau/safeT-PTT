@@ -73,6 +73,10 @@ final class InboundJitterBuffer {
     /// Guarded by `lock`.
     private var backgrounded = false
 
+    /// Linear RX make-up gain (≥ 1.0), applied at the PCM16 → float conversion
+    /// with a tanh soft limiter. Guarded by `lock`; read once per frame.
+    private var makeupGain: Float = 1.0
+
     private var initialTargetFrames: Int { backgrounded ? backgroundInitialTargetFrames : foregroundInitialTargetFrames }
     private var maxBufferFrames: Int { backgrounded ? backgroundMaxBufferFrames : foregroundMaxBufferFrames }
 
@@ -183,6 +187,13 @@ final class InboundJitterBuffer {
     func setBackgrounded(_ value: Bool) {
         lock.lock()
         backgrounded = value
+        lock.unlock()
+    }
+
+    /// Update the RX make-up gain (voice-chat-mode loudness compensation).
+    func setGain(_ value: Float) {
+        lock.lock()
+        makeupGain = max(1.0, value)
         lock.unlock()
     }
 
@@ -312,11 +323,19 @@ final class InboundJitterBuffer {
         guard let buffer = AVAudioPCMBuffer(pcmFormat: playerFormat, frameCapacity: frames) else { return }
         buffer.frameLength = frames
 
+        lock.lock()
+        let gain = makeupGain
+        lock.unlock()
+        let boosted = gain > 1.001
+
         guard let floatChannel = buffer.floatChannelData?[0] else { return }
         pcm16.withUnsafeBytes { raw in
             let int16Ptr = raw.bindMemory(to: Int16.self)
             for i in 0..<Int(frames) {
-                floatChannel[i] = Float(int16Ptr[i]) / 32_768.0
+                let x = Float(int16Ptr[i]) / 32_768.0
+                // tanh soft limiter: boosts speech loudness while a hot signal
+                // saturates smoothly instead of hard-clipping at the DAC.
+                floatChannel[i] = boosted ? tanhf(x * gain) : x
             }
         }
         player.scheduleBuffer(buffer, completionHandler: nil)
